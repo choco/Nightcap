@@ -6,8 +6,8 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use nightcap_protocol::{
-    ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NotificationPermission,
-    Payload, Query, Request, Response,
+    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, ManualState,
+    NightShift, NotificationPermission, Payload, Query, Request, Response, Status,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -36,6 +36,12 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Turn Night Shift on until the next schedule transition.
+    On,
+    /// Turn Night Shift off until the next schedule transition.
+    Off,
+    /// Turn Night Shift on if it's off, or off if it's on, until the next schedule transition.
+    Toggle,
 }
 
 /// Why a command failed, which decides the exit code.
@@ -73,36 +79,66 @@ fn main() -> ExitCode {
 }
 
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
-    match command {
-        Command::Status { json } => {
-            let Payload::Status(status) = request(instance, &Request::Query(Query::Status))?;
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string(&status).context("couldn't encode the status")?
-                );
-            } else {
-                let install = match status.install {
-                    Install::Managed => "managed by its installer",
-                    Install::SelfManaged => "self-managed",
-                };
-                let accessibility = if status.permissions.accessibility {
-                    "granted"
-                } else {
-                    "not granted"
-                };
-                let notifications = match status.permissions.notifications {
-                    NotificationPermission::NotRequested => "not requested",
-                    NotificationPermission::Denied => "denied",
-                    NotificationPermission::Granted => "granted",
-                };
-                println!("Nightcap {}, {install}", status.version);
-                println!("Accessibility: {accessibility}");
-                println!("Notifications: {notifications}");
+    let (to_send, json) = match command {
+        Command::Status { json } => (Request::Query(Query::Status), json),
+        Command::On => (Request::Command(protocol::Command::On), false),
+        Command::Off => (Request::Command(protocol::Command::Off), false),
+        Command::Toggle => (Request::Command(protocol::Command::Toggle), false),
+    };
+    let is_command = matches!(to_send, Request::Command(_));
+    let Payload::Status(status) = request(instance, &to_send)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&status).context("couldn't encode the status")?
+        );
+    } else if is_command {
+        // The reply comes before the shell applies the change, so it names what was asked
+        // rather than Night Shift as last observed.
+        match status.manual_state {
+            Some(ManualState::On) => {
+                println!("Night Shift turned on until the next schedule transition")
             }
-            Ok(())
+            Some(ManualState::Off) => {
+                println!("Night Shift turned off until the next schedule transition")
+            }
+            None => print_status(&status),
         }
+    } else {
+        print_status(&status);
     }
+    Ok(())
+}
+
+fn print_status(status: &Status) {
+    let install = match status.install {
+        Install::Managed => "managed by its installer",
+        Install::SelfManaged => "self-managed",
+    };
+    let night_shift = match status.night_shift {
+        NightShift::Unavailable => "unavailable",
+        NightShift::On => "on",
+        NightShift::Off => "off",
+    };
+    let manual = match status.manual_state {
+        None => "",
+        Some(ManualState::On) => ", turned on by hand until the next schedule transition",
+        Some(ManualState::Off) => ", turned off by hand until the next schedule transition",
+    };
+    let accessibility = if status.permissions.accessibility {
+        "granted"
+    } else {
+        "not granted"
+    };
+    let notifications = match status.permissions.notifications {
+        NotificationPermission::NotRequested => "not requested",
+        NotificationPermission::Denied => "denied",
+        NotificationPermission::Granted => "granted",
+    };
+    println!("Nightcap {}, {install}", status.version);
+    println!("Night Shift: {night_shift}{manual}");
+    println!("Accessibility: {accessibility}");
+    println!("Notifications: {notifications}");
 }
 
 fn request(instance: Instance, request: &Request) -> Result<Payload, Failure> {

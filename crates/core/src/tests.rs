@@ -6,8 +6,8 @@ use std::thread;
 use std::time::Duration;
 
 use nightcap_protocol::{
-    ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NotificationPermission, Payload,
-    Permissions, Query, Request, Response, Status,
+    Command, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, ManualState,
+    NightShift, NotificationPermission, Payload, Permissions, Query, Request, Response, Status,
 };
 
 use crate::state::{Persisted, Store};
@@ -106,6 +106,127 @@ fn query_status(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Respo
     client.join().unwrap()
 }
 
+/// Sends a command the way the CLI does, and returns the tick's effects and the response.
+fn send(
+    core: &Core,
+    socket: &Path,
+    wakes: &mpsc::Receiver<()>,
+    command: Command,
+) -> (Vec<Effect>, Response) {
+    let socket = socket.to_owned();
+    let client = thread::spawn(move || {
+        let mut client = Client::connect(&socket);
+        assert_eq!(client.hello(1), HelloReply::Hello(Hello::current()));
+        client.send(&serde_json::to_string(&Request::Command(command)).unwrap());
+        client.receive::<Response>()
+    });
+    wakes
+        .recv_timeout(Duration::from_secs(5))
+        .expect("the IPC thread asks for a tick");
+    let effects = core.tick();
+    (effects, client.join().unwrap())
+}
+
+fn status_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Status {
+    let Response::Ok(Payload::Status(status)) = query_status(core, socket, wakes) else {
+        panic!("expected a status");
+    };
+    status
+}
+
+#[test]
+fn the_status_reports_night_shift_as_last_observed() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    core.handle(Event::StatusChanged { enabled: true });
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).night_shift,
+        NightShift::On
+    );
+}
+
+#[test]
+fn on_while_night_shift_is_off_turns_it_on_and_sets_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::StatusChanged { enabled: false });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    let Response::Ok(Payload::Status(status)) = response else {
+        panic!("expected a status, got {response:?}");
+    };
+    assert_eq!(status.manual_state, Some(ManualState::On));
+}
+
+#[test]
+fn off_while_night_shift_is_on_turns_it_off_and_sets_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::StatusChanged { enabled: true });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Off);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    let Response::Ok(Payload::Status(status)) = response else {
+        panic!("expected a status, got {response:?}");
+    };
+    assert_eq!(status.manual_state, Some(ManualState::Off));
+}
+
+#[test]
+fn on_while_night_shift_is_already_on_writes_nothing_but_still_sets_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::StatusChanged { enabled: true });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(effects, Vec::new());
+    let Response::Ok(Payload::Status(status)) = response else {
+        panic!("expected a status, got {response:?}");
+    };
+    assert_eq!(status.manual_state, Some(ManualState::On));
+}
+
+#[test]
+fn toggle_inverts_night_shift_as_last_observed() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::StatusChanged { enabled: true });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    let Response::Ok(Payload::Status(status)) = response else {
+        panic!("expected a status, got {response:?}");
+    };
+    assert_eq!(status.manual_state, Some(ManualState::Off));
+}
+
+#[test]
+fn a_command_while_night_shift_is_unavailable_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(effects, Vec::new());
+    let Response::Error(error) = response else {
+        panic!("expected an error, got {response:?}");
+    };
+    assert_eq!(error.code, ErrorCode::NightShiftUnavailable);
+}
+
 #[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
@@ -140,6 +261,8 @@ fn a_status_query_is_answered_on_the_next_tick() {
         Response::Ok(Payload::Status(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
+            night_shift: NightShift::Unavailable,
+            manual_state: None,
             permissions: Permissions {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,

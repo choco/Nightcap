@@ -9,6 +9,7 @@ import os
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private var core: Core?
+    private var nightShift: NightShiftAdapter?
     private var terminationSignal: DispatchSourceSignal?
     private var accessibilityObserver: NSObjectProtocol?
 
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
+        startNightShift()
         apply(core!.handle(event: .launched))
         watchPermissions()
     }
@@ -56,6 +58,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         source.setEventHandler { NSApp.terminate(nil) }
         source.resume()
         terminationSignal = source
+    }
+
+    private func startNightShift() {
+        nightShift = NightShiftAdapter { [weak self] enabled in self?.reportNightShift(enabled) }
+        guard let enabled = nightShift?.enabled else {
+            log.fault("Night Shift is unavailable")
+            return
+        }
+        reportNightShift(enabled)
+    }
+
+    private func reportNightShift(_ enabled: Bool) {
+        guard let core else { return }
+        apply(core.handle(event: .statusChanged(enabled: enabled)))
     }
 
     private func watchPermissions() {
@@ -102,7 +118,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .registerLoginItem:
                 registerLoginItem()
             case .setNightShift(let enabled):
-                log.error("there's no Night Shift adapter yet; dropped setNightShift(enabled: \(enabled))")
+                guard let nightShift else {
+                    log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")
+                    continue
+                }
+                nightShift.setEnabled(enabled)
             }
         }
     }

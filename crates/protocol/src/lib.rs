@@ -97,7 +97,17 @@ pub enum HelloReply {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Request {
+    Command(Command),
     Query(Query),
+}
+
+/// What the CLI asks Nightcap to do; each one answers with the resulting status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Command {
+    On,
+    Off,
+    Toggle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -123,7 +133,27 @@ pub enum Payload {
 pub struct Status {
     pub version: String,
     pub install: Install,
+    pub night_shift: NightShift,
+    pub manual_state: Option<ManualState>,
     pub permissions: Permissions,
+}
+
+/// The on or off the user set last; it lasts until the next schedule transition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManualState {
+    On,
+    Off,
+}
+
+/// Night Shift as last observed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NightShift {
+    #[default]
+    Unavailable,
+    On,
+    Off,
 }
 
 /// Who owns updates and starting at login (ADR-0014).
@@ -160,6 +190,7 @@ pub struct ErrorReply {
 pub enum ErrorCode {
     ProtocolMismatch,
     BadRequest,
+    NightShiftUnavailable,
 }
 
 #[cfg(test)]
@@ -194,15 +225,21 @@ mod tests {
             r#"{"query":"status"}"#
         );
         assert_eq!(
+            json(&Request::Command(Command::Toggle)),
+            r#"{"command":"toggle"}"#
+        );
+        assert_eq!(
             json(&Response::Ok(Payload::Status(Status {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
+                night_shift: NightShift::On,
+                manual_state: None,
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","manual_state":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 

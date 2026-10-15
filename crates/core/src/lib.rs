@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use etcetera::BaseStrategy;
 
 use nightcap_protocol::{
-    Install, Instance, NotificationPermission, Payload, Permissions, Query, Request, Response,
-    Status,
+    Command, ErrorCode, ErrorReply, Install, Instance, ManualState, NightShift,
+    NotificationPermission, Payload, Permissions, Query, Request, Response, Status,
 };
 
 #[uniffi::remote(Enum)]
@@ -35,6 +35,10 @@ pub enum Event {
     PermissionsChanged {
         accessibility: bool,
         notifications: NotificationPermission,
+    },
+    /// Night Shift as CoreBrightness reports it.
+    StatusChanged {
+        enabled: bool,
     },
     Terminating,
 }
@@ -76,6 +80,8 @@ struct Setup {
 /// What the core believes about the system, as last reported by the shell, plus what it
 /// keeps across restarts.
 struct State {
+    night_shift: NightShift,
+    manual_state: Option<ManualState>,
     accessibility: bool,
     notifications: NotificationPermission,
     persisted: state::Persisted,
@@ -162,6 +168,14 @@ impl Core {
                 state.notifications = notifications;
                 Vec::new()
             }
+            Event::StatusChanged { enabled } => {
+                self.state().night_shift = if enabled {
+                    NightShift::On
+                } else {
+                    NightShift::Off
+                };
+                Vec::new()
+            }
             Event::Terminating => {
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
@@ -176,11 +190,12 @@ impl Core {
             .requests
             .lock()
             .expect("no panic happens while it's held");
+        let mut effects = Vec::new();
         for pending in requests.try_iter() {
-            let response = self.answer(&pending.request);
+            let response = self.answer(&pending.request, &mut effects);
             pending.reply(response);
         }
-        Vec::new()
+        effects
     }
 }
 
@@ -196,6 +211,8 @@ impl Core {
             store,
             requests: Mutex::new(requests),
             state: Mutex::new(State {
+                night_shift: NightShift::Unavailable,
+                manual_state: None,
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,
                 persisted,
@@ -207,20 +224,58 @@ impl Core {
         self.state.lock().expect("no panic happens while it's held")
     }
 
-    fn answer(&self, request: &Request) -> Response {
+    fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
-            Request::Query(Query::Status) => {
-                let state = self.state();
-                Response::Ok(Payload::Status(Status {
-                    version: env!("CARGO_PKG_VERSION").to_owned(),
-                    install: self.install,
-                    permissions: Permissions {
-                        accessibility: state.accessibility,
-                        notifications: state.notifications,
-                    },
-                }))
+            Request::Command(command) => {
+                let night_shift = self.state().night_shift;
+                if night_shift == NightShift::Unavailable {
+                    return Response::Error(ErrorReply {
+                        code: ErrorCode::NightShiftUnavailable,
+                        message: "Night Shift isn't available on this Mac".to_owned(),
+                    });
+                }
+                let enabled = match command {
+                    Command::On => true,
+                    Command::Off => false,
+                    Command::Toggle => night_shift != NightShift::On,
+                };
+                self.set_manual_state(enabled, effects);
+                self.status()
             }
+            Request::Query(Query::Status) => self.status(),
         }
+    }
+
+    /// Writes Night Shift only when it differs from what was last observed (ADR-0005).
+    fn set_manual_state(&self, enabled: bool, effects: &mut Vec<Effect>) {
+        let mut state = self.state();
+        state.manual_state = Some(if enabled {
+            ManualState::On
+        } else {
+            ManualState::Off
+        });
+        let wanted = if enabled {
+            NightShift::On
+        } else {
+            NightShift::Off
+        };
+        if state.night_shift != wanted {
+            effects.push(Effect::SetNightShift { enabled });
+        }
+    }
+
+    fn status(&self) -> Response {
+        let state = self.state();
+        Response::Ok(Payload::Status(Status {
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            install: self.install,
+            night_shift: state.night_shift,
+            manual_state: state.manual_state,
+            permissions: Permissions {
+                accessibility: state.accessibility,
+                notifications: state.notifications,
+            },
+        }))
     }
 }
 
