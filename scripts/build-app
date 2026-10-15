@@ -18,7 +18,7 @@ fi
 env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" \
   ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
   xcodebuild build \
-  -project macos/Nightcap.xcodeproj \
+  -project app/Nightcap.xcodeproj \
   -target Nightcap \
   -configuration "$configuration" \
   SYMROOT="$root/build/xcode" \
