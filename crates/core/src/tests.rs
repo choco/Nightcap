@@ -6,11 +6,12 @@ use std::thread;
 use std::time::Duration;
 
 use nightcap_protocol::{
-    ErrorCode, Hello, HelloMessage, HelloReply, Payload, Permissions, Query, Request, Response,
-    Status,
+    ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NotificationPermission, Payload,
+    Permissions, Query, Request, Response, Status,
 };
 
-use crate::{Core, CoreError, Event, Waker};
+use crate::state::{Persisted, Store};
+use crate::{Core, CoreError, Effect, Event, Setup, Waker};
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
 struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -22,10 +23,28 @@ impl Waker for ChannelWaker {
 }
 
 fn start(socket: &Path) -> (Core, mpsc::Receiver<()>) {
+    start_as(socket, Instance::Release, Install::Managed)
+}
+
+fn start_as(socket: &Path, instance: Instance, install: Install) -> (Core, mpsc::Receiver<()>) {
+    start_with(setup(socket, instance, install))
+}
+
+fn start_with(setup: Setup) -> (Core, mpsc::Receiver<()>) {
     let (sender, wakes) = mpsc::channel();
     let waker = Arc::new(ChannelWaker(Mutex::new(sender)));
-    let core = Core::listening_at(socket.to_owned(), waker).unwrap();
+    let core = Core::start(setup, waker).unwrap();
     (core, wakes)
+}
+
+/// Keeps the state file beside the socket, inside the test's temporary folder.
+fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
+    Setup {
+        instance,
+        install,
+        socket: socket.to_owned(),
+        state_file: socket.with_file_name("state.json"),
+    }
 }
 
 fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
@@ -95,6 +114,7 @@ fn the_status_reports_the_last_permission_change() {
 
     core.handle(Event::PermissionsChanged {
         accessibility: true,
+        notifications: NotificationPermission::Denied,
     });
 
     let Response::Ok(Payload::Status(status)) = query_status(&core, &socket, &wakes) else {
@@ -103,7 +123,8 @@ fn the_status_reports_the_last_permission_change() {
     assert_eq!(
         status.permissions,
         Permissions {
-            accessibility: true
+            accessibility: true,
+            notifications: NotificationPermission::Denied,
         }
     );
 }
@@ -118,8 +139,10 @@ fn a_status_query_is_answered_on_the_next_tick() {
         query_status(&core, &socket, &wakes),
         Response::Ok(Payload::Status(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
+            install: Install::Managed,
             permissions: Permissions {
-                accessibility: false
+                accessibility: false,
+                notifications: NotificationPermission::NotRequested,
             },
         }))
     );
@@ -182,7 +205,10 @@ fn a_second_instance_on_the_same_socket_is_refused() {
     let (_first, _wakes) = start(&socket);
 
     let (sender, _) = mpsc::channel();
-    let second = Core::listening_at(socket.clone(), Arc::new(ChannelWaker(Mutex::new(sender))));
+    let second = Core::start(
+        setup(&socket, Instance::Release, Install::Managed),
+        Arc::new(ChannelWaker(Mutex::new(sender))),
+    );
 
     assert!(matches!(second, Err(CoreError::AlreadyRunning { .. })));
 }
@@ -223,4 +249,102 @@ fn terminating_removes_the_socket() {
     assert_eq!(core.handle(Event::Terminating), Vec::new());
 
     assert!(!socket.exists());
+}
+
+#[test]
+fn a_self_managed_release_registers_its_login_item_at_launch() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+
+    assert_eq!(
+        core.handle(Event::Launched),
+        vec![Effect::RegisterLoginItem]
+    );
+}
+
+#[test]
+fn a_managed_install_leaves_starting_at_login_to_its_installer() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::Managed);
+
+    assert_eq!(core.handle(Event::Launched), Vec::new());
+}
+
+#[test]
+fn a_dev_build_never_registers_a_login_item() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Dev, Install::SelfManaged);
+
+    assert_eq!(core.handle(Event::Launched), Vec::new());
+}
+
+#[test]
+fn the_login_item_is_registered_only_once_across_restarts() {
+    let dir = tempfile::tempdir().unwrap();
+    let state_file = dir.path().join("state").join("state.json");
+    let first = Setup {
+        state_file: state_file.clone(),
+        ..setup(&socket_in(&dir), Instance::Release, Install::SelfManaged)
+    };
+    let (core, _wakes) = start_with(first);
+    assert_eq!(
+        core.handle(Event::Launched),
+        vec![Effect::RegisterLoginItem]
+    );
+    core.handle(Event::LoginItemRegistered);
+
+    // The first core still holds its socket, so the restarted one gets its own.
+    let restarted = Setup {
+        socket: dir.path().join("restarted").join("nightcap.sock"),
+        state_file,
+        ..setup(&socket_in(&dir), Instance::Release, Install::SelfManaged)
+    };
+    let (core, _wakes) = start_with(restarted);
+
+    assert_eq!(core.handle(Event::Launched), Vec::new());
+}
+
+#[test]
+fn saved_state_loads_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Store::new(dir.path().join("nightcap").join("state.json"));
+    let state = Persisted {
+        login_item_registered: true,
+    };
+
+    store.save(&state).unwrap();
+
+    assert_eq!(store.load(), state);
+}
+
+#[test]
+fn missing_state_starts_fresh() {
+    let dir = tempfile::tempdir().unwrap();
+
+    assert_eq!(
+        Store::new(dir.path().join("state.json")).load(),
+        Persisted::default()
+    );
+}
+
+#[test]
+fn state_from_a_newer_build_starts_fresh() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    std::fs::write(&path, r#"{"version":2,"login_item_registered":true}"#).unwrap();
+
+    assert_eq!(Store::new(path).load(), Persisted::default());
+}
+
+#[test]
+fn state_with_keys_this_build_doesnt_know_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state.json");
+    std::fs::write(
+        &path,
+        r#"{"version":1,"login_item_registered":true,"snoozes":[]}"#,
+    )
+    .unwrap();
+
+    assert!(Store::new(path).load().login_item_registered);
 }

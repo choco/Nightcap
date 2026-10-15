@@ -2,11 +2,24 @@ uniffi::setup_scaffolding!();
 
 mod ipc;
 mod logging;
+mod state;
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 
-use nightcap_protocol::{Instance, Payload, Permissions, Query, Request, Response, Status};
+use etcetera::BaseStrategy;
+
+use nightcap_protocol::{
+    Install, Instance, NotificationPermission, Payload, Permissions, Query, Request, Response,
+    Status,
+};
+
+#[uniffi::remote(Enum)]
+pub enum NotificationPermission {
+    NotRequested,
+    Denied,
+    Granted,
+}
 
 /// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
 #[uniffi::export(foreign)]
@@ -16,12 +29,19 @@ pub trait Waker: Send + Sync {
 
 #[derive(Debug, uniffi::Enum)]
 pub enum Event {
-    PermissionsChanged { accessibility: bool },
+    Launched,
+    /// The login item exists, whether the shell just registered it or found it in place.
+    LoginItemRegistered,
+    PermissionsChanged {
+        accessibility: bool,
+        notifications: NotificationPermission,
+    },
     Terminating,
 }
 
 #[derive(Debug, PartialEq, uniffi::Enum)]
 pub enum Effect {
+    RegisterLoginItem,
     SetNightShift { enabled: bool },
 }
 
@@ -37,23 +57,42 @@ pub enum CoreError {
 
 #[derive(uniffi::Object)]
 pub struct Core {
+    instance: Instance,
+    install: Install,
     socket: PathBuf,
+    store: state::Store,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
     state: Mutex<State>,
 }
 
-/// What the core believes about the system, as last reported by the shell.
-#[derive(Default)]
+/// Where a core lives and what kind of install it serves.
+struct Setup {
+    instance: Instance,
+    install: Install,
+    socket: PathBuf,
+    state_file: PathBuf,
+}
+
+/// What the core believes about the system, as last reported by the shell, plus what it
+/// keeps across restarts.
 struct State {
     accessibility: bool,
+    notifications: NotificationPermission,
+    persisted: state::Persisted,
 }
 
 #[uniffi::export]
 impl Core {
     /// Starts the core for the app with this bundle ID, which picks the instance: its
     /// subsystem for logging and its socket. Fails if that instance is already running.
+    /// `bundle_writable` says whether the user can replace the app bundle, which makes it a
+    /// self-managed install.
     #[uniffi::constructor]
-    pub fn new(bundle_id: String, waker: Arc<dyn Waker>) -> Result<Arc<Self>, CoreError> {
+    pub fn new(
+        bundle_id: String,
+        bundle_writable: bool,
+        waker: Arc<dyn Waker>,
+    ) -> Result<Arc<Self>, CoreError> {
         let instance =
             Instance::from_bundle_id(&bundle_id).ok_or_else(|| CoreError::UnknownBundleId {
                 bundle_id: bundle_id.clone(),
@@ -62,16 +101,65 @@ impl Core {
         let socket = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
-        let core = Self::listening_at(socket, waker)?;
-        tracing::info!("core {} listening", env!("CARGO_PKG_VERSION"));
+        let state_folder = etcetera::base_strategy::Xdg::new()
+            .ok()
+            .and_then(|xdg| xdg.state_dir())
+            .ok_or_else(|| CoreError::Io {
+                message: "can't find the XDG state directory".to_owned(),
+            })?;
+        let install = if bundle_writable {
+            Install::SelfManaged
+        } else {
+            Install::Managed
+        };
+        let core = Self::start(
+            Setup {
+                instance,
+                install,
+                socket,
+                state_file: state_folder
+                    .join(instance.xdg_folder_name())
+                    .join("state.json"),
+            },
+            waker,
+        )?;
+        tracing::info!(
+            "core {} listening, {install:?} install",
+            env!("CARGO_PKG_VERSION")
+        );
         Ok(Arc::new(core))
     }
 
     pub fn handle(&self, event: Event) -> Vec<Effect> {
         match event {
-            Event::PermissionsChanged { accessibility } => {
-                tracing::info!("accessibility permission: {accessibility}");
-                self.state().accessibility = accessibility;
+            // Dev builds never start at login: they'd shadow the installed app (ADR-0014).
+            Event::Launched => {
+                let registered = self.state().persisted.login_item_registered;
+                match (self.install, self.instance, registered) {
+                    (Install::SelfManaged, Instance::Release, false) => {
+                        vec![Effect::RegisterLoginItem]
+                    }
+                    _ => Vec::new(),
+                }
+            }
+            Event::LoginItemRegistered => {
+                let mut state = self.state();
+                state.persisted.login_item_registered = true;
+                if let Err(error) = self.store.save(&state.persisted) {
+                    tracing::warn!("couldn't save the state: {error}");
+                }
+                Vec::new()
+            }
+            Event::PermissionsChanged {
+                accessibility,
+                notifications,
+            } => {
+                tracing::info!(
+                    "permissions: accessibility {accessibility}, notifications {notifications:?}"
+                );
+                let mut state = self.state();
+                state.accessibility = accessibility;
+                state.notifications = notifications;
                 Vec::new()
             }
             Event::Terminating => {
@@ -97,27 +185,41 @@ impl Core {
 }
 
 impl Core {
-    fn listening_at(socket: PathBuf, waker: Arc<dyn Waker>) -> Result<Self, CoreError> {
-        let requests = ipc::serve(&socket, waker)?;
+    fn start(setup: Setup, waker: Arc<dyn Waker>) -> Result<Self, CoreError> {
+        let requests = ipc::serve(&setup.socket, waker)?;
+        let store = state::Store::new(setup.state_file);
+        let persisted = store.load();
         Ok(Self {
-            socket,
+            instance: setup.instance,
+            install: setup.install,
+            socket: setup.socket,
+            store,
             requests: Mutex::new(requests),
-            state: Mutex::default(),
+            state: Mutex::new(State {
+                accessibility: false,
+                notifications: NotificationPermission::NotRequested,
+                persisted,
+            }),
         })
     }
 
-    fn state(&self) -> std::sync::MutexGuard<'_, State> {
+    fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("no panic happens while it's held")
     }
 
     fn answer(&self, request: &Request) -> Response {
         match request {
-            Request::Query(Query::Status) => Response::Ok(Payload::Status(Status {
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                permissions: Permissions {
-                    accessibility: self.state().accessibility,
-                },
-            })),
+            Request::Query(Query::Status) => {
+                let state = self.state();
+                Response::Ok(Payload::Status(Status {
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
+                    install: self.install,
+                    permissions: Permissions {
+                        accessibility: state.accessibility,
+                        notifications: state.notifications,
+                    },
+                }))
+            }
         }
     }
 }

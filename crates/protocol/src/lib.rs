@@ -37,6 +37,14 @@ impl Instance {
         }
     }
 
+    /// The folder under each XDG base directory that holds this instance's files.
+    pub fn xdg_folder_name(self) -> &'static str {
+        match self {
+            Self::Release => "nightcap",
+            Self::Dev => "nightcap-dev",
+        }
+    }
+
     pub fn socket_path(self) -> Result<PathBuf, PathError> {
         let home = std::env::home_dir().ok_or(PathError::NoHome)?;
         let path = home
@@ -114,12 +122,31 @@ pub enum Payload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub version: String,
+    pub install: Install,
     pub permissions: Permissions,
+}
+
+/// Who owns updates and starting at login (ADR-0014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Install {
+    Managed,
+    SelfManaged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Permissions {
     pub accessibility: bool,
+    pub notifications: NotificationPermission,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationPermission {
+    #[default]
+    NotRequested,
+    Denied,
+    Granted,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,11 +196,13 @@ mod tests {
         assert_eq!(
             json(&Response::Ok(Payload::Status(Status {
                 version: "1.2.0".to_owned(),
+                install: Install::SelfManaged,
                 permissions: Permissions {
-                    accessibility: true
+                    accessibility: true,
+                    notifications: NotificationPermission::NotRequested,
                 },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0","permissions":{"accessibility":true}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 

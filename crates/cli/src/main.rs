@@ -6,7 +6,8 @@ use std::time::Duration;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use nightcap_protocol::{
-    ErrorReply, Hello, HelloMessage, HelloReply, Instance, Payload, Query, Request, Response,
+    ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NotificationPermission,
+    Payload, Query, Request, Response,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -81,13 +82,23 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                     serde_json::to_string(&status).context("couldn't encode the status")?
                 );
             } else {
+                let install = match status.install {
+                    Install::Managed => "managed by its installer",
+                    Install::SelfManaged => "self-managed",
+                };
                 let accessibility = if status.permissions.accessibility {
                     "granted"
                 } else {
                     "not granted"
                 };
-                println!("Nightcap {}", status.version);
+                let notifications = match status.permissions.notifications {
+                    NotificationPermission::NotRequested => "not requested",
+                    NotificationPermission::Denied => "denied",
+                    NotificationPermission::Granted => "granted",
+                };
+                println!("Nightcap {}, {install}", status.version);
                 println!("Accessibility: {accessibility}");
+                println!("Notifications: {notifications}");
             }
             Ok(())
         }
