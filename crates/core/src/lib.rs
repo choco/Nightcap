@@ -6,7 +6,7 @@ mod logging;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 
-use nightcap_protocol::{Instance, Payload, Query, Request, Response, Status};
+use nightcap_protocol::{Instance, Payload, Permissions, Query, Request, Response, Status};
 
 /// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
 #[uniffi::export(foreign)]
@@ -16,6 +16,7 @@ pub trait Waker: Send + Sync {
 
 #[derive(Debug, uniffi::Enum)]
 pub enum Event {
+    PermissionsChanged { accessibility: bool },
     Terminating,
 }
 
@@ -38,6 +39,13 @@ pub enum CoreError {
 pub struct Core {
     socket: PathBuf,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
+    state: Mutex<State>,
+}
+
+/// What the core believes about the system, as last reported by the shell.
+#[derive(Default)]
+struct State {
+    accessibility: bool,
 }
 
 #[uniffi::export]
@@ -61,6 +69,11 @@ impl Core {
 
     pub fn handle(&self, event: Event) -> Vec<Effect> {
         match event {
+            Event::PermissionsChanged { accessibility } => {
+                tracing::info!("accessibility permission: {accessibility}");
+                self.state().accessibility = accessibility;
+                Vec::new()
+            }
             Event::Terminating => {
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
@@ -89,13 +102,21 @@ impl Core {
         Ok(Self {
             socket,
             requests: Mutex::new(requests),
+            state: Mutex::default(),
         })
+    }
+
+    fn state(&self) -> std::sync::MutexGuard<'_, State> {
+        self.state.lock().expect("no panic happens while it's held")
     }
 
     fn answer(&self, request: &Request) -> Response {
         match request {
             Request::Query(Query::Status) => Response::Ok(Payload::Status(Status {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
+                permissions: Permissions {
+                    accessibility: self.state().accessibility,
+                },
             })),
         }
     }

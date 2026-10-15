@@ -6,7 +6,8 @@ use std::thread;
 use std::time::Duration;
 
 use nightcap_protocol::{
-    ErrorCode, Hello, HelloMessage, HelloReply, Payload, Query, Request, Response, Status,
+    ErrorCode, Hello, HelloMessage, HelloReply, Payload, Permissions, Query, Request, Response,
+    Status,
 };
 
 use crate::{Core, CoreError, Event, Waker};
@@ -71,27 +72,55 @@ impl Client {
     }
 }
 
-#[test]
-fn a_status_query_is_answered_on_the_next_tick() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-
+fn query_status(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Response {
+    let socket = socket.to_owned();
     let client = thread::spawn(move || {
         let mut client = Client::connect(&socket);
         assert_eq!(client.hello(1), HelloReply::Hello(Hello::current()));
         client.send(&serde_json::to_string(&Request::Query(Query::Status)).unwrap());
         client.receive::<Response>()
     });
-
     wakes
         .recv_timeout(Duration::from_secs(5))
         .expect("the IPC thread asks for a tick");
     assert_eq!(core.tick(), Vec::new());
+    client.join().unwrap()
+}
+
+#[test]
+fn the_status_reports_the_last_permission_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    core.handle(Event::PermissionsChanged {
+        accessibility: true,
+    });
+
+    let Response::Ok(Payload::Status(status)) = query_status(&core, &socket, &wakes) else {
+        panic!("expected a status");
+    };
     assert_eq!(
-        client.join().unwrap(),
+        status.permissions,
+        Permissions {
+            accessibility: true
+        }
+    );
+}
+
+#[test]
+fn a_status_query_is_answered_on_the_next_tick() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    assert_eq!(
+        query_status(&core, &socket, &wakes),
         Response::Ok(Payload::Status(Status {
-            version: env!("CARGO_PKG_VERSION").to_owned()
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            permissions: Permissions {
+                accessibility: false
+            },
         }))
     );
 }

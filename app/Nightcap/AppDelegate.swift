@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import NightcapCore
 import os
 
@@ -7,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private var core: Core?
     private var terminationSignal: DispatchSourceSignal?
+    private var accessibilityObserver: NSObjectProtocol?
 
     static func main() {
         let app = NSApplication.shared
@@ -30,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
+        watchPermissions()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -45,6 +48,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         source.setEventHandler { NSApp.terminate(nil) }
         source.resume()
         terminationSignal = source
+    }
+
+    private func watchPermissions() {
+        reportPermissions()
+        // An undocumented notification macOS posts when the Accessibility list changes.
+        accessibilityObserver = DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reportPermissions() }
+        }
+    }
+
+    private func reportPermissions() {
+        guard let core else { return }
+        apply(core.handle(event: .permissionsChanged(accessibility: AXIsProcessTrusted())))
     }
 
     private func tick() {

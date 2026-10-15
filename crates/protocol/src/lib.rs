@@ -114,6 +114,12 @@ pub enum Payload {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub version: String,
+    pub permissions: Permissions,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Permissions {
+    pub accessibility: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -162,9 +168,12 @@ mod tests {
         );
         assert_eq!(
             json(&Response::Ok(Payload::Status(Status {
-                version: "1.2.0".to_owned()
+                version: "1.2.0".to_owned(),
+                permissions: Permissions {
+                    accessibility: true
+                },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0"}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","permissions":{"accessibility":true}}}}"#
         );
     }
 

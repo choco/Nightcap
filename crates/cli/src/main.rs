@@ -81,7 +81,13 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                     serde_json::to_string(&status).context("couldn't encode the status")?
                 );
             } else {
+                let accessibility = if status.permissions.accessibility {
+                    "granted"
+                } else {
+                    "not granted"
+                };
                 println!("Nightcap {}", status.version);
+                println!("Accessibility: {accessibility}");
             }
             Ok(())
         }
