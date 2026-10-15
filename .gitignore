@@ -1,0 +1,8 @@
+/target/
+/build/
+/macos/NightcapCore/NightcapCoreFFI.xcframework/
+/macos/NightcapCore/Sources/NightcapCore/NightcapCore.swift
+xcuserdata/
+.DS_Store
+.build/
+.swiftpm/

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Prints the workspace version from Cargo.toml, the single source for every version.
+set -euo pipefail
+sed -n 's/^version = "\(.*\)"$/\1/p' "$(git rev-parse --show-toplevel)/Cargo.toml" | head -n 1

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Builds Nightcap.app with xcodebuild into build/xcode/<Debug|Release>/, unsigned.
+# Debug is the dev build; pass --release for a release build. Run build-core first,
+# with the same flag.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+configuration=Debug
+if [[ "${1:-}" == "--release" ]]; then
+  configuration=Release
+fi
+
+# A clean environment keeps the Nix dev shell's compiler and SDK variables away from Xcode.
+# Indexing stays off: in -target builds its store path comes out empty and swallows the
+# next compiler flag.
+env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" \
+  ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
+  xcodebuild build \
+  -project macos/Nightcap.xcodeproj \
+  -target Nightcap \
+  -configuration "$configuration" \
+  SYMROOT="$root/build/xcode" \
+  COMPILER_INDEX_STORE_ENABLE=NO \
+  MARKETING_VERSION="$(scripts/version)" \
+  CURRENT_PROJECT_VERSION="$(git rev-list --count HEAD)"

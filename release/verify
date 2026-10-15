@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# The release gate: fails unless the app satisfies the committed signing requirement,
+# its designated requirement matches it exactly, and every executable in it links only
+# system libraries. Usage: release/verify <Nightcap.app>
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+app="$1"
+expected="$(cat "$root/release/signing-requirement.txt")"
+
+/usr/bin/codesign --verify --strict --deep --test-requirement="=$expected" "$app"
+
+actual="$(/usr/bin/codesign --display --requirements - "$app" 2>&1 | sed -n 's/^designated => //p')"
+if [[ "$actual" != "$expected" ]]; then
+  echo "error: designated requirement is '$actual', expected '$expected'" >&2
+  exit 1
+fi
+
+for binary in "$app/Contents/MacOS/Nightcap" "$app/Contents/Helpers/nightcap"; do
+  foreign="$(otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/)' || true)"
+  if [[ -n "$foreign" ]]; then
+    echo "error: $binary links non-system libraries:" >&2
+    echo "$foreign" >&2
+    exit 1
+  fi
+done

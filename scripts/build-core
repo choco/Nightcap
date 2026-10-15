@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Builds the core and the CLI, wraps the core as NightcapCoreFFI.xcframework with
+# its generated Swift bindings in macos/NightcapCore, and stages the CLI in build/cli for
+# the app bundle. Pass --release for an optimised build.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+profile=debug
+release=
+if [[ "${1:-}" == "--release" ]]; then
+  profile=release
+  release=1
+fi
+
+cargo build ${release:+--release} --package nightcap-core --package nightcap-cli
+lib="target/$profile/libnightcap_core.a"
+
+package="macos/NightcapCore"
+generated="build/uniffi"
+rm -rf "$generated" "$package/NightcapCoreFFI.xcframework"
+mkdir -p "$generated/include" "$package/Sources/NightcapCore"
+
+cargo run --quiet --package uniffi-bindgen -- \
+  --headers --modulemap --module-name NightcapCoreFFI --modulemap-filename module.modulemap \
+  "$lib" "$generated/include"
+cargo run --quiet --package uniffi-bindgen -- \
+  --swift-sources "$lib" "$package/Sources/NightcapCore"
+
+xcodebuild -create-xcframework \
+  -library "$lib" -headers "$generated/include" \
+  -output "$package/NightcapCoreFFI.xcframework"
+
+mkdir -p build/cli
+cp "target/$profile/nightcap" build/cli/nightcap

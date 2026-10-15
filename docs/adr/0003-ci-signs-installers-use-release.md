@@ -7,7 +7,7 @@ Permission grants survive an update only if the new build satisfies the same sig
 In GitHub Actions:
 
 1. **Every push:** a Linux job runs fmt, clippy and the core's tests, and a macOS job builds the core and the shell unsigned.
-2. **Every `v*` tag:** a `macos-26` job builds the core with cargo and the shell with Xcode, then assembles the bundle.
+2. **Every `v*` tag:** a job on the `xcode-27` runner builds the core with cargo and the shell with Xcode, then assembles the bundle. The `macos-26` runner tops out at the macOS 26 SDK, below the app's 27.0 deployment target.
 3. **Versions** are set before signing. `CFBundleShortVersionString` comes from the tag, which must match the Cargo version. `CFBundleVersion` is the commit count.
 4. **Signing:** the job imports the certificate from an Actions secret into a temporary keychain and signs inside-out with `/usr/bin/codesign`, called by absolute path.
 5. **Verification gate:** the release fails unless the signed app satisfies the signing requirement committed in the repo, and its requirement string matches that one exactly.

@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+clap = { version = "4.6", features = ["derive"] }
+nightcap-protocol = { path = "crates/protocol" }
+uniffi = "0.32"
+
+# Rust panics can't cross the FFI boundary into Swift (ADR-0002).
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+lto = true

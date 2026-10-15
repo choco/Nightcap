@@ -1,0 +1,13 @@
+[package]
+name = "nightcap-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "nightcap_core"
+crate-type = ["lib", "staticlib"]
+
+[dependencies]
+uniffi.workspace = true

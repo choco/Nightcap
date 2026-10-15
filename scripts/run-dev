@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Builds the dev build, signs it, and runs it until it quits.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+scripts/build-core
+scripts/build-app
+app=build/xcode/Debug/Nightcap.app
+release/sign "$app"
+
+# Through LaunchServices, so macOS attributes permission grants to the app rather than
+# to the terminal that started it.
+open -W "$app"
