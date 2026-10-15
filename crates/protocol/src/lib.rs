@@ -6,6 +6,7 @@
 
 use std::path::PathBuf;
 
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
@@ -134,14 +135,19 @@ pub struct Status {
     pub version: String,
     pub install: Install,
     pub night_shift: NightShift,
-    pub manual_state: Option<ManualState>,
+    /// The on or off the user set last; it lasts until the next schedule transition.
+    pub manual_state: Option<OnOff>,
+    /// None until the shell first reports Night Shift's status.
+    pub schedule: Option<Schedule>,
+    /// None while the schedule, or the sun times it needs, aren't known.
+    pub scheduled_state: Option<OnOff>,
+    pub next_transition: Option<Timestamp>,
     pub permissions: Permissions,
 }
 
-/// The on or off the user set last; it lasts until the next schedule transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ManualState {
+pub enum OnOff {
     On,
     Off,
 }
@@ -154,6 +160,25 @@ pub enum NightShift {
     Unavailable,
     On,
     Off,
+}
+
+/// Night Shift's schedule in System Settings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Schedule {
+    Off,
+    SunsetToSunrise,
+    /// On from `from` until `to`, in local time; `to` falls on the next day when it's earlier.
+    Custom {
+        from: TimeOfDay,
+        to: TimeOfDay,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TimeOfDay {
+    pub hour: u8,
+    pub minute: u8,
 }
 
 /// Who owns updates and starting at login (ADR-0014).
@@ -234,12 +259,21 @@ mod tests {
                 install: Install::SelfManaged,
                 night_shift: NightShift::On,
                 manual_state: None,
+                schedule: Some(Schedule::Custom {
+                    from: TimeOfDay {
+                        hour: 22,
+                        minute: 0
+                    },
+                    to: TimeOfDay { hour: 7, minute: 0 },
+                }),
+                scheduled_state: Some(OnOff::Off),
+                next_transition: Some("2026-10-16T20:00:00Z".parse().unwrap()),
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","manual_state":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 

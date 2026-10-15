@@ -5,13 +5,16 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    Command, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, ManualState,
-    NightShift, NotificationPermission, Payload, Permissions, Query, Request, Response, Status,
+    Command, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
+    NotificationPermission, OnOff, Payload, Permissions, Query, Request, Response, Schedule,
+    Status, TimeOfDay,
 };
 
 use crate::state::{Persisted, Store};
-use crate::{Core, CoreError, Effect, Event, Setup, Waker};
+use crate::{Clock, Core, CoreError, Effect, Event, Setup, Waker};
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
 struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -19,6 +22,40 @@ struct ChannelWaker(Mutex<mpsc::Sender<()>>);
 impl Waker for ChannelWaker {
     fn wake(&self) {
         self.0.lock().unwrap().send(()).unwrap();
+    }
+}
+
+/// A clock the test moves by hand.
+struct TestClock(Mutex<Timestamp>);
+
+impl TestClock {
+    fn at(instant: &str) -> Arc<Self> {
+        Arc::new(Self(Mutex::new(at(instant))))
+    }
+
+    fn set(&self, instant: &str) {
+        *self.0.lock().unwrap() = at(instant);
+    }
+}
+
+impl Clock for TestClock {
+    fn now(&self) -> Timestamp {
+        *self.0.lock().unwrap()
+    }
+}
+
+fn at(instant: &str) -> Timestamp {
+    instant.parse().unwrap()
+}
+
+/// 22:00 to 07:00, local time.
+fn custom_hours() -> Schedule {
+    Schedule::Custom {
+        from: TimeOfDay {
+            hour: 22,
+            minute: 0,
+        },
+        to: TimeOfDay { hour: 7, minute: 0 },
     }
 }
 
@@ -37,6 +74,16 @@ fn start_with(setup: Setup) -> (Core, mpsc::Receiver<()>) {
     (core, wakes)
 }
 
+/// Starts a release core in Zurich whose clock reads `now` until the test moves it.
+fn start_at(socket: &Path, now: &str) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    let clock = TestClock::at(now);
+    let (core, wakes) = start_with(Setup {
+        clock: clock.clone(),
+        ..setup(socket, Instance::Release, Install::Managed)
+    });
+    (core, wakes, clock)
+}
+
 /// Keeps the state file beside the socket, inside the test's temporary folder.
 fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
     Setup {
@@ -44,6 +91,8 @@ fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
         install,
         socket: socket.to_owned(),
         state_file: socket.with_file_name("state.json"),
+        clock: TestClock::at("2026-10-16T12:00:00+02:00"),
+        zone: TimeZone::get("Europe/Zurich").unwrap(),
     }
 }
 
@@ -140,7 +189,10 @@ fn the_status_reports_night_shift_as_last_observed() {
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
 
-    core.handle(Event::StatusChanged { enabled: true });
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::Off,
+    });
 
     assert_eq!(
         status_of(&core, &socket, &wakes).night_shift,
@@ -153,7 +205,10 @@ fn on_while_night_shift_is_off_turns_it_on_and_sets_the_manual_state() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged { enabled: false });
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
 
@@ -161,7 +216,7 @@ fn on_while_night_shift_is_off_turns_it_on_and_sets_the_manual_state() {
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
-    assert_eq!(status.manual_state, Some(ManualState::On));
+    assert_eq!(status.manual_state, Some(OnOff::On));
 }
 
 #[test]
@@ -169,7 +224,10 @@ fn off_while_night_shift_is_on_turns_it_off_and_sets_the_manual_state() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged { enabled: true });
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::Off,
+    });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::Off);
 
@@ -177,7 +235,7 @@ fn off_while_night_shift_is_on_turns_it_off_and_sets_the_manual_state() {
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
-    assert_eq!(status.manual_state, Some(ManualState::Off));
+    assert_eq!(status.manual_state, Some(OnOff::Off));
 }
 
 #[test]
@@ -185,7 +243,10 @@ fn on_while_night_shift_is_already_on_writes_nothing_but_still_sets_the_manual_s
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged { enabled: true });
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::Off,
+    });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
 
@@ -193,7 +254,7 @@ fn on_while_night_shift_is_already_on_writes_nothing_but_still_sets_the_manual_s
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
-    assert_eq!(status.manual_state, Some(ManualState::On));
+    assert_eq!(status.manual_state, Some(OnOff::On));
 }
 
 #[test]
@@ -201,7 +262,10 @@ fn toggle_inverts_night_shift_as_last_observed() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged { enabled: true });
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::Off,
+    });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
 
@@ -209,7 +273,7 @@ fn toggle_inverts_night_shift_as_last_observed() {
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
-    assert_eq!(status.manual_state, Some(ManualState::Off));
+    assert_eq!(status.manual_state, Some(OnOff::Off));
 }
 
 #[test]
@@ -225,6 +289,324 @@ fn a_command_while_night_shift_is_unavailable_is_refused() {
         panic!("expected an error, got {response:?}");
     };
     assert_eq!(error.code, ErrorCode::NightShiftUnavailable);
+}
+
+#[test]
+fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.schedule, Some(custom_hours()));
+    assert_eq!(status.scheduled_state, Some(OnOff::Off));
+    assert_eq!(
+        status.next_transition,
+        Some(at("2026-10-16T22:00:00+02:00"))
+    );
+}
+
+#[test]
+fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T22:00:00+02:00").into()
+        }]
+    );
+}
+
+#[test]
+fn the_manual_state_ends_at_the_next_schedule_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::On);
+
+    clock.set("2026-10-16T22:00:00+02:00");
+    let effects = core.handle(Event::TimerFired);
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T07:00:00+02:00").into()
+        }]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn a_timer_that_fires_before_its_transition_is_set_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    clock.set("2026-10-16T21:59:59+02:00");
+
+    assert_eq!(
+        core.handle(Event::TimerFired),
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T22:00:00+02:00").into()
+        }]
+    );
+}
+
+#[test]
+fn an_external_change_is_adopted_as_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::On)
+    );
+}
+
+#[test]
+fn an_external_change_back_to_the_schedule_replaces_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::On);
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}
+
+#[test]
+fn a_change_just_before_a_schedule_transition_is_that_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::Off);
+
+    clock.set("2026-10-16T21:59:00+02:00");
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T07:00:00+02:00").into()
+        }]
+    );
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.manual_state, None);
+    assert_eq!(status.scheduled_state, Some(OnOff::On));
+}
+
+#[test]
+fn a_change_against_the_coming_transition_is_still_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::On);
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    clock.set("2026-10-16T21:59:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}
+
+#[test]
+fn editing_the_schedule_is_a_schedule_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::Off);
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    // Moving the start to 21:00 makes macOS apply the schedule again, so Night Shift comes on.
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::Custom {
+            from: TimeOfDay {
+                hour: 21,
+                minute: 0,
+            },
+            to: TimeOfDay { hour: 7, minute: 0 },
+        },
+    });
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn a_transition_missed_during_sleep_ends_the_manual_state_on_waking() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::On);
+
+    clock.set("2026-10-17T08:00:00+02:00");
+    let effects = core.handle(Event::Woke);
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T22:00:00+02:00").into()
+        }]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn a_time_zone_change_moves_the_custom_hours() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let effects = core.handle(Event::TimeZoneChanged {
+        iana_id: "Europe/London".to_owned(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T22:00:00+01:00").into()
+        }]
+    );
+}
+
+#[test]
+fn sunset_to_sunrise_follows_the_reported_sun_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+
+    // As CoreBrightness reported them in Zurich that night.
+    core.handle(Event::SunTimesChanged {
+        sunrises: [
+            "2026-10-15T05:49:20Z",
+            "2026-10-16T05:50:47Z",
+            "2026-10-17T05:52:14Z",
+        ]
+        .map(|sunrise| at(sunrise).into())
+        .to_vec(),
+        sunsets: [
+            "2026-10-15T16:33:25Z",
+            "2026-10-16T16:31:32Z",
+            "2026-10-17T16:29:41Z",
+        ]
+        .map(|sunset| at(sunset).into())
+        .to_vec(),
+    });
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::SunsetToSunrise,
+    });
+
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T05:50:47Z").into()
+        }]
+    );
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.scheduled_state, Some(OnOff::On));
+    assert_eq!(status.manual_state, None);
+}
+
+#[test]
+fn turning_the_schedule_off_cancels_the_wakeup() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+
+    assert_eq!(effects, vec![Effect::CancelWakeup]);
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.scheduled_state, Some(OnOff::Off));
+    assert_eq!(status.next_transition, None);
 }
 
 #[test]
@@ -263,6 +645,9 @@ fn a_status_query_is_answered_on_the_next_tick() {
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
             manual_state: None,
+            schedule: None,
+            scheduled_state: None,
+            next_transition: None,
             permissions: Permissions {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,

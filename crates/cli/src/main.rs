@@ -5,9 +5,11 @@ use std::time::Duration;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, ManualState,
-    NightShift, NotificationPermission, Payload, Query, Request, Response, Status,
+    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
+    NotificationPermission, OnOff, Payload, Query, Request, Response, Schedule, Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -96,12 +98,11 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
         // The reply comes before the shell applies the change, so it names what was asked
         // rather than Night Shift as last observed.
         match status.manual_state {
-            Some(ManualState::On) => {
-                println!("Night Shift turned on until the next schedule transition")
-            }
-            Some(ManualState::Off) => {
-                println!("Night Shift turned off until the next schedule transition")
-            }
+            Some(manual) => println!(
+                "Night Shift turned {}{}",
+                on_off(manual),
+                until(status.next_transition)
+            ),
             None => print_status(&status),
         }
     } else {
@@ -121,9 +122,27 @@ fn print_status(status: &Status) {
         NightShift::Off => "off",
     };
     let manual = match status.manual_state {
-        None => "",
-        Some(ManualState::On) => ", turned on by hand until the next schedule transition",
-        Some(ManualState::Off) => ", turned off by hand until the next schedule transition",
+        None => String::new(),
+        Some(manual) => format!(
+            ", turned {} by hand{}",
+            on_off(manual),
+            until(status.next_transition)
+        ),
+    };
+    let schedule = match status.schedule {
+        None => "unknown".to_owned(),
+        Some(Schedule::Off) => "off".to_owned(),
+        Some(Schedule::SunsetToSunrise) => "sunset to sunrise".to_owned(),
+        Some(Schedule::Custom { from, to }) => {
+            format!("{} to {}", time_of_day(from), time_of_day(to))
+        }
+    };
+    let scheduled = match (status.schedule, status.scheduled_state) {
+        (Some(Schedule::Off), _) | (None, _) => String::new(),
+        (Some(_), None) => ", waiting for sun times".to_owned(),
+        (Some(_), Some(scheduled)) => {
+            format!(", {}{}", on_off(scheduled), until(status.next_transition))
+        }
     };
     let accessibility = if status.permissions.accessibility {
         "granted"
@@ -137,8 +156,30 @@ fn print_status(status: &Status) {
     };
     println!("Nightcap {}, {install}", status.version);
     println!("Night Shift: {night_shift}{manual}");
+    println!("Schedule: {schedule}{scheduled}");
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
+}
+
+fn on_off(state: OnOff) -> &'static str {
+    match state {
+        OnOff::On => "on",
+        OnOff::Off => "off",
+    }
+}
+
+/// " until 22:00" in local time, or nothing when no schedule transition is coming.
+fn until(transition: Option<Timestamp>) -> String {
+    transition.map_or_else(String::new, |transition| {
+        format!(
+            " until {}",
+            transition.to_zoned(TimeZone::system()).strftime("%H:%M")
+        )
+    })
+}
+
+fn time_of_day(time: TimeOfDay) -> String {
+    format!("{:02}:{:02}", time.hour, time.minute)
 }
 
 fn request(instance: Instance, request: &Request) -> Result<Payload, Failure> {

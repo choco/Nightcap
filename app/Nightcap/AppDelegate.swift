@@ -11,7 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var core: Core?
     private var nightShift: NightShiftAdapter?
     private var terminationSignal: DispatchSourceSignal?
-    private var accessibilityObserver: NSObjectProtocol?
+    private var wakeup: DispatchSourceTimer?
+    private var observers: [NSObjectProtocol] = []
 
     static func main() {
         let app = NSApplication.shared
@@ -28,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             core = try Core(
                 bundleId: Bundle.main.bundleIdentifier!,
                 bundleWritable: FileManager.default.isWritableFile(atPath: bundleFolder),
+                timeZone: TimeZone.current.identifier,
                 waker: waker
             )
         } catch CoreError.AlreadyRunning(let path) {
@@ -43,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startNightShift()
         apply(core!.handle(event: .launched))
         watchPermissions()
+        watchSystem()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -61,17 +64,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startNightShift() {
-        nightShift = NightShiftAdapter { [weak self] enabled in self?.reportNightShift(enabled) }
-        guard let enabled = nightShift?.enabled else {
+        nightShift = NightShiftAdapter { [weak self] status in self?.reportNightShift(status) }
+        // Sun times first, so the core can place the schedule the moment it learns it.
+        reportSunTimes()
+        guard let status = nightShift?.status else {
             log.fault("Night Shift is unavailable")
             return
         }
-        reportNightShift(enabled)
+        reportNightShift(status)
     }
 
-    private func reportNightShift(_ enabled: Bool) {
+    private func reportNightShift(_ status: NightShiftAdapter.Status) {
         guard let core else { return }
-        apply(core.handle(event: .statusChanged(enabled: enabled)))
+        apply(core.handle(event: .statusChanged(enabled: status.enabled, schedule: status.schedule)))
+    }
+
+    /// CoreBrightness reports sun times only a day either side of now, so they're re-read
+    /// whenever time may have moved on: at launch, on waking and before each wakeup.
+    private func reportSunTimes() {
+        guard let core, let sunTimes = nightShift?.sunTimes else { return }
+        apply(core.handle(event: .sunTimesChanged(sunrises: sunTimes.sunrises, sunsets: sunTimes.sunsets)))
+    }
+
+    private func watchSystem() {
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                self.reportSunTimes()
+                self.apply(core.handle(event: .woke))
+            }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                // TimeZone.current caches the zone it first read.
+                NSTimeZone.resetSystemTimeZone()
+                self.apply(core.handle(event: .timeZoneChanged(ianaId: TimeZone.current.identifier)))
+            }
+        })
+    }
+
+    /// A wall-clock timer, so it fires on time after sleep or a clock change.
+    private func scheduleWakeup(at date: Date) {
+        wakeup?.cancel()
+        let seconds = date.timeIntervalSince1970.rounded(.down)
+        let deadline = DispatchWallTime(timespec: timespec(
+            tv_sec: Int(seconds),
+            tv_nsec: Int((date.timeIntervalSince1970 - seconds) * 1_000_000_000)
+        ))
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(wallDeadline: deadline, leeway: .seconds(1))
+        timer.setEventHandler { [weak self] in
+            guard let self, let core = self.core else { return }
+            self.wakeup?.cancel()
+            self.wakeup = nil
+            self.reportSunTimes()
+            self.apply(core.handle(event: .timerFired))
+        }
+        timer.resume()
+        wakeup = timer
     }
 
     private func watchPermissions() {
@@ -87,11 +142,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             await reportPermissions()
         }
         // An undocumented notification macOS posts when the Accessibility list changes.
-        accessibilityObserver = DistributedNotificationCenter.default().addObserver(
+        observers.append(DistributedNotificationCenter.default().addObserver(
             forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
         ) { [weak self] _ in
             Task { @MainActor in await self?.reportPermissions() }
-        }
+        })
     }
 
     private func reportPermissions() async {
@@ -123,6 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     continue
                 }
                 nightShift.setEnabled(enabled)
+            case .scheduleWakeup(let at):
+                scheduleWakeup(at: at)
+            case .cancelWakeup:
+                wakeup?.cancel()
+                wakeup = nil
             }
         }
     }
