@@ -152,8 +152,11 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
             visited += 1
             AXUIElementSetMessagingTimeout(element, elementTimeout)
             let role = attribute(element, kAXRoleAttribute) as? String ?? ""
-            if depth > 0, role != "AXLink", let url = attribute(element, "AXURL") {
-                return (url as? URL)?.host() ?? (url as? String).flatMap { URL(string: $0)?.host() }
+            if depth > 0, role != "AXLink", let value = attribute(element, "AXURL") {
+                // Only web pages have a host a domain rule means; chrome://newtab doesn't.
+                let url = value as? URL ?? (value as? String).flatMap { URL(string: $0) }
+                guard let url, ["http", "https"].contains(url.scheme?.lowercased()) else { return nil }
+                return url.host()
             }
             guard depth < maxDepth, !leafRoles.contains(role) else { continue }
             let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] ?? []
