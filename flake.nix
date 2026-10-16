@@ -37,6 +37,7 @@
             pkgs.gh
             pkgs.librsvg
             pkgs.jq
+            pkgs.python3Packages.dmgbuild
           ];
           # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo
           # builds with Xcode's tools instead, matching CI and the Swift shell.

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Renders release/dmg-assets/background.html into the DMG's background, at 1x and 2x. Needs
+# Google Chrome, for the brand's web fonts; the PNGs are committed, so release builds don't.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+assets="$root/release/dmg-assets"
+chrome="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+if [[ ! -x "$chrome" ]]; then
+  echo "error: render-dmg-background needs Google Chrome in /Applications" >&2
+  exit 1
+fi
+
+for scale in 1 2; do
+  name=background.png
+  [[ $scale -eq 2 ]] && name=background@2x.png
+  "$chrome" --headless=new --disable-gpu --hide-scrollbars --allow-file-access-from-files \
+    --force-device-scale-factor="$scale" --window-size=640,400 --virtual-time-budget=3000 \
+    --screenshot="$assets/$name" "file://$assets/background.html" >/dev/null 2>&1
+  sips -g pixelWidth -g pixelHeight "$assets/$name" | tail -2 | tr '\n' ' '
+  echo "$name"
+done

@@ -338,21 +338,17 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(drawDoodles, 200);
 });
 
-// The download buttons point at the newest release's zip, as the site's appcast names it.
-// Until it loads, or where the site has no appcast, they lead to the releases page.
-fetch('appcast.xml')
+// The download buttons point at the newest release's DMG, as the Pages deploy writes it into
+// download.json. Until it loads, or where the site has none, they lead to the releases page.
+fetch('download.json')
   .then((response) => {
-    if (!response.ok) throw new Error(`appcast.xml: ${response.status}`);
-    return response.text();
+    if (!response.ok) throw new Error(`download.json: ${response.status}`);
+    return response.json();
   })
-  .then((text) => {
-    const feed = new DOMParser().parseFromString(text, 'application/xml');
-    const enclosure = feed.querySelector('enclosure');
-    const version = feed.getElementsByTagNameNS('*', 'shortVersionString')[0];
-    if (!enclosure || !version) throw new Error('appcast.xml names no release');
-    document.querySelectorAll('[data-download]').forEach((link) => { link.href = enclosure.getAttribute('url'); });
+  .then(({ version, url }) => {
+    document.querySelectorAll('[data-download]').forEach((link) => { link.href = url; });
     document.querySelectorAll('[data-version]').forEach((label) => {
-      label.textContent = version.textContent;
+      label.textContent = version;
       label.hidden = false;
     });
   });

@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- The DMG window's background at 640 × 400 points; scripts/render-dmg-background renders it.
+     Finder lays the app's icon at (160, 205) and Applications at (480, 205), as settings.py says. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Caprasimo; src: url(../../design/fonts/Caprasimo-Regular.woff2) format("woff2"); }
+  @font-face { font-family: Figtree; src: url(../../design/fonts/Figtree-Variable.woff2) format("woff2"); font-weight: 300 900; }
+  html, body { margin: 0; width: 640px; height: 400px; overflow: hidden; }
+  body {
+    position: relative;
+    background: linear-gradient(180deg, #dde5f6 0%, #eef1f8 100%);
+    color: #0b1330;
+    font-family: Figtree, sans-serif;
+  }
+  .sun { position: absolute; right: -80px; top: -100px; width: 180px; height: 180px; border-radius: 50%; background: #f6d58a; box-shadow: 0 0 80px 22px rgba(246, 213, 138, 0.35); }
+  .rays { position: absolute; right: -134px; top: -154px; width: 288px; height: 288px; }
+  .title { position: absolute; left: 0; right: 0; top: 34px; text-align: center; font-family: Caprasimo, serif; font-size: 26px; line-height: 1; }
+  .arrow { position: absolute; left: 230px; top: 186px; width: 180px; height: 40px; }
+  .note { position: absolute; left: 60px; right: 60px; bottom: 26px; text-align: center; font-size: 12px; line-height: 1.45; color: #4a5578; }
+  .doodle { position: absolute; color: rgba(74, 85, 120, 0.34); }
+  .gold { color: rgba(138, 91, 0, 0.42); }
+</style>
+</head>
+<body>
+  <div class="sun"></div>
+  <svg class="rays" viewBox="0 0 100 100" fill="none" stroke="rgba(138, 91, 0, 0.42)" stroke-width="0.7" stroke-linecap="round"><path d="M50 2v9M50 89v9M2 50h9M89 50h9M16 16l6.4 6.4M77.6 77.6l6.4 6.4M16 84l6.4-6.4M77.6 22.4l6.4-6.4M31.6 5.6l3.4 8.3M65 86.1l3.4 8.3M5.6 31.6l8.3 3.4M86.1 65l8.3 3.4M5.6 68.4l8.3-3.4M86.1 35l8.3-3.4M31.6 94.4l3.4-8.3M65 13.9l3.4-8.3"/></svg>
+
+  <svg class="doodle" style="left: 34px; top: 40px;" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z"/></svg>
+  <svg class="doodle gold" style="left: 30px; top: 292px;" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.6A8.6 8.6 0 1 1 9.4 4.1a6.7 6.7 0 0 0 10.6 10.5z"/></svg>
+  <svg class="doodle" style="left: 300px; top: 128px;" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z"/></svg>
+  <svg class="doodle" style="left: 572px; top: 300px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z"/></svg>
+  <svg class="doodle gold" style="left: 24px; top: 190px;" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4.4"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.4 5.4l1.9 1.9M16.7 16.7l1.9 1.9M5.4 18.6l1.9-1.9M16.7 7.3l1.9-1.9"/></svg>
+  <svg class="doodle" style="left: 600px; top: 160px;" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z"/></svg>
+
+  <div class="title">Drag Nightcap to Applications</div>
+  <svg class="arrow" viewBox="0 0 180 40" fill="none" stroke="#8a5b00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 26C46 4 120 4 166 20" stroke-dasharray="1 9"/>
+    <path d="M154 10l14 10-15 8"/>
+  </svg>
+  <div class="note">Nightcap isn't notarized, so the first time you open it, macOS asks you to allow it in System Settings → Privacy &amp; Security.</div>
+</body>
+</html>
