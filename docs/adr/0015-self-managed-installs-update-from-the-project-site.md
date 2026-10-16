@@ -20,7 +20,7 @@ Dev builds never start the updater or register a login item. A second instance t
 Sparkle is set up like this:
 
 - Updates are verified with an EdDSA key. The public key is `SUPublicEDKey` in Info.plist; the private key is a second secret in the `release` environment, used by CI's `sign_update`.
-- Every release publishes `appcast.xml` as an asset, and the site's deploy workflow copies the newest one to `https://choco.github.io/nightcap/appcast.xml`, the `SUFeedURL`. The release asset stays the single source, so nothing commits the feed. A custom domain added later keeps old installs updating through GitHub's redirect.
+- Every release publishes `appcast.xml` as an asset, and the site's deploy workflow copies the newest one to `https://choco.github.io/Nightcap/appcast.xml`, the `SUFeedURL`. The site's path is the repo's name, and it is case-sensitive. The release asset stays the single source, so nothing commits the feed. A custom domain added later keeps old installs updating through GitHub's redirect.
 - Nightcap checks daily, downloads automatically, and installs when it quits, at logout or restart. `nightcap update` starts Sparkle's own check, whose window installs at once; in a managed install it fails, pointing at the installer.
 - An update keeps the signing requirement, so the grants survive.
 - Hardened runtime stays on, with `com.apple.security.cs.disable-library-validation`: library validation rejects any framework signed by a certificate without a Team ID, which a self-signed certificate never has. Hardened runtime still blocks `DYLD_*` injection. Sparkle's helpers are re-signed inside-out with Nightcap's certificate, and the release gate allows `@rpath/Sparkle.framework` as the only non-system library.
