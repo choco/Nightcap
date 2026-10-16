@@ -18,6 +18,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 - Lay pages on `ground`, sections on `surface`, floating things on `surface-raised` with `shadow-lift`. Divide with `line`; give controls their edge with `line-strong`.
 - Set text in `ink`, secondary text in `ink-muted`. Gold words use `moon-text`, warm words `ember-text`.
+- `true-colour` is ember's counterpart: a mark (a dot, a highlight) for what the screen looks like with Night Shift off. Pair the two to tell a warm screen from a true one.
 - `night` and `night-deep` are the brand's navies in both themes. Use them for night panels: the hero, the terminal, a feature that happens after dark. Text on them is `starlight` or `starlight-muted`, whatever the theme.
 - `moon` is the one accent. Spend it on the primary action, the moon itself and at most one highlight per view. Text on it is `on-moon`.
 - `ember` and `tint` show Night Shift's warmth and nothing else: the tinted half of a before/after, a screen warming as the schedule starts. Never use them for buttons, links or status.
@@ -26,7 +27,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 ## Type
 
-- Set headlines in Caprasimo (`display-xl`, `display-l`, `display-m`): a soft, heavy serif with the warmth of a bedtime story. Use one `display-xl` per page. Never set Caprasimo below 40px, in capitals, or for more than two lines.
+- Set headlines in Caprasimo (`display-xl`, `display-l`, `display-m`): a soft, heavy serif with the warmth of a bedtime story. Use one `display-xl` per page. Keep Caprasimo at 40px or larger on wide screens; phones may take it down to 32px to keep a headline on two lines. Never set it in capitals or on more than two lines.
 - Set everything else in Figtree: `lead` under a headline, `body` for running text, `title` for cards and steps, `small` for captions, `label` in capitals for eyebrows.
 - Set commands, config, rule identities, versions and times in Martian Mono (`code`, `data`): anything a user might type back.
 - All three faces are under the SIL Open Font License; their licences sit in `licenses/` and ship with the font files.
@@ -41,14 +42,16 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 ## Motion
 
-- One idea moves: the screen warms and cools. A `tint` overlay fades in over 900ms, ease-in-out, when "Night Shift" starts, and out over 450ms when Nightcap forces it off, the same direction every time.
-- The moon can wax and wane through its phases as a page scrolls or a state changes. Nothing else floats, bounces or parallaxes.
-- With reduced motion, swap states instantly and keep every phase still.
+- The main idea moves: the screen warms and cools. A `tint` overlay fades in over 900ms, ease-in-out, when "Night Shift" starts, and out over 450ms when Nightcap forces it off, the same direction every time. A true-colour circle, cut out of the tint, follows the pointer and wanders over the nearest illustration when the pointer rests.
+- Everything else moves slowly and by itself, like a night sky: doodles twinkle, drift and sway, suns and orbit rings turn over a minute or more, an illustration bobs a few pixels. Headlines rise in once, on load, with a little spring; buttons spring on hover.
+- Motion never carries meaning on its own, and never loops fast enough to pull the eye from the text.
+- With reduced motion, swap states instantly and keep everything still.
 
 ## Imagery
 
 - Show the real thing: the Mac menu bar with the moon in it, the Nightcap menu, a screen with and without the tint. Build these as live mocks with the `Menu` component and `tint`, not screenshots, so they follow the theme.
-- Illustrations stay geometric: moons, discs, crescents cut from `night` and `moon`. No mascots, no faces, no stars clip-art.
+- Illustrations stay geometric: moons, discs, crescents cut from `night` and `moon`, a sun at the edge of a hero or a dusk panel. No mascots, no faces.
+- Doodles are line art in the iconography's style (24 grid, 1.5px strokes): moons, suns, stars, sparkles and small dots, scattered evenly through a page's margins and sparsely across its middle, never over text. Most are drawn in a faint `ink-muted`, a fifth or so in a faint gold; on phones keep about one in four.
 
 ## Iconography
 
