@@ -10,6 +10,7 @@ Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo a
 - `build-app [--release]`: builds `build/xcode/Release/Nightcap.app` or the dev build, `build/xcode/Debug/Nightcap Dev.app` (`io.github.choco.nightcap.dev`), unsigned. The dev build's own name keeps it apart from the installed app in System Settings.
 - `run-dev`: builds, signs and launches the dev build.
 - `run-tests`: runs the Rust tests.
+- `build-site`: assembles the project site into `build/site`: `site/` plus the design system's fonts and generated `tokens.css`, and the app icon. Preview it with `python3 -m http.server -d build/site`; the download buttons need an `appcast.xml` beside it, as Pages serves one.
 - `render-icons`: renders `app/icons/AppIcon.svg` into the app's icon set. The menu-bar moons are SVGs in `app/Nightcap/Assets.xcassets`, used as they are.
 
 To compare the UI against a mockup, a dev build renders the settings window's tabs, light and dark, from a fixed scenario into a folder and quits: `NIGHTCAP_SNAPSHOT="$PWD/tmp/snap" "build/xcode/Debug/Nightcap Dev.app/Contents/MacOS/Nightcap Dev"`. It needs no core and no screen-recording permission (`app/Nightcap/Snapshot.swift`).

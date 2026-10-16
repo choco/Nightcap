@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "design/**", "scripts/build-site", ".github/workflows/pages.yml"]
   workflow_call:
   workflow_dispatch:
 
@@ -28,8 +28,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p build/site
-          cp -R site/. build/site/
+          scripts/build-site
           if [[ -n "$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[].tagName')" ]]; then
             assets="$(gh release view --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             if grep -qx appcast.xml <<<"$assets"; then

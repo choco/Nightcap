@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Assembles the project site into build/site: site/, with the design system's fonts and
+# tokens (tokens.css, generated from design/tokens.json) and the app icon. The Pages workflow
+# deploys the result; preview it with `python3 -m http.server -d build/site`.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+out=build/site
+rm -rf "$out"
+mkdir -p "$out/fonts"
+cp -R site/. "$out/"
+cp design/fonts/*.woff2 design/licenses/*.txt "$out/fonts/"
+cp app/icons/AppIcon.svg "$out/icon.svg"
+
+# Light values on :root; dark values for the dark system appearance unless the page was set
+# to light, and for an explicit dark choice. A token missing a theme takes the first one's.
+jq -r '
+  def css: if type == "string" and test("^\\{.+\\}$") then "var(--" + (ltrimstr("{") | rtrimstr("}")) + ")" else . end;
+  def light: if (.value | type) == "object" then (.value.light // .value.dark) else .value end;
+  def dark: if (.value | type) == "object" then (.value.dark // .value.light) else .value end;
+  ([.color.tokens[] | select((.value | type) == "object") | "--\(.name):\(dark | css)"] | join(";")) as $dark
+  | "/* Generated from design/tokens.json by scripts/build-site. */",
+    (.type.fonts[] | "@font-face{font-family:\"\(.family)\";src:url(fonts/\(.file | split("/") | last)) format(\"woff2\");font-weight:\(.weight);font-style:\(.style // "normal");font-display:swap}"),
+    ":root{" + ([.color.tokens[] | "--\(.name):\(light | css)"]
+      + [(.spacing.tokens + .radius.tokens + .shadow.tokens)[] | "--\(.name):\(.value)"]
+      + [.type.families | to_entries[] | "--font-\(.key):\(.value)"] | join(";")) + ";color-scheme:light}",
+    "@media (prefers-color-scheme: dark){:root:not([data-theme=\"light\"]){\($dark);color-scheme:dark}}",
+    ":root[data-theme=\"dark\"]{\($dark);color-scheme:dark}"
+' design/tokens.json > "$out/tokens.css"

@@ -4,23 +4,204 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nightcap</title>
-<meta name="description" content="Switches Night Shift off for chosen apps and websites on macOS.">
-<style>
-  :root { color-scheme: light dark; --bg: #fbfaf7; --fg: #1d1b18; --muted: #6b665e; --link: #8a4b0f; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #16140f; --fg: #ece7dd; --muted: #a39d92; --link: #f0a65a; } }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.55 -apple-system, system-ui, sans-serif; }
-  main { max-width: 34rem; margin: 18vh auto; padding: 0 16px; }
-  h1 { font-size: 2rem; margin: 0 0 .25rem; }
-  p { margin: .5rem 0; }
-  .muted { color: var(--muted); }
-  a { color: var(--link); }
-</style>
+<meta name="description" content="Nightcap turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them.">
+<meta property="og:title" content="Nightcap: Night Shift, with exceptions">
+<meta property="og:description" content="Nightcap turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them.">
+<meta name="theme-color" content="#eef1f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0b1330" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<script>
+  // The footer's appearance switch, applied before the first paint.
+  try {
+    const theme = localStorage.getItem('nightcap-theme');
+    if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="style.css">
+<script src="main.js" defer></script>
 </head>
 <body>
-<main>
-  <h1>Nightcap</h1>
-  <p>Switches Night Shift off for chosen apps and websites on macOS.</p>
-  <p class="muted">The site is on its way. Until then, everything lives on <a href="https://github.com/choco/nightcap">GitHub</a>.</p>
-</main>
+<div class="page" data-lens-root>
+  <div class="doodles" data-doodles="page" aria-hidden="true"></div>
+
+  <section class="hero" data-lens-section>
+    <div class="doodles" data-doodles="hero" aria-hidden="true"></div>
+    <div class="celestial" aria-hidden="true">
+      <div class="moon-scene">
+        <div class="ring ring-near spin"></div>
+        <div class="ring ring-far spin-back"></div>
+        <div class="moon-glow glow"></div>
+        <div class="moon-disc"></div>
+      </div>
+      <div class="sun-scene">
+        <div class="sun-rays spin">
+          <svg viewBox="0 0 100 100" fill="none" stroke="var(--doodle-gold)" stroke-width="0.7" stroke-linecap="round"><path d="M50 2v9M50 89v9M2 50h9M89 50h9M16 16l6.4 6.4M77.6 77.6l6.4 6.4M16 84l6.4-6.4M77.6 22.4l6.4-6.4M31.6 5.6l3.4 8.3M65 86.1l3.4 8.3M5.6 31.6l8.3 3.4M86.1 65l8.3 3.4M5.6 68.4l8.3-3.4M86.1 35l8.3-3.4M31.6 94.4l3.4-8.3M65 13.9l3.4-8.3"/></svg>
+        </div>
+        <div class="sun-disc glow"></div>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <nav class="nav" aria-label="Main">
+        <a class="brand" href="#top">
+          <img src="icon.svg" alt="Nightcap" width="36" height="36">
+          <span class="brand-name">Nightcap</span>
+        </a>
+        <div class="nav-spacer"></div>
+        <div class="nav-group">
+          <a class="nav-link" href="#how">How it works</a>
+          <span class="nav-divider" aria-hidden="true"></span>
+          <a class="nav-link" href="https://github.com/choco/Nightcap">GitHub<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 16 16 8M9.5 8H16v6.5"/></svg></a>
+        </div>
+        <button class="shift-switch" type="button" aria-pressed="true" data-shift-switch>
+          <span class="switch-track"><span class="switch-knob"></span></span>
+          <span class="shift-label">Night Shift: On</span>
+        </button>
+      </nav>
+
+      <header id="top" class="hero-content">
+        <div class="hero-text">
+          <span class="eyebrow">For Mac · free and open source</span>
+          <h1 class="hero-title"><span class="rise">Night Shift,</span> <span class="rise rise-late">with exceptions.</span></h1>
+          <p class="lead fade-in">Nightcap turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them. The rest of the time, your schedule runs as usual.</p>
+          <div class="cta-row">
+            <a class="button button-primary spring" href="https://github.com/choco/Nightcap/releases/latest" data-download>Download for Mac <span class="button-version" data-version hidden></span></a>
+            <span class="requirement">macOS 27 on Apple silicon</span>
+          </div>
+        </div>
+        <div class="poster bob" data-lens-area aria-hidden="true">
+          <div class="poster-circle"></div>
+          <div class="poster-square"></div>
+          <div class="poster-bar"></div>
+          <div class="poster-dot"></div>
+          <div class="poster-hex"><span>#E5372C</span><span>#0A72E8</span><span>#22B33A</span></div>
+        </div>
+      </header>
+    </div>
+  </section>
+
+  <main class="wrap">
+    <section id="how" class="section how" data-lens-section>
+      <div class="how-heading" data-lens-area>
+        <h2>It follows what's in front</h2>
+        <p class="section-text">Pick the apps, and the websites in Safari or Chrome, that need true colour. While one is in front, Night Shift stays off. Switch away and it comes back, and your schedule carries on as before.</p>
+      </div>
+      <figure class="desk">
+        <div class="desk-screen" role="img" aria-label="A Mac running Nightcap: Night Shift is off while Figma is in front, and on in Mail">
+          <div class="desk-menubar">
+            <span class="desk-app-name" data-app-name>Figma</span>
+            <span class="desk-menu-label">File</span>
+            <span class="desk-menu-label">Edit</span>
+            <span class="nav-spacer"></span>
+            <span class="desk-moon" data-desk-moon aria-hidden="true"></span>
+            <span class="desk-time">Wed 23:41</span>
+          </div>
+
+          <div class="desk-window">
+            <div class="window window-mail swap" data-window="mail" hidden>
+              <div class="window-bar">Inbox</div>
+              <div class="mail-row"><strong>Ada</strong><span>Dinner on Friday?</span></div>
+              <div class="mail-row"><strong>Leo</strong><span>Photos from Sunday, finally</span></div>
+              <div class="mail-row"><strong>Mia</strong><span>Re: the poster colours</span></div>
+            </div>
+            <div class="window window-figma swap" data-window="figma">
+              <div class="window-bar">Poster v3</div>
+              <div class="figma-canvas">
+                <div class="figma-board">
+                  <div class="poster-circle"></div>
+                  <div class="poster-square"></div>
+                  <div class="poster-bar"></div>
+                </div>
+              </div>
+            </div>
+            <div class="window window-safari swap" data-window="safari" hidden>
+              <div class="window-bar"><span class="address">youtube.com</span></div>
+              <div class="video"><span class="play"><svg viewBox="0 0 24 24" width="18" height="18"><path d="M8 5v14l11-7z" fill="#eef1fa"/></svg></span></div>
+            </div>
+          </div>
+
+          <div class="menu desk-menu-inline" data-menu></div>
+
+          <div class="dock">
+            <button class="dock-app" type="button" data-app="mail" aria-label="Bring Mail to the front" aria-pressed="false" style="--tile: #3d6fd6">M</button>
+            <button class="dock-app" type="button" data-app="figma" aria-label="Bring Figma to the front" aria-pressed="true" style="--tile: #a259ff">F</button>
+            <button class="dock-app" type="button" data-app="safari" aria-label="Bring Safari to the front" aria-pressed="false" style="--tile: #1d9bf0">S</button>
+          </div>
+
+          <div class="desk-tint" data-desk-tint aria-hidden="true"><span></span><span></span></div>
+        </div>
+        <div class="menu desk-menu-below" data-menu></div>
+      </figure>
+    </section>
+
+    <section id="evening" class="section evening" data-lens-section>
+      <div class="split-heading">
+        <h2>Overrule it anytime</h2>
+        <p class="section-text">Turn Night Shift on while a rule holds it off, from the menu, Control Center or a script, and Nightcap goes along with you. It snoozes that rule until the schedule's next change instead of fighting you.</p>
+      </div>
+      <div class="sky-strip" aria-hidden="true" data-sky></div>
+      <div class="moments" role="group" aria-label="Moments of one evening" data-lens-area data-moments></div>
+      <div class="moment-detail">
+        <p class="moment-body swap" data-moment-body></p>
+        <div class="menu-card" data-moment-menu></div>
+      </div>
+    </section>
+
+    <section id="cli" class="section cli" data-lens-section>
+      <div class="cli-text">
+        <h2>Made to be scripted</h2>
+        <p class="section-text">Everything in the menu is also a <code>nightcap</code> command. Bind it to a key with skhd, Raycast or Karabiner, run it from a script, or read the status as JSON.</p>
+        <p class="note">Rules can also live in a plain config file, next to the rest of your setup.</p>
+      </div>
+      <div class="terminal" data-lens-area role="figure" aria-label="A terminal session with the nightcap command">
+        <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> disable <span class="t-arg">1h30m</span></div>
+        <div class="term-line t-out">Night Shift <span class="t-warm">forced off</span> by a timed disable until 01:00</div>
+        <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> rules add <span class="t-arg">domain:figma.com</span></div>
+        <div class="term-line t-out">Added domain:figma.com. Night Shift <span class="t-warm">forced off</span> by a timed disable until 01:00.</div>
+        <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> resume</div>
+        <div class="term-line t-out">Night Shift following the schedule</div>
+        <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> status <span class="t-arg">--json</span> | jq -r <span class="t-arg">.decision.verdict</span></div>
+        <div class="term-line t-out"><span class="t-ok">hands_off</span></div>
+      </div>
+    </section>
+
+    <section class="dusk" data-lens-section data-lens-area>
+      <span class="dusk-sky" aria-hidden="true"></span>
+      <span class="dusk-sun" aria-hidden="true"></span>
+      <svg class="dusk-star sway" style="right: 9%; top: 18px;" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.6A8.6 8.6 0 1 1 9.4 4.1a6.7 6.7 0 0 0 10.6 10.5z"/></svg>
+      <svg class="dusk-star twinkle" style="right: 30%; top: 22px;" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z"/></svg>
+      <svg class="dusk-star twinkle" style="right: 44%; top: 12px; animation-delay: 1.4s;" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z"/></svg>
+      <svg class="dusk-star twinkle" style="right: 18%; top: 46px; animation-delay: 2.6s;" viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z"/></svg>
+      <div class="dusk-text">
+        <p class="dusk-title">Set it up before sunset.</p>
+        <p class="dusk-sub">Free and open source, for macOS 27 on Apple silicon.</p>
+      </div>
+      <a class="button button-primary button-plain spring" href="https://github.com/choco/Nightcap/releases/latest" data-download>Download for Mac</a>
+    </section>
+
+    <footer class="site-footer">
+      <span class="made-with">Made with
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="var(--moon-text)" stroke-width="1.8" stroke-linejoin="round" role="img" aria-label="love"><path d="M12 20.2s-7.6-4.6-7.6-10.1a4.2 4.2 0 0 1 7.6-2.5 4.2 4.2 0 0 1 7.6 2.5c0 5.5-7.6 10.1-7.6 10.1z"/></svg>
+        by choco
+        <svg class="choco-bar" viewBox="0 0 30 44" width="24" height="35" aria-hidden="true"><defs><mask id="choco-bite"><rect width="30" height="44" fill="#fff"/><circle cx="21.4" cy="1.4" r="3.3"/><circle cx="25" cy="4.4" r="3.3"/><circle cx="27.6" cy="8.6" r="3.3"/><path d="M15 2v20M4 9.2h22M4 16h22" stroke="#000" stroke-width="1.4"/></mask></defs><rect x="4" y="2" width="22" height="22" rx="2" fill="var(--choco)" mask="url(#choco-bite)"/><path d="M3 23.4 4.8 20.6 6.6 23.4 8.4 20.6 10.2 23.4 12 20.6 13.8 23.4 15.6 20.6 17.4 23.4 19.2 20.6 21 23.4 22.8 20.6 24.6 23.4 26.4 20.6 27 21.6V26H3z" fill="var(--choco-foil)"/><rect x="3" y="24" width="24" height="18" rx="1.6" fill="var(--moon)"/><rect x="3" y="29.5" width="24" height="6" fill="var(--choco-band)"/></svg>
+      </span>
+      <span class="footer-links">
+        <a href="https://github.com/choco/Nightcap">GitHub</a>
+        <a href="https://github.com/choco/Nightcap/releases">Releases</a>
+        <a href="https://github.com/choco/Nightcap/blob/main/LICENSE">MIT licence</a>
+        <span>© 2026</span>
+      </span>
+      <span class="theme-switch" role="group" aria-label="Appearance">
+        <button class="theme-option" type="button" data-theme-option="system" aria-label="Match the system" title="Match the system" aria-pressed="true"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg></button>
+        <button class="theme-option" type="button" data-theme-option="light" aria-label="Light" title="Light" aria-pressed="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></svg></button>
+        <button class="theme-option" type="button" data-theme-option="dark" aria-label="Dark" title="Dark" aria-pressed="false"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M20 14.6A8.6 8.6 0 1 1 9.4 4.1a6.7 6.7 0 0 0 10.6 10.5z"/></svg></button>
+      </span>
+    </footer>
+  </main>
+
+  <div class="page-tint" data-page-tint aria-hidden="true"><span></span><span></span></div>
+  <div class="lens-ring" data-lens-ring aria-hidden="true"></div>
+</div>
 </body>
 </html>
