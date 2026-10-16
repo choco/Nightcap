@@ -13,38 +13,51 @@ pub(crate) struct Context {
 pub(crate) struct Inputs<'a> {
     pub context: &'a Context,
     pub rules: &'a [Rule],
+    /// Rules muted until the next schedule transition.
+    pub snoozes: &'a [RuleIdentity],
+    /// When the timed disable ends, if one is running.
+    pub timed_disable: Option<Timestamp>,
     pub manual_state: Option<OnOff>,
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
 }
 
 pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
-    let forcing: Vec<_> = inputs
+    let (snoozed, forcing): (Vec<_>, Vec<_>) = inputs
         .rules
         .iter()
         .filter(|rule| matches(rule, inputs.context))
-        .cloned()
-        .map(Reason::Rule)
+        .partition(|rule| inputs.snoozes.contains(&rule.identity));
+    let forces: Vec<_> = inputs
+        .timed_disable
+        .map(|until| Reason::TimedDisable { until })
+        .into_iter()
+        .chain(forcing.into_iter().cloned().map(Reason::Rule))
         .collect();
-    if !forcing.is_empty() {
+    if !forces.is_empty() {
         return Decision {
             verdict: Verdict::ForceOff,
-            reasons: forcing,
+            reasons: forces,
         };
     }
+    let snoozes = snoozed.into_iter().map(|rule| Reason::Snooze {
+        identity: rule.identity.clone(),
+        until: inputs.next_transition,
+    });
+    let followed = match (inputs.manual_state, inputs.scheduled_state) {
+        (Some(state), _) => Some(Reason::ManualState {
+            state,
+            until: inputs.next_transition,
+        }),
+        (None, Some(state)) => Some(Reason::Schedule {
+            state,
+            until: inputs.next_transition,
+        }),
+        (None, None) => None,
+    };
     Decision {
         verdict: Verdict::HandsOff,
-        reasons: match (inputs.manual_state, inputs.scheduled_state) {
-            (Some(state), _) => vec![Reason::ManualState {
-                state,
-                until: inputs.next_transition,
-            }],
-            (None, Some(state)) => vec![Reason::Schedule {
-                state,
-                until: inputs.next_transition,
-            }],
-            (None, None) => Vec::new(),
-        },
+        reasons: snoozes.chain(followed).collect(),
     }
 }
 
@@ -85,6 +98,8 @@ mod tests {
         let decision = decide(&Inputs {
             context: &frontmost("com.apple.Terminal"),
             rules: &[],
+            snoozes: &[],
+            timed_disable: None,
             manual_state: None,
             scheduled_state: Some(OnOff::On),
             next_transition: Some(at("2026-10-16T05:50:47Z")),
@@ -107,6 +122,8 @@ mod tests {
         let decision = decide(&Inputs {
             context: &frontmost("com.apple.Terminal"),
             rules: &[],
+            snoozes: &[],
+            timed_disable: None,
             manual_state: Some(OnOff::Off),
             scheduled_state: Some(OnOff::On),
             next_transition: Some(at("2026-10-16T05:50:47Z")),
@@ -134,6 +151,8 @@ mod tests {
         let decision = decide(&Inputs {
             context: &frontmost("com.figma.Desktop"),
             rules: &rules,
+            snoozes: &[],
+            timed_disable: None,
             manual_state: Some(OnOff::On),
             scheduled_state: Some(OnOff::On),
             next_transition: None,
@@ -155,11 +174,78 @@ mod tests {
         let decision = decide(&Inputs {
             context: &frontmost("com.figma.Desktop"),
             rules: &rules,
+            snoozes: &[],
+            timed_disable: None,
             manual_state: None,
             scheduled_state: Some(OnOff::On),
             next_transition: None,
         });
 
         assert_eq!(decision.verdict, Verdict::ForceOff);
+    }
+
+    #[test]
+    fn a_snoozed_rule_leaves_night_shift_alone_and_says_so() {
+        let rules = [app_rule("com.figma.Desktop")];
+
+        let decision = decide(&Inputs {
+            context: &frontmost("com.figma.Desktop"),
+            rules: &rules,
+            snoozes: &[RuleIdentity::App("com.figma.Desktop".to_owned())],
+            timed_disable: None,
+            manual_state: Some(OnOff::On),
+            scheduled_state: Some(OnOff::On),
+            next_transition: Some(at("2026-10-16T05:50:47Z")),
+        });
+
+        assert_eq!(
+            decision,
+            Decision {
+                verdict: Verdict::HandsOff,
+                reasons: vec![
+                    Reason::Snooze {
+                        identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+                        until: Some(at("2026-10-16T05:50:47Z")),
+                    },
+                    Reason::ManualState {
+                        state: OnOff::On,
+                        until: Some(at("2026-10-16T05:50:47Z")),
+                    },
+                ],
+            }
+        );
+    }
+
+    #[test]
+    fn a_timed_disable_forces_night_shift_off_alongside_any_rule() {
+        fn disabled_with(app: &str) -> Decision {
+            decide(&Inputs {
+                context: &frontmost(app),
+                rules: &[app_rule("com.figma.Desktop")],
+                snoozes: &[],
+                timed_disable: Some(at("2026-10-16T01:00:00Z")),
+                manual_state: Some(OnOff::On),
+                scheduled_state: Some(OnOff::On),
+                next_transition: None,
+            })
+        }
+        let disabled = Reason::TimedDisable {
+            until: at("2026-10-16T01:00:00Z"),
+        };
+
+        assert_eq!(
+            disabled_with("com.apple.Terminal"),
+            Decision {
+                verdict: Verdict::ForceOff,
+                reasons: vec![disabled.clone()],
+            }
+        );
+        assert_eq!(
+            disabled_with("com.figma.Desktop"),
+            Decision {
+                verdict: Verdict::ForceOff,
+                reasons: vec![disabled, Reason::Rule(app_rule("com.figma.Desktop"))],
+            }
+        );
     }
 }

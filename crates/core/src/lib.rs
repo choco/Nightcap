@@ -18,7 +18,7 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ErrorReply, Install, Instance, NightShift,
     NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
-    Schedule, Status, TimeOfDay, Verdict,
+    RuleIdentity, Schedule, Status, TimeOfDay, Verdict,
 };
 
 use engine::{Context, Inputs};
@@ -168,6 +168,10 @@ struct State {
     context: Context,
     rules: Vec<Rule>,
     config_error: Option<String>,
+    /// Rules muted until the next schedule transition.
+    snoozes: Vec<RuleIdentity>,
+    /// When the timed disable ends, if one is running.
+    timed_disable: Option<Timestamp>,
     /// The write the shell was last asked for, until a status callback reports the result.
     pending_write: Option<bool>,
     unreported: Option<Unreported>,
@@ -322,11 +326,11 @@ impl Core {
                     // macOS applies an edited schedule at once, so the edit is a schedule
                     // transition and whatever it switched isn't an external change.
                     tracing::info!("schedule edited");
-                    state.manual_state = None;
+                    state.pass_transition();
+                    Vec::new()
                 } else {
-                    self.reconcile(&mut state, enabled);
+                    self.reconcile(&mut state, enabled).into_iter().collect()
                 }
-                Vec::new()
             }
             Event::TimerFired => {
                 // The shell's timer is spent, whether or not its transition came due.
@@ -405,6 +409,8 @@ impl Core {
                 context: Context::default(),
                 rules,
                 config_error,
+                snoozes: Vec::new(),
+                timed_disable: None,
                 pending_write: None,
                 unreported: None,
                 applied_until: setup.clock.now(),
@@ -430,13 +436,34 @@ impl Core {
                         message: "Night Shift isn't available on this Mac".to_owned(),
                     });
                 }
-                let enabled = match command {
-                    Command::On => true,
-                    Command::Off => false,
-                    Command::Toggle => night_shift != NightShift::On,
-                };
                 let mut state = self.state();
-                state.manual_state = Some(on_off(enabled));
+                match command {
+                    Command::On => {
+                        state.set_manual_state(OnOff::On);
+                    }
+                    Command::Off => {
+                        state.set_manual_state(OnOff::Off);
+                    }
+                    Command::Toggle => {
+                        state.set_manual_state(on_off(night_shift != NightShift::On));
+                    }
+                    Command::Disable(duration) => {
+                        let Ok(until) = self.clock.now().checked_add(*duration) else {
+                            return Response::Error(ErrorReply {
+                                code: ErrorCode::BadRequest,
+                                message: format!("{duration:#} is too long"),
+                            });
+                        };
+                        tracing::info!("timed disable until {until}");
+                        state.timed_disable = Some(until);
+                    }
+                    Command::Resume => {
+                        tracing::info!("resumed");
+                        state.timed_disable = None;
+                        state.snoozes.clear();
+                        state.manual_state = None;
+                    }
+                }
                 Response::Ok(Payload::Decision(state.decide()))
             }
             Request::Query(Query::Status) => self.status(),
@@ -465,7 +492,7 @@ impl Core {
     /// transition the core already applied, or running just ahead of the next one, is that
     /// transition; a match needs nothing; anything else is an external change, handled like the
     /// equivalent command (ADR-0006).
-    fn reconcile(&self, state: &mut State, enabled: bool) {
+    fn reconcile(&self, state: &mut State, enabled: bool) -> Option<Effect> {
         let now = self.clock.now();
         match state.unreported.take() {
             Some(unreported) if now <= unreported.until && enabled == unreported.scheduled => {
@@ -474,16 +501,14 @@ impl Core {
                     unreported.transition,
                     now.duration_since(unreported.transition)
                 );
-                return;
+                return None;
             }
             Some(unreported) if now <= unreported.until => state.unreported = Some(unreported),
             _ => {}
         }
-        let Some(wanted) = wanted(&state.decide()) else {
-            return;
-        };
+        let wanted = wanted(&state.decide())?;
         if enabled == wanted {
-            return;
+            return None;
         }
         if let Some(transition) = state.timeline.next_transition(state.applied_until)
             && transition.duration_since(now) <= TRANSITION_TOLERANCE
@@ -493,15 +518,16 @@ impl Core {
                 "schedule transition at {transition}, reported {:#} early",
                 transition.duration_since(now)
             );
-            state.manual_state = None;
+            state.pass_transition();
             state.applied_until = transition;
-            return;
+            return None;
         }
         tracing::info!(
             "Night Shift turned {} outside Nightcap",
             if enabled { "on" } else { "off" }
         );
-        state.manual_state = Some(on_off(enabled));
+        let overridden = state.set_manual_state(on_off(enabled));
+        state.collision_notice(&overridden)
     }
 
     /// Applies every schedule transition that came due since the last event: the manual state
@@ -512,11 +538,15 @@ impl Core {
         if now <= state.applied_until {
             return;
         }
+        if state.timed_disable.is_some_and(|until| until <= now) {
+            tracing::info!("the timed disable ended");
+            state.timed_disable = None;
+        }
         if let Some(transition) = state.timeline.next_transition(state.applied_until)
             && transition <= now
         {
             tracing::info!("schedule transition at {transition}");
-            state.manual_state = None;
+            state.pass_transition();
             state.unreported = state
                 .timeline
                 .scheduled_state(now)
@@ -529,10 +559,16 @@ impl Core {
         state.applied_until = now;
     }
 
-    /// Keeps the shell's one wakeup at the next schedule transition.
+    /// Keeps the shell's one wakeup at the next schedule transition or the end of the timed
+    /// disable, whichever comes first.
     fn reschedule(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        let next = state.timeline.next_transition(state.applied_until);
+        let next = state
+            .timeline
+            .next_transition(state.applied_until)
+            .into_iter()
+            .chain(state.timed_disable)
+            .min();
         if next != state.wakeup {
             state.wakeup = next;
             effects.push(match next {
@@ -575,6 +611,8 @@ impl Core {
             frontmost_app: state.context.app.clone(),
             rules: state.rules.clone(),
             config_error: state.config_error.clone(),
+            snoozes: state.snoozes.clone(),
+            timed_disable: state.timed_disable,
             permissions: Permissions {
                 accessibility: state.accessibility,
                 notifications: state.notifications,
@@ -593,11 +631,79 @@ struct Unreported {
     until: Timestamp,
 }
 
+/// What turning Night Shift on overrode.
+#[derive(Default)]
+struct Overridden {
+    snoozed: Vec<RuleIdentity>,
+    timed_disable: bool,
+}
+
 impl State {
+    /// Sets the manual state the way `on`, `off` and external changes do (ADR-0006): turning
+    /// Night Shift on while it's forced off snoozes the forcing rules and cancels a timed
+    /// disable.
+    fn set_manual_state(&mut self, state: OnOff) -> Overridden {
+        let mut overridden = Overridden::default();
+        let decision = self.decide();
+        if state == OnOff::On && decision.verdict == Verdict::ForceOff {
+            for reason in decision.reasons {
+                match reason {
+                    Reason::Rule(rule) => overridden.snoozed.push(rule.identity),
+                    Reason::TimedDisable { .. } => overridden.timed_disable = true,
+                    _ => {}
+                }
+            }
+            for identity in &overridden.snoozed {
+                tracing::info!("snoozed {identity} until the next schedule transition");
+            }
+            self.snoozes.extend(overridden.snoozed.iter().cloned());
+            if overridden.timed_disable {
+                tracing::info!("cancelled the timed disable");
+                self.timed_disable = None;
+            }
+        }
+        self.manual_state = Some(state);
+        overridden
+    }
+
+    /// Tells the user what an external change overrode, if it collided with a force (ADR-0006).
+    fn collision_notice(&self, overridden: &Overridden) -> Option<Effect> {
+        if overridden.snoozed.is_empty() && !overridden.timed_disable {
+            return None;
+        }
+        let until = match self.timeline.next_transition(self.applied_until) {
+            Some(transition) => format!(
+                "until {}",
+                self.timeline.zone.to_datetime(transition).strftime("%H:%M")
+            ),
+            None => "until you resume".to_owned(),
+        };
+        let mut sentences = Vec::new();
+        if !overridden.snoozed.is_empty() {
+            let snoozed: Vec<_> = overridden.snoozed.iter().map(ToString::to_string).collect();
+            sentences.push(format!("Snoozed {} {until}.", snoozed.join(", ")));
+        }
+        if overridden.timed_disable {
+            sentences.push("Cancelled the timed disable.".to_owned());
+        }
+        Some(Effect::Notify {
+            title: "Night Shift turned on outside Nightcap".to_owned(),
+            body: sentences.join(" "),
+        })
+    }
+
+    /// Snoozes and the manual state last only until the next schedule transition (ADR-0006).
+    fn pass_transition(&mut self) {
+        self.manual_state = None;
+        self.snoozes.clear();
+    }
+
     fn decide(&self) -> Decision {
         engine::decide(&Inputs {
             context: &self.context,
             rules: &self.rules,
+            snoozes: &self.snoozes,
+            timed_disable: self.timed_disable,
             manual_state: self.manual_state,
             scheduled_state: self
                 .timeline
@@ -616,7 +722,7 @@ fn wanted(decision: &Decision) -> Option<bool> {
             Reason::ManualState { state, .. } | Reason::Schedule { state, .. } => {
                 Some(*state == OnOff::On)
             }
-            Reason::Rule(_) => None,
+            Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
         }),
     }
 }

@@ -7,7 +7,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
@@ -112,6 +112,10 @@ pub enum Command {
     On,
     Off,
     Toggle,
+    /// Forces Night Shift off for this long: a timed disable.
+    Disable(SignedDuration),
+    /// Clears the timed disable, every snooze and the manual state.
+    Resume,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -154,6 +158,13 @@ pub enum Verdict {
 pub enum Reason {
     /// A rule matching the context forces Night Shift off.
     Rule(Rule),
+    /// A timed disable forces Night Shift off.
+    TimedDisable { until: Timestamp },
+    /// A rule matching the context is snoozed until the next schedule transition, if any.
+    Snooze {
+        identity: RuleIdentity,
+        until: Option<Timestamp>,
+    },
     /// Hands off, following the manual state until the next schedule transition, if any.
     ManualState {
         state: OnOff,
@@ -233,6 +244,10 @@ pub struct Status {
     pub rules: Vec<Rule>,
     /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
     pub config_error: Option<String>,
+    /// Rules snoozed until the next schedule transition.
+    pub snoozes: Vec<RuleIdentity>,
+    /// When the timed disable ends, if one is running.
+    pub timed_disable: Option<Timestamp>,
     pub permissions: Permissions,
 }
 
@@ -367,18 +382,42 @@ mod tests {
                 frontmost_app: Some("com.apple.Terminal".to_owned()),
                 rules: Vec::new(),
                 config_error: None,
+                snoozes: Vec::new(),
+                timed_disable: None,
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Terminal","rules":[],"config_error":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Terminal","rules":[],"config_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 
     #[test]
     fn decisions_match_the_documented_wire_format() {
         assert_eq!(json(&Request::Reload), r#""reload""#);
+        assert_eq!(
+            json(&Request::Command(Command::Disable(
+                jiff::SignedDuration::from_mins(90)
+            ))),
+            r#"{"command":{"disable":"PT1H30M"}}"#
+        );
+        assert_eq!(
+            json(&Decision {
+                verdict: Verdict::ForceOff,
+                reasons: vec![Reason::TimedDisable {
+                    until: "2026-10-16T05:50:47Z".parse().unwrap(),
+                }],
+            }),
+            r#"{"verdict":"force_off","reasons":[{"timed_disable":{"until":"2026-10-16T05:50:47Z"}}]}"#
+        );
+        assert_eq!(
+            json(&Reason::Snooze {
+                identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+                until: None,
+            }),
+            r#"{"snooze":{"identity":"app:com.figma.Desktop","until":null}}"#
+        );
         assert_eq!(
             json(&Payload::Decision(Decision {
                 verdict: Verdict::ForceOff,

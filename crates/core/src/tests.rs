@@ -5,8 +5,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
     NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
@@ -115,6 +115,30 @@ fn app_rule(bundle_id: &str) -> Rule {
         identity: RuleIdentity::App(bundle_id.to_owned()),
         source: RuleSource::Config,
     }
+}
+
+/// Starts at 23:00 with Night Shift on by the custom hours, then brings Figma, which a config
+/// rule forces off, to the front, and reports the result.
+fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    write_config(socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    assert_eq!(
+        activate(&core, "com.figma.Desktop"),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    (core, wakes, clock)
+}
+
+fn figma() -> RuleIdentity {
+    RuleIdentity::App("com.figma.Desktop".to_owned())
 }
 
 fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
@@ -821,6 +845,175 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_chan
 }
 
 #[test]
+fn on_during_a_force_snoozes_the_forcing_rules_until_the_next_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    let morning = Some(at("2026-10-17T07:00:00+02:00"));
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            verdict: Verdict::HandsOff,
+            reasons: vec![
+                Reason::Snooze {
+                    identity: figma(),
+                    until: morning,
+                },
+                Reason::ManualState {
+                    state: OnOff::On,
+                    until: morning,
+                },
+            ],
+        }))
+    );
+}
+
+#[test]
+fn snoozes_end_at_the_next_schedule_transition() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_forced(&socket);
+    send(&core, &socket, &wakes, Command::On);
+
+    clock.set("2026-10-17T07:00:00+02:00");
+    core.handle(Event::TimerFired);
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.snoozes, Vec::new());
+    assert_eq!(status.decision.verdict, Verdict::ForceOff);
+}
+
+#[test]
+fn turning_night_shift_on_outside_nightcap_during_a_force_snoozes_it_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![Effect::Notify {
+            title: "Night Shift turned on outside Nightcap".to_owned(),
+            body: "Snoozed app:com.figma.Desktop until 07:00.".to_owned(),
+        }]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).snoozes, vec![figma()]);
+}
+
+#[test]
+fn a_timed_disable_forces_night_shift_off_until_its_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let (effects, response) = send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+
+    let midnight = at("2026-10-17T00:00:00+02:00");
+    assert_eq!(
+        effects,
+        vec![
+            Effect::SetNightShift { enabled: false },
+            Effect::ScheduleWakeup {
+                at: midnight.into()
+            },
+        ]
+    );
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            verdict: Verdict::ForceOff,
+            reasons: vec![Reason::TimedDisable { until: midnight }],
+        }))
+    );
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    clock.set("2026-10-17T00:00:00+02:00");
+    assert_eq!(
+        core.handle(Event::TimerFired),
+        vec![
+            Effect::SetNightShift { enabled: true },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            },
+        ]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).timed_disable, None);
+}
+
+#[test]
+fn on_cancels_a_timed_disable() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+
+    let (_, response) = send(&core, &socket, &wakes, Command::On);
+
+    let Response::Ok(Payload::Decision(decision)) = response else {
+        panic!("expected a decision, got {response:?}");
+    };
+    assert_eq!(decision.verdict, Verdict::HandsOff);
+    assert_eq!(status_of(&core, &socket, &wakes).timed_disable, None);
+}
+
+#[test]
+fn resume_clears_the_timed_disable_every_snooze_and_the_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    send(&core, &socket, &wakes, Command::On);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+
+    let (_, response) = send(&core, &socket, &wakes, Command::Resume);
+
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            verdict: Verdict::ForceOff,
+            reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
+        }))
+    );
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.snoozes, Vec::new());
+    assert_eq!(status.timed_disable, None);
+    assert_eq!(status.manual_state, None);
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -866,6 +1059,8 @@ fn a_status_query_is_answered_on_the_next_tick() {
             frontmost_app: None,
             rules: Vec::new(),
             config_error: None,
+            snoozes: Vec::new(),
+            timed_disable: None,
             permissions: Permissions {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,

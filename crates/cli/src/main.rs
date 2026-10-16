@@ -41,18 +41,33 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Turn Night Shift on until the next schedule transition.
+    /// Turn Night Shift on until the next schedule transition, snoozing any rule that forces it
+    /// off.
     On,
     /// Turn Night Shift off until the next schedule transition.
     Off,
     /// Turn Night Shift on if it's off, or off if it's on, until the next schedule transition.
     Toggle,
+    /// Force Night Shift off for a while, e.g. 1h, 30m or 1h30m.
+    Disable {
+        #[arg(value_parser = parse_positive_duration)]
+        duration: Duration,
+    },
+    /// Clear the timed disable, every snooze and the manual state.
+    Resume,
     /// Read the config again, after changing it.
     Reload {
         /// Keep trying this long for Nightcap to start, e.g. 5s.
         #[arg(long, value_parser = parse_duration)]
         wait: Option<Duration>,
     },
+}
+
+fn parse_positive_duration(text: &str) -> Result<Duration, String> {
+    match parse_duration(text)? {
+        Duration::ZERO => Err("the duration must be longer than zero".to_owned()),
+        duration => Ok(duration),
+    }
 }
 
 fn parse_duration(text: &str) -> Result<Duration, String> {
@@ -121,6 +136,10 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
         Command::On => protocol::Command::On,
         Command::Off => protocol::Command::Off,
         Command::Toggle => protocol::Command::Toggle,
+        Command::Disable { duration } => protocol::Command::Disable(
+            jiff::SignedDuration::try_from(duration).context("that's too long")?,
+        ),
+        Command::Resume => protocol::Command::Resume,
     };
     let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
         return Err(unexpected_reply());
@@ -180,6 +199,17 @@ fn print_status(status: &Status) {
         status.frontmost_app.as_deref().unwrap_or("unknown")
     );
     println!("Rules: {}", rules(&status.rules));
+    if !status.snoozes.is_empty() {
+        let snoozes: Vec<_> = status.snoozes.iter().map(ToString::to_string).collect();
+        println!(
+            "Snoozed: {}{}",
+            snoozes.join(", "),
+            until(status.next_transition)
+        );
+    }
+    if let Some(end) = status.timed_disable {
+        println!("Timed disable:{}", until(Some(end)));
+    }
     if let Some(error) = &status.config_error {
         println!("Config: invalid. {error}");
     }
@@ -189,24 +219,40 @@ fn print_status(status: &Status) {
 
 /// What the core decided and why, as it reads after "Night Shift".
 fn describe(decision: &Decision) -> String {
-    let forcing: Vec<_> = decision
+    if decision.verdict == Verdict::ForceOff {
+        let forces: Vec<_> = decision
+            .reasons
+            .iter()
+            .filter_map(|reason| match reason {
+                Reason::Rule(rule) => Some(rule_name(rule)),
+                Reason::TimedDisable { until: end } => {
+                    Some(format!("a timed disable{}", until(Some(*end))))
+                }
+                _ => None,
+            })
+            .collect();
+        return format!("forced off by {}", forces.join(" and "));
+    }
+    let followed = decision.reasons.iter().find_map(|reason| match reason {
+        Reason::ManualState { state, until: end } => {
+            Some(format!("turned {} by hand{}", on_off(*state), until(*end)))
+        }
+        Reason::Schedule { .. } => Some("following the schedule".to_owned()),
+        _ => None,
+    });
+    let snoozed: Vec<_> = decision
         .reasons
         .iter()
         .filter_map(|reason| match reason {
-            Reason::Rule(rule) => Some(rule_name(rule)),
+            Reason::Snooze { identity, .. } => Some(identity.to_string()),
             _ => None,
         })
         .collect();
-    if decision.verdict == Verdict::ForceOff {
-        return format!("forced off by {}", forcing.join(", "));
+    let mut description = followed.unwrap_or_else(|| "left alone".to_owned());
+    if !snoozed.is_empty() {
+        description.push_str(&format!(", with {} snoozed", snoozed.join(", ")));
     }
-    match decision.reasons.first() {
-        Some(Reason::ManualState { state, until: end }) => {
-            format!("turned {} by hand{}", on_off(*state), until(*end))
-        }
-        Some(Reason::Schedule { .. }) => "following the schedule".to_owned(),
-        Some(Reason::Rule(_)) | None => "left alone".to_owned(),
-    }
+    description
 }
 
 fn rules(rules: &[Rule]) -> String {
