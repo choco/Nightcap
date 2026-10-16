@@ -113,8 +113,8 @@ pub struct Menu {
     pub status: String,
     /// Why, in a few words, e.g. "While Figma is in front".
     pub reason: Option<String>,
-    /// What needs the user's attention, while something does.
-    pub attention: Option<Attention>,
+    /// The problem line, while any problem exists.
+    pub problem_line: Option<ProblemLine>,
     pub entries: Vec<MenuEntry>,
 }
 
@@ -203,7 +203,7 @@ pub struct SettingsSwitch {
 /// The menu's line about problems, under the status line. Choosing it opens Settings, and
 /// while it's set the shell marks the icon too.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct Attention {
+pub struct ProblemLine {
     pub title: String,
     pub subtitle: Option<String>,
 }
@@ -621,7 +621,7 @@ impl Core {
                 icon: MenuIcon::Unavailable,
                 status: "Night Shift: Unavailable".to_owned(),
                 reason: None,
-                attention: None,
+                problem_line: None,
                 entries: Vec::new(),
             };
         }
@@ -700,7 +700,7 @@ impl Core {
             }
             .to_owned(),
             reason: state.menu_reason(&decision),
-            attention: state.attention(),
+            problem_line: state.problem_line(),
             entries,
         }
     }
@@ -1805,7 +1805,7 @@ impl State {
     }
 
     /// The menu's problem line, from the checks. Night Shift's own is left to the status line.
-    fn attention(&self) -> Option<Attention> {
+    fn problem_line(&self) -> Option<ProblemLine> {
         let problems: Vec<_> = self
             .checks()
             .into_iter()
@@ -1832,7 +1832,7 @@ impl State {
                 .to_owned()
             })
             .collect();
-        Some(Attention {
+        Some(ProblemLine {
             title: match problems.len() {
                 1 => "1 Thing Needs Attention…".to_owned(),
                 count => format!("{count} Things Need Attention…"),

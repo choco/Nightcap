@@ -66,12 +66,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func refresh() {
         let snapshot = current()
         let image = Self.image(for: snapshot.icon)
-        if snapshot.attention != nil, let description = image?.accessibilityDescription {
+        if snapshot.problemLine != nil, let description = image?.accessibilityDescription {
             image?.accessibilityDescription = "\(description), needs attention"
         }
         item.button?.image = image
         item.button?.appearsDisabled = snapshot.icon == .unavailable
-        dot.isHidden = snapshot.attention == nil
+        dot.isHidden = snapshot.problemLine == nil
         if shown != nil, snapshot != shown, let menu = item.menu {
             menuNeedsUpdate(menu)
         }
@@ -146,9 +146,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         status.subtitle = snapshot.reason
         status.isEnabled = false
         menu.addItem(status)
-        if let attention = snapshot.attention {
-            let line = NSMenuItem(title: attention.title, action: #selector(attentionChosen), keyEquivalent: "")
-            line.subtitle = attention.subtitle
+        if let problemLine = snapshot.problemLine {
+            let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
+            line.subtitle = problemLine.subtitle
             line.onStateImage = Self.warning
             line.state = .on
             menu.addItem(line)
@@ -200,7 +200,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         openSettings(false)
     }
 
-    @objc private func attentionChosen() {
+    @objc private func problemLineChosen() {
         openSettings(true)
     }
 

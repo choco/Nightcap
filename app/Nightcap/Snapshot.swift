@@ -79,9 +79,9 @@ enum Snapshot {
             }
         }
         for icon in [MenuIcon.on, .off, .forcedOff] {
-            for attention in [false, true] {
-                let name = "icon-\(icon)-\(attention ? "attention" : "plain").png"
-                try! menuBarIcon(icon, attention: attention)
+            for problems in [false, true] {
+                let name = "icon-\(icon)-\(problems ? "problems" : "plain").png"
+                try! menuBarIcon(icon, problems: problems)
                     .write(to: URL(fileURLWithPath: folder).appendingPathComponent(name))
             }
         }
@@ -90,7 +90,7 @@ enum Snapshot {
 
     /// The menu-bar icon at 8x, black on white as a template draws in a light menu bar, with the
     /// dot where the status item lays it over the moon.
-    private static func menuBarIcon(_ icon: MenuIcon, attention: Bool) -> Data {
+    private static func menuBarIcon(_ icon: MenuIcon, problems: Bool) -> Data {
         let image = StatusMenu.image(for: icon)!
         let scale: CGFloat = 8
         let size = NSSize(width: image.size.width * scale + 64, height: image.size.height * scale + 64)
@@ -103,7 +103,7 @@ enum Snapshot {
         NSColor.white.setFill()
         NSRect(origin: .zero, size: size).fill()
         image.draw(in: NSRect(x: 32, y: 32, width: size.width - 64, height: size.height - 64))
-        if attention {
+        if problems {
             let diameter = StatusMenu.dotSize * scale
             let centre = NSPoint(
                 x: size.width / 2 + StatusMenu.dotOffset.x * scale,

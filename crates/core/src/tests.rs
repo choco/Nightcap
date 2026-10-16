@@ -17,8 +17,8 @@ use nightcap_protocol::{
 use crate::adhoc;
 use crate::state::{Persisted, Store};
 use crate::{
-    Attention, Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry,
-    MenuIcon, MenuItem, RuleAction, SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker,
+    Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
+    MenuItem, ProblemLine, RuleAction, SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker,
     normalize_domain,
 };
 
@@ -2203,7 +2203,7 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
 }
 
 #[test]
-fn the_menu_points_out_what_needs_attention() {
+fn the_menu_shows_a_problem_line_while_any_problem_exists() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(&socket, "websites = true\n");
@@ -2212,29 +2212,29 @@ fn the_menu_points_out_what_needs_attention() {
         enabled: false,
         schedule: Schedule::Off,
     });
-    let attention = |title: &str, subtitle: Option<&str>| {
-        Some(Attention {
+    let line = |title: &str, subtitle: Option<&str>| {
+        Some(ProblemLine {
             title: title.to_owned(),
             subtitle: subtitle.map(str::to_owned),
         })
     };
 
-    assert_eq!(core.menu().attention, None);
+    assert_eq!(core.menu().problem_line, None);
     core.handle(permissions(false, NotificationPermission::Granted));
     assert_eq!(
-        core.menu().attention,
-        attention("1 Thing Needs Attention…", Some("Accessibility"))
+        core.menu().problem_line,
+        line("1 Thing Needs Attention…", Some("Accessibility"))
     );
     core.handle(permissions(false, NotificationPermission::Denied));
     assert_eq!(
-        core.menu().attention,
-        attention(
+        core.menu().problem_line,
+        line(
             "2 Things Need Attention…",
             Some("Accessibility and notifications")
         )
     );
     core.handle(permissions(true, NotificationPermission::Granted));
-    assert_eq!(core.menu().attention, None);
+    assert_eq!(core.menu().problem_line, None);
 }
 
 fn domain(name: &str) -> RuleIdentity {
