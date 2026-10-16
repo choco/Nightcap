@@ -42,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
+        // The context first, so a force still in place after a crash holds without a flash.
+        reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         startNightShift()
         apply(core!.handle(event: .launched))
         watchPermissions()
@@ -87,7 +89,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchSystem() {
-        reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in

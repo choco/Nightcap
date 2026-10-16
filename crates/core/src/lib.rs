@@ -175,13 +175,19 @@ struct State {
     /// The write the shell was last asked for, until a status callback reports the result.
     pending_write: Option<bool>,
     unreported: Option<Unreported>,
+    /// Set on the way out: forces no longer apply.
+    released: bool,
+    /// Where the last run left Night Shift, which the first status callback will show.
+    left_by_last_run: Option<OnOff>,
     /// Every schedule transition up to here has been applied.
     applied_until: Timestamp,
     /// The wakeup the shell was last asked for.
     wakeup: Option<Timestamp>,
     accessibility: bool,
     notifications: NotificationPermission,
-    persisted: state::Persisted,
+    login_item_registered: bool,
+    /// What was last written to `state.json`.
+    saved: state::Persisted,
 }
 
 #[uniffi::export]
@@ -246,6 +252,7 @@ impl Core {
         let mut effects = self.react(event);
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
+        self.save();
         effects
     }
 
@@ -262,6 +269,7 @@ impl Core {
         }
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
+        self.save();
         effects
     }
 }
@@ -273,11 +281,9 @@ impl Core {
             Event::Launched => {
                 let state = self.state();
                 let mut effects = Vec::new();
-                if let (Install::SelfManaged, Instance::Release, false) = (
-                    self.install,
-                    self.instance,
-                    state.persisted.login_item_registered,
-                ) {
+                if let (Install::SelfManaged, Instance::Release, false) =
+                    (self.install, self.instance, state.login_item_registered)
+                {
                     effects.push(Effect::RegisterLoginItem);
                 }
                 if let Some(error) = &state.config_error {
@@ -294,11 +300,7 @@ impl Core {
                 Vec::new()
             }
             Event::LoginItemRegistered => {
-                let mut state = self.state();
-                state.persisted.login_item_registered = true;
-                if let Err(error) = self.store.save(&state.persisted) {
-                    tracing::warn!("couldn't save the state: {error}");
-                }
+                self.state().login_item_registered = true;
                 Vec::new()
             }
             Event::PermissionsChanged {
@@ -371,6 +373,9 @@ impl Core {
                 Vec::new()
             }
             Event::Terminating => {
+                // Nightcap can't tell a restart from being removed, so it never leaves a force
+                // behind (ADR-0011).
+                self.state().released = true;
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
                 }
@@ -382,7 +387,8 @@ impl Core {
     fn start(setup: Setup, waker: Arc<dyn Waker>) -> Result<Self, CoreError> {
         let requests = ipc::serve(&setup.socket, waker)?;
         let store = state::Store::new(setup.state_file);
-        let persisted = store.load();
+        let mut persisted = store.load();
+        persisted.expire(setup.clock.now());
         let (rules, config_error) = match config::load(&setup.config_file) {
             Ok(rules) => (rules, None),
             Err(error) => {
@@ -400,7 +406,7 @@ impl Core {
             requests: Mutex::new(requests),
             state: Mutex::new(State {
                 night_shift: NightShift::Unavailable,
-                manual_state: None,
+                manual_state: persisted.manual_state,
                 timeline: Timeline {
                     schedule: None,
                     sun_times: SunTimes::default(),
@@ -409,15 +415,18 @@ impl Core {
                 context: Context::default(),
                 rules,
                 config_error,
-                snoozes: Vec::new(),
-                timed_disable: None,
+                snoozes: persisted.snoozes.clone(),
+                timed_disable: persisted.timed_disable,
                 pending_write: None,
                 unreported: None,
+                released: false,
+                left_by_last_run: persisted.night_shift,
                 applied_until: setup.clock.now(),
                 wakeup: None,
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,
-                persisted,
+                login_item_registered: persisted.login_item_registered,
+                saved: persisted,
             }),
         })
     }
@@ -493,6 +502,10 @@ impl Core {
     /// transition; a match needs nothing; anything else is an external change, handled like the
     /// equivalent command (ADR-0006).
     fn reconcile(&self, state: &mut State, enabled: bool) -> Option<Effect> {
+        if state.left_by_last_run.take() == Some(on_off(enabled)) {
+            tracing::info!("Night Shift is where the last run left it");
+            return None;
+        }
         let now = self.clock.now();
         match state.unreported.take() {
             Some(unreported) if now <= unreported.until && enabled == unreported.scheduled => {
@@ -557,6 +570,19 @@ impl Core {
                 });
         }
         state.applied_until = now;
+    }
+
+    /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0011).
+    fn save(&self) {
+        let mut state = self.state();
+        let snapshot = state.snapshot();
+        if snapshot == state.saved {
+            return;
+        }
+        match self.store.save(&snapshot) {
+            Ok(()) => state.saved = snapshot,
+            Err(error) => tracing::warn!("couldn't save the state: {error}"),
+        }
     }
 
     /// Keeps the shell's one wakeup at the next schedule transition or the end of the timed
@@ -692,6 +718,17 @@ impl State {
         })
     }
 
+    fn snapshot(&self) -> state::Persisted {
+        state::Persisted {
+            login_item_registered: self.login_item_registered,
+            manual_state: self.manual_state,
+            snoozes: self.snoozes.clone(),
+            timed_disable: self.timed_disable,
+            night_shift: wanted(&self.decide()).map(on_off),
+            until: self.timeline.next_transition(self.applied_until),
+        }
+    }
+
     /// Snoozes and the manual state last only until the next schedule transition (ADR-0006).
     fn pass_transition(&mut self) {
         self.manual_state = None;
@@ -701,9 +738,9 @@ impl State {
     fn decide(&self) -> Decision {
         engine::decide(&Inputs {
             context: &self.context,
-            rules: &self.rules,
+            rules: if self.released { &[] } else { &self.rules },
             snoozes: &self.snoozes,
-            timed_disable: self.timed_disable,
+            timed_disable: self.timed_disable.filter(|_| !self.released),
             manual_state: self.manual_state,
             scheduled_state: self
                 .timeline

@@ -84,6 +84,23 @@ fn start_at(socket: &Path, now: &str) -> (Core, mpsc::Receiver<()>, Arc<TestCloc
     (core, wakes, clock)
 }
 
+/// Starts a second core on the first one's state and config, as launchd would after a restart
+/// or a crash. The first core still holds its socket, so the second gets its own.
+fn restart_at(socket: &Path, now: &str) -> (Core, PathBuf, mpsc::Receiver<()>, Arc<TestClock>) {
+    let clock = TestClock::at(now);
+    let restarted = socket
+        .parent()
+        .unwrap()
+        .with_file_name("restarted")
+        .join("nightcap.sock");
+    let (core, wakes) = start_with(Setup {
+        socket: restarted.clone(),
+        clock: clock.clone(),
+        ..setup(socket, Instance::Release, Install::Managed)
+    });
+    (core, restarted, wakes, clock)
+}
+
 /// Keeps the state file beside the socket, inside the test's temporary folder.
 fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
     Setup {
@@ -1014,6 +1031,138 @@ fn resume_clears_the_timed_disable_every_snooze_and_the_manual_state() {
 }
 
 #[test]
+fn the_overrides_survive_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    send(&core, &socket, &wakes, Command::On);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:30:00+02:00");
+
+    assert_eq!(
+        core.handle(Event::Launched),
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T00:00:00+02:00").into()
+        }]
+    );
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.manual_state, Some(OnOff::On));
+    assert_eq!(status.snoozes, vec![figma()]);
+    assert_eq!(status.timed_disable, Some(at("2026-10-17T00:00:00+02:00")));
+}
+
+#[test]
+fn overrides_that_ended_while_nightcap_was_stopped_are_dropped_on_start() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    send(&core, &socket, &wakes, Command::On);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+
+    // Past both the timed disable's end and the 07:00 schedule transition.
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-17T08:00:00+02:00");
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.manual_state, None);
+    assert_eq!(status.snoozes, Vec::new());
+    assert_eq!(status.timed_disable, None);
+}
+
+#[test]
+fn terminating_releases_every_force() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_forced(&socket_in(&dir));
+
+    assert_eq!(
+        core.handle(Event::Terminating),
+        vec![Effect::SetNightShift { enabled: true }]
+    );
+}
+
+#[test]
+fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (_crashed, _wakes, _clock) = start_forced(&socket);
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    activate(&core, "com.apple.Terminal");
+    let effects = core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![
+            Effect::SetNightShift { enabled: true },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            },
+        ]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (stopped, _wakes, _clock) = start_forced(&socket);
+    stopped.handle(Event::Terminating);
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    activate(&core, "com.apple.Terminal");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}
+
+#[test]
+fn after_a_clean_exit_a_force_still_in_place_comes_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (stopped, _wakes, _clock) = start_forced(&socket);
+    stopped.handle(Event::Terminating);
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    activate(&core, "com.figma.Desktop");
+    // Night Shift as the release on exit left it.
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        effects,
+        vec![
+            Effect::SetNightShift { enabled: false },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            },
+        ]
+    );
+    assert_eq!(status_of(&core, &socket, &wakes).snoozes, Vec::new());
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1231,6 +1380,11 @@ fn saved_state_loads_back() {
     let store = Store::new(dir.path().join("nightcap").join("state.json"));
     let state = Persisted {
         login_item_registered: true,
+        manual_state: Some(OnOff::Off),
+        snoozes: vec![figma()],
+        timed_disable: Some(at("2026-10-17T00:00:00+02:00")),
+        night_shift: Some(OnOff::Off),
+        until: Some(at("2026-10-17T07:00:00+02:00")),
     };
 
     store.save(&state).unwrap();
