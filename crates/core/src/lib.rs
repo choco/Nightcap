@@ -1,5 +1,6 @@
 uniffi::setup_scaffolding!();
 
+mod adhoc;
 mod config;
 mod domain;
 mod engine;
@@ -19,7 +20,7 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ErrorReply, Install, Instance, NightShift,
     NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
-    RuleIdentity, Schedule, Status, TimeOfDay, Verdict,
+    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
 };
 
 use engine::{Context, Inputs};
@@ -166,6 +167,7 @@ pub struct Core {
     socket: PathBuf,
     store: state::Store,
     config_file: PathBuf,
+    ad_hoc_store: adhoc::Store,
     clock: Arc<dyn Clock>,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
     state: Mutex<State>,
@@ -178,6 +180,7 @@ struct Setup {
     socket: PathBuf,
     state_file: PathBuf,
     config_file: PathBuf,
+    rules_file: PathBuf,
     clock: Arc<dyn Clock>,
     zone: TimeZone,
 }
@@ -189,8 +192,13 @@ struct State {
     manual_state: Option<OnOff>,
     timeline: Timeline,
     context: Context,
+    /// The config rules and the ad-hoc ones not in the config, as the rule engine sees them.
     rules: Vec<Rule>,
+    config_rules: Vec<Rule>,
     config_error: Option<String>,
+    ad_hoc: Vec<RuleIdentity>,
+    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
+    ad_hoc_error: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
     is_browser: bool,
     watch: Option<Watch>,
@@ -264,6 +272,10 @@ impl Core {
                     .config_dir()
                     .join(instance.xdg_folder_name())
                     .join("config.toml"),
+                rules_file: xdg
+                    .data_dir()
+                    .join(instance.xdg_folder_name())
+                    .join("rules.toml"),
                 clock: Arc::new(SystemClock),
                 zone,
             },
@@ -452,7 +464,7 @@ impl Core {
         let store = state::Store::new(setup.state_file);
         let mut persisted = store.load();
         persisted.expire(setup.clock.now());
-        let (rules, config_error) = match config::load(&setup.config_file) {
+        let (config_rules, config_error) = match config::load(&setup.config_file) {
             Ok(rules) => (rules, None),
             Err(error) => {
                 // The error can quote a domain, so it goes to status, not the log (ADR-0012).
@@ -460,12 +472,21 @@ impl Core {
                 (Vec::new(), Some(error))
             }
         };
-        Ok(Self {
+        let ad_hoc_store = adhoc::Store::new(setup.rules_file);
+        let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
+            Ok(rules) => (rules, None),
+            Err(error) => {
+                tracing::warn!("ad-hoc rules are off: rules.toml can't be used; see status");
+                (Vec::new(), Some(error))
+            }
+        };
+        let core = Self {
             instance: setup.instance,
             install: setup.install,
             socket: setup.socket,
             store,
             config_file: setup.config_file,
+            ad_hoc_store,
             clock: setup.clock.clone(),
             requests: Mutex::new(requests),
             state: Mutex::new(State {
@@ -477,8 +498,11 @@ impl Core {
                     zone: setup.zone,
                 },
                 context: Context::default(),
-                rules,
+                rules: Vec::new(),
+                config_rules,
                 config_error,
+                ad_hoc,
+                ad_hoc_error,
                 is_browser: false,
                 watch: None,
                 generation: 0,
@@ -496,7 +520,9 @@ impl Core {
                 login_item_registered: persisted.login_item_registered,
                 saved: persisted,
             }),
-        })
+        };
+        core.graduate();
+        Ok(core)
     }
 
     /// Only a self-managed release starts at login and updates through Sparkle: an installer
@@ -513,43 +539,70 @@ impl Core {
         match request {
             Request::Command(command) => {
                 let night_shift = self.state().night_shift;
-                if night_shift == NightShift::Unavailable {
-                    return Response::Error(ErrorReply {
-                        code: ErrorCode::NightShiftUnavailable,
-                        message: "Night Shift isn't available on this Mac".to_owned(),
-                    });
+                let needs_night_shift = matches!(
+                    command,
+                    Command::On
+                        | Command::Off
+                        | Command::Toggle
+                        | Command::Disable(_)
+                        | Command::Resume
+                );
+                if needs_night_shift && night_shift == NightShift::Unavailable {
+                    return Response::Error(refused(
+                        ErrorCode::NightShiftUnavailable,
+                        "Night Shift isn't available on this Mac",
+                    ));
                 }
                 let mut state = self.state();
-                match command {
+                let outcome = match command {
                     Command::On => {
                         state.set_manual_state(OnOff::On);
+                        Ok(())
                     }
                     Command::Off => {
                         state.set_manual_state(OnOff::Off);
+                        Ok(())
                     }
                     Command::Toggle => {
                         state.set_manual_state(on_off(night_shift != NightShift::On));
+                        Ok(())
                     }
-                    Command::Disable(duration) => {
-                        let Ok(until) = self.clock.now().checked_add(*duration) else {
-                            return Response::Error(ErrorReply {
-                                code: ErrorCode::BadRequest,
-                                message: format!("{duration:#} is too long"),
-                            });
-                        };
-                        tracing::info!("timed disable until {until}");
-                        state.timed_disable = Some(until);
-                    }
+                    Command::Disable(duration) => match self.clock.now().checked_add(*duration) {
+                        Ok(until) => {
+                            tracing::info!("timed disable until {until}");
+                            state.timed_disable = Some(until);
+                            Ok(())
+                        }
+                        Err(_) => Err(refused(
+                            ErrorCode::BadRequest,
+                            format!("{duration:#} is too long"),
+                        )),
+                    },
                     Command::Resume => {
                         tracing::info!("resumed");
                         state.timed_disable = None;
                         state.snoozes.clear();
                         state.manual_state = None;
+                        Ok(())
                     }
+                    Command::AddRule(identity) => self.add_rule(&mut state, identity),
+                    Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
+                    Command::Snooze(identity) => state.snooze(identity, true),
+                    Command::Unsnooze(identity) => state.snooze(identity, false),
+                };
+                match outcome {
+                    Ok(()) => Response::Ok(Payload::Decision(state.decide())),
+                    Err(error) => Response::Error(error),
                 }
-                Response::Ok(Payload::Decision(state.decide()))
             }
             Request::Query(Query::Status) => self.status(),
+            Request::Query(Query::Rules) => {
+                Response::Ok(Payload::Rules(self.state().rules.clone()))
+            }
+            Request::Query(Query::Export(format)) => Response::Ok(Payload::Export(adhoc::export(
+                &self.state().ad_hoc,
+                *format,
+            ))),
             Request::Update => {
                 if self.updates_itself() {
                     tracing::info!("checking for updates");
@@ -571,9 +624,10 @@ impl Core {
                 Ok(rules) => {
                     tracing::info!("reloaded the config: {} rules", rules.len());
                     let mut state = self.state();
-                    state.rules = rules;
+                    state.config_rules = rules;
                     state.config_error = None;
                     drop(state);
+                    self.graduate();
                     self.status()
                 }
                 Err(error) => {
@@ -696,6 +750,91 @@ impl Core {
         }
     }
 
+    /// Drops the ad-hoc rules the config now has, which have graduated (ADR-0009), and lays out
+    /// the rules the engine sees.
+    fn graduate(&self) {
+        let mut state = self.state();
+        let config = state.config_rules.clone();
+        let before = state.ad_hoc.len();
+        state.ad_hoc.retain(|identity| {
+            !config
+                .iter()
+                .any(|rule| same_rule(&rule.identity, identity))
+        });
+        let graduated = before - state.ad_hoc.len();
+        if graduated > 0 {
+            tracing::info!("{graduated} ad-hoc rules graduated into the config");
+            if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+                tracing::warn!("couldn't save rules.toml: {error}");
+            }
+        }
+        state.lay_out_rules();
+    }
+
+    fn add_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
+        let identity = normalize_identity(identity)?;
+        if state
+            .rules
+            .iter()
+            .any(|rule| same_rule(&rule.identity, &identity))
+        {
+            return Ok(());
+        }
+        state.check_ad_hoc_rules_on()?;
+        state.ad_hoc.push(identity.clone());
+        if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+            state.ad_hoc.pop();
+            return Err(refused(
+                ErrorCode::AdHocRulesOff,
+                format!("couldn't save rules.toml: {error}"),
+            ));
+        }
+        tracing::info!("added an ad-hoc rule: {}", loggable(&identity));
+        state.lay_out_rules();
+        Ok(())
+    }
+
+    fn remove_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
+        let identity = normalize_identity(identity)?;
+        let Some(index) = state
+            .ad_hoc
+            .iter()
+            .position(|kept| same_rule(kept, &identity))
+        else {
+            if state
+                .config_rules
+                .iter()
+                .any(|rule| same_rule(&rule.identity, &identity))
+            {
+                return Err(refused(
+                    ErrorCode::ConfigRule,
+                    format!(
+                        "{identity} comes from the config; snooze it instead with `nightcap rules snooze {identity}`"
+                    ),
+                ));
+            }
+            return Err(refused(
+                ErrorCode::NoSuchRule,
+                format!("{identity} isn't a rule"),
+            ));
+        };
+        state.check_ad_hoc_rules_on()?;
+        let removed = state.ad_hoc.remove(index);
+        if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+            state.ad_hoc.insert(index, removed);
+            return Err(refused(
+                ErrorCode::AdHocRulesOff,
+                format!("couldn't save rules.toml: {error}"),
+            ));
+        }
+        tracing::info!("removed an ad-hoc rule: {}", loggable(&identity));
+        state
+            .snoozes
+            .retain(|snoozed| !same_rule(snoozed, &identity));
+        state.lay_out_rules();
+        Ok(())
+    }
+
     /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0011).
     fn save(&self) {
         let mut state = self.state();
@@ -768,6 +907,7 @@ impl Core {
             host: state.context.host.clone(),
             rules: state.rules.clone(),
             config_error: state.config_error.clone(),
+            ad_hoc_error: state.ad_hoc_error.clone(),
             snoozes: state.snoozes.clone(),
             timed_disable: state.timed_disable,
             permissions: Permissions {
@@ -881,6 +1021,51 @@ impl State {
         }
     }
 
+    /// The config rules, then the ad-hoc rules the config doesn't have.
+    fn lay_out_rules(&mut self) {
+        let ad_hoc = self.ad_hoc.iter().cloned().map(|identity| Rule {
+            identity,
+            source: RuleSource::AdHoc,
+        });
+        self.rules = self.config_rules.iter().cloned().chain(ad_hoc).collect();
+    }
+
+    fn check_ad_hoc_rules_on(&self) -> Result<(), ErrorReply> {
+        match &self.ad_hoc_error {
+            None => Ok(()),
+            Some(error) => Err(refused(
+                ErrorCode::AdHocRulesOff,
+                format!("ad-hoc rules are off: {error}"),
+            )),
+        }
+    }
+
+    /// Snoozes or unsnoozes an existing rule, config or ad-hoc, until the next schedule
+    /// transition.
+    fn snooze(&mut self, identity: &RuleIdentity, snoozed: bool) -> Result<(), ErrorReply> {
+        let identity = normalize_identity(identity)?;
+        let Some(rule) = self
+            .rules
+            .iter()
+            .find(|rule| same_rule(&rule.identity, &identity))
+        else {
+            return Err(refused(
+                ErrorCode::NoSuchRule,
+                format!("{identity} isn't a rule"),
+            ));
+        };
+        let rule = rule.identity.clone();
+        self.snoozes.retain(|kept| !same_rule(kept, &rule));
+        if snoozed {
+            tracing::info!(
+                "snoozed {} until the next schedule transition",
+                loggable(&rule)
+            );
+            self.snoozes.push(rule);
+        }
+        Ok(())
+    }
+
     /// Snoozes and the manual state last only until the next schedule transition (ADR-0006).
     fn pass_transition(&mut self) {
         self.manual_state = None;
@@ -917,6 +1102,43 @@ fn wanted(decision: &Decision) -> Option<bool> {
             }
             Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
         }),
+    }
+}
+
+fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
+    ErrorReply {
+        code,
+        message: message.into(),
+    }
+}
+
+/// `identity` as rules keep it: a bundle ID is letters, digits, hyphens and periods, and a
+/// domain is bare and normalized (ADR-0008).
+fn normalize_identity(identity: &RuleIdentity) -> Result<RuleIdentity, ErrorReply> {
+    let normalized = match identity {
+        RuleIdentity::App(bundle_id) => (!bundle_id.is_empty()
+            && bundle_id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.'))
+        .then(|| identity.clone()),
+        RuleIdentity::Domain(domain) => domain::normalize(domain).map(RuleIdentity::Domain),
+    };
+    normalized.ok_or_else(|| {
+        refused(
+            ErrorCode::BadIdentity,
+            format!(
+                "{identity} isn't a rule identity like app:com.figma.Desktop or domain:figma.com"
+            ),
+        )
+    })
+}
+
+/// Rules with the same identity are the same rule; bundle IDs compare case-insensitively.
+fn same_rule(a: &RuleIdentity, b: &RuleIdentity) -> bool {
+    match (a, b) {
+        (RuleIdentity::App(a), RuleIdentity::App(b)) => a.eq_ignore_ascii_case(b),
+        (RuleIdentity::Domain(a), RuleIdentity::Domain(b)) => a == b,
+        _ => false,
     }
 }
 

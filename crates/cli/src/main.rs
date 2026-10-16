@@ -57,12 +57,62 @@ enum Command {
     Resume,
     /// Check for an update now; Nightcap shows what it finds and offers to install it.
     Update,
+    /// List, add, remove or snooze rules, or export the ad-hoc ones for the config.
+    Rules {
+        #[command(subcommand)]
+        action: RulesAction,
+    },
     /// Read the config again, after changing it.
     Reload {
         /// Keep trying this long for Nightcap to start, e.g. 5s.
         #[arg(long, value_parser = parse_duration)]
         wait: Option<Duration>,
     },
+}
+
+#[derive(Subcommand)]
+enum RulesAction {
+    /// Show every rule and where it comes from.
+    List {
+        /// Print the rules as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com.
+    Add {
+        #[arg(value_parser = parse_identity)]
+        identity: RuleIdentity,
+    },
+    /// Remove an ad-hoc rule; a config rule can only be snoozed.
+    Remove {
+        #[arg(value_parser = parse_identity)]
+        identity: RuleIdentity,
+    },
+    /// Mute a rule until the next schedule transition.
+    Snooze {
+        #[arg(value_parser = parse_identity)]
+        identity: RuleIdentity,
+    },
+    /// Undo a snooze.
+    Unsnooze {
+        #[arg(value_parser = parse_identity)]
+        identity: RuleIdentity,
+    },
+    /// Print the ad-hoc rules, ready to paste into the config.
+    Export {
+        #[arg(long, value_enum)]
+        format: Format,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Format {
+    Nix,
+    Toml,
+}
+
+fn parse_identity(text: &str) -> Result<RuleIdentity, String> {
+    RuleIdentity::try_from(text.to_owned())
 }
 
 fn parse_positive_duration(text: &str) -> Result<Duration, String> {
@@ -135,6 +185,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             println!("Reloaded the config. Rules: {}", rules(&status.rules));
             return Ok(());
         }
+        Command::Rules { action } => return run_rules(instance, action),
         Command::Update => {
             let Payload::UpdateCheckStarted = request(instance, &Request::Update, None)? else {
                 return Err(unexpected_reply());
@@ -156,6 +207,64 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
     println!("Night Shift {}", describe(&decision));
+    Ok(())
+}
+
+fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
+    let (command, done) = match action {
+        RulesAction::List { json } => {
+            let Payload::Rules(rules) = request(instance, &Request::Query(Query::Rules), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&rules).context("couldn't encode the rules")?
+                );
+            } else if rules.is_empty() {
+                println!("No rules.");
+            } else {
+                for rule in &rules {
+                    println!("{}", rule_name(rule));
+                }
+            }
+            return Ok(());
+        }
+        RulesAction::Export { format } => {
+            let format = match format {
+                Format::Nix => protocol::ExportFormat::Nix,
+                Format::Toml => protocol::ExportFormat::Toml,
+            };
+            let Payload::Export(text) =
+                request(instance, &Request::Query(Query::Export(format)), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            print!("{text}");
+            return Ok(());
+        }
+        RulesAction::Add { identity } => {
+            let done = format!("Added {identity}.");
+            (protocol::Command::AddRule(identity), done)
+        }
+        RulesAction::Remove { identity } => {
+            let done = format!("Removed {identity}.");
+            (protocol::Command::RemoveRule(identity), done)
+        }
+        RulesAction::Snooze { identity } => {
+            let done = format!("Snoozed {identity} until the next schedule transition.");
+            (protocol::Command::Snooze(identity), done)
+        }
+        RulesAction::Unsnooze { identity } => {
+            let done = format!("Unsnoozed {identity}.");
+            (protocol::Command::Unsnooze(identity), done)
+        }
+    };
+    let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
+        return Err(unexpected_reply());
+    };
+    println!("{done} Night Shift {}.", describe(&decision));
     Ok(())
 }
 
@@ -283,6 +392,7 @@ fn rules(rules: &[Rule]) -> String {
 fn rule_name(rule: &Rule) -> String {
     let source = match rule.source {
         RuleSource::Config => "config",
+        RuleSource::AdHoc => "ad-hoc",
     };
     format!("{} ({source} rule)", rule.identity)
 }

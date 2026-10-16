@@ -8,11 +8,12 @@ use std::time::Duration;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
-    NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
-    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    Command, Decision, ErrorCode, ExportFormat, Hello, HelloMessage, HelloReply, Install, Instance,
+    NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request,
+    Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
 };
 
+use crate::adhoc;
 use crate::state::{Persisted, Store};
 use crate::{Clock, Core, CoreError, Effect, Event, Setup, Waker};
 
@@ -109,6 +110,7 @@ fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
         socket: socket.to_owned(),
         state_file: socket.with_file_name("state.json"),
         config_file: config_beside(socket),
+        rules_file: socket.parent().unwrap().with_file_name("rules.toml"),
         clock: TestClock::at("2026-10-16T12:00:00+02:00"),
         zone: TimeZone::get("Europe/Zurich").unwrap(),
     }
@@ -152,6 +154,21 @@ fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
         schedule: custom_hours(),
     });
     (core, wakes, clock)
+}
+
+fn ad_hoc(identity: RuleIdentity) -> Rule {
+    Rule {
+        identity,
+        source: RuleSource::AdHoc,
+    }
+}
+
+fn rules_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Vec<Rule> {
+    let (_, response) = exchange(core, socket, wakes, Request::Query(Query::Rules));
+    let Response::Ok(Payload::Rules(rules)) = response else {
+        panic!("expected rules, got {response:?}");
+    };
+    rules
 }
 
 fn figma() -> RuleIdentity {
@@ -1502,6 +1519,221 @@ fn snoozing_the_only_domain_rule_stops_the_watch() {
 }
 
 #[test]
+fn an_added_rule_applies_at_once_and_survives_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::AddRule(figma()));
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            verdict: Verdict::ForceOff,
+            reasons: vec![Reason::Rule(ad_hoc(figma()))],
+        }))
+    );
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    assert_eq!(rules_of(&core, &socket, &wakes), vec![ad_hoc(figma())]);
+}
+
+fn refusal(response: Response) -> ErrorCode {
+    let Response::Error(error) = response else {
+        panic!("expected an error, got {response:?}");
+    };
+    error.code
+}
+
+#[test]
+fn an_added_domain_is_normalized_and_a_bad_identity_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(RuleIdentity::Domain("Figma.COM".to_owned())),
+    );
+
+    assert_eq!(
+        rules_of(&core, &socket, &wakes),
+        vec![ad_hoc(RuleIdentity::Domain("figma.com".to_owned()))]
+    );
+    for bad in [
+        RuleIdentity::Domain("https://figma.com".to_owned()),
+        RuleIdentity::App("com.figma.Desktop/".to_owned()),
+    ] {
+        let (_, response) = send(&core, &socket, &wakes, Command::AddRule(bad));
+        assert_eq!(refusal(response), ErrorCode::BadIdentity);
+    }
+}
+
+#[test]
+fn removing_an_ad_hoc_rule_lifts_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(rules_of(&core, &socket, &wakes), Vec::new());
+}
+
+#[test]
+fn a_config_rule_can_be_snoozed_but_not_removed() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+
+    let (_, response) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
+    let Response::Error(error) = response else {
+        panic!("expected an error, got {response:?}");
+    };
+    assert_eq!(error.code, ErrorCode::ConfigRule);
+    assert!(
+        error
+            .message
+            .contains("nightcap rules snooze app:com.figma.Desktop")
+    );
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::Snooze(figma()));
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::Unsnooze(figma()));
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+}
+
+#[test]
+fn a_rule_that_doesnt_exist_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    let (_, removed) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
+    let (_, snoozed) = send(&core, &socket, &wakes, Command::Snooze(figma()));
+
+    assert_eq!(refusal(removed), ErrorCode::NoSuchRule);
+    assert_eq!(refusal(snoozed), ErrorCode::NoSuchRule);
+}
+
+#[test]
+fn an_ad_hoc_rule_graduates_when_the_config_takes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+
+    write_config(&socket, "[rules]\napp = [\"com.figma.desktop\"]\n");
+    exchange(&core, &socket, &wakes, Request::Reload);
+
+    assert_eq!(
+        rules_of(&core, &socket, &wakes),
+        vec![app_rule("com.figma.desktop")]
+    );
+    let store = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
+    assert_eq!(store.load(), Ok(Vec::new()));
+}
+
+#[test]
+fn export_prints_the_ad_hoc_rules_for_the_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(RuleIdentity::Domain("figma.com".to_owned())),
+    );
+
+    let export = |format| {
+        let (_, response) = exchange(
+            &core,
+            &socket,
+            &wakes,
+            Request::Query(Query::Export(format)),
+        );
+        let Response::Ok(Payload::Export(text)) = response else {
+            panic!("expected an export, got {response:?}");
+        };
+        text
+    };
+
+    assert_eq!(
+        export(ExportFormat::Nix),
+        "{ app = [ \"com.figma.Desktop\" ]; domain = [ \"figma.com\" ]; }\n"
+    );
+    assert_eq!(
+        export(ExportFormat::Toml),
+        "[rules]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n"
+    );
+}
+
+#[test]
+fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
+    let newer = "version = 2\n[rules]\napp = [\"com.figma.Desktop\"]\n";
+    std::fs::write(&rules_file, newer).unwrap();
+    let (core, wakes) = start(&socket);
+
+    let (_, response) = send(&core, &socket, &wakes, Command::AddRule(figma()));
+
+    assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
+    assert!(status_of(&core, &socket, &wakes).ad_hoc_error.is_some());
+    assert_eq!(rules_of(&core, &socket, &wakes), Vec::new());
+    assert_eq!(std::fs::read_to_string(&rules_file).unwrap(), newer);
+}
+
+#[test]
+fn the_rules_query_lists_every_rule_with_its_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes) = start(&socket);
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(RuleIdentity::Domain("figma.com".to_owned())),
+    );
+
+    assert_eq!(
+        rules_of(&core, &socket, &wakes),
+        vec![
+            app_rule("com.figma.Desktop"),
+            ad_hoc(RuleIdentity::Domain("figma.com".to_owned())),
+        ]
+    );
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1549,6 +1781,7 @@ fn a_status_query_is_answered_on_the_next_tick() {
             host: None,
             rules: Vec::new(),
             config_error: None,
+            ad_hoc_error: None,
             snoozes: Vec::new(),
             timed_disable: None,
             permissions: Permissions {
@@ -1713,6 +1946,43 @@ fn the_login_item_is_registered_only_once_across_restarts() {
     let (core, _wakes) = start_with(restarted);
 
     assert_eq!(core.handle(Event::Launched), vec![Effect::StartUpdater]);
+}
+
+#[test]
+fn saved_ad_hoc_rules_load_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = adhoc::Store::new(dir.path().join("nightcap").join("rules.toml"));
+    let rules = vec![figma(), RuleIdentity::Domain("figma.com".to_owned())];
+
+    store.save(&rules).unwrap();
+
+    assert_eq!(store.load(), Ok(rules));
+}
+
+#[test]
+fn ad_hoc_rules_from_a_newer_build_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rules.toml");
+    std::fs::write(
+        &path,
+        "version = 2\n[rules]\napp = [\"com.figma.Desktop\"]\n",
+    )
+    .unwrap();
+
+    assert!(adhoc::Store::new(path).load().is_err());
+}
+
+#[test]
+fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("rules.toml");
+    std::fs::write(
+        &path,
+        "version = 1\nlabel = \"x\"\n[rules]\napp = [\"com.figma.Desktop\"]\nkeyword = []\n",
+    )
+    .unwrap();
+
+    assert_eq!(adhoc::Store::new(path).load(), Ok(vec![figma()]));
 }
 
 #[test]

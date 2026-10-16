@@ -107,8 +107,8 @@ pub enum Request {
     Update,
 }
 
-/// What the CLI asks Nightcap to do; each one answers with the resulting decision.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What the CLI and the menu ask Nightcap to do; each one answers with the resulting decision.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     On,
@@ -118,12 +118,29 @@ pub enum Command {
     Disable(SignedDuration),
     /// Clears the timed disable, every snooze and the manual state.
     Resume,
+    /// Adds an ad-hoc rule (ADR-0009).
+    AddRule(RuleIdentity),
+    /// Removes an ad-hoc rule; a config rule can only be snoozed.
+    RemoveRule(RuleIdentity),
+    /// Mutes a rule until the next schedule transition.
+    Snooze(RuleIdentity),
+    Unsnooze(RuleIdentity),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Query {
     Status,
+    Rules,
+    /// The ad-hoc rules that aren't in the config yet, ready to paste into it.
+    Export(ExportFormat),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExportFormat {
+    Nix,
+    Toml,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,6 +157,8 @@ pub enum Payload {
     Decision(Decision),
     /// Sparkle is checking; it shows what it finds in its own window.
     UpdateCheckStarted,
+    Rules(Vec<Rule>),
+    Export(String),
 }
 
 /// What the core makes of everything it knows: whether Night Shift is forced off or left alone,
@@ -231,6 +250,7 @@ impl TryFrom<String> for RuleIdentity {
 #[serde(rename_all = "snake_case")]
 pub enum RuleSource {
     Config,
+    AdHoc,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -256,6 +276,8 @@ pub struct Status {
     pub rules: Vec<Rule>,
     /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
     pub config_error: Option<String>,
+    /// Why `rules.toml` can't be used; ad-hoc rules are then off.
+    pub ad_hoc_error: Option<String>,
     /// Rules snoozed until the next schedule transition.
     pub snoozes: Vec<RuleIdentity>,
     /// When the timed disable ends, if one is running.
@@ -337,6 +359,13 @@ pub enum ErrorCode {
     InvalidConfig,
     /// The install doesn't update itself: its installer does, or it's a dev build.
     NoUpdater,
+    /// The identity isn't one a rule can have, such as a domain with a path.
+    BadIdentity,
+    /// The rule comes from the config, which only snoozing can override at runtime.
+    ConfigRule,
+    NoSuchRule,
+    /// `rules.toml` is invalid or from a newer Nightcap, so ad-hoc rules can't change.
+    AdHocRulesOff,
 }
 
 #[cfg(test)]
@@ -398,6 +427,7 @@ mod tests {
                 host: Some("www.figma.com".to_owned()),
                 rules: Vec::new(),
                 config_error: None,
+                ad_hoc_error: None,
                 snoozes: Vec::new(),
                 timed_disable: None,
                 permissions: Permissions {
@@ -405,7 +435,7 @@ mod tests {
                     notifications: NotificationPermission::NotRequested,
                 },
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 
@@ -458,6 +488,35 @@ mod tests {
                 }],
             }),
             r#"{"verdict":"hands_off","reasons":[{"manual_state":{"state":"on","until":"2026-10-16T05:50:47Z"}}]}"#
+        );
+    }
+
+    #[test]
+    fn rule_messages_match_the_documented_wire_format() {
+        let figma = RuleIdentity::Domain("figma.com".to_owned());
+        assert_eq!(
+            json(&Request::Command(Command::AddRule(figma.clone()))),
+            r#"{"command":{"add_rule":"domain:figma.com"}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::Snooze(figma.clone()))),
+            r#"{"command":{"snooze":"domain:figma.com"}}"#
+        );
+        assert_eq!(json(&Request::Query(Query::Rules)), r#"{"query":"rules"}"#);
+        assert_eq!(
+            json(&Request::Query(Query::Export(ExportFormat::Nix))),
+            r#"{"query":{"export":"nix"}}"#
+        );
+        assert_eq!(
+            json(&Response::Ok(Payload::Rules(vec![Rule {
+                identity: figma,
+                source: RuleSource::AdHoc,
+            }]))),
+            r#"{"ok":{"rules":[{"identity":"domain:figma.com","source":"ad_hoc"}]}}"#
+        );
+        assert_eq!(
+            json(&Response::Ok(Payload::Export("{ }".to_owned()))),
+            r#"{"ok":{"export":"{ }"}}"#
         );
     }
 

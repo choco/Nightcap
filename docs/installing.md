@@ -45,6 +45,8 @@ domain = ["figma.com"]
 
 An app rule forces Night Shift off while that app is in front. A domain rule does it while Safari or Chrome shows that domain or any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Write domains bare, with no scheme, path, port or wildcard. Domain rules need the Accessibility permission, which Nightcap asks for the first time one could apply.
 
+Rules added while Nightcap runs, with `nightcap rules add` or from the menu, live in `rules.toml`. `nightcap rules export --format nix` (or `toml`) prints them ready to paste into the config; once the config has a rule, Nightcap drops its own copy.
+
 Nightcap doesn't watch the file. After writing it, run:
 
 ```sh
