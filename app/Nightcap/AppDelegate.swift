@@ -280,10 +280,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         guard let accessibility, let core else { return }
+        let settings = core.settings()
         let onboarding = Onboarding(
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
-            opensAtLogin: core.settings().openAtLogin?.on,
+            opensAtLogin: settings.openAtLogin?.on,
+            websitesFromConfig: settings.websiteChecking.locked ? settings.websiteChecking.on : nil,
             chooseOpenAtLogin: { [weak self] on in
                 self?.apply(core.handle(event: .commandChosen(command: .openAtLogin(on ? .on : .off))))
             },

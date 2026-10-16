@@ -35,6 +35,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let askForAccessibility: () -> Void
     /// Nil where Nightcap doesn't open itself at login, so the row doesn't show.
     private let opensAtLogin: Bool?
+    /// The config's `websites`, which answers its row for good; nil when the config leaves it
+    /// to the user.
+    private let websitesFromConfig: Bool?
     private let chooseOpenAtLogin: (Bool) -> Void
     private let onNotificationsRead: () -> Void
     private let onFinish: (_ websites: Bool) -> Void
@@ -56,6 +59,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         opensAtLogin: Bool?,
+        websitesFromConfig: Bool?,
         chooseOpenAtLogin: @escaping (Bool) -> Void,
         onNotificationsRead: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool) -> Void
@@ -63,6 +67,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.accessibilityGranted = accessibilityGranted
         self.askForAccessibility = askForAccessibility
         self.opensAtLogin = opensAtLogin
+        self.websitesFromConfig = websitesFromConfig
         self.chooseOpenAtLogin = chooseOpenAtLogin
         self.onNotificationsRead = onNotificationsRead
         self.onFinish = onFinish
@@ -73,6 +78,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window.backgroundColor = .nightcapWindow
         // An install that already opens at login has its answer.
         if opensAtLogin == true { answers.openAtLogin = true }
+        if let websitesFromConfig {
+            answers.websites = websitesFromConfig
+            if websitesFromConfig, accessibilityGranted() { answers.accessibility = true }
+        }
         advance()
         draw()
         window.center()
@@ -297,11 +306,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
         heading.setContentHuggingPriority(.defaultLow, for: .horizontal)
         var line: [NSView] = [heading]
         if let result, !isCurrent {
-            line.append(Look.secondary(result, width: 120))
-            line.append(Look.link("Change") { [weak self] in
-                self?.current = row
-                self?.draw()
-            })
+            if row == .websites, websitesFromConfig != nil {
+                line.append(Look.secondary(result, width: 180))
+            } else {
+                line.append(Look.secondary(result, width: 120))
+                line.append(Look.link("Change") { [weak self] in
+                    self?.current = row
+                    self?.draw()
+                })
+            }
         }
         let header = NSStackView(views: line)
         header.orientation = .horizontal
@@ -354,7 +367,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 }
             return ("Notifications", result, answers.notifications == .allowed)
         case .websites:
-            return ("Website checking", answers.websites.map { $0 ? "On" : "Off" }, answers.websites == true)
+            let result = answers.websites.map { $0 ? "On" : "Off" }
+            return (
+                "Website checking",
+                websitesFromConfig == nil ? result : result.map { "\($0), from your config" },
+                answers.websites == true
+            )
         case .accessibility:
             return ("Accessibility", answers.accessibility.map { $0 ? "Allowed" : "Not now" }, answers.accessibility == true)
         case .openAtLogin:

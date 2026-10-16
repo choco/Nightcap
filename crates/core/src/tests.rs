@@ -2440,6 +2440,20 @@ fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask() {
 }
 
 #[test]
+fn a_self_managed_release_still_asks_about_opening_at_login_when_the_config_sets_website_checking()
+{
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = false\n");
+    let (core, _wakes) = start_as(&socket, Instance::Release, Install::SelfManaged);
+
+    assert!(
+        core.handle(Event::Launched)
+            .contains(&Effect::ShowOnboarding { completed: 0 })
+    );
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);

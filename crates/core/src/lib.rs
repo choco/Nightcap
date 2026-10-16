@@ -733,8 +733,8 @@ impl Core {
                 let mut state = self.state();
                 let mut effects = Vec::new();
                 if state.onboarding < ONBOARDING {
-                    if state.config_websites.is_some() {
-                        // The config answered the only question there is.
+                    // The config can answer website checking; opening at login it can't.
+                    if state.config_websites.is_some() && !state.opens_itself_at_login {
                         state.onboarding = ONBOARDING;
                     } else {
                         effects.push(Effect::ShowOnboarding {
