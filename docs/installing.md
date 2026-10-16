@@ -8,7 +8,7 @@ Every release on GitHub carries three files:
 
 - `Nightcap-<version>.zip`: the signed app, `Nightcap.app`.
 - `SHA256SUMS`: the zip's SHA-256. Check downloads against it.
-- `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://choco.github.io/nightcap/appcast.xml`, which always serves the newest one.
+- `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://choco.github.io/Nightcap/appcast.xml`, which always serves the newest one.
 
 ## Installing the app
 
