@@ -991,11 +991,9 @@ impl Core {
     /// Watches the frontmost browser whenever website checking is on (ADR-0016).
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        let wanted = state
-            .context
-            .app
-            .clone()
-            .filter(|_| state.is_browser && state.website_checking());
+        let wanted = state.context.app.clone().filter(|_| {
+            state.is_browser && state.website_checking() && !state.front_app_has_rule()
+        });
         match (&state.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {
@@ -1474,6 +1472,21 @@ impl State {
 
     fn website_checking(&self) -> bool {
         self.config_websites.unwrap_or(self.websites)
+    }
+
+    /// Whether an unsnoozed app rule covers the frontmost app, which forces Night Shift off
+    /// whatever a browser's tab shows, so its host doesn't matter.
+    fn front_app_has_rule(&self) -> bool {
+        self.context.app.as_ref().is_some_and(|bundle_id| {
+            let identity = RuleIdentity::App(bundle_id.clone());
+            self.rules
+                .iter()
+                .any(|rule| same_rule(&rule.identity, &identity))
+                && !self
+                    .snoozes
+                    .iter()
+                    .any(|snoozed| same_rule(snoozed, &identity))
+        })
     }
 
     /// The reason under the menu's status line, naming what's in front rather than rules.

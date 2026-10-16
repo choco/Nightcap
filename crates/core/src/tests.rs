@@ -1420,14 +1420,14 @@ fn leaving_the_browser_stops_watching_and_lifts_the_force() {
 }
 
 #[test]
-fn an_app_rule_on_a_watched_browser_forces_night_shift_off_without_waiting_for_the_host() {
+fn a_browser_its_app_rule_forces_off_is_watched_again_while_the_rule_is_snoozed() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(
         &socket,
         "websites = true\n[rules]\napp = [\"com.apple.Safari\"]\n",
     );
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
     grant_accessibility(&core);
     core.handle(Event::StatusChanged {
         enabled: true,
@@ -1436,11 +1436,12 @@ fn an_app_rule_on_a_watched_browser_forces_night_shift_off_without_waiting_for_t
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
-        vec![
-            watch("com.apple.Safari", 1),
-            Effect::SetNightShift { enabled: false }
-        ]
+        vec![Effect::SetNightShift { enabled: false }]
     );
+    let (effects, _) = send(&core, &socket, &wakes, Command::Snooze(safari()));
+    assert!(effects.contains(&watch("com.apple.Safari", 1)));
+    let (effects, _) = send(&core, &socket, &wakes, Command::Unsnooze(safari()));
+    assert!(effects.contains(&Effect::StopWatching));
 }
 
 #[test]
@@ -2297,6 +2298,24 @@ fn the_menu_snoozes_a_config_rule_for_the_site_rather_than_removing_it() {
             Command::Unsnooze(domain("figma.com"))
         ))
     );
+}
+
+fn safari() -> RuleIdentity {
+    RuleIdentity::App("com.apple.Safari".to_owned())
+}
+
+#[test]
+fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_figma(&socket);
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::AddRule(safari()));
+    assert!(effects.contains(&Effect::StopWatching));
+    assert_eq!(site_toggle(&core), None);
+    assert_eq!(status_of(&core, &socket, &wakes).host, None);
+    let (effects, _) = send(&core, &socket, &wakes, Command::RemoveRule(safari()));
+    assert!(effects.contains(&watch("com.apple.Safari", 2)));
 }
 
 fn accessibility_notice() -> Effect {
