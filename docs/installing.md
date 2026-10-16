@@ -15,8 +15,8 @@ Every release on GitHub carries three files:
 1. **Install the bundle byte for byte.** Unzip it with `ditto -x -k` or anything that keeps symlinks, and change nothing inside it: no re-signing, no patching, no fixups (in Nix, `dontFixup = true`). Every permission the user grants is tied to the bundle's signature, so a modified bundle loses Accessibility and notifications.
 2. **Decide who owns updates.**
    - If your installer updates Nightcap, keep the bundle's folder read-only to the user, as the Nix store is. Nightcap then sees a *managed install*: it never updates itself and never adds a login item, and `nightcap update` refuses, pointing at you.
-   - If the folder is writable, as `/Applications` is, Nightcap is *self-managed*. It checks the appcast once a day, downloads updates in the background, installs them when it quits, and adds itself as a login item.
-3. **Start it.** A managed install starts `Contents/MacOS/Nightcap` from a LaunchAgent, pointing straight at the installed path, with `KeepAlive` so launchd restarts it. A self-managed install starts itself at login.
+   - If the folder is writable, as `/Applications` is, Nightcap is *self-managed*. It checks the appcast once a day, downloads updates in the background, and installs them when it quits. It opens at login if the user chooses it, in onboarding or in Settings.
+3. **Start it.** A managed install starts `Contents/MacOS/Nightcap` from a LaunchAgent, pointing straight at the installed path, with `KeepAlive` so launchd restarts it. A self-managed install opens itself at login if the user chose that.
 4. **Put the CLI on `PATH`.** It's `Contents/Helpers/nightcap`; link it, don't copy it.
 
 A downloaded zip carries the quarantine flag. Nightcap isn't notarized, so a cask removes the flag after installing: `xattr -dr com.apple.quarantine Nightcap.app`.
@@ -35,17 +35,19 @@ Each must be an absolute path; anything else falls back to the default. The CLI 
 
 ## The config
 
-`config.toml` holds only rules. An unknown key is an error, so a typo can't hide a rule:
+`config.toml` holds the rules and, optionally, `websites`, which settles website checking: set, it wins over the user's choice in onboarding, the menu and Settings. An unknown key is an error, so a typo can't hide a rule:
 
 ```toml
+websites = true
+
 [rules]
 app = ["com.figma.Desktop", "com.adobe.Photoshop"]
 domain = ["figma.com"]
 ```
 
-An app rule forces Night Shift off while that app is in front. A domain rule does it while Safari or Chrome shows that domain or any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Write domains bare, with no scheme, path, port or wildcard. Domain rules need the Accessibility permission, which Nightcap asks for the first time one could apply.
+An app rule forces Night Shift off while that app is in front. A domain rule does it while Safari or Chrome shows that domain or any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Write domains bare, with no scheme, path, port or wildcard. Domain rules apply while website checking is on, which the user chooses in onboarding or Settings unless the config sets `websites`. Website checking needs the Accessibility permission, which Nightcap asks for when it's turned on.
 
-Rules added while Nightcap runs, with `nightcap rules add` or from the menu, live in `rules.toml`. `nightcap rules export --format nix` (or `toml`) prints them ready to paste into the config; once the config has a rule, Nightcap drops its own copy.
+Rules added while Nightcap runs, with `nightcap rules add`, from the menu or in Settings, live in `rules.toml`. `nightcap rules export --format nix` (or `toml`), or Settings' "Copy", gives them ready to paste into the config; once the config has a rule, Nightcap drops its own copy.
 
 Nightcap doesn't watch the file. After writing it, run:
 
