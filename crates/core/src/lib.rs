@@ -277,7 +277,7 @@ impl Core {
 impl Core {
     fn react(&self, event: Event) -> Vec<Effect> {
         match event {
-            // Dev builds never start at login: they'd shadow the installed app (ADR-0014).
+            // Dev builds never start at login: they'd shadow the installed app (ADR-0015).
             Event::Launched => {
                 let state = self.state();
                 let mut effects = Vec::new();

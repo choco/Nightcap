@@ -287,7 +287,7 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
-/// Who owns updates and starting at login (ADR-0014).
+/// Who owns updates and starting at login (ADR-0015).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Install {

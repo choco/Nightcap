@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0015
+---
+
 # Self-managed installs update through Sparkle; managed installs leave updates to their installer
 
 Nightcap is installed two ways. A package manager such as Nix puts the bundle where the user can't write it (the Nix store), starts it from a LaunchAgent, and owns its updates. Brew or a manual drag-install puts it in `/Applications`, where nothing else updates it or starts it at login. The official homebrew/cask tap only accepts apps that pass Gatekeeper, which a self-signed, un-notarized app doesn't, so brew installs come from a personal tap whose cask strips the quarantine flag. Every update must keep the Accessibility and notification grants, which are tied to the signing requirement (ADR-0004).
