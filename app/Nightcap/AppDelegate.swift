@@ -87,6 +87,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchSystem() {
+        reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.reportFrontmostApp(app) }
+        })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -106,6 +113,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.apply(core.handle(event: .timeZoneChanged(ianaId: TimeZone.current.identifier)))
             }
         })
+    }
+
+    private func reportFrontmostApp(_ app: NSRunningApplication?) {
+        guard let core else { return }
+        apply(core.handle(event: .appActivated(bundleId: app?.bundleIdentifier)))
+    }
+
+    /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
+    /// dropped while the prompt waits for an answer.
+    private func notify(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        Task {
+            let center = UNUserNotificationCenter.current()
+            do {
+                guard try await center.requestAuthorization(options: [.alert, .sound]) else {
+                    log.notice("notifications are off; dropped \"\(title, privacy: .public)\"")
+                    return
+                }
+                try await center.add(request)
+            } catch {
+                log.error("couldn't post \"\(title, privacy: .public)\": \(error, privacy: .public)")
+            }
+        }
     }
 
     /// A wall-clock timer, so it fires on time after sleep or a clock change.
@@ -183,6 +216,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .cancelWakeup:
                 wakeup?.cancel()
                 wakeup = nil
+            case .notify(let title, let body):
+                notify(title: title, body: body)
             }
         }
     }

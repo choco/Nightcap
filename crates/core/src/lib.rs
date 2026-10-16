@@ -1,5 +1,7 @@
 uniffi::setup_scaffolding!();
 
+mod config;
+mod engine;
 mod ipc;
 mod logging;
 mod schedule;
@@ -14,10 +16,12 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    Command, ErrorCode, ErrorReply, Install, Instance, NightShift, NotificationPermission, OnOff,
-    Payload, Permissions, Query, Request, Response, Schedule, Status, TimeOfDay,
+    Command, Decision, ErrorCode, ErrorReply, Install, Instance, NightShift,
+    NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
+    Schedule, Status, TimeOfDay, Verdict,
 };
 
+use engine::{Context, Inputs};
 use schedule::{SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
@@ -49,6 +53,10 @@ pub trait Waker: Send + Sync {
 #[derive(Debug, uniffi::Enum)]
 pub enum Event {
     Launched,
+    /// An app came to the front; some processes have no bundle ID.
+    AppActivated {
+        bundle_id: Option<String>,
+    },
     /// The login item exists, whether the shell just registered it or found it in place.
     LoginItemRegistered,
     PermissionsChanged {
@@ -89,6 +97,10 @@ pub enum Effect {
         at: SystemTime,
     },
     CancelWakeup,
+    Notify {
+        title: String,
+        body: String,
+    },
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -103,9 +115,13 @@ pub enum CoreError {
     Io { message: String },
 }
 
-/// How long before a computed schedule transition a status callback can arrive and still be that
-/// transition: CoreBrightness's sun times and the core's can differ slightly (ADR-0005).
+/// How far from a computed schedule transition a status callback can arrive and still be macOS
+/// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0005).
 const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
+
+/// How long after waking macOS may take to perform a schedule transition it missed during sleep.
+/// A guess until measured.
+const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
 
 /// Where the core reads the time, so that tests control it completely.
 trait Clock: Send + Sync {
@@ -126,6 +142,7 @@ pub struct Core {
     install: Install,
     socket: PathBuf,
     store: state::Store,
+    config_file: PathBuf,
     clock: Arc<dyn Clock>,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
     state: Mutex<State>,
@@ -137,6 +154,7 @@ struct Setup {
     install: Install,
     socket: PathBuf,
     state_file: PathBuf,
+    config_file: PathBuf,
     clock: Arc<dyn Clock>,
     zone: TimeZone,
 }
@@ -147,6 +165,12 @@ struct State {
     night_shift: NightShift,
     manual_state: Option<OnOff>,
     timeline: Timeline,
+    context: Context,
+    rules: Vec<Rule>,
+    config_error: Option<String>,
+    /// The write the shell was last asked for, until a status callback reports the result.
+    pending_write: Option<bool>,
+    unreported: Option<Unreported>,
     /// Every schedule transition up to here has been applied.
     applied_until: Timestamp,
     /// The wakeup the shell was last asked for.
@@ -177,12 +201,11 @@ impl Core {
         let socket = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
-        let state_folder = etcetera::base_strategy::Xdg::new()
-            .ok()
-            .and_then(|xdg| xdg.state_dir())
-            .ok_or_else(|| CoreError::Io {
-                message: "can't find the XDG state directory".to_owned(),
-            })?;
+        let missing = |what: &str| CoreError::Io {
+            message: format!("can't find the XDG {what} directory"),
+        };
+        let xdg = etcetera::base_strategy::Xdg::new().map_err(|_| missing("base"))?;
+        let state_folder = xdg.state_dir().ok_or_else(|| missing("state"))?;
         let zone = TimeZone::get(&time_zone)
             .map_err(|_| CoreError::UnknownTimeZone { iana_id: time_zone })?;
         let install = if bundle_writable {
@@ -198,6 +221,10 @@ impl Core {
                 state_file: state_folder
                     .join(instance.xdg_folder_name())
                     .join("state.json"),
+                config_file: xdg
+                    .config_dir()
+                    .join(instance.xdg_folder_name())
+                    .join("config.toml"),
                 clock: Arc::new(SystemClock),
                 zone,
             },
@@ -213,6 +240,7 @@ impl Core {
     pub fn handle(&self, event: Event) -> Vec<Effect> {
         self.catch_up();
         let mut effects = self.react(event);
+        self.enforce(&mut effects);
         self.reschedule(&mut effects);
         effects
     }
@@ -225,9 +253,10 @@ impl Core {
         self.catch_up();
         let mut effects = Vec::new();
         for pending in requests.try_iter() {
-            let response = self.answer(&pending.request, &mut effects);
+            let response = self.answer(&pending.request);
             pending.reply(response);
         }
+        self.enforce(&mut effects);
         self.reschedule(&mut effects);
         effects
     }
@@ -238,13 +267,27 @@ impl Core {
         match event {
             // Dev builds never start at login: they'd shadow the installed app (ADR-0014).
             Event::Launched => {
-                let registered = self.state().persisted.login_item_registered;
-                match (self.install, self.instance, registered) {
-                    (Install::SelfManaged, Instance::Release, false) => {
-                        vec![Effect::RegisterLoginItem]
-                    }
-                    _ => Vec::new(),
+                let state = self.state();
+                let mut effects = Vec::new();
+                if let (Install::SelfManaged, Instance::Release, false) = (
+                    self.install,
+                    self.instance,
+                    state.persisted.login_item_registered,
+                ) {
+                    effects.push(Effect::RegisterLoginItem);
                 }
+                if let Some(error) = &state.config_error {
+                    effects.push(Effect::Notify {
+                        title: "Nightcap's config is invalid".to_owned(),
+                        body: format!("Running without its rules. {error}"),
+                    });
+                }
+                effects
+            }
+            Event::AppActivated { bundle_id } => {
+                tracing::debug!("frontmost app: {bundle_id:?}");
+                self.state().context.app = bundle_id;
+                Vec::new()
             }
             Event::LoginItemRegistered => {
                 let mut state = self.state();
@@ -273,6 +316,7 @@ impl Core {
                 } else {
                     NightShift::Off
                 };
+                state.pending_write = None;
                 let previous = state.timeline.schedule.replace(schedule);
                 if previous.is_some_and(|previous| previous != schedule) {
                     // macOS applies an edited schedule at once, so the edit is a schedule
@@ -316,6 +360,10 @@ impl Core {
             }
             Event::Woke => {
                 tracing::debug!("woke");
+                let now = self.clock.now();
+                if let Some(unreported) = &mut self.state().unreported {
+                    unreported.until = now + POST_WAKE_GRACE;
+                }
                 Vec::new()
             }
             Event::Terminating => {
@@ -331,11 +379,19 @@ impl Core {
         let requests = ipc::serve(&setup.socket, waker)?;
         let store = state::Store::new(setup.state_file);
         let persisted = store.load();
+        let (rules, config_error) = match config::load(&setup.config_file) {
+            Ok(rules) => (rules, None),
+            Err(error) => {
+                tracing::warn!("running without config rules: {error}");
+                (Vec::new(), Some(error))
+            }
+        };
         Ok(Self {
             instance: setup.instance,
             install: setup.install,
             socket: setup.socket,
             store,
+            config_file: setup.config_file,
             clock: setup.clock.clone(),
             requests: Mutex::new(requests),
             state: Mutex::new(State {
@@ -346,6 +402,11 @@ impl Core {
                     sun_times: SunTimes::default(),
                     zone: setup.zone,
                 },
+                context: Context::default(),
+                rules,
+                config_error,
+                pending_write: None,
+                unreported: None,
                 applied_until: setup.clock.now(),
                 wakeup: None,
                 accessibility: false,
@@ -359,7 +420,7 @@ impl Core {
         self.state.lock().expect("no panic happens while it's held")
     }
 
-    fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
+    fn answer(&self, request: &Request) -> Response {
         match request {
             Request::Command(command) => {
                 let night_shift = self.state().night_shift;
@@ -374,27 +435,56 @@ impl Core {
                     Command::Off => false,
                     Command::Toggle => night_shift != NightShift::On,
                 };
-                self.set_manual_state(enabled, effects);
-                self.status()
+                let mut state = self.state();
+                state.manual_state = Some(on_off(enabled));
+                Response::Ok(Payload::Decision(state.decide()))
             }
             Request::Query(Query::Status) => self.status(),
+            Request::Reload => match config::load(&self.config_file) {
+                Ok(rules) => {
+                    tracing::info!("reloaded the config: {} rules", rules.len());
+                    let mut state = self.state();
+                    state.rules = rules;
+                    state.config_error = None;
+                    drop(state);
+                    self.status()
+                }
+                Err(error) => {
+                    tracing::warn!("keeping the rules loaded before: {error}");
+                    self.state().config_error = Some(error.clone());
+                    Response::Error(ErrorReply {
+                        code: ErrorCode::InvalidConfig,
+                        message: error,
+                    })
+                }
+            },
         }
     }
 
-    /// Reconciles a status callback with what the core wants (ADR-0005). A match needs nothing,
-    /// a change just ahead of a computed schedule transition is that transition, and anything
-    /// else is an external change, handled like the equivalent command (ADR-0006).
+    /// Reconciles a status callback with what the core wants (ADR-0005). macOS catching up on a
+    /// transition the core already applied, or running just ahead of the next one, is that
+    /// transition; a match needs nothing; anything else is an external change, handled like the
+    /// equivalent command (ADR-0006).
     fn reconcile(&self, state: &mut State, enabled: bool) {
-        let Some(scheduled) = state.timeline.scheduled_state(state.applied_until) else {
+        let now = self.clock.now();
+        match state.unreported.take() {
+            Some(unreported) if now <= unreported.until && enabled == unreported.scheduled => {
+                tracing::info!(
+                    "macOS performed the schedule transition at {}, {:#} late",
+                    unreported.transition,
+                    now.duration_since(unreported.transition)
+                );
+                return;
+            }
+            Some(unreported) if now <= unreported.until => state.unreported = Some(unreported),
+            _ => {}
+        }
+        let Some(wanted) = wanted(&state.decide()) else {
             return;
         };
-        let wanted = state
-            .manual_state
-            .map_or(scheduled, |manual| manual == OnOff::On);
         if enabled == wanted {
             return;
         }
-        let now = self.clock.now();
         if let Some(transition) = state.timeline.next_transition(state.applied_until)
             && transition.duration_since(now) <= TRANSITION_TOLERANCE
             && state.timeline.scheduled_state(transition) == Some(enabled)
@@ -427,6 +517,14 @@ impl Core {
         {
             tracing::info!("schedule transition at {transition}");
             state.manual_state = None;
+            state.unreported = state
+                .timeline
+                .scheduled_state(now)
+                .map(|scheduled| Unreported {
+                    transition,
+                    scheduled,
+                    until: now + TRANSITION_TOLERANCE,
+                });
         }
         state.applied_until = now;
     }
@@ -444,17 +542,19 @@ impl Core {
         }
     }
 
-    /// Writes Night Shift only when it differs from what was last observed (ADR-0005).
-    fn set_manual_state(&self, enabled: bool, effects: &mut Vec<Effect>) {
+    /// Writes Night Shift when what the core wants differs from what was last observed
+    /// (ADR-0005), once until a status callback reports the result.
+    fn enforce(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        state.manual_state = Some(on_off(enabled));
-        let wanted = if enabled {
-            NightShift::On
-        } else {
-            NightShift::Off
+        if state.night_shift == NightShift::Unavailable {
+            return;
+        }
+        let Some(wanted) = wanted(&state.decide()) else {
+            return;
         };
-        if state.night_shift != wanted {
-            effects.push(Effect::SetNightShift { enabled });
+        if wanted != (state.night_shift == NightShift::On) && state.pending_write != Some(wanted) {
+            state.pending_write = Some(wanted);
+            effects.push(Effect::SetNightShift { enabled: wanted });
         }
     }
 
@@ -464,6 +564,7 @@ impl Core {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: self.install,
             night_shift: state.night_shift,
+            decision: state.decide(),
             manual_state: state.manual_state,
             schedule: state.timeline.schedule,
             scheduled_state: state
@@ -471,11 +572,52 @@ impl Core {
                 .scheduled_state(state.applied_until)
                 .map(on_off),
             next_transition: state.timeline.next_transition(state.applied_until),
+            frontmost_app: state.context.app.clone(),
+            rules: state.rules.clone(),
+            config_error: state.config_error.clone(),
             permissions: Permissions {
                 accessibility: state.accessibility,
                 notifications: state.notifications,
             },
         }))
+    }
+}
+
+/// A schedule transition the core applied on its own clock that macOS hasn't reported
+/// performing yet. Until `until`, a callback matching it is macOS catching up, not an external
+/// change.
+struct Unreported {
+    transition: Timestamp,
+    /// Whether the schedule has Night Shift on after the transition.
+    scheduled: bool,
+    until: Timestamp,
+}
+
+impl State {
+    fn decide(&self) -> Decision {
+        engine::decide(&Inputs {
+            context: &self.context,
+            rules: &self.rules,
+            manual_state: self.manual_state,
+            scheduled_state: self
+                .timeline
+                .scheduled_state(self.applied_until)
+                .map(on_off),
+            next_transition: self.timeline.next_transition(self.applied_until),
+        })
+    }
+}
+
+/// The Night Shift state a decision asks for, if it asks for one.
+fn wanted(decision: &Decision) -> Option<bool> {
+    match decision.verdict {
+        Verdict::ForceOff => Some(false),
+        Verdict::HandsOff => decision.reasons.iter().find_map(|reason| match reason {
+            Reason::ManualState { state, .. } | Reason::Schedule { state, .. } => {
+                Some(*state == OnOff::On)
+            }
+            Reason::Rule(_) => None,
+        }),
     }
 }
 

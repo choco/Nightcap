@@ -4,6 +4,7 @@
 //! [`HelloMessage`] from the client, answered by a [`HelloReply`]; then the client sends one
 //! [`Request`] and receives one [`Response`].
 
+use std::fmt;
 use std::path::PathBuf;
 
 use jiff::Timestamp;
@@ -100,9 +101,11 @@ pub enum HelloReply {
 pub enum Request {
     Command(Command),
     Query(Query),
+    /// Reads the config again; answers with the status.
+    Reload,
 }
 
-/// What the CLI asks Nightcap to do; each one answers with the resulting status.
+/// What the CLI asks Nightcap to do; each one answers with the resulting decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
@@ -128,6 +131,88 @@ pub enum Response {
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
     Status(Status),
+    Decision(Decision),
+}
+
+/// What the core makes of everything it knows: whether Night Shift is forced off or left alone,
+/// and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Decision {
+    pub verdict: Verdict,
+    pub reasons: Vec<Reason>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Verdict {
+    ForceOff,
+    HandsOff,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Reason {
+    /// A rule matching the context forces Night Shift off.
+    Rule(Rule),
+    /// Hands off, following the manual state until the next schedule transition, if any.
+    ManualState {
+        state: OnOff,
+        until: Option<Timestamp>,
+    },
+    /// Hands off, following the schedule until its next transition, if any.
+    Schedule {
+        state: OnOff,
+        until: Option<Timestamp>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rule {
+    pub identity: RuleIdentity,
+    pub source: RuleSource,
+}
+
+/// A rule's kind plus its target, written `app:com.figma.Desktop`. Bundle IDs compare
+/// case-insensitively.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(into = "String", try_from = "String")]
+pub enum RuleIdentity {
+    App(String),
+}
+
+impl fmt::Display for RuleIdentity {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::App(bundle_id) => write!(formatter, "app:{bundle_id}"),
+        }
+    }
+}
+
+impl From<RuleIdentity> for String {
+    fn from(identity: RuleIdentity) -> Self {
+        identity.to_string()
+    }
+}
+
+impl TryFrom<String> for RuleIdentity {
+    type Error = String;
+
+    fn try_from(identity: String) -> Result<Self, Self::Error> {
+        match identity.split_once(':') {
+            Some(("app", bundle_id)) if !bundle_id.is_empty() => {
+                Ok(Self::App(bundle_id.to_owned()))
+            }
+            _ => Err(format!(
+                "{identity} isn't a rule identity like app:com.figma.Desktop"
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleSource {
+    Config,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -135,6 +220,7 @@ pub struct Status {
     pub version: String,
     pub install: Install,
     pub night_shift: NightShift,
+    pub decision: Decision,
     /// The on or off the user set last; it lasts until the next schedule transition.
     pub manual_state: Option<OnOff>,
     /// None until the shell first reports Night Shift's status.
@@ -142,6 +228,11 @@ pub struct Status {
     /// None while the schedule, or the sun times it needs, aren't known.
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
+    /// The frontmost app's bundle ID, when it has one.
+    pub frontmost_app: Option<String>,
+    pub rules: Vec<Rule>,
+    /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
+    pub config_error: Option<String>,
     pub permissions: Permissions,
 }
 
@@ -216,6 +307,7 @@ pub enum ErrorCode {
     ProtocolMismatch,
     BadRequest,
     NightShiftUnavailable,
+    InvalidConfig,
 }
 
 #[cfg(test)]
@@ -258,6 +350,10 @@ mod tests {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
                 night_shift: NightShift::On,
+                decision: Decision {
+                    verdict: Verdict::HandsOff,
+                    reasons: Vec::new(),
+                },
                 manual_state: None,
                 schedule: Some(Schedule::Custom {
                     from: TimeOfDay {
@@ -268,13 +364,49 @@ mod tests {
                 }),
                 scheduled_state: Some(OnOff::Off),
                 next_transition: Some("2026-10-16T20:00:00Z".parse().unwrap()),
+                frontmost_app: Some("com.apple.Terminal".to_owned()),
+                rules: Vec::new(),
+                config_error: None,
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
             }))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Terminal","rules":[],"config_error":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
+    }
+
+    #[test]
+    fn decisions_match_the_documented_wire_format() {
+        assert_eq!(json(&Request::Reload), r#""reload""#);
+        assert_eq!(
+            json(&Payload::Decision(Decision {
+                verdict: Verdict::ForceOff,
+                reasons: vec![Reason::Rule(Rule {
+                    identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+                    source: RuleSource::Config,
+                })],
+            })),
+            r#"{"decision":{"verdict":"force_off","reasons":[{"rule":{"identity":"app:com.figma.Desktop","source":"config"}}]}}"#
+        );
+        assert_eq!(
+            json(&Decision {
+                verdict: Verdict::HandsOff,
+                reasons: vec![Reason::ManualState {
+                    state: OnOff::On,
+                    until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
+                }],
+            }),
+            r#"{"verdict":"hands_off","reasons":[{"manual_state":{"state":"on","until":"2026-10-16T05:50:47Z"}}]}"#
+        );
+    }
+
+    #[test]
+    fn rule_identities_read_back_as_written() {
+        let identity: RuleIdentity = serde_json::from_str(r#""app:com.figma.Desktop""#).unwrap();
+
+        assert_eq!(identity, RuleIdentity::App("com.figma.Desktop".to_owned()));
+        assert!(serde_json::from_str::<RuleIdentity>(r#""figma""#).is_err());
     }
 
     #[test]

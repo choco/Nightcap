@@ -1,15 +1,18 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::process::ExitCode;
-use std::time::Duration;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
-    NotificationPermission, OnOff, Payload, Query, Request, Response, Schedule, Status, TimeOfDay,
+    self as protocol, Decision, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
+    NightShift, NotificationPermission, OnOff, Payload, Query, Reason, Request, Response, Rule,
+    RuleSource, Schedule, Status, TimeOfDay, Verdict,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -44,6 +47,17 @@ enum Command {
     Off,
     /// Turn Night Shift on if it's off, or off if it's on, until the next schedule transition.
     Toggle,
+    /// Read the config again, after changing it.
+    Reload {
+        /// Keep trying this long for Nightcap to start, e.g. 5s.
+        #[arg(long, value_parser = parse_duration)]
+        wait: Option<Duration>,
+    },
+}
+
+fn parse_duration(text: &str) -> Result<Duration, String> {
+    let duration: jiff::SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
+    Duration::try_from(duration).map_err(|error| format!("{error}"))
 }
 
 /// Why a command failed, which decides the exit code.
@@ -81,34 +95,46 @@ fn main() -> ExitCode {
 }
 
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
-    let (to_send, json) = match command {
-        Command::Status { json } => (Request::Query(Query::Status), json),
-        Command::On => (Request::Command(protocol::Command::On), false),
-        Command::Off => (Request::Command(protocol::Command::Off), false),
-        Command::Toggle => (Request::Command(protocol::Command::Toggle), false),
-    };
-    let is_command = matches!(to_send, Request::Command(_));
-    let Payload::Status(status) = request(instance, &to_send)?;
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string(&status).context("couldn't encode the status")?
-        );
-    } else if is_command {
-        // The reply comes before the shell applies the change, so it names what was asked
-        // rather than Night Shift as last observed.
-        match status.manual_state {
-            Some(manual) => println!(
-                "Night Shift turned {}{}",
-                on_off(manual),
-                until(status.next_transition)
-            ),
-            None => print_status(&status),
+    let command = match command {
+        Command::Status { json } => {
+            let Payload::Status(status) = request(instance, &Request::Query(Query::Status), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&status).context("couldn't encode the status")?
+                );
+            } else {
+                print_status(&status);
+            }
+            return Ok(());
         }
-    } else {
-        print_status(&status);
-    }
+        Command::Reload { wait } => {
+            let Payload::Status(status) = request(instance, &Request::Reload, wait)? else {
+                return Err(unexpected_reply());
+            };
+            println!("Reloaded the config. Rules: {}", rules(&status.rules));
+            return Ok(());
+        }
+        Command::On => protocol::Command::On,
+        Command::Off => protocol::Command::Off,
+        Command::Toggle => protocol::Command::Toggle,
+    };
+    let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
+        return Err(unexpected_reply());
+    };
+    // The reply comes before the shell applies the change, so it names what the core decided
+    // rather than Night Shift as last observed.
+    println!("Night Shift {}", describe(&decision));
     Ok(())
+}
+
+fn unexpected_reply() -> Failure {
+    Failure::Unreachable(anyhow::anyhow!(
+        "Nightcap sent a reply this CLI doesn't expect"
+    ))
 }
 
 fn print_status(status: &Status) {
@@ -120,14 +146,6 @@ fn print_status(status: &Status) {
         NightShift::Unavailable => "unavailable",
         NightShift::On => "on",
         NightShift::Off => "off",
-    };
-    let manual = match status.manual_state {
-        None => String::new(),
-        Some(manual) => format!(
-            ", turned {} by hand{}",
-            on_off(manual),
-            until(status.next_transition)
-        ),
     };
     let schedule = match status.schedule {
         None => "unknown".to_owned(),
@@ -155,10 +173,54 @@ fn print_status(status: &Status) {
         NotificationPermission::Granted => "granted",
     };
     println!("Nightcap {}, {install}", status.version);
-    println!("Night Shift: {night_shift}{manual}");
+    println!("Night Shift: {night_shift}, {}", describe(&status.decision));
     println!("Schedule: {schedule}{scheduled}");
+    println!(
+        "Frontmost app: {}",
+        status.frontmost_app.as_deref().unwrap_or("unknown")
+    );
+    println!("Rules: {}", rules(&status.rules));
+    if let Some(error) = &status.config_error {
+        println!("Config: invalid. {error}");
+    }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
+}
+
+/// What the core decided and why, as it reads after "Night Shift".
+fn describe(decision: &Decision) -> String {
+    let forcing: Vec<_> = decision
+        .reasons
+        .iter()
+        .filter_map(|reason| match reason {
+            Reason::Rule(rule) => Some(rule_name(rule)),
+            _ => None,
+        })
+        .collect();
+    if decision.verdict == Verdict::ForceOff {
+        return format!("forced off by {}", forcing.join(", "));
+    }
+    match decision.reasons.first() {
+        Some(Reason::ManualState { state, until: end }) => {
+            format!("turned {} by hand{}", on_off(*state), until(*end))
+        }
+        Some(Reason::Schedule { .. }) => "following the schedule".to_owned(),
+        Some(Reason::Rule(_)) | None => "left alone".to_owned(),
+    }
+}
+
+fn rules(rules: &[Rule]) -> String {
+    if rules.is_empty() {
+        return "none".to_owned();
+    }
+    rules.iter().map(rule_name).collect::<Vec<_>>().join(", ")
+}
+
+fn rule_name(rule: &Rule) -> String {
+    let source = match rule.source {
+        RuleSource::Config => "config",
+    };
+    format!("{} ({source} rule)", rule.identity)
 }
 
 fn on_off(state: OnOff) -> &'static str {
@@ -182,16 +244,15 @@ fn time_of_day(time: TimeOfDay) -> String {
     format!("{:02}:{:02}", time.hour, time.minute)
 }
 
-fn request(instance: Instance, request: &Request) -> Result<Payload, Failure> {
+fn request(
+    instance: Instance,
+    request: &Request,
+    wait: Option<Duration>,
+) -> Result<Payload, Failure> {
     let socket = instance
         .socket_path()
         .context("couldn't locate the socket")?;
-    let stream = UnixStream::connect(&socket).with_context(|| {
-        format!(
-            "Nightcap isn't running (nothing is listening at {})",
-            socket.display()
-        )
-    })?;
+    let stream = connect(&socket, wait)?;
     stream
         .set_read_timeout(Some(TIMEOUT))
         .context("couldn't set a timeout on the socket")?;
@@ -211,6 +272,25 @@ fn request(instance: Instance, request: &Request) -> Result<Payload, Failure> {
     match receive(&mut reader)? {
         Response::Ok(payload) => Ok(payload),
         Response::Error(error) => Err(Failure::Rejected(error)),
+    }
+}
+
+/// Connects to the daemon, retrying for up to `wait` while it starts.
+fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> {
+    let deadline = Instant::now() + wait.unwrap_or_default();
+    loop {
+        match UnixStream::connect(socket) {
+            Ok(stream) => return Ok(stream),
+            Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
+            Err(error) => {
+                return Err(error).with_context(|| {
+                    format!(
+                        "Nightcap isn't running (nothing is listening at {})",
+                        socket.display()
+                    )
+                });
+            }
+        }
     }
 }
 

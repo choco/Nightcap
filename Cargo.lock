@@ -494,6 +494,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "toml",
  "tracing",
  "tracing-oslog",
  "tracing-subscriber",

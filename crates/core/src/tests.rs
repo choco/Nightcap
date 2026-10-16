@@ -8,9 +8,9 @@ use std::time::Duration;
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    Command, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
-    NotificationPermission, OnOff, Payload, Permissions, Query, Request, Response, Schedule,
-    Status, TimeOfDay,
+    Command, Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
+    NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
+    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
 };
 
 use crate::state::{Persisted, Store};
@@ -91,6 +91,7 @@ fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
         install,
         socket: socket.to_owned(),
         state_file: socket.with_file_name("state.json"),
+        config_file: config_beside(socket),
         clock: TestClock::at("2026-10-16T12:00:00+02:00"),
         zone: TimeZone::get("Europe/Zurich").unwrap(),
     }
@@ -98,6 +99,28 @@ fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
 
 fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
     dir.path().join("instance").join("nightcap.sock")
+}
+
+/// The config sits outside the socket's folder, which the core creates private at start.
+fn config_beside(socket: &Path) -> PathBuf {
+    socket.parent().unwrap().with_file_name("config.toml")
+}
+
+fn write_config(socket: &Path, contents: &str) {
+    std::fs::write(config_beside(socket), contents).unwrap();
+}
+
+fn app_rule(bundle_id: &str) -> Rule {
+    Rule {
+        identity: RuleIdentity::App(bundle_id.to_owned()),
+        source: RuleSource::Config,
+    }
+}
+
+fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
+    core.handle(Event::AppActivated {
+        bundle_id: Some(bundle_id.to_owned()),
+    })
 }
 
 /// Speaks the wire protocol from the client side: a hello, then at most one request.
@@ -162,11 +185,21 @@ fn send(
     wakes: &mpsc::Receiver<()>,
     command: Command,
 ) -> (Vec<Effect>, Response) {
+    exchange(core, socket, wakes, Request::Command(command))
+}
+
+/// Sends a request the way the CLI does, and returns the tick's effects and the response.
+fn exchange(
+    core: &Core,
+    socket: &Path,
+    wakes: &mpsc::Receiver<()>,
+    request: Request,
+) -> (Vec<Effect>, Response) {
     let socket = socket.to_owned();
     let client = thread::spawn(move || {
         let mut client = Client::connect(&socket);
         assert_eq!(client.hello(1), HelloReply::Hello(Hello::current()));
-        client.send(&serde_json::to_string(&Request::Command(command)).unwrap());
+        client.send(&serde_json::to_string(&request).unwrap());
         client.receive::<Response>()
     });
     wakes
@@ -174,6 +207,15 @@ fn send(
         .expect("the IPC thread asks for a tick");
     let effects = core.tick();
     (effects, client.join().unwrap())
+}
+
+/// The answer to a command with no force and no schedule: hands off, following the manual
+/// state for good.
+fn by_hand(state: OnOff) -> Response {
+    Response::Ok(Payload::Decision(Decision {
+        verdict: Verdict::HandsOff,
+        reasons: vec![Reason::ManualState { state, until: None }],
+    }))
 }
 
 fn status_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Status {
@@ -213,10 +255,7 @@ fn on_while_night_shift_is_off_turns_it_on_and_sets_the_manual_state() {
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
-    };
-    assert_eq!(status.manual_state, Some(OnOff::On));
+    assert_eq!(response, by_hand(OnOff::On));
 }
 
 #[test]
@@ -232,10 +271,7 @@ fn off_while_night_shift_is_on_turns_it_off_and_sets_the_manual_state() {
     let (effects, response) = send(&core, &socket, &wakes, Command::Off);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
-    };
-    assert_eq!(status.manual_state, Some(OnOff::Off));
+    assert_eq!(response, by_hand(OnOff::Off));
 }
 
 #[test]
@@ -251,10 +287,7 @@ fn on_while_night_shift_is_already_on_writes_nothing_but_still_sets_the_manual_s
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
 
     assert_eq!(effects, Vec::new());
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
-    };
-    assert_eq!(status.manual_state, Some(OnOff::On));
+    assert_eq!(response, by_hand(OnOff::On));
 }
 
 #[test]
@@ -270,10 +303,7 @@ fn toggle_inverts_night_shift_as_last_observed() {
     let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
-    };
-    assert_eq!(status.manual_state, Some(OnOff::Off));
+    assert_eq!(response, by_hand(OnOff::Off));
 }
 
 #[test]
@@ -610,6 +640,187 @@ fn turning_the_schedule_off_cancels_the_wakeup() {
 }
 
 #[test]
+fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let effects = activate(&core, "com.figma.Desktop");
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.frontmost_app.as_deref(), Some("com.figma.Desktop"));
+    assert_eq!(
+        status.decision,
+        Decision {
+            verdict: Verdict::ForceOff,
+            reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
+        }
+    );
+}
+
+#[test]
+fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let effects = activate(&core, "com.apple.Terminal");
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+}
+
+#[test]
+fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napps = [\"com.figma.Desktop\"]\n");
+    let (core, wakes) = start(&socket);
+
+    let effects = core.handle(Event::Launched);
+
+    let [Effect::Notify { body, .. }] = effects.as_slice() else {
+        panic!("expected one notification, got {effects:?}");
+    };
+    assert!(body.contains("apps"), "{body}");
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.rules, Vec::new());
+    assert!(
+        status
+            .config_error
+            .is_some_and(|error| error.contains("apps"))
+    );
+}
+
+#[test]
+fn reload_applies_a_changed_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    let Response::Ok(Payload::Status(status)) = response else {
+        panic!("expected a status, got {response:?}");
+    };
+    assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
+}
+
+#[test]
+fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes) = start(&socket);
+
+    write_config(&socket, "[rules]\napp = \"com.figma.Desktop\"\n");
+    let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+
+    assert_eq!(effects, Vec::new());
+    let Response::Error(error) = response else {
+        panic!("expected an error, got {response:?}");
+    };
+    assert_eq!(error.code, ErrorCode::InvalidConfig);
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
+    assert_eq!(status.config_error, Some(error.message));
+}
+
+#[test]
+fn a_command_answers_with_the_resulting_decision() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let (_, response) = send(&core, &socket, &wakes, Command::Off);
+
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            verdict: Verdict::HandsOff,
+            reasons: vec![Reason::ManualState {
+                state: OnOff::Off,
+                until: Some(at("2026-10-17T07:00:00+02:00")),
+            }],
+        }))
+    );
+}
+
+#[test]
+fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T21:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+    clock.set("2026-10-16T22:00:00+02:00");
+    core.handle(Event::TimerFired);
+
+    clock.set("2026-10-16T22:01:00+02:00");
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T21:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+    clock.set("2026-10-16T23:00:00+02:00");
+    core.handle(Event::Woke);
+
+    clock.set("2026-10-16T23:03:00+02:00");
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -644,10 +855,17 @@ fn a_status_query_is_answered_on_the_next_tick() {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
+            decision: Decision {
+                verdict: Verdict::HandsOff,
+                reasons: Vec::new(),
+            },
             manual_state: None,
             schedule: None,
             scheduled_state: None,
             next_transition: None,
+            frontmost_app: None,
+            rules: Vec::new(),
+            config_error: None,
             permissions: Permissions {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,
