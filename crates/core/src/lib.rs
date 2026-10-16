@@ -20,7 +20,7 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ErrorReply, Install, Instance, NightShift,
     NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
-    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict, WebsiteChecking,
 };
 
 use engine::{Context, Inputs};
@@ -54,6 +54,12 @@ uniffi::custom_type!(SignedDuration, i64, {
 });
 
 #[uniffi::remote(Enum)]
+pub enum OnOff {
+    On,
+    Off,
+}
+
+#[uniffi::remote(Enum)]
 pub enum RuleIdentity {
     App(String),
     Domain(String),
@@ -70,6 +76,7 @@ pub enum Command {
     RemoveRule(RuleIdentity),
     Snooze(RuleIdentity),
     Unsnooze(RuleIdentity),
+    Websites(OnOff),
 }
 
 /// What the menu shows. The core decides it; the shell only draws it.
@@ -91,8 +98,17 @@ pub enum MenuIcon {
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum MenuEntry {
-    Item { item: MenuItem },
-    Submenu { title: String, items: Vec<MenuItem> },
+    Item {
+        item: MenuItem,
+    },
+    Submenu {
+        title: String,
+        items: Vec<MenuItem>,
+    },
+    /// Asks for Accessibility, which website checking is missing: a shell action, not a command.
+    AskForAccessibility {
+        title: String,
+    },
     Separator,
 }
 
@@ -101,6 +117,7 @@ pub enum MenuEntry {
 pub struct MenuItem {
     pub title: String,
     pub checked: bool,
+    pub enabled: bool,
     pub command: Command,
 }
 
@@ -149,6 +166,10 @@ pub enum Event {
     TimeZoneChanged {
         iana_id: String,
     },
+    /// The user went through onboarding, choosing whether to check websites.
+    OnboardingFinished {
+        websites: bool,
+    },
     /// The user chose a menu item, which carries the command to run.
     MenuItemChosen {
         command: Command,
@@ -171,6 +192,13 @@ pub enum Effect {
     StartUpdater,
     /// Starts Sparkle's own check, as if the user had asked for one.
     CheckForUpdates,
+    /// Opens onboarding, skipping the steps of versions up to `completed`.
+    ShowOnboarding {
+        completed: u32,
+    },
+    /// Asks for Accessibility, which website checking needs: the macOS prompt, or the pane in
+    /// System Settings once Nightcap has an entry there (ADR-0016).
+    AskForAccessibility,
     /// Watches this browser's host, replacing any earlier watch; reports carry `generation`.
     WatchBrowser {
         bundle_id: String,
@@ -202,6 +230,9 @@ pub enum CoreError {
     #[error("{message}")]
     Io { message: String },
 }
+
+/// The current onboarding version: welcome, notifications, and website checking.
+const ONBOARDING: u32 = 1;
 
 /// The menu's timed disables, in minutes, shortest first.
 const DISABLE_CHOICES: [(i64, &str); 3] = [(30, "30 Minutes"), (60, "1 Hour"), (120, "2 Hours")];
@@ -266,10 +297,16 @@ struct State {
     ad_hoc: Vec<RuleIdentity>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
     ad_hoc_error: Option<String>,
+    /// Website checking as the user chose it; `websites` in the config wins (ADR-0016).
+    websites: bool,
+    onboarding: u32,
+    config_websites: Option<bool>,
     /// The frontmost app's name, for the menu.
     app_name: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
     is_browser: bool,
+    /// Whether this launch already posted that website checking needs Accessibility.
+    told_about_accessibility: bool,
     watch: Option<Watch>,
     /// The generation of the last watch started.
     generation: u64,
@@ -289,7 +326,8 @@ struct State {
     applied_until: Timestamp,
     /// The wakeup the shell was last asked for.
     wakeup: Option<Timestamp>,
-    accessibility: bool,
+    /// None until the shell first reports it.
+    accessibility: Option<bool>,
     notifications: NotificationPermission,
     login_item_registered: bool,
     /// What was last written to `state.json`.
@@ -381,6 +419,7 @@ impl Core {
         let item = |title: &str, command| MenuItem {
             title: title.to_owned(),
             checked: false,
+            enabled: true,
             command,
         };
         let mut entries = vec![MenuEntry::Item {
@@ -423,6 +462,18 @@ impl Core {
             entries.push(MenuEntry::Item {
                 item: state.app_toggle(bundle_id),
             });
+            if let Some(item) = state.site_toggle() {
+                entries.push(MenuEntry::Item { item });
+            }
+        }
+        entries.push(MenuEntry::Separator);
+        entries.push(MenuEntry::Item {
+            item: state.websites_toggle(),
+        });
+        if state.website_checking() && state.accessibility == Some(false) {
+            entries.push(MenuEntry::AskForAccessibility {
+                title: "Allow Accessibility for Websites…".to_owned(),
+            });
         }
         Menu {
             icon: match (decision.verdict, on) {
@@ -458,8 +509,18 @@ impl Core {
     fn react(&self, event: Event) -> Vec<Effect> {
         match event {
             Event::Launched => {
-                let state = self.state();
+                let mut state = self.state();
                 let mut effects = Vec::new();
+                if state.onboarding < ONBOARDING {
+                    if state.config_websites.is_some() {
+                        // The config answered the only question there is.
+                        state.onboarding = ONBOARDING;
+                    } else {
+                        effects.push(Effect::ShowOnboarding {
+                            completed: state.onboarding,
+                        });
+                    }
+                }
                 if self.updates_itself() {
                     if !state.login_item_registered {
                         effects.push(Effect::RegisterLoginItem);
@@ -484,7 +545,9 @@ impl Core {
                 state.context.app = bundle_id;
                 state.app_name = name;
                 state.is_browser = is_browser;
-                Vec::new()
+                let mut effects = Vec::new();
+                state.notice_missing_accessibility(&mut effects);
+                effects
             }
             // The host itself is never logged (ADR-0012).
             Event::HostChanged { generation, host } => {
@@ -511,9 +574,11 @@ impl Core {
                     "permissions: accessibility {accessibility}, notifications {notifications:?}"
                 );
                 let mut state = self.state();
-                state.accessibility = accessibility;
+                state.accessibility = Some(accessibility);
                 state.notifications = notifications;
-                Vec::new()
+                let mut effects = Vec::new();
+                state.notice_missing_accessibility(&mut effects);
+                effects
             }
             Event::StatusChanged { enabled, schedule } => {
                 let mut state = self.state();
@@ -543,12 +608,22 @@ impl Core {
                     self.reconcile(&mut state, enabled).into_iter().collect()
                 }
             }
+            Event::OnboardingFinished { websites } => {
+                let mut state = self.state();
+                state.onboarding = ONBOARDING;
+                if state.config_websites.is_none() {
+                    tracing::info!("onboarding finished; website checking {websites}");
+                    state.websites = websites;
+                }
+                Vec::new()
+            }
             Event::MenuItemChosen { command } => {
-                if let Err(error) = self.run_command(&command) {
+                let mut effects = Vec::new();
+                if let Err(error) = self.run_command(&command, &mut effects) {
                     // The message can name a domain, so only the code is logged (ADR-0012).
                     tracing::warn!("a menu command was refused: {:?}", error.code);
                 }
-                Vec::new()
+                effects
             }
             Event::TimerFired => {
                 // The shell's timer is spent, whether or not its transition came due.
@@ -610,12 +685,16 @@ impl Core {
         let store = state::Store::new(setup.state_file);
         let mut persisted = store.load();
         persisted.expire(setup.clock.now());
-        let (config_rules, config_error) = match config::load(&setup.config_file) {
-            Ok(rules) => (rules, None),
+        let (config, config_error) = match config::load(&setup.config_file) {
+            Ok(config) => (config, None),
             Err(error) => {
                 // The error can quote a domain, so it goes to status, not the log (ADR-0012).
                 tracing::warn!("running without config rules: the config is invalid; see status");
-                (Vec::new(), Some(error))
+                let config = config::Config {
+                    rules: Vec::new(),
+                    websites: None,
+                };
+                (config, Some(error))
             }
         };
         let ad_hoc_store = adhoc::Store::new(setup.rules_file);
@@ -645,12 +724,16 @@ impl Core {
                 },
                 context: Context::default(),
                 rules: Vec::new(),
-                config_rules,
+                config_rules: config.rules,
                 config_error,
                 ad_hoc,
                 ad_hoc_error,
+                websites: persisted.websites,
+                onboarding: persisted.onboarding,
+                config_websites: config.websites,
                 app_name: None,
                 is_browser: false,
+                told_about_accessibility: false,
                 watch: None,
                 generation: 0,
                 snoozes: persisted.snoozes.clone(),
@@ -662,7 +745,7 @@ impl Core {
                 left_by_last_run: persisted.night_shift,
                 applied_until: setup.clock.now(),
                 wakeup: None,
-                accessibility: false,
+                accessibility: None,
                 notifications: NotificationPermission::NotRequested,
                 login_item_registered: persisted.login_item_registered,
                 saved: persisted,
@@ -684,7 +767,7 @@ impl Core {
 
     fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
-            Request::Command(command) => match self.run_command(command) {
+            Request::Command(command) => match self.run_command(command, effects) {
                 Ok(decision) => Response::Ok(Payload::Decision(decision)),
                 Err(error) => Response::Error(error),
             },
@@ -714,10 +797,11 @@ impl Core {
                 })
             }
             Request::Reload => match config::load(&self.config_file) {
-                Ok(rules) => {
-                    tracing::info!("reloaded the config: {} rules", rules.len());
+                Ok(config) => {
+                    tracing::info!("reloaded the config: {} rules", config.rules.len());
                     let mut state = self.state();
-                    state.config_rules = rules;
+                    state.config_rules = config.rules;
+                    state.config_websites = config.websites;
                     state.config_error = None;
                     drop(state);
                     self.graduate();
@@ -736,7 +820,11 @@ impl Core {
     }
 
     /// Runs a command from the CLI or the menu, answering with the resulting decision.
-    fn run_command(&self, command: &Command) -> Result<Decision, ErrorReply> {
+    fn run_command(
+        &self,
+        command: &Command,
+        effects: &mut Vec<Effect>,
+    ) -> Result<Decision, ErrorReply> {
         let night_shift = self.state().night_shift;
         let needs_night_shift = matches!(
             command,
@@ -784,6 +872,15 @@ impl Core {
             Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
             Command::Snooze(identity) => state.snooze(identity, true),
             Command::Unsnooze(identity) => state.snooze(identity, false),
+            Command::Websites(chosen) => {
+                let on = *chosen == OnOff::On;
+                let turned_on = on && !state.website_checking();
+                state.set_websites(on).map(|()| {
+                    if turned_on && state.accessibility != Some(true) {
+                        effects.push(Effect::AskForAccessibility);
+                    }
+                })
+            }
         };
         outcome.map(|()| state.decide())
     }
@@ -863,14 +960,14 @@ impl Core {
         state.applied_until = now;
     }
 
-    /// Watches the frontmost browser only while its host could change the decision (ADR-0010).
+    /// Watches the frontmost browser whenever website checking is on (ADR-0016).
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         let wanted = state
             .context
             .app
             .clone()
-            .filter(|_| state.is_browser && engine::host_matters(&state.inputs()));
+            .filter(|_| state.is_browser && state.website_checking());
         match (&state.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {
@@ -1017,15 +1114,17 @@ impl Core {
     /// (ADR-0005), once until a status callback reports the result.
     fn enforce(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        // A new watch keeps Night Shift as it is until its first read (ADR-0010).
-        let reading = state.watch.as_ref().is_some_and(|watch| !watch.reported);
-        if state.night_shift == NightShift::Unavailable
-            || state.session != Session::Active
-            || reading
-        {
+        if state.night_shift == NightShift::Unavailable || state.session != Session::Active {
             return;
         }
-        let Some(wanted) = wanted(&state.decide()) else {
+        let decision = state.decide();
+        // A new watch keeps Night Shift as it is until its first read (ADR-0016), unless it's
+        // forced off whatever the host turns out to be.
+        let reading = state.watch.as_ref().is_some_and(|watch| !watch.reported);
+        if reading && decision.verdict == Verdict::HandsOff {
+            return;
+        }
+        let Some(wanted) = wanted(&decision) else {
             return;
         };
         if wanted != (state.night_shift == NightShift::On) && state.pending_write != Some(wanted) {
@@ -1054,10 +1153,14 @@ impl Core {
             rules: state.rules.clone(),
             config_error: state.config_error.clone(),
             ad_hoc_error: state.ad_hoc_error.clone(),
+            website_checking: WebsiteChecking {
+                state: on_off(state.website_checking()),
+                from_config: state.config_websites.is_some(),
+            },
             snoozes: state.snoozes.clone(),
             timed_disable: state.timed_disable,
             permissions: Permissions {
-                accessibility: state.accessibility,
+                accessibility: state.accessibility == Some(true),
                 notifications: state.notifications,
             },
         })))
@@ -1162,56 +1265,138 @@ impl State {
             manual_state: self.manual_state,
             snoozes: self.snoozes.clone(),
             timed_disable: self.timed_disable,
+            websites: self.websites,
+            onboarding: self.onboarding,
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
         }
     }
 
-    /// The menu's toggle for the frontmost app (ADR-0009): it adds an ad-hoc rule, removes
-    /// one, snoozes a config rule, or undoes a snooze.
+    /// "Check Websites", which only the config can change once it sets `websites`.
+    fn websites_toggle(&self) -> MenuItem {
+        let on = self.website_checking();
+        let from_config = self.config_websites.is_some();
+        MenuItem {
+            title: if from_config {
+                "Check Websites (from the config)".to_owned()
+            } else {
+                "Check Websites".to_owned()
+            },
+            checked: on,
+            enabled: !from_config,
+            command: Command::Websites(on_off(!on)),
+        }
+    }
+
+    /// The menu's toggle for the frontmost app (ADR-0009).
     fn app_toggle(&self, bundle_id: &str) -> MenuItem {
-        let name = self.app_name.as_deref().unwrap_or(bundle_id);
+        let name = self.app_name.as_deref().unwrap_or(bundle_id).to_owned();
         let identity = RuleIdentity::App(bundle_id.to_owned());
+        let rule = self
+            .rules
+            .iter()
+            .find(|rule| same_rule(&rule.identity, &identity));
+        self.rule_toggle(rule, identity, |_| format!("Force Off in {name}"))
+    }
+
+    /// The menu's toggle for the front tab's site, while website checking knows its host: it
+    /// adds a rule for the registrable domain, or acts on the most specific rule covering the
+    /// host (ADR-0009).
+    fn site_toggle(&self) -> Option<MenuItem> {
+        let host = self
+            .context
+            .host
+            .as_deref()
+            .filter(|_| self.website_checking())?;
+        let rule = self
+            .rules
+            .iter()
+            .filter_map(|rule| match &rule.identity {
+                RuleIdentity::Domain(domain) if domain::covers(domain, host) => {
+                    Some((domain.len(), rule))
+                }
+                _ => None,
+            })
+            .max_by_key(|(length, _)| *length)
+            .map(|(_, rule)| rule);
+        let identity = RuleIdentity::Domain(domain::registrable(host));
+        Some(self.rule_toggle(rule, identity, |identity| match identity {
+            RuleIdentity::Domain(domain) => format!("Force Off on {domain}"),
+            RuleIdentity::App(bundle_id) => format!("Force Off in {bundle_id}"),
+        }))
+    }
+
+    /// A rule toggle (ADR-0009): with no `rule` it adds `new`; otherwise it removes an ad-hoc
+    /// rule, snoozes a config rule, or undoes a snooze. `title` names the identity it acts on.
+    fn rule_toggle(
+        &self,
+        rule: Option<&Rule>,
+        new: RuleIdentity,
+        title: impl Fn(&RuleIdentity) -> String,
+    ) -> MenuItem {
         let toggle = |title: String, checked, command| MenuItem {
             title,
             checked,
+            enabled: true,
             command,
         };
-        let Some(rule) = self
-            .rules
-            .iter()
-            .find(|rule| same_rule(&rule.identity, &identity))
-        else {
-            return toggle(
-                format!("Force Off in {name}"),
-                false,
-                Command::AddRule(identity),
-            );
+        let Some(rule) = rule else {
+            return toggle(title(&new), false, Command::AddRule(new));
         };
         let identity = rule.identity.clone();
+        let name = title(&identity);
         if self
             .snoozes
             .iter()
             .any(|snoozed| same_rule(snoozed, &identity))
         {
             toggle(
-                format!("Force Off in {name} (snoozed)"),
+                format!("{name} (snoozed)"),
                 false,
                 Command::Unsnooze(identity),
             )
         } else if rule.source == RuleSource::Config {
             toggle(
-                format!("Force Off in {name} (from the config)"),
+                format!("{name} (from the config)"),
                 true,
                 Command::Snooze(identity),
             )
         } else {
-            toggle(
-                format!("Force Off in {name}"),
-                true,
-                Command::RemoveRule(identity),
-            )
+            toggle(name, true, Command::RemoveRule(identity))
         }
+    }
+
+    fn website_checking(&self) -> bool {
+        self.config_websites.unwrap_or(self.websites)
+    }
+
+    /// Once per launch, the first time a browser is in front while website checking is on and
+    /// Accessibility is known to be missing.
+    fn notice_missing_accessibility(&mut self, effects: &mut Vec<Effect>) {
+        if self.is_browser
+            && self.website_checking()
+            && self.accessibility == Some(false)
+            && !self.told_about_accessibility
+        {
+            self.told_about_accessibility = true;
+            effects.push(Effect::Notify {
+                title: "Website checking needs Accessibility".to_owned(),
+                body: "Choose \u{201c}Allow Accessibility for Websites\u{2026}\u{201d} in Nightcap's menu."
+                    .to_owned(),
+            });
+        }
+    }
+
+    fn set_websites(&mut self, on: bool) -> Result<(), ErrorReply> {
+        if self.config_websites.is_some() {
+            return Err(refused(
+                ErrorCode::SetInConfig,
+                "website checking is set by `websites` in the config",
+            ));
+        }
+        tracing::info!("website checking {}", if on { "on" } else { "off" });
+        self.websites = on;
+        Ok(())
     }
 
     /// The config rules, then the ad-hoc rules the config doesn't have.

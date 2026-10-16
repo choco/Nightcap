@@ -33,7 +33,6 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
 
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "browser")
     private let onHost: @Sendable (UInt64, String?) -> Void
-    private let onAccessibility: @Sendable (Bool) -> Void
     private var runLoop: CFRunLoop?
 
     private struct Watch {
@@ -48,18 +47,10 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
 
     private var watch: Watch?
 
-    /// Both run on the main thread: `onHost` with each new host read under a generation, and
-    /// `onAccessibility` with whether attaching to a browser showed Accessibility granted, which
-    /// `AXIsProcessTrusted()` only learns at the next launch (M2).
-    init(
-        onHost: @escaping @MainActor (UInt64, String?) -> Void,
-        onAccessibility: @escaping @MainActor (Bool) -> Void
-    ) {
+    /// `onHost` runs on the main thread with each new host read under a generation.
+    init(onHost: @escaping @MainActor (UInt64, String?) -> Void) {
         self.onHost = { generation, host in
             DispatchQueue.main.async { MainActor.assumeIsolated { onHost(generation, host) } }
-        }
-        self.onAccessibility = { granted in
-            DispatchQueue.main.async { MainActor.assumeIsolated { onAccessibility(granted) } }
         }
         let started = DispatchSemaphore(value: 0)
         let thread = Thread { [unowned self] in
@@ -86,15 +77,12 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
             }
             let app = AXUIElementCreateApplication(pid)
             let refcon = Unmanaged.passUnretained(self).toOpaque()
-            var granted = true
             for notification in Self.notifications {
                 let error = AXObserverAddNotification(observer, app, notification as CFString, refcon)
-                if error == .apiDisabled { granted = false }
                 if error != .success {
                     log.error("couldn't observe \(notification, privacy: .public): \(error.rawValue)")
                 }
             }
-            onAccessibility(granted)
             CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
             watch = Watch(pid: pid, generation: generation, observer: observer)
             scheduleRead()

@@ -126,6 +126,8 @@ pub enum Command {
     /// Mutes a rule until the next schedule transition.
     Snooze(RuleIdentity),
     Unsnooze(RuleIdentity),
+    /// Turns website checking on or off, unless the config sets it (ADR-0016).
+    Websites(OnOff),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,11 +337,20 @@ pub struct Status {
     pub config_error: Option<String>,
     /// Why `rules.toml` can't be used; ad-hoc rules are then off.
     pub ad_hoc_error: Option<String>,
+    pub website_checking: WebsiteChecking,
     /// Rules snoozed until the next schedule transition.
     pub snoozes: Vec<RuleIdentity>,
     /// When the timed disable ends, if one is running.
     pub timed_disable: Option<Timestamp>,
     pub permissions: Permissions,
+}
+
+/// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0016).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebsiteChecking {
+    pub state: OnOff,
+    /// Set by `websites` in the config, which wins over the menu and the CLI.
+    pub from_config: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -432,6 +443,8 @@ pub enum ErrorCode {
     NoSuchRule,
     /// `rules.toml` is invalid or from a newer Nightcap, so ad-hoc rules can't change.
     AdHocRulesOff,
+    /// The config sets this, so only the config can change it.
+    SetInConfig,
 }
 
 #[cfg(test)]
@@ -494,6 +507,10 @@ mod tests {
                 rules: Vec::new(),
                 config_error: None,
                 ad_hoc_error: None,
+                website_checking: WebsiteChecking {
+                    state: OnOff::On,
+                    from_config: false,
+                },
                 snoozes: Vec::new(),
                 timed_disable: None,
                 permissions: Permissions {
@@ -501,7 +518,7 @@ mod tests {
                     notifications: NotificationPermission::NotRequested,
                 },
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 
@@ -569,6 +586,10 @@ mod tests {
             r#"{"command":{"snooze":"domain:figma.com"}}"#
         );
         assert_eq!(json(&Request::Query(Query::Rules)), r#"{"query":"rules"}"#);
+        assert_eq!(
+            json(&Request::Command(Command::Websites(OnOff::On))),
+            r#"{"command":{"websites":"on"}}"#
+        );
         assert_eq!(
             json(&Request::Query(Query::Export(ExportFormat::Nix))),
             r#"{"query":{"export":"nix"}}"#

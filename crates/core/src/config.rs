@@ -12,8 +12,15 @@ use crate::domain;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
+    /// Website checking, which then the menu and the CLI can't change (ADR-0016).
+    websites: Option<bool>,
     #[serde(default)]
     rules: Rules,
+}
+
+pub(crate) struct Config {
+    pub rules: Vec<Rule>,
+    pub websites: Option<bool>,
 }
 
 #[derive(Default, Deserialize)]
@@ -25,11 +32,16 @@ struct Rules {
     domain: Vec<String>,
 }
 
-/// The config rules in `path`. A missing file means no rules, as on a fresh brew install.
-pub(crate) fn load(path: &Path) -> Result<Vec<Rule>, String> {
+/// The config in `path`. A missing file means no rules, as on a fresh brew install.
+pub(crate) fn load(path: &Path) -> Result<Config, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Ok(Config {
+                rules: Vec::new(),
+                websites: None,
+            });
+        }
         Err(error) => return Err(format!("couldn't read {}: {error}", path.display())),
     };
     let file: File =
@@ -53,10 +65,13 @@ pub(crate) fn load(path: &Path) -> Result<Vec<Rule>, String> {
         .into_iter()
         .map(RuleIdentity::App)
         .chain(domains.into_iter().map(RuleIdentity::Domain));
-    Ok(identities
-        .map(|identity| Rule {
-            identity,
-            source: RuleSource::Config,
-        })
-        .collect())
+    Ok(Config {
+        rules: identities
+            .map(|identity| Rule {
+                identity,
+                source: RuleSource::Config,
+            })
+            .collect(),
+        websites: file.websites,
+    })
 }

@@ -11,3 +11,16 @@ pub(crate) fn normalize(input: &str) -> Option<String> {
     let bare = !ascii.contains('*') && ascii.split('.').all(|label| !label.is_empty());
     bare.then(|| ascii.into_owned())
 }
+
+/// Whether a rule for `domain` covers `host`: the domain itself and every subdomain, on label
+/// boundaries, so figma.com covers www.figma.com but not notfigma.com (ADR-0008).
+pub(crate) fn covers(domain: &str, host: &str) -> bool {
+    host.strip_suffix(domain)
+        .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+}
+
+/// The domain a new rule for `host` gets: its registrable domain, or the host itself when it
+/// has no public suffix, like `localhost` (ADR-0009).
+pub(crate) fn registrable(host: &str) -> String {
+    psl::domain_str(host).unwrap_or(host).to_owned()
+}

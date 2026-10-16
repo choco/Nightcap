@@ -11,6 +11,7 @@ use nightcap_protocol::{
     Command, Decision, ErrorCode, ExportFormat, Hello, HelloMessage, HelloReply, Install, Instance,
     NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request,
     Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    WebsiteChecking,
 };
 
 use crate::adhoc;
@@ -156,6 +157,14 @@ fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     (core, wakes, clock)
 }
 
+/// The launch's effects, leaving out onboarding, which only its own tests look at.
+fn launch(core: &Core) -> Vec<Effect> {
+    core.handle(Event::Launched)
+        .into_iter()
+        .filter(|effect| !matches!(effect, Effect::ShowOnboarding { .. }))
+        .collect()
+}
+
 fn ad_hoc(identity: RuleIdentity) -> Rule {
     Rule {
         identity,
@@ -205,6 +214,14 @@ fn watch(bundle_id: &str, generation: u64) -> Effect {
     }
 }
 
+/// Website checking is useless without Accessibility, so tests about it start granted.
+fn grant_accessibility(core: &Core) {
+    core.handle(Event::PermissionsChanged {
+        accessibility: true,
+        notifications: NotificationPermission::Granted,
+    });
+}
+
 fn domain_rule(domain: &str) -> Rule {
     Rule {
         identity: RuleIdentity::Domain(domain.to_owned()),
@@ -212,10 +229,15 @@ fn domain_rule(domain: &str) -> Rule {
     }
 }
 
-/// Starts at 23:00 with Night Shift on by the custom hours and a config rule for figma.com.
+/// Starts at 23:00 with Night Shift on by the custom hours, website checking on and a config
+/// rule for figma.com.
 fn start_with_figma_domain(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
-    write_config(socket, "[rules]\ndomain = [\"figma.com\"]\n");
+    write_config(
+        socket,
+        "websites = true\n[rules]\ndomain = [\"figma.com\"]\n",
+    );
     let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
+    grant_accessibility(&core);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
@@ -792,7 +814,7 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
     write_config(&socket, "[rules]\napps = [\"com.figma.Desktop\"]\n");
     let (core, wakes) = start(&socket);
 
-    let effects = core.handle(Event::Launched);
+    let effects = launch(&core);
 
     let [Effect::Notify { body, .. }] = effects.as_slice() else {
         panic!("expected one notification, got {effects:?}");
@@ -1105,7 +1127,7 @@ fn the_overrides_survive_a_restart() {
     let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:30:00+02:00");
 
     assert_eq!(
-        core.handle(Event::Launched),
+        launch(&core),
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-17T00:00:00+02:00").into()
         }]
@@ -1398,14 +1420,15 @@ fn leaving_the_browser_stops_watching_and_lifts_the_force() {
 }
 
 #[test]
-fn a_browser_covered_by_an_app_rule_is_never_watched() {
+fn an_app_rule_on_a_watched_browser_forces_night_shift_off_without_waiting_for_the_host() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(
         &socket,
-        "[rules]\napp = [\"com.apple.Safari\"]\ndomain = [\"figma.com\"]\n",
+        "websites = true\n[rules]\napp = [\"com.apple.Safari\"]\n",
     );
     let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    grant_accessibility(&core);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
@@ -1413,20 +1436,29 @@ fn a_browser_covered_by_an_app_rule_is_never_watched() {
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![
+            watch("com.apple.Safari", 1),
+            Effect::SetNightShift { enabled: false }
+        ]
     );
 }
 
 #[test]
-fn without_domain_rules_no_browser_is_watched() {
+fn with_website_checking_on_the_front_browser_is_watched_without_any_domain_rule() {
     let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    grant_accessibility(&core);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
     });
 
-    assert_eq!(activate_browser(&core, "com.apple.Safari"), Vec::new());
+    assert_eq!(
+        activate_browser(&core, "com.apple.Safari"),
+        vec![watch("com.apple.Safari", 1)]
+    );
 }
 
 #[test]
@@ -1500,24 +1532,20 @@ fn hosts_compare_in_normal_form() {
 }
 
 #[test]
-fn snoozing_the_only_domain_rule_stops_the_watch() {
+fn snoozing_a_domain_rule_lifts_its_force_and_keeps_watching() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_figma(&socket);
 
     let (effects, _) = send(&core, &socket, &wakes, Command::On);
 
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    let status = status_of(&core, &socket, &wakes);
     assert_eq!(
-        effects,
-        vec![
-            Effect::StopWatching,
-            Effect::SetNightShift { enabled: true }
-        ]
-    );
-    assert_eq!(
-        status_of(&core, &socket, &wakes).snoozes,
+        status.snoozes,
         vec![RuleIdentity::Domain("figma.com".to_owned())]
     );
+    assert!(status.watching);
 }
 
 #[test]
@@ -1753,8 +1781,20 @@ fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
     MenuItem {
         title: title.to_owned(),
         checked,
+        enabled: true,
         command,
     }
+}
+
+/// The first menu entry whose title starts with `prefix`.
+fn entry_titled(core: &Core, prefix: &str) -> Option<MenuEntry> {
+    core.menu().entries.into_iter().find(|entry| match entry {
+        MenuEntry::Item { item } => item.title.starts_with(prefix),
+        MenuEntry::Submenu { title, .. } | MenuEntry::AskForAccessibility { title } => {
+            title.starts_with(prefix)
+        }
+        MenuEntry::Separator => false,
+    })
 }
 
 #[test]
@@ -1818,7 +1858,7 @@ fn the_menu_offers_resume_only_when_there_is_something_to_resume() {
 }
 
 fn app_toggle(core: &Core) -> Option<MenuEntry> {
-    core.menu().entries.last().cloned()
+    entry_titled(core, "Force Off in")
 }
 
 fn toggle_item(title: &str, checked: bool, command: Command) -> Option<MenuEntry> {
@@ -1918,6 +1958,281 @@ fn the_menu_offers_disable_for_only_while_it_would_change_something() {
 }
 
 #[test]
+fn website_checking_is_off_until_turned_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\ndomain = [\"figma.com\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(activate_browser(&core, "com.apple.Safari"), Vec::new());
+    assert_eq!(
+        status_of(&core, &socket, &wakes).website_checking,
+        WebsiteChecking {
+            state: OnOff::Off,
+            from_config: false,
+        }
+    );
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+
+    assert!(
+        effects.contains(&watch("com.apple.Safari", 1)),
+        "{effects:?}"
+    );
+}
+
+#[test]
+fn the_config_decides_website_checking_when_it_sets_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, wakes) = start(&socket);
+
+    let (_, response) = send(&core, &socket, &wakes, Command::Websites(OnOff::Off));
+
+    assert_eq!(refusal(response), ErrorCode::SetInConfig);
+    assert_eq!(
+        status_of(&core, &socket, &wakes).website_checking,
+        WebsiteChecking {
+            state: OnOff::On,
+            from_config: true,
+        }
+    );
+}
+
+#[test]
+fn turning_website_checking_on_without_accessibility_asks_for_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::PermissionsChanged {
+        accessibility: false,
+        notifications: NotificationPermission::Granted,
+    });
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+
+    assert_eq!(effects, vec![Effect::AskForAccessibility]);
+}
+
+#[test]
+fn the_menu_turns_website_checking_on_and_off_unless_the_config_sets_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        entry_titled(&core, "Check Websites"),
+        toggle_item("Check Websites", false, Command::Websites(OnOff::On))
+    );
+    send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    assert_eq!(
+        entry_titled(&core, "Check Websites"),
+        toggle_item("Check Websites", true, Command::Websites(OnOff::Off))
+    );
+
+    write_config(&socket, "websites = false\n");
+    exchange(&core, &socket, &wakes, Request::Reload);
+    assert_eq!(
+        entry_titled(&core, "Check Websites"),
+        Some(MenuEntry::Item {
+            item: MenuItem {
+                enabled: false,
+                ..menu_item(
+                    "Check Websites (from the config)",
+                    false,
+                    Command::Websites(OnOff::On)
+                )
+            }
+        })
+    );
+}
+
+#[test]
+fn the_menu_asks_for_accessibility_once_website_checking_is_known_to_lack_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes) = start(&socket);
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+    let permissions = |accessibility| Event::PermissionsChanged {
+        accessibility,
+        notifications: NotificationPermission::Granted,
+    };
+    let ask = Some(MenuEntry::AskForAccessibility {
+        title: "Allow Accessibility for Websites…".to_owned(),
+    });
+
+    assert_eq!(entry_titled(&core, "Allow Accessibility"), None);
+    core.handle(permissions(false));
+    assert_eq!(entry_titled(&core, "Allow Accessibility"), ask);
+    core.handle(permissions(true));
+    assert_eq!(entry_titled(&core, "Allow Accessibility"), None);
+}
+
+fn domain(name: &str) -> RuleIdentity {
+    RuleIdentity::Domain(name.to_owned())
+}
+
+#[test]
+fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate_browser(&core, "com.apple.Safari");
+    report_host(&core, 1, "docs.figma.com");
+
+    assert_eq!(
+        entry_titled(&core, "Force Off on"),
+        toggle_item(
+            "Force Off on figma.com",
+            false,
+            Command::AddRule(domain("figma.com"))
+        )
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(domain("figma.com")),
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(domain("docs.figma.com")),
+    );
+    assert_eq!(
+        entry_titled(&core, "Force Off on"),
+        toggle_item(
+            "Force Off on docs.figma.com",
+            true,
+            Command::RemoveRule(domain("docs.figma.com"))
+        )
+    );
+}
+
+#[test]
+fn the_menu_snoozes_a_config_rule_for_the_site_rather_than_removing_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_figma(&socket);
+
+    assert_eq!(
+        entry_titled(&core, "Force Off on"),
+        toggle_item(
+            "Force Off on figma.com (from the config)",
+            true,
+            Command::Snooze(domain("figma.com"))
+        )
+    );
+    send(&core, &socket, &wakes, Command::Snooze(domain("figma.com")));
+    assert_eq!(
+        entry_titled(&core, "Force Off on"),
+        toggle_item(
+            "Force Off on figma.com (snoozed)",
+            false,
+            Command::Unsnooze(domain("figma.com"))
+        )
+    );
+}
+
+fn accessibility_notice() -> Effect {
+    Effect::Notify {
+        title: "Website checking needs Accessibility".to_owned(),
+        body: "Choose \u{201c}Allow Accessibility for Websites\u{2026}\u{201d} in Nightcap's menu."
+            .to_owned(),
+    }
+}
+
+#[test]
+fn a_browser_in_front_without_accessibility_posts_one_notice_per_launch() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes) = start(&socket);
+    core.handle(Event::PermissionsChanged {
+        accessibility: false,
+        notifications: NotificationPermission::Granted,
+    });
+
+    assert!(activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
+    activate(&core, "com.apple.Terminal");
+    assert!(!activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
+}
+
+#[test]
+fn the_accessibility_notice_waits_for_the_first_permission_report() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes) = start(&socket);
+
+    assert!(!activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
+    let reported = core.handle(Event::PermissionsChanged {
+        accessibility: false,
+        notifications: NotificationPermission::Granted,
+    });
+    assert!(reported.contains(&accessibility_notice()));
+}
+
+#[test]
+fn onboarding_runs_at_the_first_launch_and_not_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    assert!(
+        core.handle(Event::Launched)
+            .contains(&Effect::ShowOnboarding { completed: 0 })
+    );
+    core.handle(Event::OnboardingFinished { websites: true });
+    assert_eq!(
+        status_of(&core, &socket, &wakes).website_checking.state,
+        OnOff::On
+    );
+
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    assert!(
+        !core
+            .handle(Event::Launched)
+            .iter()
+            .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
+    );
+}
+
+#[test]
+fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = false\n");
+    let (core, _wakes) = start(&socket);
+
+    assert!(
+        !core
+            .handle(Event::Launched)
+            .iter()
+            .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
+    );
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1966,6 +2281,10 @@ fn a_status_query_is_answered_on_the_next_tick() {
             rules: Vec::new(),
             config_error: None,
             ad_hoc_error: None,
+            website_checking: WebsiteChecking {
+                state: OnOff::Off,
+                from_config: false,
+            },
             snoozes: Vec::new(),
             timed_disable: None,
             permissions: Permissions {
@@ -2085,7 +2404,7 @@ fn a_self_managed_release_registers_its_login_item_and_starts_its_updater_at_lau
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
 
     assert_eq!(
-        core.handle(Event::Launched),
+        launch(&core),
         vec![Effect::RegisterLoginItem, Effect::StartUpdater]
     );
 }
@@ -2095,7 +2414,7 @@ fn a_managed_install_leaves_starting_at_login_to_its_installer() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::Managed);
 
-    assert_eq!(core.handle(Event::Launched), Vec::new());
+    assert_eq!(launch(&core), Vec::new());
 }
 
 #[test]
@@ -2103,7 +2422,7 @@ fn a_dev_build_never_registers_a_login_item() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Dev, Install::SelfManaged);
 
-    assert_eq!(core.handle(Event::Launched), Vec::new());
+    assert_eq!(launch(&core), Vec::new());
 }
 
 #[test]
@@ -2116,7 +2435,7 @@ fn the_login_item_is_registered_only_once_across_restarts() {
     };
     let (core, _wakes) = start_with(first);
     assert_eq!(
-        core.handle(Event::Launched),
+        launch(&core),
         vec![Effect::RegisterLoginItem, Effect::StartUpdater]
     );
     core.handle(Event::LoginItemRegistered);
@@ -2129,7 +2448,7 @@ fn the_login_item_is_registered_only_once_across_restarts() {
     };
     let (core, _wakes) = start_with(restarted);
 
-    assert_eq!(core.handle(Event::Launched), vec![Effect::StartUpdater]);
+    assert_eq!(launch(&core), vec![Effect::StartUpdater]);
 }
 
 #[test]
@@ -2178,6 +2497,8 @@ fn saved_state_loads_back() {
         manual_state: Some(OnOff::Off),
         snoozes: vec![figma()],
         timed_disable: Some(at("2026-10-17T00:00:00+02:00")),
+        websites: true,
+        onboarding: 1,
         night_shift: Some(OnOff::Off),
         until: Some(at("2026-10-17T07:00:00+02:00")),
     };

@@ -1,5 +1,4 @@
 import AppKit
-import ApplicationServices
 import NightcapCore
 import ServiceManagement
 import Sparkle
@@ -16,17 +15,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var updater: SPUStandardUpdaterController?
     private var browserWatcher: BrowserWatcher?
     private var statusMenu: StatusMenu?
-    private var askedForAccessibility = false
-    private var reportedAccessibility: Bool?
-    /// What attaching to a browser last showed, fresher than `AXIsProcessTrusted()`.
-    private var observedAccessibility: Bool?
-    private let updateReminders = UpdateReminders()
+    private var accessibility: AccessibilityPermission?
+    private var onboarding: Onboarding?
+    private let dockIcon = DockIcon()
+    private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon)
     private var observers: [NSObjectProtocol] = []
 
     static func main() {
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
+        app.mainMenu = MainMenu.make()
         withExtendedLifetime(delegate) { app.run() }
     }
 
@@ -34,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         quitOnTerminationSignal()
         let waker = MainThreadWaker { [weak self] in self?.tick() }
         let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
+        let core: Core
         do {
             core = try Core(
                 bundleId: Bundle.main.bundleIdentifier!,
@@ -51,29 +51,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
-        let core = core!
-        statusMenu = StatusMenu(
-            current: { core.menu() },
-            choose: { [weak self] command in
-                self?.apply(core.handle(event: .menuItemChosen(command: command)))
-            })
-        browserWatcher = BrowserWatcher(
-            onHost: { [weak self] generation, host in
-                self?.reportHost(generation: generation, host: host)
-            },
-            onAccessibility: { [weak self] granted in
-                guard let self else { return }
-                observedAccessibility = granted
-                if granted != reportedAccessibility {
-                    Task { await self.reportPermissions() }
-                }
-            })
+        self.core = core
+        accessibility = AccessibilityPermission { [weak self] _ in
+            self?.onboarding?.accessibilityChanged()
+            Task { await self?.reportPermissions() }
+        }
+        browserWatcher = BrowserWatcher { [weak self] generation, host in
+            self?.reportHost(generation: generation, host: host)
+        }
         // The context first, so a force still in place after a crash holds without a flash.
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         startNightShift()
         apply(core.handle(event: .launched))
+        // The menu-bar item appears once onboarding is done.
+        if onboarding == nil { showStatusMenu() }
         watchPermissions()
         watchSystem()
+    }
+
+    /// Clicking the Dock icon brings onboarding forward.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard let onboarding else { return true }
+        onboarding.present()
+        return false
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -164,18 +164,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
 
-    /// `AXIsProcessTrusted()` keeps its launch-time answer, so a grant or revocation since then
-    /// shows only when the browser watcher attaches.
-    private var accessibilityGranted: Bool {
-        observedAccessibility ?? AXIsProcessTrusted()
-    }
-
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         guard let core else { return }
-        // The grant's notification doesn't arrive live (M0), so each activation checks it.
-        if accessibilityGranted != reportedAccessibility {
-            Task { await reportPermissions() }
-        }
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
         apply(core.handle(event: .appActivated(
@@ -193,11 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchBrowser(bundleId: String, generation: UInt64) {
-        // Only domain rules need Accessibility, so it's asked for the first time one could apply.
-        if !accessibilityGranted, !askedForAccessibility {
-            askedForAccessibility = true
-            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-        }
         guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
             .first?.processIdentifier
         else {
@@ -249,10 +234,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         wakeup = timer
     }
 
+    /// Onboarding asks for notifications itself; without it, they're asked for at launch.
     private func watchPermissions() {
         Task {
             // Once now, so status is right while the notification prompt waits for an answer.
             await reportPermissions()
+            guard onboarding == nil else { return }
             do {
                 _ = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound])
@@ -261,12 +248,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             await reportPermissions()
         }
-        // An undocumented notification macOS posts when the Accessibility list changes.
-        observers.append(DistributedNotificationCenter.default().addObserver(
-            forName: Notification.Name("com.apple.accessibility.api"), object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in await self?.reportPermissions() }
-        })
+    }
+
+    private func showOnboarding() {
+        guard let accessibility, let core else { return }
+        let onboarding = Onboarding(
+            accessibility: accessibility,
+            onNotificationsAnswered: { [weak self] in
+                Task { await self?.reportPermissions() }
+            },
+            onFinish: { [weak self] websites in
+                guard let self else { return }
+                apply(core.handle(event: .onboardingFinished(websites: websites)))
+                self.onboarding = nil
+                dockIcon.hide(for: .onboarding)
+                showStatusMenu()
+            })
+        self.onboarding = onboarding
+        dockIcon.show(for: .onboarding)
+        onboarding.present()
+    }
+
+    /// Sparkle starts with the launch's effects, so by now it runs if it ever will.
+    private func showStatusMenu() {
+        guard let core, let accessibility else { return }
+        let checkForUpdates: (() -> Void)? = updater == nil ? nil : { [weak self] in self?.checkForUpdates() }
+        statusMenu = StatusMenu(
+            current: { core.menu() },
+            choose: { [weak self] command in
+                self?.apply(core.handle(event: .menuItemChosen(command: command)))
+            },
+            askForAccessibility: { accessibility.ask() },
+            checkForUpdates: checkForUpdates)
     }
 
     private func reportPermissions() async {
@@ -277,11 +290,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .denied: .denied
             default: .granted
             }
-        guard let core else { return }
-        let accessibility = accessibilityGranted
-        reportedAccessibility = accessibility
+        guard let core, let accessibility else { return }
         apply(core.handle(event: .permissionsChanged(
-            accessibility: accessibility, notifications: notifications)))
+            accessibility: accessibility.granted, notifications: notifications)))
     }
 
     private func tick() {
@@ -297,7 +308,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .startUpdater:
                 updater = SPUStandardUpdaterController(
                     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
-                statusMenu?.checkForUpdates = { [weak self] in self?.checkForUpdates() }
             case .checkForUpdates:
                 checkForUpdates()
             case .setNightShift(let enabled):
@@ -313,6 +323,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 wakeup = nil
             case .notify(let title, let body):
                 notify(title: title, body: body)
+            // Version 1 is the only onboarding so far, so `completed` is always 0.
+            case .showOnboarding:
+                showOnboarding()
+            case .askForAccessibility:
+                accessibility?.ask()
             case .watchBrowser(let bundleId, let generation):
                 watchBrowser(bundleId: bundleId, generation: generation)
             case .stopWatching:

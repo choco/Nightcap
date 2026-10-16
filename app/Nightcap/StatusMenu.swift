@@ -7,8 +7,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let current: () -> Menu
     private let choose: (Command) -> Void
-    /// Set once Sparkle runs, in self-managed installs only.
-    var checkForUpdates: (() -> Void)?
+    private let askForAccessibility: () -> Void
+    /// Nil unless Sparkle runs, which it does in self-managed installs only.
+    private let checkForUpdates: (() -> Void)?
 
     /// Boxes a command for `NSMenuItem.representedObject`, which takes only objects.
     private final class Choice: NSObject {
@@ -16,9 +17,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         init(_ command: Command) { self.command = command }
     }
 
-    init(current: @escaping () -> Menu, choose: @escaping (Command) -> Void) {
+    init(
+        current: @escaping () -> Menu,
+        choose: @escaping (Command) -> Void,
+        askForAccessibility: @escaping () -> Void,
+        checkForUpdates: (() -> Void)?
+    ) {
         self.current = current
         self.choose = choose
+        self.askForAccessibility = askForAccessibility
+        self.checkForUpdates = checkForUpdates
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -61,6 +69,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 items.forEach { submenu.addItem(menuItem($0)) }
                 parent.submenu = submenu
                 menu.addItem(parent)
+            case .askForAccessibility(let title):
+                menu.addItem(NSMenuItem(title: title, action: #selector(allowAccessibility), keyEquivalent: ""))
             case .separator:
                 menu.addItem(.separator())
             }
@@ -77,6 +87,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
         menuItem.state = item.checked ? .on : .off
+        menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
         return menuItem
     }
@@ -84,6 +95,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func chose(_ sender: NSMenuItem) {
         guard let choice = sender.representedObject as? Choice else { return }
         choose(choice.command)
+    }
+
+    @objc private func allowAccessibility() {
+        askForAccessibility()
     }
 
     @objc private func checkNow() {

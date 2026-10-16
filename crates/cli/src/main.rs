@@ -57,6 +57,11 @@ enum Command {
     Resume,
     /// Check for an update now; Nightcap shows what it finds and offers to install it.
     Update,
+    /// Turn website checking on or off: domain rules need it, and it needs Accessibility.
+    Websites {
+        #[arg(value_enum)]
+        state: Switch,
+    },
     /// List, add, remove or snooze rules, or export the ad-hoc ones for the config.
     Rules {
         #[command(subcommand)]
@@ -103,6 +108,12 @@ enum RulesAction {
         #[arg(long, value_enum)]
         format: Format,
     },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum Switch {
+    On,
+    Off,
 }
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -200,6 +211,18 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             jiff::SignedDuration::try_from(duration).context("that's too long")?,
         ),
         Command::Resume => protocol::Command::Resume,
+        Command::Websites { state } => {
+            let state = match state {
+                Switch::On => protocol::OnOff::On,
+                Switch::Off => protocol::OnOff::Off,
+            };
+            let command = protocol::Command::Websites(state);
+            let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
+                return Err(unexpected_reply());
+            };
+            println!("Website checking is {state}.");
+            return Ok(());
+        }
     };
     let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
         return Err(unexpected_reply());
@@ -332,6 +355,16 @@ fn print_status(status: &Status) {
         status.frontmost_app.as_deref().unwrap_or("unknown")
     );
     println!("Rules: {}", rules(&status.rules));
+    let website_checking = status.website_checking;
+    println!(
+        "Website checking: {}{}",
+        website_checking.state,
+        if website_checking.from_config {
+            " (set in the config)"
+        } else {
+            ""
+        }
+    );
     if !status.snoozes.is_empty() {
         let snoozes: Vec<_> = status.snoozes.iter().map(ToString::to_string).collect();
         println!(

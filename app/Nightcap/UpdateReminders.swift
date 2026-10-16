@@ -6,12 +6,18 @@ import UserNotifications
 /// shows in the Dock so its update window can be found, and a scheduled update also posts a
 /// notification, since its window opens behind whatever the user is doing.
 final class UpdateReminders: NSObject, SPUStandardUserDriverDelegate {
+    private let dockIcon: DockIcon
+
+    init(dockIcon: DockIcon) {
+        self.dockIcon = dockIcon
+    }
+
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
     func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState
     ) {
-        NSApp.setActivationPolicy(.regular)
+        dockIcon.show(for: .update)
         guard !state.userInitiated else { return }
         let content = UNMutableNotificationContent()
         content.title = "Nightcap \(update.displayVersionString) is ready to install"
@@ -21,6 +27,6 @@ final class UpdateReminders: NSObject, SPUStandardUserDriverDelegate {
     }
 
     func standardUserDriverWillFinishUpdateSession() {
-        NSApp.setActivationPolicy(.accessory)
+        dockIcon.hide(for: .update)
     }
 }

@@ -20,6 +20,10 @@ pub(crate) struct Persisted {
     pub(crate) manual_state: Option<OnOff>,
     pub(crate) snoozes: Vec<RuleIdentity>,
     pub(crate) timed_disable: Option<Timestamp>,
+    /// Website checking as last chosen in onboarding, the menu or the CLI (ADR-0016).
+    pub(crate) websites: bool,
+    /// The last onboarding version completed; a later one shows only its new steps.
+    pub(crate) onboarding: u32,
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
     /// clean exit. The next run finds Night Shift there and knows it wasn't the user.
     pub(crate) night_shift: Option<OnOff>,
