@@ -16,7 +16,10 @@ use nightcap_protocol::{
 
 use crate::adhoc;
 use crate::state::{Persisted, Store};
-use crate::{Clock, Core, CoreError, Effect, Event, MenuEntry, MenuIcon, MenuItem, Setup, Waker};
+use crate::{
+    Attention, Clock, Core, CoreError, Effect, Event, Fix, FixButton, MenuEntry, MenuIcon,
+    MenuItem, SettingsCheck, SettingsSwitch, Setup, Waker,
+};
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
 struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -1835,9 +1838,7 @@ fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
 fn entry_titled(core: &Core, prefix: &str) -> Option<MenuEntry> {
     core.menu().entries.into_iter().find(|entry| match entry {
         MenuEntry::Item { item } => item.title.starts_with(prefix),
-        MenuEntry::Submenu { title, .. }
-        | MenuEntry::Header { title }
-        | MenuEntry::AskForAccessibility { title } => title.starts_with(prefix),
+        MenuEntry::Submenu { title, .. } | MenuEntry::Header { title } => title.starts_with(prefix),
         MenuEntry::Separator => false,
     })
 }
@@ -2073,7 +2074,7 @@ fn choosing_a_menu_item_runs_its_command() {
     });
     activate(&core, "com.figma.Desktop");
 
-    let effects = core.handle(Event::MenuItemChosen {
+    let effects = core.handle(Event::CommandChosen {
         command: Command::AddRule(figma()),
     });
 
@@ -2165,7 +2166,7 @@ fn turning_website_checking_on_without_accessibility_asks_for_it() {
 }
 
 #[test]
-fn the_menu_turns_website_checking_on_and_off_unless_the_config_sets_it() {
+fn settings_switch_website_checking_unless_the_config_sets_it() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
@@ -2173,36 +2174,35 @@ fn the_menu_turns_website_checking_on_and_off_unless_the_config_sets_it() {
         enabled: true,
         schedule: custom_hours(),
     });
+    let switch = |on, locked, command| SettingsSwitch {
+        on,
+        locked,
+        command,
+    };
 
+    assert_eq!(entry_titled(&core, "Check Websites"), None);
     assert_eq!(
-        entry_titled(&core, "Check Websites"),
-        toggle_item("Check Websites", false, Command::Websites(OnOff::On))
+        core.settings().website_checking,
+        switch(false, false, Command::Websites(OnOff::On))
     );
-    send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    core.handle(Event::CommandChosen {
+        command: Command::Websites(OnOff::On),
+    });
     assert_eq!(
-        entry_titled(&core, "Check Websites"),
-        toggle_item("Check Websites", true, Command::Websites(OnOff::Off))
+        core.settings().website_checking,
+        switch(true, false, Command::Websites(OnOff::Off))
     );
 
     write_config(&socket, "websites = false\n");
     exchange(&core, &socket, &wakes, Request::Reload);
     assert_eq!(
-        entry_titled(&core, "Check Websites"),
-        Some(MenuEntry::Item {
-            item: MenuItem {
-                enabled: false,
-                ..menu_item(
-                    "Check Websites (from the config)",
-                    false,
-                    Command::Websites(OnOff::On)
-                )
-            }
-        })
+        core.settings().website_checking,
+        switch(false, true, Command::Websites(OnOff::On))
     );
 }
 
 #[test]
-fn the_menu_asks_for_accessibility_once_website_checking_is_known_to_lack_it() {
+fn the_menu_points_out_what_needs_attention() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(&socket, "websites = true\n");
@@ -2211,19 +2211,29 @@ fn the_menu_asks_for_accessibility_once_website_checking_is_known_to_lack_it() {
         enabled: false,
         schedule: Schedule::Off,
     });
-    let permissions = |accessibility| Event::PermissionsChanged {
-        accessibility,
-        notifications: NotificationPermission::Granted,
+    let attention = |title: &str, subtitle: Option<&str>| {
+        Some(Attention {
+            title: title.to_owned(),
+            subtitle: subtitle.map(str::to_owned),
+        })
     };
-    let ask = Some(MenuEntry::AskForAccessibility {
-        title: "Allow Accessibility for Websites…".to_owned(),
-    });
 
-    assert_eq!(entry_titled(&core, "Allow Accessibility"), None);
-    core.handle(permissions(false));
-    assert_eq!(entry_titled(&core, "Allow Accessibility"), ask);
-    core.handle(permissions(true));
-    assert_eq!(entry_titled(&core, "Allow Accessibility"), None);
+    assert_eq!(core.menu().attention, None);
+    core.handle(permissions(false, NotificationPermission::Granted));
+    assert_eq!(
+        core.menu().attention,
+        attention("1 Thing Needs Attention…", Some("Accessibility"))
+    );
+    core.handle(permissions(false, NotificationPermission::Denied));
+    assert_eq!(
+        core.menu().attention,
+        attention(
+            "2 Things Need Attention…",
+            Some("Accessibility and notifications")
+        )
+    );
+    core.handle(permissions(true, NotificationPermission::Granted));
+    assert_eq!(core.menu().attention, None);
 }
 
 fn domain(name: &str) -> RuleIdentity {
@@ -2321,40 +2331,71 @@ fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
 fn accessibility_notice() -> Effect {
     Effect::Notify {
         title: "Website checking needs Accessibility".to_owned(),
-        body: "Choose \u{201c}Allow Accessibility for Websites\u{2026}\u{201d} in Nightcap's menu."
-            .to_owned(),
+        body: "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
     }
 }
 
-#[test]
-fn a_browser_in_front_without_accessibility_posts_one_notice_per_launch() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes) = start(&socket);
-    core.handle(Event::PermissionsChanged {
-        accessibility: false,
-        notifications: NotificationPermission::Granted,
-    });
-
-    assert!(activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
-    activate(&core, "com.apple.Terminal");
-    assert!(!activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
+fn notifies(effects: &[Effect]) -> bool {
+    effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::Notify { .. }))
 }
 
 #[test]
-fn the_accessibility_notice_waits_for_the_first_permission_report() {
+fn a_problem_that_appears_on_its_own_is_announced_once() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(&socket, "websites = true\n");
     let (core, _wakes) = start(&socket);
 
-    assert!(!activate_browser(&core, "com.apple.Safari").contains(&accessibility_notice()));
-    let reported = core.handle(Event::PermissionsChanged {
-        accessibility: false,
-        notifications: NotificationPermission::Granted,
+    assert!(
+        core.handle(permissions(false, NotificationPermission::Granted))
+            .contains(&accessibility_notice())
+    );
+    assert!(!notifies(
+        &core.handle(permissions(false, NotificationPermission::Granted))
+    ));
+    core.handle(permissions(true, NotificationPermission::Granted));
+    assert!(
+        core.handle(permissions(false, NotificationPermission::Granted))
+            .contains(&accessibility_notice())
+    );
+
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    assert!(!notifies(
+        &core.handle(permissions(false, NotificationPermission::Granted))
+    ));
+}
+
+#[test]
+fn a_problem_the_user_causes_in_nightcap_is_not_announced() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes) = start(&socket);
+    core.handle(permissions(false, NotificationPermission::Granted));
+
+    let effects = core.handle(Event::CommandChosen {
+        command: Command::Websites(OnOff::On),
     });
-    assert!(reported.contains(&accessibility_notice()));
+    assert!(effects.contains(&Effect::AskForAccessibility));
+    assert!(!notifies(&effects));
+    assert!(!notifies(
+        &core.handle(permissions(false, NotificationPermission::Granted))
+    ));
+}
+
+#[test]
+fn a_config_broken_at_launch_is_announced() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\ndomian = [\"figma.com\"]\n");
+    let (core, _wakes) = start(&socket);
+
+    assert!(launch(&core).iter().any(|effect| matches!(
+        effect,
+        Effect::Notify { title, body }
+            if title == "Nightcap’s config is invalid" && body.contains("domian")
+    )));
 }
 
 #[test]
@@ -2671,6 +2712,7 @@ fn saved_state_loads_back() {
         websites: true,
         onboarding: 1,
         notifications_wanted: true,
+        announced: vec![CheckKind::Accessibility],
         night_shift: Some(OnOff::Off),
         until: Some(at("2026-10-17T07:00:00+02:00")),
     };
@@ -2753,7 +2795,7 @@ fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
         check_of(&core, &socket, &wakes, CheckKind::Accessibility),
         stands(
             CheckState::Drifted,
-            "Accessibility isn't allowed, so website checking can't read the front tab."
+            "Accessibility isn’t allowed, so website checking can’t read the front tab."
         )
     );
     core.handle(permissions(true, NotificationPermission::Granted));
@@ -2780,12 +2822,12 @@ fn notifications_switched_off_after_being_allowed_are_a_problem() {
     core.handle(permissions(true, NotificationPermission::Granted));
     assert_eq!(
         notifications(&core, &socket, &wakes),
-        stands(CheckState::Ok, "Notifications are allowed.")
+        stands(CheckState::Ok, "Allowed.")
     );
     core.handle(permissions(true, NotificationPermission::Denied));
     let drifted = stands(
         CheckState::Drifted,
-        "Notifications were allowed, but they're switched off in System Settings.",
+        "Notifications were allowed, but they’re switched off in System Settings.",
     );
     assert_eq!(notifications(&core, &socket, &wakes), drifted);
 
@@ -2804,10 +2846,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     assert_eq!(config(&core), stands(CheckState::Off, "No config file."));
     write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
     exchange(&core, &socket, &wakes, Request::Reload);
-    assert_eq!(
-        config(&core),
-        stands(CheckState::Ok, "The config file is valid.")
-    );
+    assert_eq!(config(&core), stands(CheckState::Ok, "Valid, with 1 rule."));
     write_config(&socket, "[rules]\ndomian = [\"figma.com\"]\n");
     exchange(&core, &socket, &wakes, Request::Reload);
     let (state, text) = config(&core).unwrap();
@@ -2854,7 +2893,7 @@ fn night_shift_missing_on_this_mac_is_broken() {
         check_of(&core, &socket, &wakes, CheckKind::NightShift),
         stands(
             CheckState::Broken,
-            "Night Shift isn't available on this Mac."
+            "Night Shift isn’t available on this Mac."
         )
     );
     core.handle(Event::StatusChanged {
@@ -2863,6 +2902,130 @@ fn night_shift_missing_on_this_mac_is_broken() {
     });
     assert_eq!(
         check_of(&core, &socket, &wakes, CheckKind::NightShift),
-        stands(CheckState::Ok, "Night Shift is available.")
+        stands(CheckState::Ok, "Available, with no schedule.")
+    );
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        stands(
+            CheckState::Ok,
+            "Available, following its schedule: 22:00 to 07:00."
+        )
+    );
+}
+
+/// The check of `kind` as Settings shows it.
+fn settings_check(core: &Core, kind: CheckKind) -> Option<SettingsCheck> {
+    core.settings()
+        .checks
+        .into_iter()
+        .find(|check| check.kind == kind)
+}
+
+fn button(title: &str, fix: Fix) -> Option<FixButton> {
+    Some(FixButton {
+        title: title.to_owned(),
+        fix,
+    })
+}
+
+#[test]
+fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "");
+    let (core, _wakes) = start(&socket);
+    core.handle(Event::CommandChosen {
+        command: Command::Websites(OnOff::On),
+    });
+    core.handle(permissions(false, NotificationPermission::Granted));
+
+    assert_eq!(
+        settings_check(&core, CheckKind::Accessibility),
+        Some(SettingsCheck {
+            kind: CheckKind::Accessibility,
+            state: CheckState::Drifted,
+            text: "Accessibility isn’t allowed, so website checking can’t read the front tab."
+                .to_owned(),
+            restore: button("Allow…", Fix::AskForAccessibility),
+            accept: button("Stop Checking Websites", Fix::StopCheckingWebsites),
+        })
+    );
+    core.handle(Event::FixChosen {
+        fix: Fix::StopCheckingWebsites,
+    });
+    assert!(!core.settings().website_checking.on);
+    assert_eq!(
+        settings_check(&core, CheckKind::Accessibility),
+        Some(SettingsCheck {
+            kind: CheckKind::Accessibility,
+            state: CheckState::Off,
+            text: "Not needed while website checking is off.".to_owned(),
+            restore: None,
+            accept: None,
+        })
+    );
+}
+
+#[test]
+fn settings_offer_to_allow_notifications_or_keep_them_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes) = start(&socket);
+    core.handle(permissions(true, NotificationPermission::Granted));
+    core.handle(permissions(true, NotificationPermission::Denied));
+
+    assert_eq!(
+        settings_check(&core, CheckKind::Notifications),
+        Some(SettingsCheck {
+            kind: CheckKind::Notifications,
+            state: CheckState::Drifted,
+            text: "Notifications were allowed, but they’re switched off in System Settings."
+                .to_owned(),
+            restore: button("Allow Notifications…", Fix::AllowNotifications),
+            accept: button("Keep Notifications Off", Fix::KeepNotificationsOff),
+        })
+    );
+    core.handle(Event::FixChosen {
+        fix: Fix::KeepNotificationsOff,
+    });
+    let kept_off = Some(SettingsCheck {
+        kind: CheckKind::Notifications,
+        state: CheckState::Off,
+        text: "Notifications are off.".to_owned(),
+        restore: button("Allow Notifications…", Fix::AllowNotifications),
+        accept: None,
+    });
+    assert_eq!(settings_check(&core, CheckKind::Notifications), kept_off);
+
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    core.handle(permissions(true, NotificationPermission::Denied));
+    assert_eq!(settings_check(&core, CheckKind::Notifications), kept_off);
+}
+
+#[test]
+fn settings_offer_to_reload_a_broken_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\ndomian = [\"figma.com\"]\n");
+    let (core, _wakes) = start(&socket);
+
+    let broken = settings_check(&core, CheckKind::ConfigFile).unwrap();
+    assert_eq!(broken.state, CheckState::Broken);
+    assert_eq!(broken.restore, button("Reload", Fix::Reload));
+    write_config(&socket, "[rules]\ndomain = [\"figma.com\"]\n");
+    core.handle(Event::FixChosen { fix: Fix::Reload });
+    assert_eq!(
+        settings_check(&core, CheckKind::ConfigFile),
+        Some(SettingsCheck {
+            kind: CheckKind::ConfigFile,
+            state: CheckState::Ok,
+            text: "Valid, with 1 rule.".to_owned(),
+            restore: None,
+            accept: None,
+        })
     );
 }

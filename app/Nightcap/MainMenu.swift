@@ -9,6 +9,8 @@ enum MainMenu {
             action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Settings…", action: #selector(AppDelegate.openSettings(_:)), keyEquivalent: ",")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Hide Nightcap", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit Nightcap", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

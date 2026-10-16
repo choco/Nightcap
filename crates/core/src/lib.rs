@@ -55,6 +55,23 @@ uniffi::custom_type!(SignedDuration, i64, {
 });
 
 #[uniffi::remote(Enum)]
+pub enum CheckKind {
+    NightShift,
+    Accessibility,
+    Notifications,
+    ConfigFile,
+    AdHocRules,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CheckState {
+    Ok,
+    Off,
+    Drifted,
+    Broken,
+}
+
+#[uniffi::remote(Enum)]
 pub enum OnOff {
     On,
     Off,
@@ -88,7 +105,66 @@ pub struct Menu {
     pub status: String,
     /// Why, in a few words, e.g. "While Figma is in front".
     pub reason: Option<String>,
+    /// What needs the user's attention, while something does.
+    pub attention: Option<Attention>,
     pub entries: Vec<MenuEntry>,
+}
+
+/// What the settings window shows, pulled like the menu: the shell only draws it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Settings {
+    /// "Check websites", locked while the config sets `websites`.
+    pub website_checking: SettingsSwitch,
+    /// Shown inline, each under the setting it belongs to.
+    pub checks: Vec<SettingsCheck>,
+}
+
+/// A check as Settings shows it, with what can be done about it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SettingsCheck {
+    pub kind: CheckKind,
+    pub state: CheckState,
+    pub text: String,
+    /// Puts back what the user set up, or fixes what's broken.
+    pub restore: Option<FixButton>,
+    /// Accepts the change as the user's choice.
+    pub accept: Option<FixButton>,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct FixButton {
+    pub title: String,
+    pub fix: Fix,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum Fix {
+    /// The shell's: the macOS prompt while Nightcap has no entry in the list, else the pane.
+    AskForAccessibility,
+    /// The shell's: the macOS prompt while notifications were never asked for, else Nightcap's
+    /// page in Notification settings.
+    AllowNotifications,
+    /// The core's, like the rest: sent back as `Event::FixChosen`.
+    StopCheckingWebsites,
+    KeepNotificationsOff,
+    Reload,
+}
+
+/// Flipping it sends `command` back as `Event::CommandChosen`.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SettingsSwitch {
+    pub on: bool,
+    /// Set by the config, so Settings can't change it.
+    pub locked: bool,
+    pub command: Command,
+}
+
+/// The menu's line about problems, under the status line. Choosing it opens Settings, and
+/// while it's set the shell marks the icon too.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct Attention {
+    pub title: String,
+    pub subtitle: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -112,14 +188,10 @@ pub enum MenuEntry {
     Header {
         title: String,
     },
-    /// Asks for Accessibility, which website checking is missing: a shell action, not a command.
-    AskForAccessibility {
-        title: String,
-    },
     Separator,
 }
 
-/// Choosing it sends `command` back as `Event::MenuItemChosen`.
+/// Choosing it sends `command` back as `Event::CommandChosen`.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct MenuItem {
     pub title: String,
@@ -181,8 +253,13 @@ pub enum Event {
     OnboardingFinished {
         websites: bool,
     },
-    /// The user chose a menu item, which carries the command to run.
-    MenuItemChosen {
+    /// The user chose one of the core's fixes in Settings.
+    FixChosen {
+        fix: Fix,
+    },
+    /// The user chose a menu item or flipped a switch in Settings, which carries the command to
+    /// run.
+    CommandChosen {
         command: Command,
     },
     /// The wakeup the core last asked for came due.
@@ -318,8 +395,6 @@ struct State {
     app_name: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
     is_browser: bool,
-    /// Whether this launch already posted that website checking needs Accessibility.
-    told_about_accessibility: bool,
     watch: Option<Watch>,
     /// The generation of the last watch started.
     generation: u64,
@@ -344,6 +419,8 @@ struct State {
     notifications: NotificationPermission,
     /// See `state::Persisted::notifications_wanted`.
     notifications_wanted: bool,
+    /// See `state::Persisted::announced`.
+    announced: Vec<CheckKind>,
     login_item_registered: bool,
     /// What was last written to `state.json`.
     saved: state::Persisted,
@@ -412,12 +489,46 @@ impl Core {
 
     pub fn handle(&self, event: Event) -> Vec<Effect> {
         self.catch_up();
+        // The user is looking at whatever their own choice in Nightcap's UI got wrong.
+        let chosen_in_nightcap = matches!(
+            event,
+            Event::CommandChosen { .. }
+                | Event::FixChosen { .. }
+                | Event::OnboardingFinished { .. }
+        );
         let mut effects = self.react(event);
         self.rewatch(&mut effects);
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
+        self.announce(!chosen_in_nightcap, &mut effects);
         self.save();
         effects
+    }
+
+    pub fn settings(&self) -> Settings {
+        let state = self.state();
+        let on = state.website_checking();
+        Settings {
+            website_checking: SettingsSwitch {
+                on,
+                locked: state.config_websites.is_some(),
+                command: Command::Websites(on_off(!on)),
+            },
+            checks: state
+                .checks()
+                .into_iter()
+                .map(|check| {
+                    let (restore, accept) = state.fixes(&check);
+                    SettingsCheck {
+                        kind: check.kind,
+                        state: check.state,
+                        text: check.text,
+                        restore,
+                        accept,
+                    }
+                })
+                .collect(),
+        }
     }
 
     pub fn menu(&self) -> Menu {
@@ -428,6 +539,7 @@ impl Core {
                 icon: MenuIcon::Unavailable,
                 status: "Night Shift: Unavailable".to_owned(),
                 reason: None,
+                attention: None,
                 entries: Vec::new(),
             };
         }
@@ -493,15 +605,6 @@ impl Core {
                 entries.push(MenuEntry::Item { item });
             }
         }
-        entries.push(MenuEntry::Separator);
-        entries.push(MenuEntry::Item {
-            item: state.websites_toggle(),
-        });
-        if state.website_checking() && state.accessibility == Some(false) {
-            entries.push(MenuEntry::AskForAccessibility {
-                title: "Allow Accessibility for Websites…".to_owned(),
-            });
-        }
         Menu {
             icon: match (decision.verdict, on) {
                 (Verdict::ForceOff, _) => MenuIcon::ForcedOff,
@@ -515,6 +618,7 @@ impl Core {
             }
             .to_owned(),
             reason: state.menu_reason(&decision),
+            attention: state.attention(),
             entries,
         }
     }
@@ -533,6 +637,8 @@ impl Core {
         self.rewatch(&mut effects);
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
+        // The CLI already printed what went wrong.
+        self.announce(false, &mut effects);
         self.save();
         effects
     }
@@ -560,12 +666,6 @@ impl Core {
                     }
                     effects.push(Effect::StartUpdater);
                 }
-                if let Some(error) = &state.config_error {
-                    effects.push(Effect::Notify {
-                        title: "Nightcap's config is invalid".to_owned(),
-                        body: format!("Running without its rules. {error}"),
-                    });
-                }
                 effects
             }
             Event::AppActivated {
@@ -578,9 +678,7 @@ impl Core {
                 state.context.app = bundle_id;
                 state.app_name = name;
                 state.is_browser = is_browser;
-                let mut effects = Vec::new();
-                state.notice_missing_accessibility(&mut effects);
-                effects
+                Vec::new()
             }
             // The host itself is never logged (ADR-0012).
             Event::HostChanged { generation, host } => {
@@ -613,9 +711,7 @@ impl Core {
                 if notifications == NotificationPermission::Granted {
                     state.notifications_wanted = true;
                 }
-                let mut effects = Vec::new();
-                state.notice_missing_accessibility(&mut effects);
-                effects
+                Vec::new()
             }
             Event::StatusChanged { enabled, schedule } => {
                 let mut state = self.state();
@@ -654,7 +750,24 @@ impl Core {
                 }
                 Vec::new()
             }
-            Event::MenuItemChosen { command } => {
+            Event::FixChosen { fix } => {
+                let mut effects = Vec::new();
+                match fix {
+                    Fix::StopCheckingWebsites => {
+                        if let Err(error) =
+                            self.run_command(&Command::Websites(OnOff::Off), &mut effects)
+                        {
+                            tracing::warn!("a fix was refused: {:?}", error.code);
+                        }
+                    }
+                    Fix::KeepNotificationsOff => self.state().notifications_wanted = false,
+                    // An invalid config shows in its check again.
+                    Fix::Reload => _ = self.reload(),
+                    _ => tracing::debug!("{fix:?} is the shell's to carry out"),
+                }
+                effects
+            }
+            Event::CommandChosen { command } => {
                 let mut effects = Vec::new();
                 if let Err(error) = self.run_command(&command, &mut effects) {
                     // The message can name a domain, so only the code is logged (ADR-0012).
@@ -772,7 +885,6 @@ impl Core {
                 config_websites: config.websites,
                 app_name: None,
                 is_browser: false,
-                told_about_accessibility: false,
                 watch: None,
                 generation: 0,
                 snoozes: persisted.snoozes.clone(),
@@ -788,6 +900,7 @@ impl Core {
                 notifications: NotificationPermission::NotRequested,
                 login_item_registered: persisted.login_item_registered,
                 notifications_wanted: persisted.notifications_wanted,
+                announced: persisted.announced.clone(),
                 saved: persisted,
             }),
         };
@@ -836,27 +949,35 @@ impl Core {
                     .to_owned(),
                 })
             }
-            Request::Reload => match config::load(&self.config_file) {
-                Ok(config) => {
-                    tracing::info!("reloaded the config: {} rules", config.rules.len());
-                    let mut state = self.state();
-                    state.config_rules = config.rules;
-                    state.config_websites = config.websites;
-                    state.config_error = None;
-                    state.config_found = config.found;
-                    drop(state);
-                    self.graduate();
-                    self.status()
-                }
-                Err(error) => {
-                    tracing::warn!("keeping the rules loaded before: the config is invalid");
-                    self.state().config_error = Some(error.clone());
-                    Response::Error(ErrorReply {
-                        code: ErrorCode::InvalidConfig,
-                        message: error,
-                    })
-                }
+            Request::Reload => match self.reload() {
+                Ok(()) => self.status(),
+                Err(error) => Response::Error(ErrorReply {
+                    code: ErrorCode::InvalidConfig,
+                    message: error,
+                }),
             },
+        }
+    }
+
+    /// Loads the config again; an invalid one keeps the rules loaded before.
+    fn reload(&self) -> Result<(), String> {
+        match config::load(&self.config_file) {
+            Ok(config) => {
+                tracing::info!("reloaded the config: {} rules", config.rules.len());
+                let mut state = self.state();
+                state.config_rules = config.rules;
+                state.config_websites = config.websites;
+                state.config_error = None;
+                state.config_found = config.found;
+                drop(state);
+                self.graduate();
+                Ok(())
+            }
+            Err(error) => {
+                tracing::warn!("keeping the rules loaded before: the config is invalid");
+                self.state().config_error = Some(error.clone());
+                Err(error)
+            }
         }
     }
 
@@ -1002,6 +1123,28 @@ impl Core {
     }
 
     /// Watches the frontmost browser whenever website checking is on (ADR-0016).
+    /// Posts one notification when a problem appears, unless `aloud` is false because the user
+    /// caused it themselves. A problem that ends and comes back is announced again.
+    fn announce(&self, aloud: bool, effects: &mut Vec<Effect>) {
+        let mut state = self.state();
+        let problems: Vec<_> = state
+            .checks()
+            .into_iter()
+            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+            .map(|check| check.kind)
+            .collect();
+        state.announced.retain(|kind| problems.contains(kind));
+        for kind in problems {
+            if state.announced.contains(&kind) {
+                continue;
+            }
+            state.announced.push(kind);
+            if let Some((title, body)) = state.notice(kind).filter(|_| aloud) {
+                effects.push(Effect::Notify { title, body });
+            }
+        }
+    }
+
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         let wanted = state.context.app.clone().filter(|_| {
@@ -1308,26 +1451,9 @@ impl State {
             websites: self.websites,
             onboarding: self.onboarding,
             notifications_wanted: self.notifications_wanted,
+            announced: self.announced.clone(),
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
-        }
-    }
-
-    /// "Check Websites", which only the config can change once it sets `websites`.
-    fn websites_toggle(&self) -> MenuItem {
-        let on = self.website_checking();
-        let from_config = self.config_websites.is_some();
-        MenuItem {
-            subtitle: None,
-            indented: false,
-            title: if from_config {
-                "Check Websites (from the config)".to_owned()
-            } else {
-                "Check Websites".to_owned()
-            },
-            checked: on,
-            enabled: !from_config,
-            command: Command::Websites(on_off(!on)),
         }
     }
 
@@ -1489,6 +1615,71 @@ impl State {
         self.config_websites.unwrap_or(self.websites)
     }
 
+    /// What Settings offers for a check: putting back what the user set up, and accepting
+    /// the change as their choice.
+    fn fixes(&self, check: &Check) -> (Option<FixButton>, Option<FixButton>) {
+        let button = |title: &str, fix| {
+            Some(FixButton {
+                title: title.to_owned(),
+                fix,
+            })
+        };
+        match (check.kind, check.state) {
+            (CheckKind::Accessibility, CheckState::Drifted) => (
+                button("Allow…", Fix::AskForAccessibility),
+                // Only the config can turn off what the config turned on.
+                button("Stop Checking Websites", Fix::StopCheckingWebsites)
+                    .filter(|_| self.config_websites.is_none()),
+            ),
+            (CheckKind::Notifications, CheckState::Drifted) => (
+                button("Allow Notifications…", Fix::AllowNotifications),
+                button("Keep Notifications Off", Fix::KeepNotificationsOff),
+            ),
+            (CheckKind::Notifications, CheckState::Off) => (
+                button("Allow Notifications…", Fix::AllowNotifications),
+                None,
+            ),
+            (CheckKind::ConfigFile, CheckState::Broken) => (button("Reload", Fix::Reload), None),
+            _ => (None, None),
+        }
+    }
+
+    /// The menu's problem line, from the checks. Night Shift's own is left to the status line.
+    fn attention(&self) -> Option<Attention> {
+        let problems: Vec<_> = self
+            .checks()
+            .into_iter()
+            .filter(|check| {
+                check.kind != CheckKind::NightShift
+                    && matches!(check.state, CheckState::Drifted | CheckState::Broken)
+            })
+            .map(|check| check.kind)
+            .collect();
+        if problems.is_empty() {
+            return None;
+        }
+        let names: Vec<_> = problems
+            .iter()
+            .map(|kind| {
+                match kind {
+                    CheckKind::NightShift => "Night Shift",
+                    CheckKind::Accessibility => "Accessibility",
+                    CheckKind::Notifications => "notifications",
+                    CheckKind::ConfigFile => "the config file",
+                    CheckKind::AdHocRules => "ad-hoc rules",
+                }
+                .to_owned()
+            })
+            .collect();
+        Some(Attention {
+            title: match problems.len() {
+                1 => "1 Thing Needs Attention…".to_owned(),
+                count => format!("{count} Things Need Attention…"),
+            },
+            subtitle: capitalized(&listed(&names)),
+        })
+    }
+
     /// Everything Nightcap depends on, compared with what the user set up.
     fn checks(&self) -> Vec<Check> {
         let check = |kind, state, text: &str| Check {
@@ -1500,13 +1691,25 @@ impl State {
             check(
                 CheckKind::NightShift,
                 CheckState::Broken,
-                "Night Shift isn't available on this Mac.",
+                "Night Shift isn’t available on this Mac.",
             )
         } else {
+            let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
             check(
                 CheckKind::NightShift,
                 CheckState::Ok,
-                "Night Shift is available.",
+                &match self.timeline.schedule {
+                    None => "Available.".to_owned(),
+                    Some(Schedule::Off) => "Available, with no schedule.".to_owned(),
+                    Some(Schedule::SunsetToSunrise) => {
+                        "Available, following its schedule: sunset to sunrise.".to_owned()
+                    }
+                    Some(Schedule::Custom { from, to }) => format!(
+                        "Available, following its schedule: {} to {}.",
+                        time(from),
+                        time(to)
+                    ),
+                },
             )
         }];
         // Nothing is said about the permissions until the shell first reports them.
@@ -1525,7 +1728,7 @@ impl State {
                 (true, false) => check(
                     CheckKind::Accessibility,
                     CheckState::Drifted,
-                    "Accessibility isn't allowed, so website checking can't read the front tab.",
+                    "Accessibility isn’t allowed, so website checking can’t read the front tab.",
                 ),
             });
             checks.push(
@@ -1533,15 +1736,11 @@ impl State {
                     self.notifications == NotificationPermission::Granted,
                     self.notifications_wanted,
                 ) {
-                    (true, _) => check(
-                        CheckKind::Notifications,
-                        CheckState::Ok,
-                        "Notifications are allowed.",
-                    ),
+                    (true, _) => check(CheckKind::Notifications, CheckState::Ok, "Allowed."),
                     (false, true) => check(
                         CheckKind::Notifications,
                         CheckState::Drifted,
-                        "Notifications were allowed, but they're switched off in System Settings.",
+                        "Notifications were allowed, but they’re switched off in System Settings.",
                     ),
                     (false, false) => check(
                         CheckKind::Notifications,
@@ -1560,7 +1759,11 @@ impl State {
             (None, true) => check(
                 CheckKind::ConfigFile,
                 CheckState::Ok,
-                "The config file is valid.",
+                &match self.config_rules.len() {
+                    0 => "Valid, with no rules.".to_owned(),
+                    1 => "Valid, with 1 rule.".to_owned(),
+                    count => format!("Valid, with {count} rules."),
+                },
             ),
             (None, false) => check(CheckKind::ConfigFile, CheckState::Off, "No config file."),
         });
@@ -1649,20 +1852,23 @@ impl State {
         }
     }
 
-    /// Once per launch, the first time a browser is in front while website checking is on and
-    /// Accessibility is known to be missing.
-    fn notice_missing_accessibility(&mut self, effects: &mut Vec<Effect>) {
-        if self.is_browser
-            && self.website_checking()
-            && self.accessibility == Some(false)
-            && !self.told_about_accessibility
-        {
-            self.told_about_accessibility = true;
-            effects.push(Effect::Notify {
-                title: "Website checking needs Accessibility".to_owned(),
-                body: "Choose \u{201c}Allow Accessibility for Websites\u{2026}\u{201d} in Nightcap's menu."
-                    .to_owned(),
-            });
+    /// The notification for a problem that appeared on its own; Night Shift's is a fact about
+    /// the Mac, and switched-off notifications can't announce themselves.
+    fn notice(&self, kind: CheckKind) -> Option<(String, String)> {
+        match kind {
+            CheckKind::Accessibility => Some((
+                "Website checking needs Accessibility".to_owned(),
+                "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
+            )),
+            CheckKind::ConfigFile => self
+                .config_error
+                .clone()
+                .map(|error| ("Nightcap’s config is invalid".to_owned(), error)),
+            CheckKind::AdHocRules => self
+                .ad_hoc_error
+                .clone()
+                .map(|error| ("Ad-hoc rules are off".to_owned(), error)),
+            CheckKind::NightShift | CheckKind::Notifications => None,
         }
     }
 

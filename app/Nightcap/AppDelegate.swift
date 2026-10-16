@@ -15,6 +15,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var updater: SPUStandardUpdaterController?
     private var browserWatcher: BrowserWatcher?
     private var statusMenu: StatusMenu?
+    private var settingsWindow: SettingsWindow?
+    /// Re-reads the permissions every second while Settings is open, and every 30 seconds
+    /// otherwise: macOS posts nothing when notifications are switched in System Settings.
+    private var permissionsPoll: Timer?
     private var accessibility: AccessibilityPermission?
     private var onboarding: Onboarding?
     /// What the core last heard, so an unchanged re-read sends nothing.
@@ -32,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        #if DEBUG
+        Snapshot.runIfAsked()
+        #endif
         quitOnTerminationSignal()
         let waker = MainThreadWaker { [weak self] in self?.tick() }
         let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
@@ -71,11 +78,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watchSystem()
     }
 
-    /// Clicking the Dock icon brings onboarding forward.
+    /// Clicking the Dock icon brings onboarding forward; opening Nightcap again once it's done
+    /// opens Settings.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard let onboarding else { return true }
-        onboarding.present()
+        if let onboarding {
+            onboarding.present()
+        } else {
+            showSettings(.general)
+        }
         return false
+    }
+
+    /// The app menu's "Settings…".
+    @objc func openSettings(_ sender: Any?) {
+        showSettings(.general)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -243,6 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Onboarding asks for notifications itself; without it, they're asked for at launch.
     private func watchPermissions() {
+        pollPermissions(every: 30)
         Task {
             // Once now, so status is right while the notification prompt waits for an answer.
             await reportPermissions()
@@ -278,15 +295,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Sparkle starts with the launch's effects, so by now it runs if it ever will.
     private func showStatusMenu() {
-        guard let core, let accessibility else { return }
+        guard let core else { return }
         let checkForUpdates: (() -> Void)? = updater == nil ? nil : { [weak self] in self?.checkForUpdates() }
         statusMenu = StatusMenu(
             current: { core.menu() },
             choose: { [weak self] command in
-                self?.apply(core.handle(event: .menuItemChosen(command: command)))
+                self?.apply(core.handle(event: .commandChosen(command: command)))
             },
-            askForAccessibility: { accessibility.ask() },
+            openSettings: { [weak self] in
+                self?.showSettings(SettingsWindow.tab(for: core.settings()))
+            },
+            onOpen: { [weak self] in
+                Task { await self?.reportPermissions() }
+            },
             checkForUpdates: checkForUpdates)
+        settingsWindow = SettingsWindow(
+            current: { core.settings() },
+            choose: { [weak self] command in
+                self?.apply(core.handle(event: .commandChosen(command: command)))
+            },
+            perform: { [weak self] fix in self?.perform(fix) },
+            checkForUpdates: checkForUpdates,
+            onClose: { [weak self] in
+                guard let self else { return }
+                dockIcon.hide(for: .settings)
+                pollPermissions(every: 30)
+            })
+    }
+
+    private func showSettings(_ tab: SettingsWindow.Tab) {
+        guard let settingsWindow else { return }
+        dockIcon.show(for: .settings)
+        settingsWindow.show(tab)
+        Task { await reportPermissions() }
+        pollPermissions(every: 1)
+    }
+
+    private func pollPermissions(every interval: TimeInterval) {
+        permissionsPoll?.invalidate()
+        let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                _ = Task { await self?.reportPermissions() }
+            }
+        }
+        // Lets macOS fold the background poll into other wakeups.
+        timer.tolerance = interval / 4
+        RunLoop.main.add(timer, forMode: .common)
+        permissionsPoll = timer
+    }
+
+    /// The shell carries out its own fixes and hands the rest to the core.
+    private func perform(_ fix: Fix) {
+        switch fix {
+        case .askForAccessibility:
+            accessibility?.ask()
+        case .allowNotifications:
+            allowNotifications()
+        default:
+            guard let core else { return }
+            apply(core.handle(event: .fixChosen(fix: fix)))
+        }
+    }
+
+    /// The macOS prompt while notifications were never asked for; it never shows again after
+    /// that, so then Nightcap's page in Notification settings.
+    private func allowNotifications() {
+        Task {
+            let center = UNUserNotificationCenter.current()
+            guard await center.notificationSettings().authorizationStatus == .notDetermined else {
+                let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
+                NSWorkspace.shared.open(URL(string: pane)!)
+                return
+            }
+            do {
+                _ = try await center.requestAuthorization(options: [.alert, .sound])
+            } catch {
+                log.error("couldn't request notification permission: \(error, privacy: .public)")
+            }
+            await reportPermissions()
+        }
     }
 
     private func reportPermissions() async {
@@ -346,6 +433,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Whatever changed the core's state changed the icon too, CLI commands included.
         statusMenu?.refresh()
+        settingsWindow?.refresh()
     }
 
     private func checkForUpdates() {

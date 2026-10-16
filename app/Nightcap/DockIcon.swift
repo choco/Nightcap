@@ -1,10 +1,10 @@
 import AppKit
 
 /// Nightcap lives in the menu bar, and shows in the Dock only while a window of its own needs
-/// finding: onboarding's, or an update's.
+/// finding: onboarding's, Settings', or an update's.
 final class DockIcon {
     enum Reason {
-        case onboarding, update
+        case onboarding, settings, update
     }
 
     private var reasons: Set<Reason> = []

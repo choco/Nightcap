@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 
 use jiff::Timestamp;
-use nightcap_protocol::{OnOff, RuleIdentity};
+use nightcap_protocol::{CheckKind, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
 const VERSION: u32 = 1;
@@ -27,6 +27,8 @@ pub(crate) struct Persisted {
     /// Whether the user wants Nightcap's notifications: set once they're allowed, and cleared
     /// only when the user accepts them off. The notifications check compares against it.
     pub(crate) notifications_wanted: bool,
+    /// The problems already announced with a notification, so a restart doesn't repeat them.
+    pub(crate) announced: Vec<CheckKind>,
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
     /// clean exit. The next run finds Night Shift there and knows it wasn't the user.
     pub(crate) night_shift: Option<OnOff>,

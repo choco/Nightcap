@@ -7,9 +7,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let current: () -> Menu
     private let choose: (Command) -> Void
-    private let askForAccessibility: () -> Void
+    private let openSettings: () -> Void
+    private let onOpen: () -> Void
     /// Nil unless Sparkle runs, which it does in self-managed installs only.
     private let checkForUpdates: (() -> Void)?
+    /// What the open menu shows, so `refresh()` redraws it only when that changed.
+    private var shown: Menu?
+    /// The mockup's orange dot, over the template moon so the moon still follows the menu
+    /// bar's appearance while the dot keeps its colour.
+    private let dot = NSView()
 
     /// Boxes a command for `NSMenuItem.representedObject`, which takes only objects.
     private final class Choice: NSObject {
@@ -20,46 +26,128 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     init(
         current: @escaping () -> Menu,
         choose: @escaping (Command) -> Void,
-        askForAccessibility: @escaping () -> Void,
+        openSettings: @escaping () -> Void,
+        onOpen: @escaping () -> Void,
         checkForUpdates: (() -> Void)?
     ) {
         self.current = current
         self.choose = choose
-        self.askForAccessibility = askForAccessibility
+        self.openSettings = openSettings
+        self.onOpen = onOpen
         self.checkForUpdates = checkForUpdates
         super.init()
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
         item.menu = menu
+        if let button = item.button {
+            dot.wantsLayer = true
+            dot.layer?.backgroundColor = NSColor.systemOrange.cgColor
+            dot.layer?.cornerRadius = Self.dotSize / 2
+            dot.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(dot)
+            NSLayoutConstraint.activate([
+                dot.widthAnchor.constraint(equalToConstant: Self.dotSize),
+                dot.heightAnchor.constraint(equalToConstant: Self.dotSize),
+                dot.centerXAnchor.constraint(equalTo: button.centerXAnchor, constant: Self.dotOffset.x),
+                dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -Self.dotOffset.y),
+            ])
+        }
         refresh()
     }
 
-    /// Redraws the icon; the menu itself is rebuilt when it opens.
+    static let dotSize: CGFloat = 5.5
+    /// From the icon's centre to its top right corner, as in the mockup: clear of the forced
+    /// moon's "z", and inside the status item's square.
+    static let dotOffset = CGPoint(x: 9.2, y: 7.5)
+
+    /// Redraws the icon, and the menu too while it's open and what it shows changed.
     func refresh() {
-        let icon = current().icon
-        let (symbol, description) =
-            switch icon {
-            case .on: ("moon.fill", "Night Shift on")
-            case .off: ("moon", "Night Shift off")
-            case .forcedOff: ("moon.zzz", "Night Shift forced off")
-            case .unavailable: ("moon", "Night Shift unavailable")
-            }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: description)
-        image?.isTemplate = true
+        let snapshot = current()
+        let image = Self.image(for: snapshot.icon)
+        if snapshot.attention != nil, let description = image?.accessibilityDescription {
+            image?.accessibilityDescription = "\(description), needs attention"
+        }
         item.button?.image = image
-        item.button?.appearsDisabled = icon == .unavailable
+        item.button?.appearsDisabled = snapshot.icon == .unavailable
+        dot.isHidden = snapshot.attention == nil
+        if shown != nil, snapshot != shown, let menu = item.menu {
+            menuNeedsUpdate(menu)
+        }
+    }
+
+    /// `onOpen` can learn something the menu should show, which then redraws it in place.
+    func menuWillOpen(_ menu: NSMenu) {
+        onOpen()
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        shown = nil
+    }
+
+    /// The mockup's moons, template images from the asset catalog.
+    static func image(for icon: MenuIcon) -> NSImage? {
+        let (name, description) =
+            switch icon {
+            case .on: ("MenuBarOn", "Night Shift on")
+            case .off: ("MenuBarOff", "Night Shift off")
+            case .forcedOff: ("MenuBarForcedOff", "Night Shift forced off")
+            case .unavailable: ("MenuBarOff", "Night Shift unavailable")
+            }
+        let image = NSImage(named: name)?.copy() as? NSImage
+        image?.accessibilityDescription = description
+        return image
+    }
+
+    /// The mockup's orange triangle, for the checkmark column. Drawn rather than an SF Symbol,
+    /// which menus draw as a monochrome template whatever its colours. The "!" is cut out, so
+    /// it still shows when a highlighted item turns the image white.
+    static var warning: NSImage? {
+        let side: CGFloat = 14
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
+            // The mockup's 20-point geometry, scaled to the image.
+            let unit = side / 20
+            let point = { (x: CGFloat, y: CGFloat) in NSPoint(x: x * unit, y: y * unit) }
+            let triangle = NSBezierPath()
+            triangle.move(to: point(10, 1.8))
+            triangle.line(to: point(19, 17.6))
+            triangle.line(to: point(1, 17.6))
+            triangle.close()
+            triangle.lineJoinStyle = .round
+            triangle.lineWidth = 1.5 * unit
+            NSColor.systemOrange.setFill()
+            NSColor.systemOrange.setStroke()
+            triangle.fill()
+            triangle.stroke()
+            let bar = NSBezierPath()
+            bar.move(to: point(10, 7.2))
+            bar.line(to: point(10, 11.8))
+            bar.lineWidth = 2 * unit
+            bar.lineCapStyle = .round
+            NSGraphicsContext.current?.compositingOperation = .clear
+            bar.stroke()
+            NSBezierPath(ovalIn: NSRect(
+                x: (10 - 1.1) * unit, y: (14.6 - 1.1) * unit, width: 2.2 * unit, height: 2.2 * unit)).fill()
+            return true
+        }
+        image.accessibilityDescription = "Needs attention"
+        return image
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         let snapshot = current()
+        shown = snapshot
         menu.removeAllItems()
-        let status = NSMenuItem(title: snapshot.status, action: nil, keyEquivalent: "")
-        status.attributedTitle = NSAttributedString(
-            string: snapshot.status, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
-        status.subtitle = snapshot.reason
-        status.isEnabled = false
+        let status = NSMenuItem()
+        status.view = StatusLine(status: snapshot.status, reason: snapshot.reason)
         menu.addItem(status)
+        if let attention = snapshot.attention {
+            let line = NSMenuItem(title: attention.title, action: #selector(settingsChosen), keyEquivalent: "")
+            line.subtitle = attention.subtitle
+            line.onStateImage = Self.warning
+            line.state = .on
+            menu.addItem(line)
+        }
         menu.addItem(.separator())
         for entry in snapshot.entries {
             switch entry {
@@ -74,13 +162,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 menu.addItem(parent)
             case .header(let title):
                 menu.addItem(.sectionHeader(title: title))
-            case .askForAccessibility(let title):
-                menu.addItem(NSMenuItem(title: title, action: #selector(allowAccessibility), keyEquivalent: ""))
             case .separator:
                 menu.addItem(.separator())
             }
         }
         menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ","))
         if checkForUpdates != nil {
             menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkNow), keyEquivalent: ""))
         }
@@ -104,8 +191,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         choose(choice.command)
     }
 
-    @objc private func allowAccessibility() {
-        askForAccessibility()
+    @objc private func settingsChosen() {
+        openSettings()
     }
 
     @objc private func checkNow() {
@@ -117,8 +204,42 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 }
 
-private extension NSFont {
-    var bold: NSFont {
-        NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask)
+/// The status line as the mockup draws it: a bold title in the text colour over the reason in
+/// grey. A view, since the menu greys out a disabled item whatever colour its title has, and a
+/// view never highlights.
+private final class StatusLine: NSView {
+    /// Where the menu starts its items' titles, past the checkmark column (measured on macOS 27).
+    private static let titleInset: CGFloat = 31
+
+    init(status: String, reason: String?) {
+        let title = NSTextField(labelWithString: status)
+        title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+        title.textColor = .labelColor
+        var lines: [NSView] = [title]
+        if let reason {
+            let detail = NSTextField(labelWithString: reason)
+            detail.font = .menuFont(ofSize: NSFont.smallSystemFontSize)
+            detail.textColor = .secondaryLabelColor
+            lines.append(detail)
+        }
+        let stack = NSStackView(views: lines)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 1
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: Self.titleInset, bottom: 5, right: 14)
+        super.init(frame: NSRect(origin: .zero, size: stack.fittingSize))
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+        autoresizingMask = [.width]
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
     }
 }
