@@ -30,8 +30,13 @@ jobs:
         run: |
           mkdir -p build/site
           cp -R site/. build/site/
-          if gh release view --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release download --repo "$GITHUB_REPOSITORY" --pattern appcast.xml --dir build/site
+          if [[ -n "$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[].tagName')" ]]; then
+            assets="$(gh release view --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
+            if grep -qx appcast.xml <<<"$assets"; then
+              gh release download --repo "$GITHUB_REPOSITORY" --pattern appcast.xml --dir build/site
+            else
+              echo "::notice::the newest release predates Sparkle and has no appcast.xml"
+            fi
           fi
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
