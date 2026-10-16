@@ -7,6 +7,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
+use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
@@ -169,6 +170,51 @@ pub struct Decision {
     pub reasons: Vec<Reason>,
 }
 
+impl Decision {
+    /// What the core decided and why, as it reads after "Night Shift", with times in `zone`.
+    pub fn describe(&self, zone: &TimeZone) -> String {
+        let until = |end: Option<Timestamp>| {
+            end.map_or_else(String::new, |end| {
+                format!(" until {}", end.to_zoned(zone.clone()).strftime("%H:%M"))
+            })
+        };
+        if self.verdict == Verdict::ForceOff {
+            let forces: Vec<_> = self
+                .reasons
+                .iter()
+                .filter_map(|reason| match reason {
+                    Reason::Rule(rule) => Some(rule.to_string()),
+                    Reason::TimedDisable { until: end } => {
+                        Some(format!("a timed disable{}", until(Some(*end))))
+                    }
+                    _ => None,
+                })
+                .collect();
+            return format!("forced off by {}", forces.join(" and "));
+        }
+        let followed = self.reasons.iter().find_map(|reason| match reason {
+            Reason::ManualState { state, until: end } => {
+                Some(format!("turned {state} by hand{}", until(*end)))
+            }
+            Reason::Schedule { .. } => Some("following the schedule".to_owned()),
+            _ => None,
+        });
+        let snoozed: Vec<_> = self
+            .reasons
+            .iter()
+            .filter_map(|reason| match reason {
+                Reason::Snooze { identity, .. } => Some(identity.to_string()),
+                _ => None,
+            })
+            .collect();
+        let mut description = followed.unwrap_or_else(|| "left alone".to_owned());
+        if !snoozed.is_empty() {
+            description.push_str(&format!(", with {} snoozed", snoozed.join(", ")));
+        }
+        description
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
@@ -204,6 +250,17 @@ pub enum Reason {
 pub struct Rule {
     pub identity: RuleIdentity,
     pub source: RuleSource,
+}
+
+/// `app:com.figma.Desktop (config rule)`.
+impl fmt::Display for Rule {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let source = match self.source {
+            RuleSource::Config => "config",
+            RuleSource::AdHoc => "ad-hoc",
+        };
+        write!(formatter, "{} ({source} rule)", self.identity)
+    }
 }
 
 /// A rule's kind plus its target, written `app:com.figma.Desktop` or `domain:figma.com`.
@@ -290,6 +347,15 @@ pub struct Status {
 pub enum OnOff {
     On,
     Off,
+}
+
+impl fmt::Display for OnOff {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::On => "on",
+            Self::Off => "off",
+        })
+    }
 }
 
 /// Night Shift as last observed.
@@ -529,6 +595,57 @@ mod tests {
         assert_eq!(identity, RuleIdentity::Domain("figma.com".to_owned()));
         assert_eq!(json(&identity), r#""domain:figma.com""#);
         assert!(serde_json::from_str::<RuleIdentity>(r#""figma""#).is_err());
+    }
+
+    #[test]
+    fn decisions_describe_themselves_after_night_shift() {
+        let zone = jiff::tz::TimeZone::get("Europe/Zurich").unwrap();
+        let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
+        let figma = Rule {
+            identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+            source: RuleSource::Config,
+        };
+        let described = |verdict, reasons| Decision { verdict, reasons }.describe(&zone);
+
+        assert_eq!(
+            described(
+                Verdict::ForceOff,
+                vec![
+                    Reason::TimedDisable {
+                        until: at("2026-10-16T22:00:00Z")
+                    },
+                    Reason::Rule(figma)
+                ]
+            ),
+            "forced off by a timed disable until 00:00 and app:com.figma.Desktop (config rule)"
+        );
+        assert_eq!(
+            described(
+                Verdict::HandsOff,
+                vec![
+                    Reason::Snooze {
+                        identity: RuleIdentity::Domain("figma.com".to_owned()),
+                        until: None
+                    },
+                    Reason::ManualState {
+                        state: OnOff::On,
+                        until: Some(at("2026-10-17T05:00:00Z"))
+                    }
+                ]
+            ),
+            "turned on by hand until 07:00, with domain:figma.com snoozed"
+        );
+        assert_eq!(
+            described(
+                Verdict::HandsOff,
+                vec![Reason::Schedule {
+                    state: OnOff::On,
+                    until: None
+                }]
+            ),
+            "following the schedule"
+        );
+        assert_eq!(described(Verdict::HandsOff, Vec::new()), "left alone");
     }
 
     #[test]

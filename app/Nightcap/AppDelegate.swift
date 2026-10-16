@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var wakeup: DispatchSourceTimer?
     private var updater: SPUStandardUpdaterController?
     private var browserWatcher: BrowserWatcher?
+    private var statusMenu: StatusMenu?
     private var askedForAccessibility = false
     private var reportedAccessibility: Bool?
     /// What attaching to a browser last showed, fresher than `AXIsProcessTrusted()`.
@@ -50,6 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
+        let core = core!
+        statusMenu = StatusMenu(
+            current: { core.menu() },
+            choose: { [weak self] command in
+                self?.apply(core.handle(event: .menuItemChosen(command: command)))
+            })
         browserWatcher = BrowserWatcher(
             onHost: { [weak self] generation, host in
                 self?.reportHost(generation: generation, host: host)
@@ -64,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The context first, so a force still in place after a crash holds without a flash.
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         startNightShift()
-        apply(core!.handle(event: .launched))
+        apply(core.handle(event: .launched))
         watchPermissions()
         watchSystem()
     }
@@ -171,7 +178,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
-        apply(core.handle(event: .appActivated(bundleId: bundleId, isBrowser: isBrowser)))
+        apply(core.handle(event: .appActivated(
+            bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
     }
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0012).
@@ -289,14 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .startUpdater:
                 updater = SPUStandardUpdaterController(
                     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
+                statusMenu?.checkForUpdates = { [weak self] in self?.checkForUpdates() }
             case .checkForUpdates:
-                guard let updater else {
-                    log.error("the updater isn't running; dropped checkForUpdates")
-                    continue
-                }
-                // A menu-bar-only app has to come forward for Sparkle's window to show in front.
-                NSApp.activate()
-                updater.checkForUpdates(nil)
+                checkForUpdates()
             case .setNightShift(let enabled):
                 guard let nightShift else {
                     log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")
@@ -316,6 +319,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 browserWatcher?.stop()
             }
         }
+        // Whatever changed the core's state changed the icon too, CLI commands included.
+        statusMenu?.refresh()
+    }
+
+    private func checkForUpdates() {
+        guard let updater else {
+            log.error("the updater isn't running; dropped a check for updates")
+            return
+        }
+        // A menu-bar-only app has to come forward for Sparkle's window to show in front.
+        NSApp.activate()
+        updater.checkForUpdates(nil)
     }
 
     /// The core asks once per install; whatever state the item is in, an item that exists is

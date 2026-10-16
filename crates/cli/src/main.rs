@@ -10,9 +10,9 @@ use clap::{Parser, Subcommand};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    self as protocol, Decision, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
-    NightShift, NotificationPermission, OnOff, Payload, Query, Reason, Request, Response, Rule,
-    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
+    NotificationPermission, Payload, Query, Request, Response, Rule, RuleIdentity, Schedule,
+    Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -206,7 +206,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     };
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
-    println!("Night Shift {}", describe(&decision));
+    println!("Night Shift {}", decision.describe(&TimeZone::system()));
     Ok(())
 }
 
@@ -226,7 +226,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
                 println!("No rules.");
             } else {
                 for rule in &rules {
-                    println!("{}", rule_name(rule));
+                    println!("{rule}");
                 }
             }
             return Ok(());
@@ -264,7 +264,10 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
     let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
         return Err(unexpected_reply());
     };
-    println!("{done} Night Shift {}.", describe(&decision));
+    println!(
+        "{done} Night Shift {}.",
+        decision.describe(&TimeZone::system())
+    );
     Ok(())
 }
 
@@ -296,7 +299,7 @@ fn print_status(status: &Status) {
         (Some(Schedule::Off), _) | (None, _) => String::new(),
         (Some(_), None) => ", waiting for sun times".to_owned(),
         (Some(_), Some(scheduled)) => {
-            format!(", {}{}", on_off(scheduled), until(status.next_transition))
+            format!(", {}{}", scheduled, until(status.next_transition))
         }
     };
     let domain_rules = status
@@ -314,7 +317,10 @@ fn print_status(status: &Status) {
         NotificationPermission::Granted => "granted",
     };
     println!("Nightcap {}, {install}", status.version);
-    println!("Night Shift: {night_shift}, {}", describe(&status.decision));
+    println!(
+        "Night Shift: {night_shift}, {}",
+        status.decision.describe(&TimeZone::system())
+    );
     println!("Schedule: {schedule}{scheduled}");
     let host = match (&status.host, status.watching) {
         (Some(host), _) => format!(", on {host}"),
@@ -344,64 +350,15 @@ fn print_status(status: &Status) {
     println!("Notifications: {notifications}");
 }
 
-/// What the core decided and why, as it reads after "Night Shift".
-fn describe(decision: &Decision) -> String {
-    if decision.verdict == Verdict::ForceOff {
-        let forces: Vec<_> = decision
-            .reasons
-            .iter()
-            .filter_map(|reason| match reason {
-                Reason::Rule(rule) => Some(rule_name(rule)),
-                Reason::TimedDisable { until: end } => {
-                    Some(format!("a timed disable{}", until(Some(*end))))
-                }
-                _ => None,
-            })
-            .collect();
-        return format!("forced off by {}", forces.join(" and "));
-    }
-    let followed = decision.reasons.iter().find_map(|reason| match reason {
-        Reason::ManualState { state, until: end } => {
-            Some(format!("turned {} by hand{}", on_off(*state), until(*end)))
-        }
-        Reason::Schedule { .. } => Some("following the schedule".to_owned()),
-        _ => None,
-    });
-    let snoozed: Vec<_> = decision
-        .reasons
-        .iter()
-        .filter_map(|reason| match reason {
-            Reason::Snooze { identity, .. } => Some(identity.to_string()),
-            _ => None,
-        })
-        .collect();
-    let mut description = followed.unwrap_or_else(|| "left alone".to_owned());
-    if !snoozed.is_empty() {
-        description.push_str(&format!(", with {} snoozed", snoozed.join(", ")));
-    }
-    description
-}
-
 fn rules(rules: &[Rule]) -> String {
     if rules.is_empty() {
         return "none".to_owned();
     }
-    rules.iter().map(rule_name).collect::<Vec<_>>().join(", ")
-}
-
-fn rule_name(rule: &Rule) -> String {
-    let source = match rule.source {
-        RuleSource::Config => "config",
-        RuleSource::AdHoc => "ad-hoc",
-    };
-    format!("{} ({source} rule)", rule.identity)
-}
-
-fn on_off(state: OnOff) -> &'static str {
-    match state {
-        OnOff::On => "on",
-        OnOff::Off => "off",
-    }
+    rules
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// " until 22:00" in local time, or nothing when no schedule transition is coming.

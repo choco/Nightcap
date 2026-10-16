@@ -15,7 +15,7 @@ use nightcap_protocol::{
 
 use crate::adhoc;
 use crate::state::{Persisted, Store};
-use crate::{Clock, Core, CoreError, Effect, Event, Setup, Waker};
+use crate::{Clock, Core, CoreError, Effect, Event, MenuEntry, MenuIcon, MenuItem, Setup, Waker};
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
 struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -178,6 +178,7 @@ fn figma() -> RuleIdentity {
 fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
     core.handle(Event::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
+        name: None,
         is_browser: false,
     })
 }
@@ -185,6 +186,7 @@ fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
 fn activate_browser(core: &Core, bundle_id: &str) -> Vec<Effect> {
     core.handle(Event::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
+        name: None,
         is_browser: true,
     })
 }
@@ -1731,6 +1733,188 @@ fn the_rules_query_lists_every_rule_with_its_source() {
             ad_hoc(RuleIdentity::Domain("figma.com".to_owned())),
         ]
     );
+}
+
+#[test]
+fn the_menu_shows_what_night_shift_is_doing_and_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_forced(&socket_in(&dir));
+
+    let menu = core.menu();
+
+    assert_eq!(menu.icon, MenuIcon::ForcedOff);
+    assert_eq!(
+        menu.summary,
+        "Night Shift forced off by app:com.figma.Desktop (config rule)"
+    );
+}
+
+fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
+    MenuItem {
+        title: title.to_owned(),
+        checked,
+        command,
+    }
+}
+
+#[test]
+fn the_menu_turns_night_shift_the_other_way_or_disables_it_for_a_while() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let menu = core.menu();
+
+    assert_eq!(menu.icon, MenuIcon::On);
+    assert_eq!(
+        menu.entries[..2],
+        [
+            MenuEntry::Item {
+                item: menu_item("Turn Night Shift Off", false, Command::Off)
+            },
+            MenuEntry::Submenu {
+                title: "Disable For".to_owned(),
+                items: vec![
+                    menu_item(
+                        "30 Minutes",
+                        false,
+                        Command::Disable(SignedDuration::from_mins(30))
+                    ),
+                    menu_item(
+                        "1 Hour",
+                        false,
+                        Command::Disable(SignedDuration::from_hours(1))
+                    ),
+                    menu_item(
+                        "2 Hours",
+                        false,
+                        Command::Disable(SignedDuration::from_hours(2))
+                    ),
+                ],
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_menu_offers_resume_only_when_there_is_something_to_resume() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    let resume = MenuEntry::Item {
+        item: menu_item("Resume", false, Command::Resume),
+    };
+
+    assert!(!core.menu().entries.contains(&resume));
+    send(&core, &socket, &wakes, Command::Off);
+    assert!(core.menu().entries.contains(&resume));
+}
+
+fn app_toggle(core: &Core) -> Option<MenuEntry> {
+    core.menu().entries.last().cloned()
+}
+
+fn toggle_item(title: &str, checked: bool, command: Command) -> Option<MenuEntry> {
+    Some(MenuEntry::Item {
+        item: menu_item(title, checked, command),
+    })
+}
+
+#[test]
+fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.figma.Desktop".to_owned()),
+        name: Some("Figma".to_owned()),
+        is_browser: false,
+    });
+
+    assert_eq!(
+        app_toggle(&core),
+        toggle_item("Force Off in Figma", false, Command::AddRule(figma()))
+    );
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+    assert_eq!(
+        app_toggle(&core),
+        toggle_item("Force Off in Figma", true, Command::RemoveRule(figma()))
+    );
+}
+
+#[test]
+fn the_menu_snoozes_a_config_rule_for_the_frontmost_app_rather_than_removing_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+
+    assert_eq!(
+        app_toggle(&core),
+        toggle_item(
+            "Force Off in com.figma.Desktop (from the config)",
+            true,
+            Command::Snooze(figma())
+        )
+    );
+    send(&core, &socket, &wakes, Command::Snooze(figma()));
+    assert_eq!(
+        app_toggle(&core),
+        toggle_item(
+            "Force Off in com.figma.Desktop (snoozed)",
+            false,
+            Command::Unsnooze(figma())
+        )
+    );
+}
+
+#[test]
+fn choosing_a_menu_item_runs_its_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    activate(&core, "com.figma.Desktop");
+
+    let effects = core.handle(Event::MenuItemChosen {
+        command: Command::AddRule(figma()),
+    });
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+}
+
+fn offers_disable_for(core: &Core) -> bool {
+    core.menu()
+        .entries
+        .iter()
+        .any(|entry| matches!(entry, MenuEntry::Submenu { title, .. } if title == "Disable For"))
+}
+
+#[test]
+fn the_menu_offers_disable_for_only_while_it_would_change_something() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T12:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert!(!offers_disable_for(&core), "off, and on only at 22:00");
+    clock.set("2026-10-16T20:30:00+02:00");
+    core.handle(Event::Woke);
+    assert!(offers_disable_for(&core), "off, but on within two hours");
 }
 
 #[test]

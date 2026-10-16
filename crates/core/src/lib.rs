@@ -46,6 +46,64 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
+// A menu item carries the very command the CLI would send (ADR-0002).
+uniffi::custom_type!(SignedDuration, i64, {
+    remote,
+    lower: |duration| duration.as_secs(),
+    try_lift: |seconds| Ok(SignedDuration::from_secs(seconds)),
+});
+
+#[uniffi::remote(Enum)]
+pub enum RuleIdentity {
+    App(String),
+    Domain(String),
+}
+
+#[uniffi::remote(Enum)]
+pub enum Command {
+    On,
+    Off,
+    Toggle,
+    Disable(SignedDuration),
+    Resume,
+    AddRule(RuleIdentity),
+    RemoveRule(RuleIdentity),
+    Snooze(RuleIdentity),
+    Unsnooze(RuleIdentity),
+}
+
+/// What the menu shows. The core decides it; the shell only draws it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct Menu {
+    pub icon: MenuIcon,
+    /// What Night Shift is doing and why, as a sentence.
+    pub summary: String,
+    pub entries: Vec<MenuEntry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum MenuIcon {
+    On,
+    Off,
+    ForcedOff,
+    Unavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum MenuEntry {
+    Item { item: MenuItem },
+    Submenu { title: String, items: Vec<MenuItem> },
+    Separator,
+}
+
+/// Choosing it sends `command` back as `Event::MenuItemChosen`.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct MenuItem {
+    pub title: String,
+    pub checked: bool,
+    pub command: Command,
+}
+
 /// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
 #[uniffi::export(foreign)]
 pub trait Waker: Send + Sync {
@@ -59,6 +117,8 @@ pub enum Event {
     /// it's in the shell's browser list, so its host can be watched.
     AppActivated {
         bundle_id: Option<String>,
+        /// The app's name as the user sees it, for the menu.
+        name: Option<String>,
         is_browser: bool,
     },
     /// The watched browser's host, read under `generation`; None when the read failed or timed
@@ -88,6 +148,10 @@ pub enum Event {
     /// The system time zone changed, to this IANA time zone ID.
     TimeZoneChanged {
         iana_id: String,
+    },
+    /// The user chose a menu item, which carries the command to run.
+    MenuItemChosen {
+        command: Command,
     },
     /// The wakeup the core last asked for came due.
     TimerFired,
@@ -138,6 +202,9 @@ pub enum CoreError {
     #[error("{message}")]
     Io { message: String },
 }
+
+/// The menu's timed disables, in minutes, shortest first.
+const DISABLE_CHOICES: [(i64, &str); 3] = [(30, "30 Minutes"), (60, "1 Hour"), (120, "2 Hours")];
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0005).
@@ -199,6 +266,8 @@ struct State {
     ad_hoc: Vec<RuleIdentity>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
     ad_hoc_error: Option<String>,
+    /// The frontmost app's name, for the menu.
+    app_name: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
     is_browser: bool,
     watch: Option<Watch>,
@@ -298,6 +367,74 @@ impl Core {
         effects
     }
 
+    pub fn menu(&self) -> Menu {
+        let state = self.state();
+        let decision = state.decide();
+        if state.night_shift == NightShift::Unavailable {
+            return Menu {
+                icon: MenuIcon::Unavailable,
+                summary: "Night Shift isn't available on this Mac".to_owned(),
+                entries: Vec::new(),
+            };
+        }
+        let on = wanted(&decision).unwrap_or(state.night_shift == NightShift::On);
+        let item = |title: &str, command| MenuItem {
+            title: title.to_owned(),
+            checked: false,
+            command,
+        };
+        let mut entries = vec![MenuEntry::Item {
+            item: if on {
+                item("Turn Night Shift Off", Command::Off)
+            } else {
+                item("Turn Night Shift On", Command::On)
+            },
+        }];
+        // A timed disable matters while Night Shift is on or forced off, or when the schedule
+        // turns it on before the longest one would end.
+        let longest = SignedDuration::from_mins(DISABLE_CHOICES[DISABLE_CHOICES.len() - 1].0);
+        let comes_on_soon = state
+            .timeline
+            .next_transition(state.applied_until)
+            .is_some_and(|transition| {
+                transition.duration_since(self.clock.now()) <= longest
+                    && state.timeline.scheduled_state(transition) == Some(true)
+            });
+        if on || decision.verdict == Verdict::ForceOff || comes_on_soon {
+            entries.push(MenuEntry::Submenu {
+                title: "Disable For".to_owned(),
+                items: DISABLE_CHOICES
+                    .map(|(minutes, title)| {
+                        item(title, Command::Disable(SignedDuration::from_mins(minutes)))
+                    })
+                    .to_vec(),
+            });
+        }
+        if state.timed_disable.is_some()
+            || !state.snoozes.is_empty()
+            || state.manual_state.is_some()
+        {
+            entries.push(MenuEntry::Item {
+                item: item("Resume", Command::Resume),
+            });
+        }
+        if let Some(bundle_id) = &state.context.app {
+            entries.push(MenuEntry::Separator);
+            entries.push(MenuEntry::Item {
+                item: state.app_toggle(bundle_id),
+            });
+        }
+        Menu {
+            icon: match (decision.verdict, on) {
+                (Verdict::ForceOff, _) => MenuIcon::ForcedOff,
+                (Verdict::HandsOff, true) => MenuIcon::On,
+                (Verdict::HandsOff, false) => MenuIcon::Off,
+            },
+            summary: format!("Night Shift {}", decision.describe(&state.timeline.zone)),
+            entries,
+        }
+    }
+
     pub fn tick(&self) -> Vec<Effect> {
         let requests = self
             .requests
@@ -339,11 +476,13 @@ impl Core {
             }
             Event::AppActivated {
                 bundle_id,
+                name,
                 is_browser,
             } => {
                 tracing::debug!("frontmost app: {bundle_id:?}, browser: {is_browser}");
                 let mut state = self.state();
                 state.context.app = bundle_id;
+                state.app_name = name;
                 state.is_browser = is_browser;
                 Vec::new()
             }
@@ -403,6 +542,13 @@ impl Core {
                 } else {
                     self.reconcile(&mut state, enabled).into_iter().collect()
                 }
+            }
+            Event::MenuItemChosen { command } => {
+                if let Err(error) = self.run_command(&command) {
+                    // The message can name a domain, so only the code is logged (ADR-0012).
+                    tracing::warn!("a menu command was refused: {:?}", error.code);
+                }
+                Vec::new()
             }
             Event::TimerFired => {
                 // The shell's timer is spent, whether or not its transition came due.
@@ -503,6 +649,7 @@ impl Core {
                 config_error,
                 ad_hoc,
                 ad_hoc_error,
+                app_name: None,
                 is_browser: false,
                 watch: None,
                 generation: 0,
@@ -537,64 +684,10 @@ impl Core {
 
     fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
-            Request::Command(command) => {
-                let night_shift = self.state().night_shift;
-                let needs_night_shift = matches!(
-                    command,
-                    Command::On
-                        | Command::Off
-                        | Command::Toggle
-                        | Command::Disable(_)
-                        | Command::Resume
-                );
-                if needs_night_shift && night_shift == NightShift::Unavailable {
-                    return Response::Error(refused(
-                        ErrorCode::NightShiftUnavailable,
-                        "Night Shift isn't available on this Mac",
-                    ));
-                }
-                let mut state = self.state();
-                let outcome = match command {
-                    Command::On => {
-                        state.set_manual_state(OnOff::On);
-                        Ok(())
-                    }
-                    Command::Off => {
-                        state.set_manual_state(OnOff::Off);
-                        Ok(())
-                    }
-                    Command::Toggle => {
-                        state.set_manual_state(on_off(night_shift != NightShift::On));
-                        Ok(())
-                    }
-                    Command::Disable(duration) => match self.clock.now().checked_add(*duration) {
-                        Ok(until) => {
-                            tracing::info!("timed disable until {until}");
-                            state.timed_disable = Some(until);
-                            Ok(())
-                        }
-                        Err(_) => Err(refused(
-                            ErrorCode::BadRequest,
-                            format!("{duration:#} is too long"),
-                        )),
-                    },
-                    Command::Resume => {
-                        tracing::info!("resumed");
-                        state.timed_disable = None;
-                        state.snoozes.clear();
-                        state.manual_state = None;
-                        Ok(())
-                    }
-                    Command::AddRule(identity) => self.add_rule(&mut state, identity),
-                    Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
-                    Command::Snooze(identity) => state.snooze(identity, true),
-                    Command::Unsnooze(identity) => state.snooze(identity, false),
-                };
-                match outcome {
-                    Ok(()) => Response::Ok(Payload::Decision(state.decide())),
-                    Err(error) => Response::Error(error),
-                }
-            }
+            Request::Command(command) => match self.run_command(command) {
+                Ok(decision) => Response::Ok(Payload::Decision(decision)),
+                Err(error) => Response::Error(error),
+            },
             Request::Query(Query::Status) => self.status(),
             Request::Query(Query::Rules) => {
                 Response::Ok(Payload::Rules(self.state().rules.clone()))
@@ -640,6 +733,59 @@ impl Core {
                 }
             },
         }
+    }
+
+    /// Runs a command from the CLI or the menu, answering with the resulting decision.
+    fn run_command(&self, command: &Command) -> Result<Decision, ErrorReply> {
+        let night_shift = self.state().night_shift;
+        let needs_night_shift = matches!(
+            command,
+            Command::On | Command::Off | Command::Toggle | Command::Disable(_) | Command::Resume
+        );
+        if needs_night_shift && night_shift == NightShift::Unavailable {
+            return Err(refused(
+                ErrorCode::NightShiftUnavailable,
+                "Night Shift isn't available on this Mac",
+            ));
+        }
+        let mut state = self.state();
+        let outcome = match command {
+            Command::On => {
+                state.set_manual_state(OnOff::On);
+                Ok(())
+            }
+            Command::Off => {
+                state.set_manual_state(OnOff::Off);
+                Ok(())
+            }
+            Command::Toggle => {
+                state.set_manual_state(on_off(night_shift != NightShift::On));
+                Ok(())
+            }
+            Command::Disable(duration) => match self.clock.now().checked_add(*duration) {
+                Ok(until) => {
+                    tracing::info!("timed disable until {until}");
+                    state.timed_disable = Some(until);
+                    Ok(())
+                }
+                Err(_) => Err(refused(
+                    ErrorCode::BadRequest,
+                    format!("{duration:#} is too long"),
+                )),
+            },
+            Command::Resume => {
+                tracing::info!("resumed");
+                state.timed_disable = None;
+                state.snoozes.clear();
+                state.manual_state = None;
+                Ok(())
+            }
+            Command::AddRule(identity) => self.add_rule(&mut state, identity),
+            Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
+            Command::Snooze(identity) => state.snooze(identity, true),
+            Command::Unsnooze(identity) => state.snooze(identity, false),
+        };
+        outcome.map(|()| state.decide())
     }
 
     /// Reconciles a status callback with what the core wants (ADR-0005). macOS catching up on a
@@ -1018,6 +1164,53 @@ impl State {
             timed_disable: self.timed_disable,
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
+        }
+    }
+
+    /// The menu's toggle for the frontmost app (ADR-0009): it adds an ad-hoc rule, removes
+    /// one, snoozes a config rule, or undoes a snooze.
+    fn app_toggle(&self, bundle_id: &str) -> MenuItem {
+        let name = self.app_name.as_deref().unwrap_or(bundle_id);
+        let identity = RuleIdentity::App(bundle_id.to_owned());
+        let toggle = |title: String, checked, command| MenuItem {
+            title,
+            checked,
+            command,
+        };
+        let Some(rule) = self
+            .rules
+            .iter()
+            .find(|rule| same_rule(&rule.identity, &identity))
+        else {
+            return toggle(
+                format!("Force Off in {name}"),
+                false,
+                Command::AddRule(identity),
+            );
+        };
+        let identity = rule.identity.clone();
+        if self
+            .snoozes
+            .iter()
+            .any(|snoozed| same_rule(snoozed, &identity))
+        {
+            toggle(
+                format!("Force Off in {name} (snoozed)"),
+                false,
+                Command::Unsnooze(identity),
+            )
+        } else if rule.source == RuleSource::Config {
+            toggle(
+                format!("Force Off in {name} (from the config)"),
+                true,
+                Command::Snooze(identity),
+            )
+        } else {
+            toggle(
+                format!("Force Off in {name}"),
+                true,
+                Command::RemoveRule(identity),
+            )
         }
     }
 
