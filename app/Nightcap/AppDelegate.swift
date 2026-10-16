@@ -88,14 +88,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let onboarding {
             onboarding.present()
         } else {
-            showSettings(.general)
+            showSettings()
         }
         return false
     }
 
     /// The app menu's "Settings…".
     @objc func openSettings(_ sender: Any?) {
-        showSettings(.general)
+        showSettings()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -311,8 +311,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             choose: { [weak self] command in
                 self?.apply(core.handle(event: .commandChosen(command: command)))
             },
-            openSettings: { [weak self] in
-                self?.showSettings(SettingsWindow.tab(for: core.settings()))
+            openSettings: { [weak self] onProblem in
+                self?.showSettings(onProblem ? SettingsWindow.tab(for: core.settings()) : nil)
             },
             onOpen: { [weak self] in
                 Task { await self?.reportSystemState() }
@@ -333,7 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
     }
 
-    private func showSettings(_ tab: SettingsWindow.Tab) {
+    /// On `tab`, or on the tab last shown.
+    private func showSettings(_ tab: SettingsWindow.Tab? = nil) {
         guard let settingsWindow else { return }
         dockIcon.show(for: .settings)
         settingsWindow.show(tab)

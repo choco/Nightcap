@@ -7,7 +7,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let current: () -> Menu
     private let choose: (Command) -> Void
-    private let openSettings: () -> Void
+    /// Opens Settings: on the problem's tab for the problem line, on the last tab otherwise.
+    private let openSettings: (_ onProblem: Bool) -> Void
     private let onOpen: () -> Void
     /// Nil unless Sparkle runs, which it does in self-managed installs only.
     private let checkForUpdates: (() -> Void)?
@@ -26,7 +27,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     init(
         current: @escaping () -> Menu,
         choose: @escaping (Command) -> Void,
-        openSettings: @escaping () -> Void,
+        openSettings: @escaping (_ onProblem: Bool) -> Void,
         onOpen: @escaping () -> Void,
         checkForUpdates: (() -> Void)?
     ) {
@@ -146,7 +147,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         status.isEnabled = false
         menu.addItem(status)
         if let attention = snapshot.attention {
-            let line = NSMenuItem(title: attention.title, action: #selector(settingsChosen), keyEquivalent: "")
+            let line = NSMenuItem(title: attention.title, action: #selector(attentionChosen), keyEquivalent: "")
             line.subtitle = attention.subtitle
             line.onStateImage = Self.warning
             line.state = .on
@@ -196,7 +197,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func settingsChosen() {
-        openSettings()
+        openSettings(false)
+    }
+
+    @objc private func attentionChosen() {
+        openSettings(true)
     }
 
     @objc private func checkNow() {

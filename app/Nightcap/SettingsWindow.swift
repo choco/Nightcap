@@ -71,10 +71,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             ? .general : .rules
     }
 
-    func show(_ tab: Tab) {
+    /// Opens on `tab`, or on the tab last shown, as macOS settings windows do.
+    func show(_ tab: Tab? = nil) {
         let window = self.window ?? makeWindow()
         let wasOpen = window.isVisible
-        select(tab)
+        select(tab ?? self.tab)
         if !wasOpen { window.center() }
         NSApp.activate()
         window.makeKeyAndOrderFront(nil)
