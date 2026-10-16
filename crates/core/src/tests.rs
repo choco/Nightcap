@@ -1194,6 +1194,84 @@ fn update_is_refused_where_nightcap_doesnt_update_itself() {
     }
 }
 
+/// Starts at 23:00 with Night Shift on by the custom hours, then disables it for an hour.
+fn start_disabled(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    send(
+        &core,
+        socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    (core, wakes, clock)
+}
+
+#[test]
+fn while_another_user_is_active_nightcap_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, clock) = start_disabled(&socket);
+    core.handle(Event::SessionChanged { active: false });
+
+    clock.set("2026-10-17T00:00:00+02:00");
+
+    assert_eq!(
+        core.handle(Event::TimerFired),
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T07:00:00+02:00").into()
+        }]
+    );
+}
+
+#[test]
+fn status_callbacks_while_another_user_is_active_are_ignored() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    core.handle(Event::SessionChanged { active: false });
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(effects, Vec::new());
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.snoozes, Vec::new());
+    assert_eq!(status.manual_state, None);
+}
+
+#[test]
+fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_disabled(&socket);
+    core.handle(Event::SessionChanged { active: false });
+    clock.set("2026-10-17T00:00:00+02:00");
+    core.handle(Event::TimerFired);
+
+    assert_eq!(
+        core.handle(Event::SessionChanged { active: true }),
+        Vec::new()
+    );
+    // The shell's fresh read: still off, as the timed disable left it.
+    let effects = core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
 #[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();

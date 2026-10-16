@@ -83,6 +83,10 @@ pub enum Event {
     TimerFired,
     /// The Mac woke from sleep, so schedule transitions may have passed unseen.
     Woke,
+    /// This user's login session became active or inactive, as with fast user switching.
+    SessionChanged {
+        active: bool,
+    },
     Terminating,
 }
 
@@ -181,6 +185,7 @@ struct State {
     unreported: Option<Unreported>,
     /// Set on the way out: forces no longer apply.
     released: bool,
+    session: Session,
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
     /// Every schedule transition up to here has been applied.
@@ -321,6 +326,10 @@ impl Core {
             }
             Event::StatusChanged { enabled, schedule } => {
                 let mut state = self.state();
+                if state.session == Session::Away {
+                    tracing::debug!("ignored a status callback while dormant");
+                    return Vec::new();
+                }
                 state.night_shift = if enabled {
                     NightShift::On
                 } else {
@@ -328,7 +337,12 @@ impl Core {
                 };
                 state.pending_write = None;
                 let previous = state.timeline.schedule.replace(schedule);
-                if previous.is_some_and(|previous| previous != schedule) {
+                if state.session == Session::Back {
+                    // The shell's fresh read after returning: nobody could change Night Shift by
+                    // hand while the session was away.
+                    state.session = Session::Active;
+                    Vec::new()
+                } else if previous.is_some_and(|previous| previous != schedule) {
                     // macOS applies an edited schedule at once, so the edit is a schedule
                     // transition and whatever it switched isn't an external change.
                     tracing::info!("schedule edited");
@@ -366,6 +380,11 @@ impl Core {
                         tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}")
                     }
                 }
+                Vec::new()
+            }
+            Event::SessionChanged { active } => {
+                tracing::info!("session active: {active}");
+                self.state().session = if active { Session::Back } else { Session::Away };
                 Vec::new()
             }
             Event::Woke => {
@@ -424,6 +443,7 @@ impl Core {
                 pending_write: None,
                 unreported: None,
                 released: false,
+                session: Session::Active,
                 left_by_last_run: persisted.night_shift,
                 applied_until: setup.clock.now(),
                 wakeup: None,
@@ -635,7 +655,7 @@ impl Core {
     /// (ADR-0005), once until a status callback reports the result.
     fn enforce(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        if state.night_shift == NightShift::Unavailable {
+        if state.night_shift == NightShift::Unavailable || state.session != Session::Active {
             return;
         }
         let Some(wanted) = wanted(&state.decide()) else {
@@ -682,6 +702,17 @@ struct Unreported {
     /// Whether the schedule has Night Shift on after the transition.
     scheduled: bool,
     until: Timestamp,
+}
+
+/// Whether Night Shift is this user's to change: with fast user switching, another user's
+/// session can be in front.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Session {
+    Active,
+    /// Another user is in front: status callbacks aren't this user's, and nothing is written.
+    Away,
+    /// Back in front, waiting for the shell's fresh read of a status that went unwatched.
+    Back,
 }
 
 /// What turning Night Shift on overrode.

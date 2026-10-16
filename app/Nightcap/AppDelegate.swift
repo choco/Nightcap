@@ -107,6 +107,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.apply(core.handle(event: .woke))
             }
         })
+        // Fast user switching: while another user is in front, the core writes nothing and
+        // ignores status callbacks, then waits for a fresh read once this session is back.
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                self.apply(core.handle(event: .sessionChanged(active: false)))
+            }
+        })
+        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                self.reportSunTimes()
+                self.apply(core.handle(event: .sessionChanged(active: true)))
+                if let status = self.nightShift?.status {
+                    self.reportNightShift(status)
+                }
+            }
+        })
         observers.append(NotificationCenter.default.addObserver(
             forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
         ) { [weak self] _ in
