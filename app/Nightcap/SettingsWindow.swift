@@ -39,7 +39,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// The groups' width, which makes the mockup's 600-point window.
     private static let width: CGFloat = 552
     private static let checksByTab: [Tab: [CheckKind]] = [
-        .general: [.nightShift, .accessibility, .notifications],
+        .general: [.nightShift, .accessibility, .notifications, .openAtLogin],
         .rules: [.configFile, .adHocRules],
     ]
 
@@ -239,7 +239,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                         accessory: nil),
                     check(.notifications)),
             ]),
-            block("Nightcap", [
+            block("Nightcap", openAtLogin(settings) + [
                 cell(
                     row(
                         title: "Version \(version)",
@@ -252,6 +252,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                     nil),
             ]),
         ])
+    }
+
+    /// "Open at login", in self-managed installs: its switch shows on or off, so its check
+    /// shows only when what the user chose stopped working.
+    private func openAtLogin(_ settings: Settings) -> [NSView] {
+        guard let openAtLogin = settings.openAtLogin else { return [] }
+        let toggle = NSSwitch()
+        toggle.state = openAtLogin.on ? .on : .off
+        attach(toggle) { [choose] in choose(openAtLogin.command) }
+        let problem = settings.checks.first {
+            $0.kind == .openAtLogin && ($0.state == .drifted || $0.state == .broken)
+        }
+        return [cell(row(title: "Open at login", detail: nil, accessory: toggle), problem)]
     }
 
     private func rulesPane(_ settings: Settings) -> NSView {

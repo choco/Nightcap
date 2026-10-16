@@ -17,8 +17,8 @@ use nightcap_protocol::{
 use crate::adhoc;
 use crate::state::{Persisted, Store};
 use crate::{
-    Attention, Clock, Core, CoreError, Effect, Event, Fix, FixButton, MenuEntry, MenuIcon,
-    MenuItem, SettingsCheck, SettingsSwitch, Setup, Waker,
+    Attention, Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry,
+    MenuIcon, MenuItem, SettingsCheck, SettingsSwitch, Setup, Waker,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -2611,14 +2611,11 @@ fn terminating_removes_the_socket() {
 }
 
 #[test]
-fn a_self_managed_release_registers_its_login_item_and_starts_its_updater_at_launch() {
+fn a_self_managed_release_starts_its_updater_at_launch_and_registers_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
 
-    assert_eq!(
-        launch(&core),
-        vec![Effect::RegisterLoginItem, Effect::StartUpdater]
-    );
+    assert_eq!(launch(&core), vec![Effect::StartUpdater]);
 }
 
 #[test]
@@ -2635,32 +2632,6 @@ fn a_dev_build_never_registers_a_login_item() {
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Dev, Install::SelfManaged);
 
     assert_eq!(launch(&core), Vec::new());
-}
-
-#[test]
-fn the_login_item_is_registered_only_once_across_restarts() {
-    let dir = tempfile::tempdir().unwrap();
-    let state_file = dir.path().join("state").join("state.json");
-    let first = Setup {
-        state_file: state_file.clone(),
-        ..setup(&socket_in(&dir), Instance::Release, Install::SelfManaged)
-    };
-    let (core, _wakes) = start_with(first);
-    assert_eq!(
-        launch(&core),
-        vec![Effect::RegisterLoginItem, Effect::StartUpdater]
-    );
-    core.handle(Event::LoginItemRegistered);
-
-    // The first core still holds its socket, so the restarted one gets its own.
-    let restarted = Setup {
-        socket: dir.path().join("restarted").join("nightcap.sock"),
-        state_file,
-        ..setup(&socket_in(&dir), Instance::Release, Install::SelfManaged)
-    };
-    let (core, _wakes) = start_with(restarted);
-
-    assert_eq!(launch(&core), vec![Effect::StartUpdater]);
 }
 
 #[test]
@@ -2705,13 +2676,13 @@ fn saved_state_loads_back() {
     let dir = tempfile::tempdir().unwrap();
     let store = Store::new(dir.path().join("nightcap").join("state.json"));
     let state = Persisted {
-        login_item_registered: true,
         manual_state: Some(OnOff::Off),
         snoozes: vec![figma()],
         timed_disable: Some(at("2026-10-17T00:00:00+02:00")),
         websites: true,
         onboarding: 1,
         notifications_wanted: true,
+        open_at_login: true,
         announced: vec![CheckKind::Accessibility],
         night_shift: Some(OnOff::Off),
         until: Some(at("2026-10-17T07:00:00+02:00")),
@@ -2747,11 +2718,11 @@ fn state_with_keys_this_build_doesnt_know_still_loads() {
     let path = dir.path().join("state.json");
     std::fs::write(
         &path,
-        r#"{"version":1,"login_item_registered":true,"snoozes":[]}"#,
+        r#"{"version":1,"login_item_registered":true,"websites":true}"#,
     )
     .unwrap();
 
-    assert!(Store::new(path).load().login_item_registered);
+    assert!(Store::new(path).load().websites);
 }
 
 /// The check of `kind` in the status, if the core reports one.
@@ -3027,5 +2998,200 @@ fn settings_offer_to_reload_a_broken_config() {
             restore: None,
             accept: None,
         })
+    );
+}
+
+fn login_item(item: LoginItem) -> Event {
+    Event::LoginItemChanged { item }
+}
+
+#[test]
+fn settings_switch_opening_at_login_in_a_self_managed_install() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let switch = |on, command| {
+        Some(SettingsSwitch {
+            on,
+            locked: false,
+            command,
+        })
+    };
+    core.handle(login_item(LoginItem::NotRegistered));
+
+    assert_eq!(
+        core.settings().open_at_login,
+        switch(false, Command::OpenAtLogin(OnOff::On))
+    );
+    assert!(
+        core.handle(Event::CommandChosen {
+            command: Command::OpenAtLogin(OnOff::On),
+        })
+        .contains(&Effect::RegisterLoginItem)
+    );
+    core.handle(login_item(LoginItem::Enabled));
+    assert_eq!(
+        core.settings().open_at_login,
+        switch(true, Command::OpenAtLogin(OnOff::Off))
+    );
+    assert!(
+        core.handle(Event::CommandChosen {
+            command: Command::OpenAtLogin(OnOff::Off),
+        })
+        .contains(&Effect::UnregisterLoginItem)
+    );
+}
+
+#[test]
+fn managed_installs_and_dev_builds_have_no_open_at_login_switch() {
+    let dir = tempfile::tempdir().unwrap();
+    let (managed, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::Managed);
+    managed.handle(login_item(LoginItem::NotRegistered));
+    assert_eq!(managed.settings().open_at_login, None);
+
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (dev, wakes) = start_as(&socket, Instance::Dev, Install::SelfManaged);
+    dev.handle(login_item(LoginItem::NotRegistered));
+    assert_eq!(dev.settings().open_at_login, None);
+    let (_, response) = send(&dev, &socket, &wakes, Command::OpenAtLogin(OnOff::On));
+    assert_eq!(refusal(response), ErrorCode::NoLoginItem);
+}
+
+/// A self-managed release on `socket`'s state and config, restarted as launchd would.
+fn restart_self_managed(socket: &Path) -> (Core, PathBuf, mpsc::Receiver<()>) {
+    let restarted = socket
+        .parent()
+        .unwrap()
+        .with_file_name("restarted")
+        .join("nightcap.sock");
+    let (core, wakes) = start_with(Setup {
+        socket: restarted.clone(),
+        ..setup(socket, Instance::Release, Install::SelfManaged)
+    });
+    (core, restarted, wakes)
+}
+
+fn login_check(
+    state: CheckState,
+    text: &str,
+    restore: Option<FixButton>,
+    accept: Option<FixButton>,
+) -> Option<SettingsCheck> {
+    Some(SettingsCheck {
+        kind: CheckKind::OpenAtLogin,
+        state,
+        text: text.to_owned(),
+        restore,
+        accept,
+    })
+}
+
+#[test]
+fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes) = start_as(&socket, Instance::Release, Install::SelfManaged);
+    let off = login_check(
+        CheckState::Off,
+        "Nightcap doesn’t open at login.",
+        None,
+        None,
+    );
+    core.handle(login_item(LoginItem::NotRegistered));
+
+    assert_eq!(settings_check(&core, CheckKind::OpenAtLogin), off);
+    core.handle(Event::CommandChosen {
+        command: Command::OpenAtLogin(OnOff::On),
+    });
+    core.handle(login_item(LoginItem::Enabled));
+    assert_eq!(
+        settings_check(&core, CheckKind::OpenAtLogin),
+        login_check(
+            CheckState::Ok,
+            "Nightcap opens when you log in.",
+            None,
+            None
+        )
+    );
+    core.handle(login_item(LoginItem::NotRegistered));
+    assert_eq!(
+        settings_check(&core, CheckKind::OpenAtLogin),
+        login_check(
+            CheckState::Drifted,
+            "Nightcap no longer opens at login: it was removed in System Settings.",
+            button("Open at Login", Fix::OpenAtLogin),
+            button("Don’t Open at Login", Fix::DontOpenAtLogin),
+        )
+    );
+    assert!(
+        core.handle(Event::FixChosen {
+            fix: Fix::OpenAtLogin
+        })
+        .contains(&Effect::RegisterLoginItem)
+    );
+    core.handle(Event::FixChosen {
+        fix: Fix::DontOpenAtLogin,
+    });
+    assert_eq!(settings_check(&core, CheckKind::OpenAtLogin), off);
+
+    let (core, _socket, _wakes) = restart_self_managed(&socket);
+    core.handle(login_item(LoginItem::NotRegistered));
+    assert_eq!(settings_check(&core, CheckKind::OpenAtLogin), off);
+}
+
+#[test]
+fn opening_at_login_waiting_for_approval_offers_login_items() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    core.handle(Event::CommandChosen {
+        command: Command::OpenAtLogin(OnOff::On),
+    });
+    core.handle(login_item(LoginItem::RequiresApproval));
+
+    assert_eq!(
+        settings_check(&core, CheckKind::OpenAtLogin),
+        login_check(
+            CheckState::Drifted,
+            "macOS is waiting for your approval in Login Items.",
+            button("Open Login Items…", Fix::OpenLoginItems),
+            button("Don’t Open at Login", Fix::DontOpenAtLogin),
+        )
+    );
+    assert!(
+        core.handle(Event::FixChosen {
+            fix: Fix::DontOpenAtLogin
+        })
+        .contains(&Effect::UnregisterLoginItem)
+    );
+}
+
+#[test]
+fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+
+    core.handle(login_item(LoginItem::Enabled));
+    core.handle(login_item(LoginItem::NotRegistered));
+    assert_eq!(
+        settings_check(&core, CheckKind::OpenAtLogin).map(|check| check.state),
+        Some(CheckState::Drifted)
+    );
+}
+
+#[test]
+fn opening_at_login_removed_in_system_settings_is_announced() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    core.handle(Event::CommandChosen {
+        command: Command::OpenAtLogin(OnOff::On),
+    });
+    core.handle(login_item(LoginItem::Enabled));
+
+    assert!(
+        core.handle(login_item(LoginItem::NotRegistered))
+            .contains(&Effect::Notify {
+                title: "Nightcap no longer opens at login".to_owned(),
+                body: "Open Nightcap’s settings to turn it back on, or to keep it off.".to_owned(),
+            })
     );
 }

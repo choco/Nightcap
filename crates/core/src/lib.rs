@@ -59,6 +59,7 @@ pub enum CheckKind {
     NightShift,
     Accessibility,
     Notifications,
+    OpenAtLogin,
     ConfigFile,
     AdHocRules,
 }
@@ -95,6 +96,7 @@ pub enum Command {
     Snooze(RuleIdentity),
     Unsnooze(RuleIdentity),
     Websites(OnOff),
+    OpenAtLogin(OnOff),
 }
 
 /// What the menu shows. The core decides it; the shell only draws it.
@@ -115,6 +117,8 @@ pub struct Menu {
 pub struct Settings {
     /// "Check websites", locked while the config sets `websites`.
     pub website_checking: SettingsSwitch,
+    /// "Open at login", in self-managed installs only.
+    pub open_at_login: Option<SettingsSwitch>,
     /// Shown inline, each under the setting it belongs to.
     pub checks: Vec<SettingsCheck>,
 }
@@ -144,9 +148,13 @@ pub enum Fix {
     /// The shell's: the macOS prompt while notifications were never asked for, else Nightcap's
     /// page in Notification settings.
     AllowNotifications,
+    /// The shell's: Login Items in System Settings, where macOS asks for its approval.
+    OpenLoginItems,
     /// The core's, like the rest: sent back as `Event::FixChosen`.
     StopCheckingWebsites,
     KeepNotificationsOff,
+    OpenAtLogin,
+    DontOpenAtLogin,
     Reload,
 }
 
@@ -227,8 +235,10 @@ pub enum Event {
         generation: u64,
         host: Option<String>,
     },
-    /// The login item exists, whether the shell just registered it or found it in place.
-    LoginItemRegistered,
+    /// The shell read the login item's state, which the user can change in System Settings.
+    LoginItemChanged {
+        item: LoginItem,
+    },
     PermissionsChanged {
         accessibility: bool,
         notifications: NotificationPermission,
@@ -273,9 +283,20 @@ pub enum Event {
     Terminating,
 }
 
+/// Nightcap's login item, as macOS reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum LoginItem {
+    Enabled,
+    /// Registered, but waiting for the user's approval in System Settings.
+    RequiresApproval,
+    NotRegistered,
+}
+
 #[derive(Debug, PartialEq, uniffi::Enum)]
 pub enum Effect {
+    /// Registers Nightcap to open at login, as the user chose (ADR-0017).
     RegisterLoginItem,
+    UnregisterLoginItem,
     /// Starts Sparkle's daily checks, in self-managed releases only (ADR-0015).
     StartUpdater,
     /// Starts Sparkle's own check, as if the user had asked for one.
@@ -421,7 +442,12 @@ struct State {
     notifications_wanted: bool,
     /// See `state::Persisted::announced`.
     announced: Vec<CheckKind>,
-    login_item_registered: bool,
+    /// None until the shell first reports it.
+    login_item: Option<LoginItem>,
+    /// See `state::Persisted::open_at_login`.
+    open_at_login: bool,
+    /// A self-managed release, which opens itself at login if the user wants (ADR-0017).
+    opens_itself_at_login: bool,
     /// What was last written to `state.json`.
     saved: state::Persisted,
 }
@@ -514,6 +540,18 @@ impl Core {
                 locked: state.config_websites.is_some(),
                 command: Command::Websites(on_off(!on)),
             },
+            // Registered but waiting for approval counts as on; its check explains the rest.
+            open_at_login: state
+                .login_item
+                .filter(|_| self.updates_itself())
+                .map(|item| {
+                    let on = item != LoginItem::NotRegistered;
+                    SettingsSwitch {
+                        on,
+                        locked: false,
+                        command: Command::OpenAtLogin(on_off(!on)),
+                    }
+                }),
             checks: state
                 .checks()
                 .into_iter()
@@ -661,9 +699,6 @@ impl Core {
                     }
                 }
                 if self.updates_itself() {
-                    if !state.login_item_registered {
-                        effects.push(Effect::RegisterLoginItem);
-                    }
                     effects.push(Effect::StartUpdater);
                 }
                 effects
@@ -693,8 +728,14 @@ impl Core {
                 }
                 Vec::new()
             }
-            Event::LoginItemRegistered => {
-                self.state().login_item_registered = true;
+            Event::LoginItemChanged { item } => {
+                tracing::info!("login item: {item:?}");
+                let mut state = self.state();
+                state.login_item = Some(item);
+                // An enabled item becomes the user's wish, however it got enabled.
+                if item == LoginItem::Enabled {
+                    state.open_at_login = true;
+                }
                 Vec::new()
             }
             Event::PermissionsChanged {
@@ -761,6 +802,15 @@ impl Core {
                         }
                     }
                     Fix::KeepNotificationsOff => self.state().notifications_wanted = false,
+                    Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
+                    Fix::DontOpenAtLogin => {
+                        let mut state = self.state();
+                        state.open_at_login = false;
+                        // An item waiting for approval would still ask for it.
+                        if state.login_item != Some(LoginItem::NotRegistered) {
+                            effects.push(Effect::UnregisterLoginItem);
+                        }
+                    }
                     // An invalid config shows in its check again.
                     Fix::Reload => _ = self.reload(),
                     _ => tracing::debug!("{fix:?} is the shell's to carry out"),
@@ -898,9 +948,12 @@ impl Core {
                 wakeup: None,
                 accessibility: None,
                 notifications: NotificationPermission::NotRequested,
-                login_item_registered: persisted.login_item_registered,
                 notifications_wanted: persisted.notifications_wanted,
                 announced: persisted.announced.clone(),
+                login_item: None,
+                open_at_login: persisted.open_at_login,
+                opens_itself_at_login: setup.install == Install::SelfManaged
+                    && setup.instance == Instance::Release,
                 saved: persisted,
             }),
         };
@@ -1034,6 +1087,21 @@ impl Core {
             Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
             Command::Snooze(identity) => state.snooze(identity, true),
             Command::Unsnooze(identity) => state.snooze(identity, false),
+            Command::OpenAtLogin(chosen) => {
+                if self.updates_itself() {
+                    state.open_at_login = *chosen == OnOff::On;
+                    effects.push(match chosen {
+                        OnOff::On => Effect::RegisterLoginItem,
+                        OnOff::Off => Effect::UnregisterLoginItem,
+                    });
+                    Ok(())
+                } else {
+                    Err(refused(
+                        ErrorCode::NoLoginItem,
+                        "this install doesn't open itself at login: its installer starts it, or it's a dev build",
+                    ))
+                }
+            }
             Command::Websites(chosen) => {
                 let on = *chosen == OnOff::On;
                 let turned_on = on && !state.website_checking();
@@ -1444,13 +1512,13 @@ impl State {
 
     fn snapshot(&self) -> state::Persisted {
         state::Persisted {
-            login_item_registered: self.login_item_registered,
             manual_state: self.manual_state,
             snoozes: self.snoozes.clone(),
             timed_disable: self.timed_disable,
             websites: self.websites,
             onboarding: self.onboarding,
             notifications_wanted: self.notifications_wanted,
+            open_at_login: self.open_at_login,
             announced: self.announced.clone(),
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
@@ -1639,6 +1707,15 @@ impl State {
                 button("Allow Notifications…", Fix::AllowNotifications),
                 None,
             ),
+            (CheckKind::OpenAtLogin, CheckState::Drifted) => (
+                // Registering again doesn't help an item that's waiting for approval.
+                if self.login_item == Some(LoginItem::RequiresApproval) {
+                    button("Open Login Items…", Fix::OpenLoginItems)
+                } else {
+                    button("Open at Login", Fix::OpenAtLogin)
+                },
+                button("Don’t Open at Login", Fix::DontOpenAtLogin),
+            ),
             (CheckKind::ConfigFile, CheckState::Broken) => (button("Reload", Fix::Reload), None),
             _ => (None, None),
         }
@@ -1665,6 +1742,7 @@ impl State {
                     CheckKind::NightShift => "Night Shift",
                     CheckKind::Accessibility => "Accessibility",
                     CheckKind::Notifications => "notifications",
+                    CheckKind::OpenAtLogin => "opening at login",
                     CheckKind::ConfigFile => "the config file",
                     CheckKind::AdHocRules => "ad-hoc rules",
                 }
@@ -1749,6 +1827,30 @@ impl State {
                     ),
                 },
             );
+        }
+        if let Some(item) = self.login_item.filter(|_| self.opens_itself_at_login) {
+            checks.push(match (item, self.open_at_login) {
+                (LoginItem::Enabled, _) => check(
+                    CheckKind::OpenAtLogin,
+                    CheckState::Ok,
+                    "Nightcap opens when you log in.",
+                ),
+                (LoginItem::RequiresApproval, true) => check(
+                    CheckKind::OpenAtLogin,
+                    CheckState::Drifted,
+                    "macOS is waiting for your approval in Login Items.",
+                ),
+                (LoginItem::NotRegistered, true) => check(
+                    CheckKind::OpenAtLogin,
+                    CheckState::Drifted,
+                    "Nightcap no longer opens at login: it was removed in System Settings.",
+                ),
+                (_, false) => check(
+                    CheckKind::OpenAtLogin,
+                    CheckState::Off,
+                    "Nightcap doesn’t open at login.",
+                ),
+            });
         }
         checks.push(match (&self.config_error, self.config_found) {
             (Some(error), _) => check(
@@ -1868,6 +1970,16 @@ impl State {
                 .ad_hoc_error
                 .clone()
                 .map(|error| ("Ad-hoc rules are off".to_owned(), error)),
+            // Waiting for approval follows the user's own choice, which macOS announces itself.
+            CheckKind::OpenAtLogin => {
+                (self.login_item == Some(LoginItem::NotRegistered)).then(|| {
+                    (
+                        "Nightcap no longer opens at login".to_owned(),
+                        "Open Nightcap’s settings to turn it back on, or to keep it off."
+                            .to_owned(),
+                    )
+                })
+            }
             CheckKind::NightShift | CheckKind::Notifications => None,
         }
     }

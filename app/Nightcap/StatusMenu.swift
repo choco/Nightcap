@@ -138,8 +138,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let snapshot = current()
         shown = snapshot
         menu.removeAllItems()
-        let status = NSMenuItem()
-        status.view = StatusLine(status: snapshot.status, reason: snapshot.reason)
+        let status = NSMenuItem(title: snapshot.status, action: nil, keyEquivalent: "")
+        status.attributedTitle = NSAttributedString(
+            string: snapshot.status,
+            attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
+        status.subtitle = snapshot.reason
+        status.isEnabled = false
         menu.addItem(status)
         if let attention = snapshot.attention {
             let line = NSMenuItem(title: attention.title, action: #selector(settingsChosen), keyEquivalent: "")
@@ -201,45 +205,5 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
-    }
-}
-
-/// The status line as the mockup draws it: a bold title in the text colour over the reason in
-/// grey. A view, since the menu greys out a disabled item whatever colour its title has, and a
-/// view never highlights.
-private final class StatusLine: NSView {
-    /// Where the menu starts its items' titles, past the checkmark column (measured on macOS 27).
-    private static let titleInset: CGFloat = 31
-
-    init(status: String, reason: String?) {
-        let title = NSTextField(labelWithString: status)
-        title.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
-        title.textColor = .labelColor
-        var lines: [NSView] = [title]
-        if let reason {
-            let detail = NSTextField(labelWithString: reason)
-            detail.font = .menuFont(ofSize: NSFont.smallSystemFontSize)
-            detail.textColor = .secondaryLabelColor
-            lines.append(detail)
-        }
-        let stack = NSStackView(views: lines)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 1
-        stack.edgeInsets = NSEdgeInsets(top: 3, left: Self.titleInset, bottom: 5, right: 14)
-        super.init(frame: NSRect(origin: .zero, size: stack.fittingSize))
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-        autoresizingMask = [.width]
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("not built from a nib")
     }
 }

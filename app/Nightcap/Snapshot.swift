@@ -9,6 +9,7 @@ enum Snapshot {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
         let settings = Settings(
             websiteChecking: SettingsSwitch(on: true, locked: false, command: .websites(.off)),
+            openAtLogin: SettingsSwitch(on: true, locked: false, command: .openAtLogin(.off)),
             checks: [
                 SettingsCheck(
                     kind: .nightShift, state: .ok,

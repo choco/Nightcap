@@ -128,6 +128,8 @@ pub enum Command {
     Unsnooze(RuleIdentity),
     /// Turns website checking on or off, unless the config sets it (ADR-0016).
     Websites(OnOff),
+    /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0017).
+    OpenAtLogin(OnOff),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -360,6 +362,7 @@ pub enum CheckKind {
     NightShift,
     Accessibility,
     Notifications,
+    OpenAtLogin,
     ConfigFile,
     AdHocRules,
 }
@@ -477,6 +480,8 @@ pub enum ErrorCode {
     AdHocRulesOff,
     /// The config sets this, so only the config can change it.
     SetInConfig,
+    /// The install doesn't open itself at login: its installer starts it, or it's a dev build.
+    NoLoginItem,
 }
 
 #[cfg(test)]

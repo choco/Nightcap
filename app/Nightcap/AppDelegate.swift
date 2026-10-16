@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboarding: Onboarding?
     /// What the core last heard, so an unchanged re-read sends nothing.
     private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
+    private var reportedLoginItem: LoginItem?
     private let dockIcon = DockIcon()
     private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon)
     private var observers: [NSObjectProtocol] = []
@@ -63,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.core = core
         accessibility = AccessibilityPermission { [weak self] _ in
             self?.onboarding?.accessibilityChanged()
-            Task { await self?.reportPermissions() }
+            Task { await self?.reportSystemState() }
         }
         browserWatcher = BrowserWatcher { [weak self] generation, host in
             self?.reportHost(generation: generation, host: host)
@@ -141,7 +142,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.reportFrontmostApp(app)
                 // macOS posts nothing when notifications are switched in System Settings, so
                 // they're re-read whenever the user moves on to another app.
-                Task { await self?.reportPermissions() }
+                Task { await self?.reportSystemState() }
             }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
@@ -262,7 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pollPermissions(every: 30)
         Task {
             // Once now, so status is right while the notification prompt waits for an answer.
-            await reportPermissions()
+            await reportSystemState()
             guard onboarding == nil else { return }
             do {
                 _ = try await UNUserNotificationCenter.current()
@@ -270,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("couldn't request notification permission: \(error, privacy: .public)")
             }
-            await reportPermissions()
+            await reportSystemState()
         }
     }
 
@@ -279,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let onboarding = Onboarding(
             accessibility: accessibility,
             onNotificationsRead: { [weak self] in
-                Task { await self?.reportPermissions() }
+                Task { await self?.reportSystemState() }
             },
             onFinish: { [weak self] websites in
                 guard let self else { return }
@@ -306,7 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.showSettings(SettingsWindow.tab(for: core.settings()))
             },
             onOpen: { [weak self] in
-                Task { await self?.reportPermissions() }
+                Task { await self?.reportSystemState() }
             },
             checkForUpdates: checkForUpdates)
         settingsWindow = SettingsWindow(
@@ -327,7 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let settingsWindow else { return }
         dockIcon.show(for: .settings)
         settingsWindow.show(tab)
-        Task { await reportPermissions() }
+        Task { await reportSystemState() }
         pollPermissions(every: 1)
     }
 
@@ -335,7 +336,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         permissionsPoll?.invalidate()
         let timer = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                _ = Task { await self?.reportPermissions() }
+                _ = Task { await self?.reportSystemState() }
             }
         }
         // Lets macOS fold the background poll into other wakeups.
@@ -351,6 +352,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibility?.ask()
         case .allowNotifications:
             allowNotifications()
+        case .openLoginItems:
+            SMAppService.openSystemSettingsLoginItems()
         default:
             guard let core else { return }
             apply(core.handle(event: .fixChosen(fix: fix)))
@@ -372,11 +375,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 log.error("couldn't request notification permission: \(error, privacy: .public)")
             }
-            await reportPermissions()
+            await reportSystemState()
         }
     }
 
-    private func reportPermissions() async {
+    /// The login item and the permissions, each reported only when it changed: macOS posts
+    /// nothing when the user switches either in System Settings.
+    private func reportSystemState() async {
+        reportLoginItem()
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         let notifications: NotificationPermission =
             switch settings.authorizationStatus {
@@ -401,7 +407,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for effect in effects {
             switch effect {
             case .registerLoginItem:
-                registerLoginItem()
+                changeLoginItem { try $0.register() }
+            case .unregisterLoginItem:
+                changeLoginItem { try $0.unregister() }
             case .startUpdater:
                 updater = SPUStandardUpdaterController(
                     startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
@@ -446,24 +454,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.checkForUpdates(nil)
     }
 
-    /// The core asks once per install; whatever state the item is in, an item that exists is
-    /// reported back so the core never asks again.
-    private func registerLoginItem() {
-        let service = SMAppService.mainApp
-        switch service.status {
-        case .enabled, .requiresApproval:
-            log.info("the login item already exists")
-        default:
-            // A never-registered app reports .notFound, the same as one whose item was removed.
-            do {
-                try service.register()
-                log.info("registered the login item")
-            } catch {
-                log.error("couldn't register the login item: \(error, privacy: .public)")
-                return
-            }
+    /// Registers or unregisters the login item, as the user chose (ADR-0017), then reports
+    /// where that left it.
+    private func changeLoginItem(_ change: (SMAppService) throws -> Void) {
+        do {
+            try change(SMAppService.mainApp)
+        } catch {
+            log.error("couldn't change the login item: \(error, privacy: .public)")
         }
+        reportLoginItem()
+    }
+
+    private func reportLoginItem() {
         guard let core else { return }
-        apply(core.handle(event: .loginItemRegistered))
+        // A never-registered app reports .notFound, the same as one whose item was removed.
+        let item: LoginItem =
+            switch SMAppService.mainApp.status {
+            case .enabled: .enabled
+            case .requiresApproval: .requiresApproval
+            default: .notRegistered
+            }
+        guard item != reportedLoginItem else { return }
+        reportedLoginItem = item
+        apply(core.handle(event: .loginItemChanged(item: item)))
     }
 }

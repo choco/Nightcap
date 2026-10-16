@@ -14,9 +14,6 @@ const VERSION: u32 = 1;
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Persisted {
-    /// Set once the login item exists, so one the user later removes stays removed: macOS
-    /// reports a removed item exactly like one that was never registered.
-    pub(crate) login_item_registered: bool,
     pub(crate) manual_state: Option<OnOff>,
     pub(crate) snoozes: Vec<RuleIdentity>,
     pub(crate) timed_disable: Option<Timestamp>,
@@ -27,6 +24,9 @@ pub(crate) struct Persisted {
     /// Whether the user wants Nightcap's notifications: set once they're allowed, and cleared
     /// only when the user accepts them off. The notifications check compares against it.
     pub(crate) notifications_wanted: bool,
+    /// Whether the user wants Nightcap to open at login: set when they choose it or the login
+    /// item turns up enabled, cleared only when they choose otherwise (ADR-0017).
+    pub(crate) open_at_login: bool,
     /// The problems already announced with a notification, so a restart doesn't repeat them.
     pub(crate) announced: Vec<CheckKind>,
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
