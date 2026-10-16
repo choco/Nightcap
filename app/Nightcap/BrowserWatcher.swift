@@ -3,7 +3,7 @@ import ApplicationServices
 import os
 
 /// Reads the frontmost browser's host through Accessibility, on a thread of its own, so a hung
-/// browser never stalls the main thread (ADR-0010). Only hosts leave it, and it never logs one
+/// browser never stalls the main thread (ADR-0016). Only hosts leave it, and it never logs one
 /// (ADR-0012).
 ///
 /// Everything below `runLoop` is confined to the watcher's thread: the main thread reaches it

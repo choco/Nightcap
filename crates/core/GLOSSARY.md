@@ -44,6 +44,10 @@ _Avoid_: subdomain rule, exact-host rule
 **Host**:
 The hostname of the front browser tab: the only part of its URL Nightcap ever sees.
 
+**Website checking**:
+Whether Nightcap reads the front browser's host, which domain rules need. Off until the user turns it on.
+_Avoid_: website monitoring, site tracking
+
 **Rule identity**:
 A rule's kind plus its target, e.g. `app:com.figma.Desktop`. Rules with the same identity are the same rule.
 

@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0016
+---
+
 # Browser URLs come from Accessibility, on a dedicated thread
 
 Domain rules need the host of the front browser tab whenever the frontmost app or the tab changes. The usual way to read a tab's URL on macOS is Apple Events. That needs one Automation consent per browser, has a default timeout of about two minutes, and through `NSAppleScript` runs only on the main thread, so one hung browser freezes app switching.
