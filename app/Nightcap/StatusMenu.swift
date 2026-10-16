@@ -54,9 +54,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         let snapshot = current()
         menu.removeAllItems()
-        let summary = NSMenuItem(title: snapshot.summary, action: nil, keyEquivalent: "")
-        summary.isEnabled = false
-        menu.addItem(summary)
+        let status = NSMenuItem(title: snapshot.status, action: nil, keyEquivalent: "")
+        status.attributedTitle = NSAttributedString(
+            string: snapshot.status, attributes: [.font: NSFont.menuFont(ofSize: 0).bold])
+        status.subtitle = snapshot.reason
+        status.isEnabled = false
+        menu.addItem(status)
         menu.addItem(.separator())
         for entry in snapshot.entries {
             switch entry {
@@ -69,6 +72,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 items.forEach { submenu.addItem(menuItem($0)) }
                 parent.submenu = submenu
                 menu.addItem(parent)
+            case .header(let title):
+                menu.addItem(.sectionHeader(title: title))
             case .askForAccessibility(let title):
                 menu.addItem(NSMenuItem(title: title, action: #selector(allowAccessibility), keyEquivalent: ""))
             case .separator:
@@ -86,6 +91,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func menuItem(_ item: MenuItem) -> NSMenuItem {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
+        menuItem.subtitle = item.subtitle
+        menuItem.indentationLevel = item.indented ? 1 : 0
         menuItem.state = item.checked ? .on : .off
         menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
@@ -107,5 +114,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+}
+
+private extension NSFont {
+    var bold: NSFont {
+        NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask)
     }
 }

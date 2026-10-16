@@ -1763,23 +1763,67 @@ fn the_rules_query_lists_every_rule_with_its_source() {
     );
 }
 
-#[test]
-fn the_menu_shows_what_night_shift_is_doing_and_why() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_forced(&socket_in(&dir));
-
+/// The menu's status line and the reason under it.
+fn status_line(core: &Core) -> (String, Option<String>) {
     let menu = core.menu();
+    (menu.status, menu.reason)
+}
 
-    assert_eq!(menu.icon, MenuIcon::ForcedOff);
+fn says(status: &str, reason: &str) -> (String, Option<String>) {
+    (status.to_owned(), Some(reason.to_owned()))
+}
+
+#[test]
+fn the_menu_says_what_night_shift_is_doing_and_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.figma.Desktop".to_owned()),
+        name: Some("Figma".to_owned()),
+        is_browser: false,
+    });
+
+    assert_eq!(core.menu().icon, MenuIcon::ForcedOff);
     assert_eq!(
-        menu.summary,
-        "Night Shift forced off by app:com.figma.Desktop (config rule)"
+        status_line(&core),
+        says("Night Shift: Forced Off", "While Figma is in front")
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_mins(30)),
+    );
+    assert_eq!(
+        status_line(&core),
+        says(
+            "Night Shift: Forced Off",
+            "While Figma is in front, and until 23:30"
+        )
+    );
+    activate(&core, "com.apple.Terminal");
+    assert_eq!(
+        status_line(&core),
+        says("Night Shift: Forced Off", "Until 23:30")
+    );
+    send(&core, &socket, &wakes, Command::Resume);
+    assert_eq!(
+        status_line(&core),
+        says("Night Shift: On", "Following the schedule until 07:00")
+    );
+    send(&core, &socket, &wakes, Command::Off);
+    assert_eq!(
+        status_line(&core),
+        says("Night Shift: Off", "Turned off by hand until 07:00")
     );
 }
 
 fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
     MenuItem {
         title: title.to_owned(),
+        subtitle: None,
+        indented: false,
         checked,
         enabled: true,
         command,
@@ -1790,15 +1834,15 @@ fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
 fn entry_titled(core: &Core, prefix: &str) -> Option<MenuEntry> {
     core.menu().entries.into_iter().find(|entry| match entry {
         MenuEntry::Item { item } => item.title.starts_with(prefix),
-        MenuEntry::Submenu { title, .. } | MenuEntry::AskForAccessibility { title } => {
-            title.starts_with(prefix)
-        }
+        MenuEntry::Submenu { title, .. }
+        | MenuEntry::Header { title }
+        | MenuEntry::AskForAccessibility { title } => title.starts_with(prefix),
         MenuEntry::Separator => false,
     })
 }
 
 #[test]
-fn the_menu_turns_night_shift_the_other_way_or_disables_it_for_a_while() {
+fn the_menu_turns_night_shift_the_other_way_or_off_for_a_while() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
     core.handle(Event::StatusChanged {
@@ -1816,7 +1860,7 @@ fn the_menu_turns_night_shift_the_other_way_or_disables_it_for_a_while() {
                 item: menu_item("Turn Night Shift Off", false, Command::Off)
             },
             MenuEntry::Submenu {
-                title: "Disable For".to_owned(),
+                title: "Turn Off For".to_owned(),
                 items: vec![
                     menu_item(
                         "30 Minutes",
@@ -1848,22 +1892,113 @@ fn the_menu_offers_resume_only_when_there_is_something_to_resume() {
         enabled: true,
         schedule: custom_hours(),
     });
-    let resume = MenuEntry::Item {
-        item: menu_item("Resume", false, Command::Resume),
-    };
-
-    assert!(!core.menu().entries.contains(&resume));
+    assert_eq!(entry_titled(&core, "Resume"), None);
     send(&core, &socket, &wakes, Command::Off);
-    assert!(core.menu().entries.contains(&resume));
+    assert!(entry_titled(&core, "Resume").is_some());
+}
+
+#[test]
+fn resume_says_what_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.figma.Desktop".to_owned()),
+        name: Some("Figma".to_owned()),
+        is_browser: false,
+    });
+
+    send(&core, &socket, &wakes, Command::On);
+    assert_eq!(
+        subtitle_of(&core, "Resume"),
+        Some("Unsnoozes the Figma rule and goes back to the schedule".to_owned())
+    );
+    send(&core, &socket, &wakes, Command::Resume);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_mins(30)),
+    );
+    assert_eq!(
+        subtitle_of(&core, "Resume"),
+        Some("Ends the timed disable".to_owned())
+    );
+}
+
+/// The subtitle of the menu item titled `title`, which must exist.
+fn subtitle_of(core: &Core, title: &str) -> Option<String> {
+    match entry_titled(core, title) {
+        Some(MenuEntry::Item { item }) if item.title == title => item.subtitle,
+        other => panic!("expected an item titled {title:?}, got {other:?}"),
+    }
+}
+
+#[test]
+fn turning_night_shift_on_during_a_force_says_what_it_snoozes_and_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_forced(&socket);
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.figma.Desktop".to_owned()),
+        name: Some("Figma".to_owned()),
+        is_browser: false,
+    });
+
+    assert_eq!(
+        subtitle_of(&core, "Turn Night Shift On"),
+        Some("Snoozes the Figma rule until 07:00".to_owned())
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_mins(30)),
+    );
+    assert_eq!(
+        subtitle_of(&core, "Turn Night Shift On"),
+        Some("Snoozes the Figma rule until 07:00 and ends the timed disable".to_owned())
+    );
+    activate(&core, "com.apple.Terminal");
+    assert_eq!(
+        subtitle_of(&core, "Turn Night Shift On"),
+        Some("Ends the timed disable".to_owned())
+    );
 }
 
 fn app_toggle(core: &Core) -> Option<MenuEntry> {
-    entry_titled(core, "Force Off in")
+    entry_titled(core, "In ")
+}
+
+fn site_toggle(core: &Core) -> Option<MenuEntry> {
+    entry_titled(core, "On ")
+}
+
+/// `entry` drawn one level in, as the site's toggle is under its browser's.
+fn nested(entry: Option<MenuEntry>) -> Option<MenuEntry> {
+    entry.map(|entry| match entry {
+        MenuEntry::Item { item } => MenuEntry::Item {
+            item: MenuItem {
+                indented: true,
+                ..item
+            },
+        },
+        other => other,
+    })
 }
 
 fn toggle_item(title: &str, checked: bool, command: Command) -> Option<MenuEntry> {
     Some(MenuEntry::Item {
         item: menu_item(title, checked, command),
+    })
+}
+
+fn subtitled(title: &str, subtitle: &str, checked: bool, command: Command) -> Option<MenuEntry> {
+    Some(MenuEntry::Item {
+        item: MenuItem {
+            subtitle: Some(subtitle.to_owned()),
+            ..menu_item(title, checked, command)
+        },
     })
 }
 
@@ -1882,14 +2017,21 @@ fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
         is_browser: false,
     });
 
-    assert_eq!(
-        app_toggle(&core),
-        toggle_item("Force Off in Figma", false, Command::AddRule(figma()))
+    let header = MenuEntry::Header {
+        title: "Force Off".to_owned(),
+    };
+    let toggle = toggle_item("In Figma", false, Command::AddRule(figma()));
+    assert_eq!(app_toggle(&core), toggle);
+    assert!(
+        core.menu()
+            .entries
+            .windows(2)
+            .any(|pair| pair[0] == header && Some(pair[1].clone()) == toggle)
     );
     send(&core, &socket, &wakes, Command::AddRule(figma()));
     assert_eq!(
         app_toggle(&core),
-        toggle_item("Force Off in Figma", true, Command::RemoveRule(figma()))
+        toggle_item("In Figma", true, Command::RemoveRule(figma()))
     );
 }
 
@@ -1901,8 +2043,9 @@ fn the_menu_snoozes_a_config_rule_for_the_frontmost_app_rather_than_removing_it(
 
     assert_eq!(
         app_toggle(&core),
-        toggle_item(
-            "Force Off in com.figma.Desktop (from the config)",
+        subtitled(
+            "In com.figma.Desktop",
+            "From your config",
             true,
             Command::Snooze(figma())
         )
@@ -1910,8 +2053,9 @@ fn the_menu_snoozes_a_config_rule_for_the_frontmost_app_rather_than_removing_it(
     send(&core, &socket, &wakes, Command::Snooze(figma()));
     assert_eq!(
         app_toggle(&core),
-        toggle_item(
-            "Force Off in com.figma.Desktop (snoozed)",
+        subtitled(
+            "In com.figma.Desktop",
+            "Snoozed until 07:00",
             false,
             Command::Unsnooze(figma())
         )
@@ -1935,15 +2079,15 @@ fn choosing_a_menu_item_runs_its_command() {
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
 }
 
-fn offers_disable_for(core: &Core) -> bool {
+fn offers_turn_off_for(core: &Core) -> bool {
     core.menu()
         .entries
         .iter()
-        .any(|entry| matches!(entry, MenuEntry::Submenu { title, .. } if title == "Disable For"))
+        .any(|entry| matches!(entry, MenuEntry::Submenu { title, .. } if title == "Turn Off For"))
 }
 
 #[test]
-fn the_menu_offers_disable_for_only_while_it_would_change_something() {
+fn the_menu_offers_turn_off_for_only_while_it_would_change_something() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T12:00:00+02:00");
     core.handle(Event::StatusChanged {
@@ -1951,10 +2095,10 @@ fn the_menu_offers_disable_for_only_while_it_would_change_something() {
         schedule: custom_hours(),
     });
 
-    assert!(!offers_disable_for(&core), "off, and on only at 22:00");
+    assert!(!offers_turn_off_for(&core), "off, and on only at 22:00");
     clock.set("2026-10-16T20:30:00+02:00");
     core.handle(Event::Woke);
-    assert!(offers_disable_for(&core), "off, but on within two hours");
+    assert!(offers_turn_off_for(&core), "off, but on within two hours");
 }
 
 #[test]
@@ -2099,12 +2243,12 @@ fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one()
     report_host(&core, 1, "docs.figma.com");
 
     assert_eq!(
-        entry_titled(&core, "Force Off on"),
-        toggle_item(
-            "Force Off on figma.com",
+        site_toggle(&core),
+        nested(toggle_item(
+            "On figma.com",
             false,
             Command::AddRule(domain("figma.com"))
-        )
+        ))
     );
     send(
         &core,
@@ -2119,12 +2263,12 @@ fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one()
         Command::AddRule(domain("docs.figma.com")),
     );
     assert_eq!(
-        entry_titled(&core, "Force Off on"),
-        toggle_item(
-            "Force Off on docs.figma.com",
+        site_toggle(&core),
+        nested(toggle_item(
+            "On docs.figma.com",
             true,
             Command::RemoveRule(domain("docs.figma.com"))
-        )
+        ))
     );
 }
 
@@ -2135,21 +2279,23 @@ fn the_menu_snoozes_a_config_rule_for_the_site_rather_than_removing_it() {
     let (core, wakes, _clock) = start_on_figma(&socket);
 
     assert_eq!(
-        entry_titled(&core, "Force Off on"),
-        toggle_item(
-            "Force Off on figma.com (from the config)",
+        site_toggle(&core),
+        nested(subtitled(
+            "On figma.com",
+            "From your config",
             true,
             Command::Snooze(domain("figma.com"))
-        )
+        ))
     );
     send(&core, &socket, &wakes, Command::Snooze(domain("figma.com")));
     assert_eq!(
-        entry_titled(&core, "Force Off on"),
-        toggle_item(
-            "Force Off on figma.com (snoozed)",
+        site_toggle(&core),
+        nested(subtitled(
+            "On figma.com",
+            "Snoozed until 07:00",
             false,
             Command::Unsnooze(domain("figma.com"))
-        )
+        ))
     );
 }
 

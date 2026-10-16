@@ -83,8 +83,10 @@ pub enum Command {
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct Menu {
     pub icon: MenuIcon,
-    /// What Night Shift is doing and why, as a sentence.
-    pub summary: String,
+    /// What Night Shift is doing, e.g. "Night Shift: Forced Off".
+    pub status: String,
+    /// Why, in a few words, e.g. "While Figma is in front".
+    pub reason: Option<String>,
     pub entries: Vec<MenuEntry>,
 }
 
@@ -105,6 +107,10 @@ pub enum MenuEntry {
         title: String,
         items: Vec<MenuItem>,
     },
+    /// Titles the items under it.
+    Header {
+        title: String,
+    },
     /// Asks for Accessibility, which website checking is missing: a shell action, not a command.
     AskForAccessibility {
         title: String,
@@ -116,6 +122,10 @@ pub enum MenuEntry {
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct MenuItem {
     pub title: String,
+    /// A line under the title, e.g. where a rule comes from or what choosing it does.
+    pub subtitle: Option<String>,
+    /// Drawn one level in, under the item it belongs to.
+    pub indented: bool,
     pub checked: bool,
     pub enabled: bool,
     pub command: Command,
@@ -411,13 +421,16 @@ impl Core {
         if state.night_shift == NightShift::Unavailable {
             return Menu {
                 icon: MenuIcon::Unavailable,
-                summary: "Night Shift isn't available on this Mac".to_owned(),
+                status: "Night Shift: Unavailable".to_owned(),
+                reason: None,
                 entries: Vec::new(),
             };
         }
         let on = wanted(&decision).unwrap_or(state.night_shift == NightShift::On);
         let item = |title: &str, command| MenuItem {
             title: title.to_owned(),
+            subtitle: None,
+            indented: false,
             checked: false,
             enabled: true,
             command,
@@ -426,7 +439,10 @@ impl Core {
             item: if on {
                 item("Turn Night Shift Off", Command::Off)
             } else {
-                item("Turn Night Shift On", Command::On)
+                MenuItem {
+                    subtitle: state.what_turning_on_does(&decision),
+                    ..item("Turn Night Shift On", Command::On)
+                }
             },
         }];
         // A timed disable matters while Night Shift is on or forced off, or when the schedule
@@ -441,7 +457,7 @@ impl Core {
             });
         if on || decision.verdict == Verdict::ForceOff || comes_on_soon {
             entries.push(MenuEntry::Submenu {
-                title: "Disable For".to_owned(),
+                title: "Turn Off For".to_owned(),
                 items: DISABLE_CHOICES
                     .map(|(minutes, title)| {
                         item(title, Command::Disable(SignedDuration::from_mins(minutes)))
@@ -454,11 +470,17 @@ impl Core {
             || state.manual_state.is_some()
         {
             entries.push(MenuEntry::Item {
-                item: item("Resume", Command::Resume),
+                item: MenuItem {
+                    subtitle: state.what_resuming_ends(),
+                    ..item("Resume", Command::Resume)
+                },
             });
         }
         if let Some(bundle_id) = &state.context.app {
             entries.push(MenuEntry::Separator);
+            entries.push(MenuEntry::Header {
+                title: "Force Off".to_owned(),
+            });
             entries.push(MenuEntry::Item {
                 item: state.app_toggle(bundle_id),
             });
@@ -481,7 +503,13 @@ impl Core {
                 (Verdict::HandsOff, true) => MenuIcon::On,
                 (Verdict::HandsOff, false) => MenuIcon::Off,
             },
-            summary: format!("Night Shift {}", decision.describe(&state.timeline.zone)),
+            status: match (decision.verdict, on) {
+                (Verdict::ForceOff, _) => "Night Shift: Forced Off",
+                (Verdict::HandsOff, true) => "Night Shift: On",
+                (Verdict::HandsOff, false) => "Night Shift: Off",
+            }
+            .to_owned(),
+            reason: state.menu_reason(&decision),
             entries,
         }
     }
@@ -1277,6 +1305,8 @@ impl State {
         let on = self.website_checking();
         let from_config = self.config_websites.is_some();
         MenuItem {
+            subtitle: None,
+            indented: false,
             title: if from_config {
                 "Check Websites (from the config)".to_owned()
             } else {
@@ -1296,7 +1326,7 @@ impl State {
             .rules
             .iter()
             .find(|rule| same_rule(&rule.identity, &identity));
-        self.rule_toggle(rule, identity, |_| format!("Force Off in {name}"))
+        self.rule_toggle(rule, identity, |_| format!("In {name}"))
     }
 
     /// The menu's toggle for the front tab's site, while website checking knows its host: it
@@ -1320,10 +1350,15 @@ impl State {
             .max_by_key(|(length, _)| *length)
             .map(|(_, rule)| rule);
         let identity = RuleIdentity::Domain(domain::registrable(host));
-        Some(self.rule_toggle(rule, identity, |identity| match identity {
-            RuleIdentity::Domain(domain) => format!("Force Off on {domain}"),
-            RuleIdentity::App(bundle_id) => format!("Force Off in {bundle_id}"),
-        }))
+        let toggle = self.rule_toggle(rule, identity, |identity| match identity {
+            RuleIdentity::Domain(domain) => format!("On {domain}"),
+            RuleIdentity::App(bundle_id) => format!("In {bundle_id}"),
+        });
+        // The site sits under its browser's own toggle.
+        Some(MenuItem {
+            indented: true,
+            ..toggle
+        })
     }
 
     /// A rule toggle (ADR-0009): with no `rule` it adds `new`; otherwise it removes an ad-hoc
@@ -1334,14 +1369,16 @@ impl State {
         new: RuleIdentity,
         title: impl Fn(&RuleIdentity) -> String,
     ) -> MenuItem {
-        let toggle = |title: String, checked, command| MenuItem {
+        let toggle = |title: String, subtitle: Option<String>, checked, command| MenuItem {
             title,
+            subtitle,
+            indented: false,
             checked,
             enabled: true,
             command,
         };
         let Some(rule) = rule else {
-            return toggle(title(&new), false, Command::AddRule(new));
+            return toggle(title(&new), None, false, Command::AddRule(new));
         };
         let identity = rule.identity.clone();
         let name = title(&identity);
@@ -1351,23 +1388,145 @@ impl State {
             .any(|snoozed| same_rule(snoozed, &identity))
         {
             toggle(
-                format!("{name} (snoozed)"),
+                name,
+                Some(format!("Snoozed{}", self.until_snoozes_end())),
                 false,
                 Command::Unsnooze(identity),
             )
         } else if rule.source == RuleSource::Config {
             toggle(
-                format!("{name} (from the config)"),
+                name,
+                Some("From your config".to_owned()),
                 true,
                 Command::Snooze(identity),
             )
         } else {
-            toggle(name, true, Command::RemoveRule(identity))
+            toggle(name, None, true, Command::RemoveRule(identity))
         }
+    }
+
+    /// " until 07:00" for snoozes made now, which last until the next schedule transition.
+    fn until_snoozes_end(&self) -> String {
+        self.timeline
+            .next_transition(self.applied_until)
+            .map_or_else(String::new, |at| format!(" until {}", self.clock_time(at)))
+    }
+
+    /// What "Turn Night Shift On" does during a force (ADR-0006); nothing to say otherwise.
+    fn what_turning_on_does(&self, decision: &Decision) -> Option<String> {
+        if decision.verdict != Verdict::ForceOff {
+            return None;
+        }
+        let rules: Vec<_> = decision
+            .reasons
+            .iter()
+            .filter_map(|reason| match reason {
+                Reason::Rule(rule) => Some(self.name_in_front(&rule.identity)),
+                _ => None,
+            })
+            .collect();
+        let mut parts = Vec::new();
+        if !rules.is_empty() {
+            let noun = if rules.len() == 1 { "rule" } else { "rules" };
+            parts.push(format!(
+                "snoozes the {} {noun}{}",
+                rules.join(" and "),
+                self.until_snoozes_end()
+            ));
+        }
+        if decision
+            .reasons
+            .iter()
+            .any(|reason| matches!(reason, Reason::TimedDisable { .. }))
+        {
+            parts.push("ends the timed disable".to_owned());
+        }
+        capitalized(&listed(&parts))
+    }
+
+    /// What "Resume" clears: the timed disable, the snoozes and the manual state.
+    fn what_resuming_ends(&self) -> Option<String> {
+        let mut parts = Vec::new();
+        if self.timed_disable.is_some() {
+            parts.push("ends the timed disable".to_owned());
+        }
+        if !self.snoozes.is_empty() {
+            let names: Vec<_> = self
+                .snoozes
+                .iter()
+                .map(|identity| self.name_in_front(identity))
+                .collect();
+            let noun = if names.len() == 1 { "rule" } else { "rules" };
+            parts.push(format!("unsnoozes the {} {noun}", names.join(" and ")));
+        }
+        if self.manual_state.is_some() {
+            parts.push("goes back to the schedule".to_owned());
+        }
+        capitalized(&listed(&parts))
+    }
+
+    /// A time of day in the user's time zone, as the menu shows it.
+    fn clock_time(&self, at: Timestamp) -> String {
+        at.to_zoned(self.timeline.zone.clone())
+            .strftime("%H:%M")
+            .to_string()
     }
 
     fn website_checking(&self) -> bool {
         self.config_websites.unwrap_or(self.websites)
+    }
+
+    /// The reason under the menu's status line, naming what's in front rather than rules.
+    fn menu_reason(&self, decision: &Decision) -> Option<String> {
+        let until = |at: &Option<Timestamp>| {
+            at.map_or_else(String::new, |at| format!(" until {}", self.clock_time(at)))
+        };
+        if decision.verdict == Verdict::HandsOff {
+            return decision.reasons.iter().find_map(|reason| match reason {
+                Reason::ManualState { state, until: end } => {
+                    Some(format!("Turned {state} by hand{}", until(end)))
+                }
+                Reason::Schedule { until: end, .. } => {
+                    Some(format!("Following the schedule{}", until(end)))
+                }
+                _ => None,
+            });
+        }
+        let in_front: Vec<_> = decision
+            .reasons
+            .iter()
+            .filter_map(|reason| match reason {
+                Reason::Rule(rule) => Some(self.name_in_front(&rule.identity)),
+                _ => None,
+            })
+            .collect();
+        let mut parts = Vec::new();
+        if !in_front.is_empty() {
+            let verb = if in_front.len() == 1 { "is" } else { "are" };
+            parts.push(format!("while {} {verb} in front", in_front.join(" and ")));
+        }
+        parts.extend(decision.reasons.iter().filter_map(|reason| match reason {
+            Reason::TimedDisable { until: end } => Some(format!("until {}", self.clock_time(*end))),
+            _ => None,
+        }));
+        capitalized(&parts.join(", and "))
+    }
+
+    /// An app rule's app by its name when it's the frontmost one, and a domain rule's domain.
+    fn name_in_front(&self, identity: &RuleIdentity) -> String {
+        match identity {
+            RuleIdentity::App(bundle_id) => self
+                .app_name
+                .clone()
+                .filter(|_| {
+                    self.context
+                        .app
+                        .as_deref()
+                        .is_some_and(|front| front.eq_ignore_ascii_case(bundle_id))
+                })
+                .unwrap_or_else(|| bundle_id.clone()),
+            RuleIdentity::Domain(domain) => domain.clone(),
+        }
     }
 
     /// Once per launch, the first time a browser is in front while website checking is on and
@@ -1481,6 +1640,23 @@ fn wanted(decision: &Decision) -> Option<bool> {
             Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
         }),
     }
+}
+
+/// "a", "a and b", "a, b and c".
+fn listed(parts: &[String]) -> String {
+    match parts {
+        [] => String::new(),
+        [only] => only.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// `text` with its first letter capitalized, or None when it's empty.
+fn capitalized(text: &str) -> Option<String> {
+    let mut letters = text.chars();
+    letters
+        .next()
+        .map(|first| first.to_uppercase().chain(letters).collect())
 }
 
 fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
