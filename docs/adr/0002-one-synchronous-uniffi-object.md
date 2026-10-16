@@ -8,7 +8,8 @@ The core exposes a single `Core` object through UniFFI, called synchronously and
 
 - `handle(Event) -> Vec<Effect>` is called for every fact the shell observes.
 - `tick() -> Vec<Effect>` is called when the core's own threads have work. A `Waker` foreign trait lets the IPC thread ask for a tick, and the shell merges those requests into one `DispatchQueue.main.async { tick() }`. This is Ghostty's wakeup pattern.
-- Effects are plain data: set Night Shift, set strength, post a notification, schedule the next wakeup, update the menu. The core computes when to wake (the next schedule transition or the end of a timed disable); the shell owns the wall-clock timer, because Rust's portable clocks stop while the Mac sleeps.
+- Effects are plain data, such as setting Night Shift, posting a notification, watching a browser or scheduling the next wakeup. The core computes when to wake (the next schedule transition or the end of a timed disable); the shell owns the wall-clock timer, because Rust's portable clocks stop while the Mac sleeps.
+- What the menu and the settings window show is pulled: `menu()` and `settings()` return a snapshot, which the shell draws after each `handle` and `tick`, so no effect carries UI.
 - The browser watcher hops its results to the main thread before they reach the core.
 - The core mirrors the last observed Night Shift status, so the CLI's `status` never needs a round trip into Swift.
 
@@ -16,7 +17,7 @@ It wins because the core can be tested as a pure state machine on Linux, by repl
 
 ## Consequences
 
-- Rust panics can't cross the FFI boundary, so the core builds with `panic = "abort"` and a panic hook that logs before the abort. launchd then restarts the app (ADR-0011).
+- Rust panics can't cross the FFI boundary, so the core builds with `panic = "abort"` and a panic hook that logs before the abort. Under a LaunchAgent, launchd then restarts the app (ADR-0011).
 - The generated bindings live in their own Swift module. UniFFI's generated code breaks when a module's default isolation is the main actor ([uniffi-rs#2818](https://github.com/mozilla/uniffi-rs/issues/2818)), and default isolation is set per module, so the app module keeps the main actor while the bindings module stays `nonisolated`.
 
 ## Rejected alternatives

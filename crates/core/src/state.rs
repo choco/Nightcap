@@ -17,7 +17,7 @@ pub(crate) struct Persisted {
     pub(crate) manual_state: Option<OnOff>,
     pub(crate) snoozes: Vec<RuleIdentity>,
     pub(crate) timed_disable: Option<Timestamp>,
-    /// Website checking as last chosen in onboarding, the menu or the CLI (ADR-0016).
+    /// Website checking as last chosen in onboarding, Settings or the CLI (ADR-0016).
     pub(crate) websites: bool,
     /// The last onboarding version completed; a later one shows only its new steps.
     pub(crate) onboarding: u32,
@@ -25,7 +25,7 @@ pub(crate) struct Persisted {
     /// only when the user accepts them off. The notifications check compares against it.
     pub(crate) notifications_wanted: bool,
     /// Whether the user wants Nightcap to open at login: set when they choose it or the login
-    /// item turns up enabled, cleared only when they choose otherwise (ADR-0017).
+    /// item turns up enabled, cleared only when they choose otherwise (ADR-0015).
     pub(crate) open_at_login: bool,
     /// The problems already announced with a notification, so a restart doesn't repeat them.
     pub(crate) announced: Vec<CheckKind>,

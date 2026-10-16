@@ -4,7 +4,7 @@ The CLI talks to the daemon (ADR-0007). The channel needs a transport, framing, 
 
 ## Decision
 
-- The core's IPC thread serves a Unix socket from a 0700 directory that macOS doesn't clean up, such as `~/Library/Application Support/nightcap/`. The socket path stays under 104 bytes.
+- The core's IPC thread serves a Unix socket from a 0700 directory that macOS doesn't clean up, `~/Library/Application Support/Nightcap/`. The socket path stays under 104 bytes.
 - Messages are one JSON object per line, request and response.
 - Every connection starts with a `Hello` carrying the protocol version. A mismatch fails hard with a restart hint.
 - A `subscribe` stream is reserved for status consumers such as SketchyBar.

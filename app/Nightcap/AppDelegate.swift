@@ -464,7 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.checkForUpdates(nil)
     }
 
-    /// Registers or unregisters the login item, as the user chose (ADR-0017), then reports
+    /// Registers or unregisters the login item, as the user chose (ADR-0015), then reports
     /// where that left it.
     private func changeLoginItem(_ change: (SMAppService) throws -> Void) {
         do {

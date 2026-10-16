@@ -2,7 +2,7 @@ import AppKit
 import UserNotifications
 import os
 
-/// Onboarding, version 1 (ADR-0016, ADR-0017): a line on what Nightcap does over a checklist,
+/// Onboarding, version 1 (ADR-0015, ADR-0016): a line on what Nightcap does over a checklist,
 /// one row per choice. The current row explains itself and asks; an answered one shows its
 /// answer and can be changed. Closing the window finishes onboarding with what was chosen so
 /// far. Quitting Nightcap leaves it unfinished.

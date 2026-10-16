@@ -24,5 +24,5 @@ The shell's Night Shift adapter looks up `CBBlueLightClient` and `BrightnessSyst
 
 - **A one-shot "my write" flag**: it misreads callbacks, as described above.
 - **Inferring schedule transitions from status callbacks**: the same misreading, from the other side.
-- **The status struct's `active` flag or `setEnabled:withOption:`**: their meaning is unknown. If testing shows one works, it replaces the inside of the adapter, not its interface.
+- **The status struct's `active` flag or `setEnabled:withOption:`**: undocumented, and no use showed in testing on macOS 27: `active` stayed true throughout, and options 0 to 2 behaved alike.
 - **The `nightlight` crate**: it only polls, never registers the status callback, and depends on the deprecated `objc` 0.2.

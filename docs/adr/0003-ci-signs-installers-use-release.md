@@ -12,7 +12,7 @@ In GitHub Actions:
 4. **Signing:** the job imports the certificate from an Actions secret into a temporary keychain and signs inside-out with `/usr/bin/codesign`, called by absolute path.
 5. **Verification gate:** the release fails unless the signed app satisfies the signing requirement committed in the repo, and its requirement string matches that one exactly.
 6. **Packaging:** the app is zipped in a way that preserves symlinks, with no extended attributes.
-7. **Publishing:** a Linux job publishes the release with `Nightcap-<version>.zip` and a `SHA256SUMS` asset.
+7. **Publishing:** a Linux job publishes the release with `Nightcap-<version>.zip`, a `SHA256SUMS` asset and the appcast (ADR-0015).
 
 This repo ships no installer. `docs/installing.md` is the contract every installer relies on. Its hard rule: install the bundle byte-for-byte unchanged. A strip or re-sign replaces the signature and loses every grant; nixpkgs' fixup phase does exactly that unless `dontFixup` is set.
 
@@ -24,7 +24,7 @@ Why this wins:
 - Installers stay thin: fetch, check the hash, copy.
 - It is how Ghostty and Glide ship. The verification gate exists because Glide once shipped unsigned releases through a broken shim.
 
-This rests on grants surviving an update to a new path signed with the same certificate. If they don't, the fallback is the first rejected alternative below.
+This rests on grants surviving an update to a new path signed with the same certificate, which holds on macOS 27: a store-path app started by launchd, and a self-managed install updated by Sparkle, both kept Accessibility and notifications.
 
 ## Consequences
 
@@ -36,5 +36,5 @@ This rests on grants surviving an update to a new path signed with the same cert
 - **Nix builds from source with nixpkgs' Swift, and activation signs**: every Mac needs the certificate in its keychain; `codesign` would have to reach the keychain during `sudo darwin-rebuild switch`; nixpkgs' Swift 6.2.4 limits the shell to the 26 SDK and rules out SwiftUI macros. Ghostty's own flake skips macOS for the same reasons.
 - **Both paths**: two signing paths, with the key in both places.
 - **Nix packaging in this repo's flake**: it ties every release to one installer. The flake is a development shell only.
-- **The app registers itself through `SMAppService` in every install**: an imperative step a managed installer can't see. Only self-managed installs register (ADR-0014).
+- **The app registers itself through `SMAppService` in every install**: an imperative step a managed installer can't see. Only self-managed installs register, and only when the user chooses to (ADR-0015).
 - **A `service install` command that writes its own plist**: it bakes store paths into the plist, the pitfall seen in yabai, skhd, rift and espanso.

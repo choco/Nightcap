@@ -12,7 +12,7 @@ use crate::domain;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
-    /// Website checking, which then the menu and the CLI can't change (ADR-0016).
+    /// Website checking, which Settings and the CLI then can't change (ADR-0016).
     websites: Option<bool>,
     #[serde(default)]
     rules: Rules,

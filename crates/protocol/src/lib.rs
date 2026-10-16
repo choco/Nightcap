@@ -128,7 +128,7 @@ pub enum Command {
     Unsnooze(RuleIdentity),
     /// Turns website checking on or off, unless the config sets it (ADR-0016).
     Websites(OnOff),
-    /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0017).
+    /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0015).
     OpenAtLogin(OnOff),
 }
 
@@ -329,7 +329,7 @@ pub struct Status {
     pub next_transition: Option<Timestamp>,
     /// The frontmost app's bundle ID, when it has one.
     pub frontmost_app: Option<String>,
-    /// Whether the frontmost browser's host is being watched (ADR-0016, ADR-0018).
+    /// Whether the frontmost browser's host is being watched (ADR-0016).
     pub watching: bool,
     /// The watched browser's host, once known.
     pub host: Option<String>,

@@ -15,13 +15,13 @@ Rules are declared in a config that home-manager generates: a read-only Nix stor
 - On reload, an ad-hoc rule whose identity now appears in the config is deleted from the ad-hoc file, and the deletion is logged.
 - `rules list` and `status` show each rule's source.
 
-Config rules can only be snoozed at runtime. The menu's rule toggles work like this:
+Config rules can only be snoozed at runtime. The menu's rule toggles work like this, and Settings offers the same action on each rule:
 
 | Current state | Toggle for this app or site |
 |---|---|
 | No rule matches | Adds an ad-hoc rule. For a site, it uses the tab's registrable domain. |
 | An ad-hoc rule matches | Removes it. For a site, it removes the most specific one. |
-| A config rule matches | Snoozes it until the next schedule transition. The menu shows that it comes from the Nix config. |
+| A config rule matches | Snoozes it until the next schedule transition. The menu marks it as from the config. |
 | A snoozed rule matches | Un-snoozes it. |
 
 Removing a config rule from the CLI fails, with a pointer to snoozing.

@@ -327,7 +327,7 @@ pub enum LoginItem {
 
 #[derive(Debug, PartialEq, uniffi::Enum)]
 pub enum Effect {
-    /// Registers Nightcap to open at login, as the user chose (ADR-0017).
+    /// Registers Nightcap to open at login, as the user chose (ADR-0015).
     RegisterLoginItem,
     UnregisterLoginItem,
     /// Starts Sparkle's daily checks, in self-managed releases only (ADR-0015).
@@ -479,7 +479,7 @@ struct State {
     login_item: Option<LoginItem>,
     /// See `state::Persisted::open_at_login`.
     open_at_login: bool,
-    /// A self-managed release, which opens itself at login if the user wants (ADR-0017).
+    /// A self-managed release, which opens itself at login if the user wants (ADR-0015).
     opens_itself_at_login: bool,
     /// What was last written to `state.json`.
     saved: state::Persisted,
@@ -1234,7 +1234,6 @@ impl Core {
         state.applied_until = now;
     }
 
-    /// Watches the frontmost browser whenever website checking is on (ADR-0016).
     /// Posts one notification when a problem appears, unless `aloud` is false because the user
     /// caused it themselves. A problem that ends and comes back is announced again.
     fn announce(&self, aloud: bool, effects: &mut Vec<Effect>) {
@@ -1257,6 +1256,8 @@ impl Core {
         }
     }
 
+    /// Watches the frontmost browser while website checking is on, unless its own app rule
+    /// forces it off (ADR-0016).
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         let wanted = state.context.app.clone().filter(|_| {
