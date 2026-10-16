@@ -4,7 +4,7 @@ launchd restarts the app at every update, after a crash and at login. Each resta
 
 ## Decision
 
-`$XDG_STATE_HOME/nightcap/state.json` holds the manual state, the snoozes, the timed-disable deadline and the current forces, each with its expiry. On start, the core drops expired entries and re-evaluates. On SIGTERM, the shell asks the core to release every force and write the file.
+`$XDG_STATE_HOME/nightcap/state.json` holds the manual state, the snoozes, the timed-disable deadline and the Night Shift state Nightcap was holding, each with its expiry. On start, the core drops expired entries and re-evaluates. Night Shift found where the last run left it, forced off before a crash or released on a clean exit, is Nightcap's own doing, not an external change. On SIGTERM, the shell asks the core to release every force and write the file.
 
 ## Consequences
 
