@@ -227,6 +227,7 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .dusk-text { flex: 999 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
 .dusk-title { font-family: var(--font-display); font-size: 40px; line-height: 1.05; text-wrap: balance; }
 .dusk-sub { font-size: 15px; line-height: 1.55; color: var(--starlight-muted); text-wrap: balance; }
+.dusk-note { max-width: 52ch; font-size: 13px; line-height: 1.5; color: var(--starlight-muted); opacity: 0.85; }
 
 .site-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding-block: 0 48px; font-size: 14px; color: var(--ink-muted); }
 .made-with { display: inline-flex; align-items: center; gap: 6px; }
