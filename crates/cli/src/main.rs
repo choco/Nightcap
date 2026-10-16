@@ -10,9 +10,9 @@ use clap::{Parser, Subcommand};
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    self as protocol, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
-    NotificationPermission, Payload, Query, Request, Response, Rule, RuleIdentity, Schedule,
-    Status, TimeOfDay,
+    self as protocol, CheckState, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
+    NightShift, NotificationPermission, Payload, Query, Request, Response, Rule, RuleIdentity,
+    Schedule, Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -325,14 +325,10 @@ fn print_status(status: &Status) {
             format!(", {}{}", scheduled, until(status.next_transition))
         }
     };
-    let domain_rules = status
-        .rules
-        .iter()
-        .any(|rule| matches!(rule.identity, RuleIdentity::Domain(_)));
-    let accessibility = match (status.permissions.accessibility, domain_rules) {
-        (true, _) => "granted",
-        (false, true) => "not granted, which domain rules need",
-        (false, false) => "not granted",
+    let accessibility = if status.permissions.accessibility {
+        "granted"
+    } else {
+        "not granted"
     };
     let notifications = match status.permissions.notifications {
         NotificationPermission::NotRequested => "not requested",
@@ -376,11 +372,19 @@ fn print_status(status: &Status) {
     if let Some(end) = status.timed_disable {
         println!("Timed disable:{}", until(Some(end)));
     }
-    if let Some(error) = &status.config_error {
-        println!("Config: invalid. {error}");
-    }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
+    let problems: Vec<_> = status
+        .checks
+        .iter()
+        .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+        .collect();
+    if !problems.is_empty() {
+        println!("Needs attention:");
+        for check in problems {
+            println!("  {}", check.text);
+        }
+    }
 }
 
 fn rules(rules: &[Rule]) -> String {

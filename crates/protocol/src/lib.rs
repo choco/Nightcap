@@ -327,8 +327,7 @@ pub struct Status {
     pub next_transition: Option<Timestamp>,
     /// The frontmost app's bundle ID, when it has one.
     pub frontmost_app: Option<String>,
-    /// Whether the frontmost browser's host is being watched: only while it could change the
-    /// decision (ADR-0010).
+    /// Whether the frontmost browser's host is being watched (ADR-0016, ADR-0018).
     pub watching: bool,
     /// The watched browser's host, once known.
     pub host: Option<String>,
@@ -343,6 +342,39 @@ pub struct Status {
     /// When the timed disable ends, if one is running.
     pub timed_disable: Option<Timestamp>,
     pub permissions: Permissions,
+    pub checks: Vec<Check>,
+}
+
+/// One thing Nightcap depends on, compared with what the user set up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Check {
+    pub kind: CheckKind,
+    pub state: CheckState,
+    /// One line on how it stands, for Settings and `status`.
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckKind {
+    NightShift,
+    Accessibility,
+    Notifications,
+    ConfigFile,
+    AdHocRules,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckState {
+    Ok,
+    /// Not needed, or off by the user's choice.
+    Off,
+    /// Something the user set up stopped working. Restoring it or accepting the change as their
+    /// choice both settle it.
+    Drifted,
+    /// Broken, so it can only be fixed.
+    Broken,
 }
 
 /// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0016).
@@ -517,8 +549,13 @@ mod tests {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
+                checks: vec![Check {
+                    kind: CheckKind::Accessibility,
+                    state: CheckState::Drifted,
+                    text: "x".to_owned(),
+                }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
         );
     }
 

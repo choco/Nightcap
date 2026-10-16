@@ -18,9 +18,10 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ErrorReply, Install, Instance, NightShift,
-    NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request, Response, Rule,
-    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict, WebsiteChecking,
+    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ErrorReply, Install, Instance,
+    NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request,
+    Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    WebsiteChecking,
 };
 
 use engine::{Context, Inputs};
@@ -304,6 +305,8 @@ struct State {
     rules: Vec<Rule>,
     config_rules: Vec<Rule>,
     config_error: Option<String>,
+    /// Whether the config file existed when it was last loaded.
+    config_found: bool,
     ad_hoc: Vec<RuleIdentity>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
     ad_hoc_error: Option<String>,
@@ -339,6 +342,8 @@ struct State {
     /// None until the shell first reports it.
     accessibility: Option<bool>,
     notifications: NotificationPermission,
+    /// See `state::Persisted::notifications_wanted`.
+    notifications_wanted: bool,
     login_item_registered: bool,
     /// What was last written to `state.json`.
     saved: state::Persisted,
@@ -604,6 +609,10 @@ impl Core {
                 let mut state = self.state();
                 state.accessibility = Some(accessibility);
                 state.notifications = notifications;
+                // Allowed notifications become the user's wish, however they got allowed.
+                if notifications == NotificationPermission::Granted {
+                    state.notifications_wanted = true;
+                }
                 let mut effects = Vec::new();
                 state.notice_missing_accessibility(&mut effects);
                 effects
@@ -721,6 +730,7 @@ impl Core {
                 let config = config::Config {
                     rules: Vec::new(),
                     websites: None,
+                    found: true,
                 };
                 (config, Some(error))
             }
@@ -754,6 +764,7 @@ impl Core {
                 rules: Vec::new(),
                 config_rules: config.rules,
                 config_error,
+                config_found: config.found,
                 ad_hoc,
                 ad_hoc_error,
                 websites: persisted.websites,
@@ -776,6 +787,7 @@ impl Core {
                 accessibility: None,
                 notifications: NotificationPermission::NotRequested,
                 login_item_registered: persisted.login_item_registered,
+                notifications_wanted: persisted.notifications_wanted,
                 saved: persisted,
             }),
         };
@@ -831,6 +843,7 @@ impl Core {
                     state.config_rules = config.rules;
                     state.config_websites = config.websites;
                     state.config_error = None;
+                    state.config_found = config.found;
                     drop(state);
                     self.graduate();
                     self.status()
@@ -1189,6 +1202,7 @@ impl Core {
                 accessibility: state.accessibility == Some(true),
                 notifications: state.notifications,
             },
+            checks: state.checks(),
         })))
     }
 }
@@ -1293,6 +1307,7 @@ impl State {
             timed_disable: self.timed_disable,
             websites: self.websites,
             onboarding: self.onboarding,
+            notifications_wanted: self.notifications_wanted,
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
         }
@@ -1472,6 +1487,98 @@ impl State {
 
     fn website_checking(&self) -> bool {
         self.config_websites.unwrap_or(self.websites)
+    }
+
+    /// Everything Nightcap depends on, compared with what the user set up.
+    fn checks(&self) -> Vec<Check> {
+        let check = |kind, state, text: &str| Check {
+            kind,
+            state,
+            text: text.to_owned(),
+        };
+        let mut checks = vec![if self.night_shift == NightShift::Unavailable {
+            check(
+                CheckKind::NightShift,
+                CheckState::Broken,
+                "Night Shift isn't available on this Mac.",
+            )
+        } else {
+            check(
+                CheckKind::NightShift,
+                CheckState::Ok,
+                "Night Shift is available.",
+            )
+        }];
+        // Nothing is said about the permissions until the shell first reports them.
+        if let Some(granted) = self.accessibility {
+            checks.push(match (self.website_checking(), granted) {
+                (false, _) => check(
+                    CheckKind::Accessibility,
+                    CheckState::Off,
+                    "Not needed while website checking is off.",
+                ),
+                (true, true) => check(
+                    CheckKind::Accessibility,
+                    CheckState::Ok,
+                    "Accessibility is allowed.",
+                ),
+                (true, false) => check(
+                    CheckKind::Accessibility,
+                    CheckState::Drifted,
+                    "Accessibility isn't allowed, so website checking can't read the front tab.",
+                ),
+            });
+            checks.push(
+                match (
+                    self.notifications == NotificationPermission::Granted,
+                    self.notifications_wanted,
+                ) {
+                    (true, _) => check(
+                        CheckKind::Notifications,
+                        CheckState::Ok,
+                        "Notifications are allowed.",
+                    ),
+                    (false, true) => check(
+                        CheckKind::Notifications,
+                        CheckState::Drifted,
+                        "Notifications were allowed, but they're switched off in System Settings.",
+                    ),
+                    (false, false) => check(
+                        CheckKind::Notifications,
+                        CheckState::Off,
+                        "Notifications are off.",
+                    ),
+                },
+            );
+        }
+        checks.push(match (&self.config_error, self.config_found) {
+            (Some(error), _) => check(
+                CheckKind::ConfigFile,
+                CheckState::Broken,
+                &format!("The config file is invalid: {error}"),
+            ),
+            (None, true) => check(
+                CheckKind::ConfigFile,
+                CheckState::Ok,
+                "The config file is valid.",
+            ),
+            (None, false) => check(CheckKind::ConfigFile, CheckState::Off, "No config file."),
+        });
+        checks.push(match (&self.ad_hoc_error, self.ad_hoc.len()) {
+            (Some(error), _) => check(
+                CheckKind::AdHocRules,
+                CheckState::Broken,
+                &format!("Ad-hoc rules are off: {error}"),
+            ),
+            (None, 0) => check(CheckKind::AdHocRules, CheckState::Ok, "No ad-hoc rules."),
+            (None, 1) => check(CheckKind::AdHocRules, CheckState::Ok, "1 ad-hoc rule."),
+            (None, count) => check(
+                CheckKind::AdHocRules,
+                CheckState::Ok,
+                &format!("{count} ad-hoc rules."),
+            ),
+        });
+        checks
     }
 
     /// Whether an unsnoozed app rule covers the frontmost app, which forces Night Shift off

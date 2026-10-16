@@ -78,3 +78,9 @@ _Avoid_: override, pause
 **Timed disable**:
 Night Shift forced off until a deadline.
 _Avoid_: pause
+
+### Checks
+
+**Check**:
+One thing Nightcap depends on, such as a permission or a valid config file, compared with what the user set up. It's a problem when something the user set up stopped working, until they restore it or accept the change as their choice.
+_Avoid_: issue, doctor, health check

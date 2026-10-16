@@ -8,10 +8,10 @@ use std::time::Duration;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ExportFormat, Hello, HelloMessage, HelloReply, Install, Instance,
-    NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request,
-    Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
-    WebsiteChecking,
+    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ExportFormat, Hello, HelloMessage,
+    HelloReply, Install, Instance, NightShift, NotificationPermission, OnOff, Payload, Permissions,
+    Query, Reason, Request, Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay,
+    Verdict, WebsiteChecking,
 };
 
 use crate::adhoc;
@@ -2426,9 +2426,14 @@ fn a_status_query_is_answered_on_the_next_tick() {
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
 
+    let Response::Ok(Payload::Status(mut status)) = query_status(&core, &socket, &wakes) else {
+        panic!("expected a status");
+    };
+    // Checks have tests of their own.
+    status.checks.clear();
     assert_eq!(
-        query_status(&core, &socket, &wakes),
-        Response::Ok(Payload::Status(Box::new(Status {
+        status,
+        Box::new(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
@@ -2456,7 +2461,8 @@ fn a_status_query_is_answered_on_the_next_tick() {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,
             },
-        })))
+            checks: Vec::new(),
+        })
     );
 }
 
@@ -2664,6 +2670,7 @@ fn saved_state_loads_back() {
         timed_disable: Some(at("2026-10-17T00:00:00+02:00")),
         websites: true,
         onboarding: 1,
+        notifications_wanted: true,
         night_shift: Some(OnOff::Off),
         until: Some(at("2026-10-17T07:00:00+02:00")),
     };
@@ -2703,4 +2710,159 @@ fn state_with_keys_this_build_doesnt_know_still_loads() {
     .unwrap();
 
     assert!(Store::new(path).load().login_item_registered);
+}
+
+/// The check of `kind` in the status, if the core reports one.
+fn check_of(
+    core: &Core,
+    socket: &Path,
+    wakes: &mpsc::Receiver<()>,
+    kind: CheckKind,
+) -> Option<(CheckState, String)> {
+    status_of(core, socket, wakes)
+        .checks
+        .into_iter()
+        .find(|check| check.kind == kind)
+        .map(|Check { state, text, .. }| (state, text))
+}
+
+fn stands(state: CheckState, text: &str) -> Option<(CheckState, String)> {
+    Some((state, text.to_owned()))
+}
+
+fn permissions(accessibility: bool, notifications: NotificationPermission) -> Event {
+    Event::PermissionsChanged {
+        accessibility,
+        notifications,
+    }
+}
+
+#[test]
+fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(permissions(false, NotificationPermission::Granted));
+
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        stands(CheckState::Off, "Not needed while website checking is off.")
+    );
+    send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        stands(
+            CheckState::Drifted,
+            "Accessibility isn't allowed, so website checking can't read the front tab."
+        )
+    );
+    core.handle(permissions(true, NotificationPermission::Granted));
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        stands(CheckState::Ok, "Accessibility is allowed.")
+    );
+}
+
+#[test]
+fn notifications_switched_off_after_being_allowed_are_a_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    let notifications = |core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>| {
+        check_of(core, socket, wakes, CheckKind::Notifications)
+    };
+
+    core.handle(permissions(true, NotificationPermission::Denied));
+    assert_eq!(
+        notifications(&core, &socket, &wakes),
+        stands(CheckState::Off, "Notifications are off.")
+    );
+    core.handle(permissions(true, NotificationPermission::Granted));
+    assert_eq!(
+        notifications(&core, &socket, &wakes),
+        stands(CheckState::Ok, "Notifications are allowed.")
+    );
+    core.handle(permissions(true, NotificationPermission::Denied));
+    let drifted = stands(
+        CheckState::Drifted,
+        "Notifications were allowed, but they're switched off in System Settings.",
+    );
+    assert_eq!(notifications(&core, &socket, &wakes), drifted);
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    core.handle(permissions(true, NotificationPermission::Denied));
+    assert_eq!(notifications(&core, &socket, &wakes), drifted);
+}
+
+#[test]
+fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    let config = |core: &Core| check_of(core, &socket, &wakes, CheckKind::ConfigFile);
+
+    assert_eq!(config(&core), stands(CheckState::Off, "No config file."));
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    exchange(&core, &socket, &wakes, Request::Reload);
+    assert_eq!(
+        config(&core),
+        stands(CheckState::Ok, "The config file is valid.")
+    );
+    write_config(&socket, "[rules]\ndomian = [\"figma.com\"]\n");
+    exchange(&core, &socket, &wakes, Request::Reload);
+    let (state, text) = config(&core).unwrap();
+    assert_eq!(state, CheckState::Broken);
+    assert!(
+        text.starts_with("The config file is invalid: ") && text.contains("domian"),
+        "{text}"
+    );
+}
+
+#[test]
+fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::AdHocRules),
+        stands(CheckState::Ok, "No ad-hoc rules.")
+    );
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::AdHocRules),
+        stands(CheckState::Ok, "1 ad-hoc rule.")
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
+    std::fs::write(&rules_file, "version = 2\n").unwrap();
+    let (core, wakes) = start(&socket);
+    let (state, text) = check_of(&core, &socket, &wakes, CheckKind::AdHocRules).unwrap();
+    assert_eq!(state, CheckState::Broken);
+    assert!(text.starts_with("Ad-hoc rules are off: "), "{text}");
+}
+
+#[test]
+fn night_shift_missing_on_this_mac_is_broken() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        stands(
+            CheckState::Broken,
+            "Night Shift isn't available on this Mac."
+        )
+    );
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+    assert_eq!(
+        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        stands(CheckState::Ok, "Night Shift is available.")
+    );
 }

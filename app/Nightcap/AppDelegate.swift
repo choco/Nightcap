@@ -17,6 +17,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusMenu: StatusMenu?
     private var accessibility: AccessibilityPermission?
     private var onboarding: Onboarding?
+    /// What the core last heard, so an unchanged re-read sends nothing.
+    private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
     private let dockIcon = DockIcon()
     private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon)
     private var observers: [NSObjectProtocol] = []
@@ -119,7 +121,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
         ) { [weak self] notification in
             let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            MainActor.assumeIsolated { self?.reportFrontmostApp(app) }
+            MainActor.assumeIsolated {
+                self?.reportFrontmostApp(app)
+                // macOS posts nothing when notifications are switched in System Settings, so
+                // they're re-read whenever the user moves on to another app.
+                Task { await self?.reportPermissions() }
+            }
         })
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
@@ -291,8 +298,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             default: .granted
             }
         guard let core, let accessibility else { return }
+        let permissions = (accessibility: accessibility.granted, notifications: notifications)
+        if let reportedPermissions, reportedPermissions == permissions { return }
+        reportedPermissions = permissions
         apply(core.handle(event: .permissionsChanged(
-            accessibility: accessibility.granted, notifications: notifications)))
+            accessibility: permissions.accessibility, notifications: permissions.notifications)))
     }
 
     private func tick() {

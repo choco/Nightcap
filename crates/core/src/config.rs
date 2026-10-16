@@ -21,6 +21,8 @@ struct File {
 pub(crate) struct Config {
     pub rules: Vec<Rule>,
     pub websites: Option<bool>,
+    /// Whether the file exists: a missing one is an empty config.
+    pub found: bool,
 }
 
 #[derive(Default, Deserialize)]
@@ -40,6 +42,7 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
             return Ok(Config {
                 rules: Vec::new(),
                 websites: None,
+                found: false,
             });
         }
         Err(error) => return Err(format!("couldn't read {}: {error}", path.display())),
@@ -73,5 +76,6 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
             })
             .collect(),
         websites: file.websites,
+        found: true,
     })
 }

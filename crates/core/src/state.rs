@@ -24,6 +24,9 @@ pub(crate) struct Persisted {
     pub(crate) websites: bool,
     /// The last onboarding version completed; a later one shows only its new steps.
     pub(crate) onboarding: u32,
+    /// Whether the user wants Nightcap's notifications: set once they're allowed, and cleared
+    /// only when the user accepts them off. The notifications check compares against it.
+    pub(crate) notifications_wanted: bool,
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
     /// clean exit. The next run finds Night Shift there and knows it wasn't the user.
     pub(crate) night_shift: Option<OnOff>,
