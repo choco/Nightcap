@@ -161,7 +161,47 @@ fn figma() -> RuleIdentity {
 fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
     core.handle(Event::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
+        is_browser: false,
     })
+}
+
+fn activate_browser(core: &Core, bundle_id: &str) -> Vec<Effect> {
+    core.handle(Event::AppActivated {
+        bundle_id: Some(bundle_id.to_owned()),
+        is_browser: true,
+    })
+}
+
+fn report_host(core: &Core, generation: u64, host: &str) -> Vec<Effect> {
+    core.handle(Event::HostChanged {
+        generation,
+        host: Some(host.to_owned()),
+    })
+}
+
+fn watch(bundle_id: &str, generation: u64) -> Effect {
+    Effect::WatchBrowser {
+        bundle_id: bundle_id.to_owned(),
+        generation,
+    }
+}
+
+fn domain_rule(domain: &str) -> Rule {
+    Rule {
+        identity: RuleIdentity::Domain(domain.to_owned()),
+        source: RuleSource::Config,
+    }
+}
+
+/// Starts at 23:00 with Night Shift on by the custom hours and a config rule for figma.com.
+fn start_with_figma_domain(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    write_config(socket, "[rules]\ndomain = [\"figma.com\"]\n");
+    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    (core, wakes, clock)
 }
 
 /// Speaks the wire protocol from the client side: a hello, then at most one request.
@@ -263,7 +303,7 @@ fn status_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Status {
     let Response::Ok(Payload::Status(status)) = query_status(core, socket, wakes) else {
         panic!("expected a status");
     };
-    status
+    *status
 }
 
 #[test]
@@ -1273,6 +1313,195 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
 }
 
 #[test]
+fn a_domain_rule_turns_night_shift_off_on_its_site() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_with_figma_domain(&socket);
+
+    assert_eq!(
+        activate_browser(&core, "com.apple.Safari"),
+        vec![watch("com.apple.Safari", 1)]
+    );
+    assert_eq!(
+        report_host(&core, 1, "www.figma.com"),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+
+    let status = status_of(&core, &socket, &wakes);
+    assert!(status.watching);
+    assert_eq!(status.host.as_deref(), Some("www.figma.com"));
+    assert_eq!(
+        status.decision.reasons,
+        vec![Reason::Rule(domain_rule("figma.com"))]
+    );
+}
+
+/// Starts with Safari in front on figma.com, Night Shift forced off and reported off.
+fn start_on_figma(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    let (core, wakes, clock) = start_with_figma_domain(socket);
+    activate_browser(&core, "com.apple.Safari");
+    report_host(&core, 1, "www.figma.com");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+    (core, wakes, clock)
+}
+
+#[test]
+fn a_host_from_an_older_watch_is_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_with_figma_domain(&socket);
+    activate_browser(&core, "com.apple.Safari");
+    assert_eq!(
+        activate_browser(&core, "com.google.Chrome"),
+        vec![watch("com.google.Chrome", 2)]
+    );
+
+    assert_eq!(report_host(&core, 1, "www.figma.com"), Vec::new());
+
+    assert_eq!(status_of(&core, &socket, &wakes).host, None);
+}
+
+#[test]
+fn leaving_the_browser_stops_watching_and_lifts_the_force() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_on_figma(&socket_in(&dir));
+
+    assert_eq!(
+        activate(&core, "com.apple.Terminal"),
+        vec![
+            Effect::StopWatching,
+            Effect::SetNightShift { enabled: true }
+        ]
+    );
+}
+
+#[test]
+fn a_browser_covered_by_an_app_rule_is_never_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[rules]\napp = [\"com.apple.Safari\"]\ndomain = [\"figma.com\"]\n",
+    );
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(
+        activate_browser(&core, "com.apple.Safari"),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+}
+
+#[test]
+fn without_domain_rules_no_browser_is_watched() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    assert_eq!(activate_browser(&core, "com.apple.Safari"), Vec::new());
+}
+
+#[test]
+fn a_new_watch_leaves_night_shift_alone_until_its_first_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_on_figma(&socket_in(&dir));
+
+    // Without a host yet, Chrome alone wouldn't force Night Shift off, but switching it on until
+    // the first read would only flash it.
+    assert_eq!(
+        activate_browser(&core, "com.google.Chrome"),
+        vec![watch("com.google.Chrome", 2)]
+    );
+    assert_eq!(report_host(&core, 2, "www.figma.com"), Vec::new());
+}
+
+#[test]
+fn an_unreadable_host_leaves_only_app_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_figma(&socket);
+
+    let effects = core.handle(Event::HostChanged {
+        generation: 1,
+        host: None,
+    });
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    let status = status_of(&core, &socket, &wakes);
+    assert!(status.watching);
+    assert_eq!(status.host, None);
+}
+
+#[test]
+fn domains_in_the_config_are_normalized_and_checked() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\ndomain = [\"Bücher.DE.\"]\n");
+    let (core, wakes) = start(&socket);
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).rules,
+        vec![domain_rule("xn--bcher-kva.de")]
+    );
+    for entry in [
+        "https://figma.com",
+        "figma.com/files",
+        "figma.com:443",
+        "*.figma.com",
+        "",
+    ] {
+        write_config(&socket, &format!("[rules]\ndomain = [{entry:?}]\n"));
+        let (_, response) = exchange(&core, &socket, &wakes, Request::Reload);
+        let Response::Error(error) = response else {
+            panic!("{entry:?} was accepted: {response:?}");
+        };
+        assert_eq!(error.code, ErrorCode::InvalidConfig, "{entry:?}");
+    }
+}
+
+#[test]
+fn hosts_compare_in_normal_form() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_with_figma_domain(&socket_in(&dir));
+    activate_browser(&core, "com.apple.Safari");
+
+    assert_eq!(
+        report_host(&core, 1, "WWW.FIGMA.COM."),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+}
+
+#[test]
+fn snoozing_the_only_domain_rule_stops_the_watch() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_figma(&socket);
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(
+        effects,
+        vec![
+            Effect::StopWatching,
+            Effect::SetNightShift { enabled: true }
+        ]
+    );
+    assert_eq!(
+        status_of(&core, &socket, &wakes).snoozes,
+        vec![RuleIdentity::Domain("figma.com".to_owned())]
+    );
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1303,7 +1532,7 @@ fn a_status_query_is_answered_on_the_next_tick() {
 
     assert_eq!(
         query_status(&core, &socket, &wakes),
-        Response::Ok(Payload::Status(Status {
+        Response::Ok(Payload::Status(Box::new(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
@@ -1316,6 +1545,8 @@ fn a_status_query_is_answered_on_the_next_tick() {
             scheduled_state: None,
             next_transition: None,
             frontmost_app: None,
+            watching: false,
+            host: None,
             rules: Vec::new(),
             config_error: None,
             snoozes: Vec::new(),
@@ -1324,7 +1555,7 @@ fn a_status_query_is_answered_on_the_next_tick() {
                 accessibility: false,
                 notifications: NotificationPermission::NotRequested,
             },
-        }))
+        })))
     );
 }
 

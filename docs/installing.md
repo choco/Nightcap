@@ -40,7 +40,10 @@ Each must be an absolute path; anything else falls back to the default. The CLI 
 ```toml
 [rules]
 app = ["com.figma.Desktop", "com.adobe.Photoshop"]
+domain = ["figma.com"]
 ```
+
+An app rule forces Night Shift off while that app is in front. A domain rule does it while Safari or Chrome shows that domain or any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Write domains bare, with no scheme, path, port or wildcard. Domain rules need the Accessibility permission, which Nightcap asks for the first time one could apply.
 
 Nightcap doesn't watch the file. After writing it, run:
 

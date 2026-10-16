@@ -8,8 +8,11 @@ use nightcap_protocol::{Decision, OnOff, Reason, Rule, RuleIdentity, Verdict};
 pub(crate) struct Context {
     /// The frontmost app's bundle ID, when it has one.
     pub app: Option<String>,
+    /// The frontmost browser's host, normalized, while it's watched and known.
+    pub host: Option<String>,
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Inputs<'a> {
     pub context: &'a Context,
     pub rules: &'a [Rule],
@@ -20,6 +23,25 @@ pub(crate) struct Inputs<'a> {
     pub manual_state: Option<OnOff>,
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
+}
+
+/// Whether the frontmost browser's host could change the decision, which is when it's worth
+/// watching (ADR-0010).
+pub(crate) fn host_matters(inputs: &Inputs<'_>) -> bool {
+    let active_domain_rule = inputs.rules.iter().any(|rule| {
+        matches!(rule.identity, RuleIdentity::Domain(_)) && !inputs.snoozes.contains(&rule.identity)
+    });
+    let without_host = Context {
+        app: inputs.context.app.clone(),
+        host: None,
+    };
+    active_domain_rule
+        && decide(&Inputs {
+            context: &without_host,
+            ..*inputs
+        })
+        .verdict
+            == Verdict::HandsOff
 }
 
 pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
@@ -67,6 +89,11 @@ fn matches(rule: &Rule, context: &Context) -> bool {
             .app
             .as_ref()
             .is_some_and(|app| app.eq_ignore_ascii_case(bundle_id)),
+        // On label boundaries: figma.com covers www.figma.com, not notfigma.com (ADR-0008).
+        RuleIdentity::Domain(domain) => context.host.as_ref().is_some_and(|host| {
+            host.strip_suffix(domain.as_str())
+                .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
+        }),
     }
 }
 
@@ -90,6 +117,14 @@ mod tests {
     fn frontmost(bundle_id: &str) -> Context {
         Context {
             app: Some(bundle_id.to_owned()),
+            host: None,
+        }
+    }
+
+    fn domain_rule(domain: &str) -> Rule {
+        Rule {
+            identity: RuleIdentity::Domain(domain.to_owned()),
+            source: RuleSource::Config,
         }
     }
 
@@ -246,6 +281,69 @@ mod tests {
                 verdict: Verdict::ForceOff,
                 reasons: vec![disabled, Reason::Rule(app_rule("com.figma.Desktop"))],
             }
+        );
+    }
+
+    #[test]
+    fn a_domain_rule_forces_night_shift_off_on_its_domain_and_subdomains() {
+        fn verdict_on(host: &str) -> Verdict {
+            decide(&Inputs {
+                context: &Context {
+                    app: Some("com.apple.Safari".to_owned()),
+                    host: Some(host.to_owned()),
+                },
+                rules: &[domain_rule("figma.com")],
+                snoozes: &[],
+                timed_disable: None,
+                manual_state: None,
+                scheduled_state: Some(OnOff::On),
+                next_transition: None,
+            })
+            .verdict
+        }
+
+        assert_eq!(verdict_on("figma.com"), Verdict::ForceOff);
+        assert_eq!(verdict_on("www.figma.com"), Verdict::ForceOff);
+        assert_eq!(verdict_on("notfigma.com"), Verdict::HandsOff);
+        assert_eq!(verdict_on("figma.com.example.net"), Verdict::HandsOff);
+    }
+
+    #[test]
+    fn a_host_matters_only_while_an_active_domain_rule_could_change_the_decision() {
+        fn matters(
+            rules: &[Rule],
+            snoozes: &[RuleIdentity],
+            timed_disable: Option<Timestamp>,
+        ) -> bool {
+            host_matters(&Inputs {
+                context: &frontmost("com.apple.Safari"),
+                rules,
+                snoozes,
+                timed_disable,
+                manual_state: None,
+                scheduled_state: Some(OnOff::On),
+                next_transition: None,
+            })
+        }
+        let figma = domain_rule("figma.com");
+
+        assert!(matters(std::slice::from_ref(&figma), &[], None));
+        assert!(!matters(&[], &[], None), "no domain rule");
+        assert!(
+            !matters(&[figma.clone(), app_rule("com.apple.Safari")], &[], None),
+            "an app rule already covers the browser"
+        );
+        assert!(
+            !matters(
+                std::slice::from_ref(&figma),
+                std::slice::from_ref(&figma.identity),
+                None
+            ),
+            "the only domain rule is snoozed"
+        );
+        assert!(
+            !matters(&[figma], &[], Some(at("2026-10-16T01:00:00Z"))),
+            "a timed disable already forces"
         );
     }
 }

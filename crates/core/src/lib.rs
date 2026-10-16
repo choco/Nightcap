@@ -1,6 +1,7 @@
 uniffi::setup_scaffolding!();
 
 mod config;
+mod domain;
 mod engine;
 mod ipc;
 mod logging;
@@ -53,9 +54,17 @@ pub trait Waker: Send + Sync {
 #[derive(Debug, uniffi::Enum)]
 pub enum Event {
     Launched,
-    /// An app came to the front; some processes have no bundle ID.
+    /// An app came to the front; some processes have no bundle ID. `is_browser` says whether
+    /// it's in the shell's browser list, so its host can be watched.
     AppActivated {
         bundle_id: Option<String>,
+        is_browser: bool,
+    },
+    /// The watched browser's host, read under `generation`; None when the read failed or timed
+    /// out, which leaves only app rules.
+    HostChanged {
+        generation: u64,
+        host: Option<String>,
     },
     /// The login item exists, whether the shell just registered it or found it in place.
     LoginItemRegistered,
@@ -97,6 +106,12 @@ pub enum Effect {
     StartUpdater,
     /// Starts Sparkle's own check, as if the user had asked for one.
     CheckForUpdates,
+    /// Watches this browser's host, replacing any earlier watch; reports carry `generation`.
+    WatchBrowser {
+        bundle_id: String,
+        generation: u64,
+    },
+    StopWatching,
     SetNightShift {
         enabled: bool,
     },
@@ -176,6 +191,11 @@ struct State {
     context: Context,
     rules: Vec<Rule>,
     config_error: Option<String>,
+    /// Whether the frontmost app is in the shell's browser list.
+    is_browser: bool,
+    watch: Option<Watch>,
+    /// The generation of the last watch started.
+    generation: u64,
     /// Rules muted until the next schedule transition.
     snoozes: Vec<RuleIdentity>,
     /// When the timed disable ends, if one is running.
@@ -259,6 +279,7 @@ impl Core {
     pub fn handle(&self, event: Event) -> Vec<Effect> {
         self.catch_up();
         let mut effects = self.react(event);
+        self.rewatch(&mut effects);
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
         self.save();
@@ -276,6 +297,7 @@ impl Core {
             let response = self.answer(&pending.request, &mut effects);
             pending.reply(response);
         }
+        self.rewatch(&mut effects);
         self.enforce(&mut effects);
         self.reschedule(&mut effects);
         self.save();
@@ -303,9 +325,27 @@ impl Core {
                 }
                 effects
             }
-            Event::AppActivated { bundle_id } => {
-                tracing::debug!("frontmost app: {bundle_id:?}");
-                self.state().context.app = bundle_id;
+            Event::AppActivated {
+                bundle_id,
+                is_browser,
+            } => {
+                tracing::debug!("frontmost app: {bundle_id:?}, browser: {is_browser}");
+                let mut state = self.state();
+                state.context.app = bundle_id;
+                state.is_browser = is_browser;
+                Vec::new()
+            }
+            // The host itself is never logged (ADR-0012).
+            Event::HostChanged { generation, host } => {
+                let mut state = self.state();
+                match &mut state.watch {
+                    Some(watch) if watch.generation == generation => {
+                        watch.reported = true;
+                        state.context.host = host.as_deref().and_then(domain::normalize);
+                        tracing::debug!("host reported for watch {generation}");
+                    }
+                    _ => tracing::debug!("dropped a host from stale watch {generation}"),
+                }
                 Vec::new()
             }
             Event::LoginItemRegistered => {
@@ -415,7 +455,8 @@ impl Core {
         let (rules, config_error) = match config::load(&setup.config_file) {
             Ok(rules) => (rules, None),
             Err(error) => {
-                tracing::warn!("running without config rules: {error}");
+                // The error can quote a domain, so it goes to status, not the log (ADR-0012).
+                tracing::warn!("running without config rules: the config is invalid; see status");
                 (Vec::new(), Some(error))
             }
         };
@@ -438,6 +479,9 @@ impl Core {
                 context: Context::default(),
                 rules,
                 config_error,
+                is_browser: false,
+                watch: None,
+                generation: 0,
                 snoozes: persisted.snoozes.clone(),
                 timed_disable: persisted.timed_disable,
                 pending_write: None,
@@ -533,7 +577,7 @@ impl Core {
                     self.status()
                 }
                 Err(error) => {
-                    tracing::warn!("keeping the rules loaded before: {error}");
+                    tracing::warn!("keeping the rules loaded before: the config is invalid");
                     self.state().config_error = Some(error.clone());
                     Response::Error(ErrorReply {
                         code: ErrorCode::InvalidConfig,
@@ -619,6 +663,39 @@ impl Core {
         state.applied_until = now;
     }
 
+    /// Watches the frontmost browser only while its host could change the decision (ADR-0010).
+    fn rewatch(&self, effects: &mut Vec<Effect>) {
+        let mut state = self.state();
+        let wanted = state
+            .context
+            .app
+            .clone()
+            .filter(|_| state.is_browser && engine::host_matters(&state.inputs()));
+        match (&state.watch, wanted) {
+            (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
+            (_, Some(bundle_id)) => {
+                state.generation += 1;
+                let generation = state.generation;
+                state.context.host = None;
+                state.watch = Some(Watch {
+                    bundle_id: bundle_id.clone(),
+                    generation,
+                    reported: false,
+                });
+                effects.push(Effect::WatchBrowser {
+                    bundle_id,
+                    generation,
+                });
+            }
+            (Some(_), None) => {
+                state.context.host = None;
+                state.watch = None;
+                effects.push(Effect::StopWatching);
+            }
+            (None, None) => {}
+        }
+    }
+
     /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0011).
     fn save(&self) {
         let mut state = self.state();
@@ -655,7 +732,12 @@ impl Core {
     /// (ADR-0005), once until a status callback reports the result.
     fn enforce(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        if state.night_shift == NightShift::Unavailable || state.session != Session::Active {
+        // A new watch keeps Night Shift as it is until its first read (ADR-0010).
+        let reading = state.watch.as_ref().is_some_and(|watch| !watch.reported);
+        if state.night_shift == NightShift::Unavailable
+            || state.session != Session::Active
+            || reading
+        {
             return;
         }
         let Some(wanted) = wanted(&state.decide()) else {
@@ -669,7 +751,7 @@ impl Core {
 
     fn status(&self) -> Response {
         let state = self.state();
-        Response::Ok(Payload::Status(Status {
+        Response::Ok(Payload::Status(Box::new(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: self.install,
             night_shift: state.night_shift,
@@ -682,6 +764,8 @@ impl Core {
                 .map(on_off),
             next_transition: state.timeline.next_transition(state.applied_until),
             frontmost_app: state.context.app.clone(),
+            watching: state.watch.is_some(),
+            host: state.context.host.clone(),
             rules: state.rules.clone(),
             config_error: state.config_error.clone(),
             snoozes: state.snoozes.clone(),
@@ -690,7 +774,7 @@ impl Core {
                 accessibility: state.accessibility,
                 notifications: state.notifications,
             },
-        }))
+        })))
     }
 }
 
@@ -713,6 +797,13 @@ enum Session {
     Away,
     /// Back in front, waiting for the shell's fresh read of a status that went unwatched.
     Back,
+}
+
+/// The browser being watched, and whether its first read under this generation has arrived.
+struct Watch {
+    bundle_id: String,
+    generation: u64,
+    reported: bool,
 }
 
 /// What turning Night Shift on overrode.
@@ -738,7 +829,10 @@ impl State {
                 }
             }
             for identity in &overridden.snoozed {
-                tracing::info!("snoozed {identity} until the next schedule transition");
+                tracing::info!(
+                    "snoozed {} until the next schedule transition",
+                    loggable(identity)
+                );
             }
             self.snoozes.extend(overridden.snoozed.iter().cloned());
             if overridden.timed_disable {
@@ -794,7 +888,11 @@ impl State {
     }
 
     fn decide(&self) -> Decision {
-        engine::decide(&Inputs {
+        engine::decide(&self.inputs())
+    }
+
+    fn inputs(&self) -> Inputs<'_> {
+        Inputs {
             context: &self.context,
             rules: if self.released { &[] } else { &self.rules },
             snoozes: &self.snoozes,
@@ -805,7 +903,7 @@ impl State {
                 .scheduled_state(self.applied_until)
                 .map(on_off),
             next_transition: self.timeline.next_transition(self.applied_until),
-        })
+        }
     }
 }
 
@@ -819,6 +917,15 @@ fn wanted(decision: &Decision) -> Option<bool> {
             }
             Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
         }),
+    }
+}
+
+/// A rule identity as the log may show it: `tracing-oslog` logs everything as public, so a
+/// domain rule is named by its kind only (ADR-0012).
+fn loggable(identity: &RuleIdentity) -> String {
+    match identity {
+        RuleIdentity::App(_) => identity.to_string(),
+        RuleIdentity::Domain(_) => "a domain rule".to_owned(),
     }
 }
 

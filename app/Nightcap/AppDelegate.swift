@@ -14,6 +14,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignal: DispatchSourceSignal?
     private var wakeup: DispatchSourceTimer?
     private var updater: SPUStandardUpdaterController?
+    private var browserWatcher: BrowserWatcher?
+    private var askedForAccessibility = false
+    private var reportedAccessibility: Bool?
+    /// What attaching to a browser last showed, fresher than `AXIsProcessTrusted()`.
+    private var observedAccessibility: Bool?
     private let updateReminders = UpdateReminders()
     private var observers: [NSObjectProtocol] = []
 
@@ -45,6 +50,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
+        browserWatcher = BrowserWatcher(
+            onHost: { [weak self] generation, host in
+                self?.reportHost(generation: generation, host: host)
+            },
+            onAccessibility: { [weak self] granted in
+                guard let self else { return }
+                observedAccessibility = granted
+                if granted != reportedAccessibility {
+                    Task { await self.reportPermissions() }
+                }
+            })
         // The context first, so a force still in place after a crash holds without a flash.
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         startNightShift()
@@ -141,9 +157,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
     }
 
+    /// `AXIsProcessTrusted()` keeps its launch-time answer, so a grant or revocation since then
+    /// shows only when the browser watcher attaches.
+    private var accessibilityGranted: Bool {
+        observedAccessibility ?? AXIsProcessTrusted()
+    }
+
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         guard let core else { return }
-        apply(core.handle(event: .appActivated(bundleId: app?.bundleIdentifier)))
+        // The grant's notification doesn't arrive live (M0), so each activation checks it.
+        if accessibilityGranted != reportedAccessibility {
+            Task { await reportPermissions() }
+        }
+        let bundleId = app?.bundleIdentifier
+        let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
+        apply(core.handle(event: .appActivated(bundleId: bundleId, isBrowser: isBrowser)))
+    }
+
+    /// The host is logged, as private, only when it changed Night Shift (ADR-0012).
+    private func reportHost(generation: UInt64, host: String?) {
+        guard let core else { return }
+        let effects = core.handle(event: .hostChanged(generation: generation, host: host))
+        if effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
+            log.info("the browser's host \(host ?? "(unknown)", privacy: .private) changed Night Shift")
+        }
+        apply(effects)
+    }
+
+    private func watchBrowser(bundleId: String, generation: UInt64) {
+        // Only domain rules need Accessibility, so it's asked for the first time one could apply.
+        if !accessibilityGranted, !askedForAccessibility {
+            askedForAccessibility = true
+            _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        }
+        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+            .first?.processIdentifier
+        else {
+            reportHost(generation: generation, host: nil)
+            return
+        }
+        browserWatcher?.watch(pid: pid, generation: generation)
     }
 
     /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
@@ -217,8 +270,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             default: .granted
             }
         guard let core else { return }
+        let accessibility = accessibilityGranted
+        reportedAccessibility = accessibility
         apply(core.handle(event: .permissionsChanged(
-            accessibility: AXIsProcessTrusted(), notifications: notifications)))
+            accessibility: accessibility, notifications: notifications)))
     }
 
     private func tick() {
@@ -255,6 +310,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 wakeup = nil
             case .notify(let title, let body):
                 notify(title: title, body: body)
+            case .watchBrowser(let bundleId, let generation):
+                watchBrowser(bundleId: bundleId, generation: generation)
+            case .stopWatching:
+                browserWatcher?.stop()
             }
         }
     }

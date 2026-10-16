@@ -12,7 +12,7 @@ use jiff::tz::TimeZone;
 use nightcap_protocol::{
     self as protocol, Decision, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
     NightShift, NotificationPermission, OnOff, Payload, Query, Reason, Request, Response, Rule,
-    RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -190,10 +190,14 @@ fn print_status(status: &Status) {
             format!(", {}{}", on_off(scheduled), until(status.next_transition))
         }
     };
-    let accessibility = if status.permissions.accessibility {
-        "granted"
-    } else {
-        "not granted"
+    let domain_rules = status
+        .rules
+        .iter()
+        .any(|rule| matches!(rule.identity, RuleIdentity::Domain(_)));
+    let accessibility = match (status.permissions.accessibility, domain_rules) {
+        (true, _) => "granted",
+        (false, true) => "not granted, which domain rules need",
+        (false, false) => "not granted",
     };
     let notifications = match status.permissions.notifications {
         NotificationPermission::NotRequested => "not requested",
@@ -203,8 +207,13 @@ fn print_status(status: &Status) {
     println!("Nightcap {}, {install}", status.version);
     println!("Night Shift: {night_shift}, {}", describe(&status.decision));
     println!("Schedule: {schedule}{scheduled}");
+    let host = match (&status.host, status.watching) {
+        (Some(host), _) => format!(", on {host}"),
+        (None, true) => ", host unknown".to_owned(),
+        (None, false) => String::new(),
+    };
     println!(
-        "Frontmost app: {}",
+        "Frontmost app: {}{host}",
         status.frontmost_app.as_deref().unwrap_or("unknown")
     );
     println!("Rules: {}", rules(&status.rules));

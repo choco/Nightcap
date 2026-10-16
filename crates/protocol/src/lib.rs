@@ -136,7 +136,7 @@ pub enum Response {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
-    Status(Status),
+    Status(Box<Status>),
     Decision(Decision),
     /// Sparkle is checking; it shows what it finds in its own window.
     UpdateCheckStarted,
@@ -187,18 +187,20 @@ pub struct Rule {
     pub source: RuleSource,
 }
 
-/// A rule's kind plus its target, written `app:com.figma.Desktop`. Bundle IDs compare
-/// case-insensitively.
+/// A rule's kind plus its target, written `app:com.figma.Desktop` or `domain:figma.com`.
+/// Bundle IDs compare case-insensitively; domains are lowercase ASCII, IDNs as punycode.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum RuleIdentity {
     App(String),
+    Domain(String),
 }
 
 impl fmt::Display for RuleIdentity {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::App(bundle_id) => write!(formatter, "app:{bundle_id}"),
+            Self::Domain(domain) => write!(formatter, "domain:{domain}"),
         }
     }
 }
@@ -217,8 +219,9 @@ impl TryFrom<String> for RuleIdentity {
             Some(("app", bundle_id)) if !bundle_id.is_empty() => {
                 Ok(Self::App(bundle_id.to_owned()))
             }
+            Some(("domain", domain)) if !domain.is_empty() => Ok(Self::Domain(domain.to_owned())),
             _ => Err(format!(
-                "{identity} isn't a rule identity like app:com.figma.Desktop"
+                "{identity} isn't a rule identity like app:com.figma.Desktop or domain:figma.com"
             )),
         }
     }
@@ -245,6 +248,11 @@ pub struct Status {
     pub next_transition: Option<Timestamp>,
     /// The frontmost app's bundle ID, when it has one.
     pub frontmost_app: Option<String>,
+    /// Whether the frontmost browser's host is being watched: only while it could change the
+    /// decision (ADR-0010).
+    pub watching: bool,
+    /// The watched browser's host, once known.
+    pub host: Option<String>,
     pub rules: Vec<Rule>,
     /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
     pub config_error: Option<String>,
@@ -367,7 +375,7 @@ mod tests {
             r#"{"command":"toggle"}"#
         );
         assert_eq!(
-            json(&Response::Ok(Payload::Status(Status {
+            json(&Response::Ok(Payload::Status(Box::new(Status {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
                 night_shift: NightShift::On,
@@ -385,7 +393,9 @@ mod tests {
                 }),
                 scheduled_state: Some(OnOff::Off),
                 next_transition: Some("2026-10-16T20:00:00Z".parse().unwrap()),
-                frontmost_app: Some("com.apple.Terminal".to_owned()),
+                frontmost_app: Some("com.apple.Safari".to_owned()),
+                watching: true,
+                host: Some("www.figma.com".to_owned()),
                 rules: Vec::new(),
                 config_error: None,
                 snoozes: Vec::new(),
@@ -394,8 +404,8 @@ mod tests {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
                 },
-            }))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Terminal","rules":[],"config_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
+            })))),
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"}}}}"#
         );
     }
 
@@ -456,6 +466,9 @@ mod tests {
         let identity: RuleIdentity = serde_json::from_str(r#""app:com.figma.Desktop""#).unwrap();
 
         assert_eq!(identity, RuleIdentity::App("com.figma.Desktop".to_owned()));
+        let identity: RuleIdentity = serde_json::from_str(r#""domain:figma.com""#).unwrap();
+        assert_eq!(identity, RuleIdentity::Domain("figma.com".to_owned()));
+        assert_eq!(json(&identity), r#""domain:figma.com""#);
         assert!(serde_json::from_str::<RuleIdentity>(r#""figma""#).is_err());
     }
 
