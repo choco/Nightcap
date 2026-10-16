@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var terminationSignal: DispatchSourceSignal?
     private var wakeup: DispatchSourceTimer?
     private var updater: SPUStandardUpdaterController?
+    private let updateReminders = UpdateReminders()
     private var observers: [NSObjectProtocol] = []
 
     static func main() {
@@ -210,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 registerLoginItem()
             case .startUpdater:
                 updater = SPUStandardUpdaterController(
-                    startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+                    startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
             case .checkForUpdates:
                 guard let updater else {
                     log.error("the updater isn't running; dropped checkForUpdates")
