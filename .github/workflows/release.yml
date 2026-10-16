@@ -39,6 +39,10 @@ jobs:
       - run: release/sign build/xcode/Release/Nightcap.app --keychain "$SIGNING_KEYCHAIN"
       - run: release/verify build/xcode/Release/Nightcap.app
       - run: release/package build/xcode/Release/Nightcap.app build/dist
+      - name: Sign the update and write the appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: release/appcast build/xcode/Release/Nightcap.app build/dist
       - name: Delete the signing keychain
         if: always() && env.SIGNING_KEYCHAIN != ''
         run: security delete-keychain "$SIGNING_KEYCHAIN"
@@ -66,3 +70,12 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Nightcap ${GITHUB_REF_NAME#v}" \
             --generate-notes
+
+  # Installs read the feed from the site, which serves the newest release's appcast (ADR-0015).
+  pages:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

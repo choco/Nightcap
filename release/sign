@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Signs Nightcap.app inside-out with hardened runtime, using the certificate named by the
-# committed signing requirement. Dev builds also get the dev entitlements.
+# committed signing requirement. Releases get the release entitlements, dev builds the dev
+# ones.
 # Usage: release/sign <Nightcap.app> [--keychain <path>]
 set -euo pipefail
 
@@ -27,9 +28,17 @@ sign() {
 }
 
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
-sign "$app/Contents/Helpers/nightcap"
+entitlements="$root/release/release.entitlements"
 if [[ "$bundle_id" == *.dev ]]; then
-  sign --entitlements "$root/release/dev.entitlements" "$app"
-else
-  sign "$app"
+  entitlements="$root/release/dev.entitlements"
 fi
+
+# Sparkle's helpers in the order its docs give, keeping their own entitlements. --deep would
+# give them the app's instead.
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Updater.app; do
+  sign --preserve-metadata=entitlements "$sparkle/Versions/B/$helper"
+done
+sign "$sparkle"
+sign "$app/Contents/Helpers/nightcap"
+sign --entitlements "$entitlements" "$app"

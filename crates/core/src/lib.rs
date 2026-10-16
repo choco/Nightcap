@@ -89,6 +89,10 @@ pub enum Event {
 #[derive(Debug, PartialEq, uniffi::Enum)]
 pub enum Effect {
     RegisterLoginItem,
+    /// Starts Sparkle's daily checks, in self-managed releases only (ADR-0015).
+    StartUpdater,
+    /// Starts Sparkle's own check, as if the user had asked for one.
+    CheckForUpdates,
     SetNightShift {
         enabled: bool,
     },
@@ -264,7 +268,7 @@ impl Core {
         self.catch_up();
         let mut effects = Vec::new();
         for pending in requests.try_iter() {
-            let response = self.answer(&pending.request);
+            let response = self.answer(&pending.request, &mut effects);
             pending.reply(response);
         }
         self.enforce(&mut effects);
@@ -277,14 +281,14 @@ impl Core {
 impl Core {
     fn react(&self, event: Event) -> Vec<Effect> {
         match event {
-            // Dev builds never start at login: they'd shadow the installed app (ADR-0015).
             Event::Launched => {
                 let state = self.state();
                 let mut effects = Vec::new();
-                if let (Install::SelfManaged, Instance::Release, false) =
-                    (self.install, self.instance, state.login_item_registered)
-                {
-                    effects.push(Effect::RegisterLoginItem);
+                if self.updates_itself() {
+                    if !state.login_item_registered {
+                        effects.push(Effect::RegisterLoginItem);
+                    }
+                    effects.push(Effect::StartUpdater);
                 }
                 if let Some(error) = &state.config_error {
                     effects.push(Effect::Notify {
@@ -431,11 +435,17 @@ impl Core {
         })
     }
 
+    /// Only a self-managed release starts at login and updates through Sparkle: an installer
+    /// owns a managed one, and a dev build would shadow the installed app (ADR-0015).
+    fn updates_itself(&self) -> bool {
+        self.install == Install::SelfManaged && self.instance == Instance::Release
+    }
+
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("no panic happens while it's held")
     }
 
-    fn answer(&self, request: &Request) -> Response {
+    fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
             Request::Command(command) => {
                 let night_shift = self.state().night_shift;
@@ -476,6 +486,23 @@ impl Core {
                 Response::Ok(Payload::Decision(state.decide()))
             }
             Request::Query(Query::Status) => self.status(),
+            Request::Update => {
+                if self.updates_itself() {
+                    tracing::info!("checking for updates");
+                    effects.push(Effect::CheckForUpdates);
+                    return Response::Ok(Payload::UpdateCheckStarted);
+                }
+                Response::Error(ErrorReply {
+                    code: ErrorCode::NoUpdater,
+                    message: match self.instance {
+                        Instance::Dev => "Dev builds don't update themselves; rebuild instead",
+                        Instance::Release => {
+                            "This install is managed by its installer, which keeps it up to date"
+                        }
+                    }
+                    .to_owned(),
+                })
+            }
             Request::Reload => match config::load(&self.config_file) {
                 Ok(rules) => {
                     tracing::info!("reloaded the config: {} rules", rules.len());

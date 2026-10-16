@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The release gate: fails unless the app satisfies the committed signing requirement,
-# its designated requirement matches it exactly, and every executable in it links only
-# system libraries. Usage: release/verify <Nightcap.app>
+# its designated requirement matches it exactly, and its executables link only system
+# libraries and the embedded Sparkle (ADR-0015). Usage: release/verify <Nightcap.app>
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -16,8 +16,16 @@ if [[ "$actual" != "$expected" ]]; then
   exit 1
 fi
 
+# Without its public key, a release could never accept an update.
+bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
+public_key="$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' "$app/Contents/Info.plist" 2>/dev/null || true)"
+if [[ "$bundle_id" != *.dev && -z "$public_key" ]]; then
+  echo "error: Info.plist has no SUPublicEDKey; run the update signing setup first" >&2
+  exit 1
+fi
+
 for binary in "$app/Contents/MacOS/Nightcap" "$app/Contents/Helpers/nightcap"; do
-  foreign="$(otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/)' || true)"
+  foreign="$(otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/|@rpath/Sparkle\.framework/)' || true)"
   if [[ -n "$foreign" ]]; then
     echo "error: $binary links non-system libraries:" >&2
     echo "$foreign" >&2

@@ -1163,6 +1163,38 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
 }
 
 #[test]
+fn update_in_a_self_managed_release_starts_sparkles_check() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_as(&socket, Instance::Release, Install::SelfManaged);
+
+    let (effects, response) = exchange(&core, &socket, &wakes, Request::Update);
+
+    assert_eq!(effects, vec![Effect::CheckForUpdates]);
+    assert_eq!(response, Response::Ok(Payload::UpdateCheckStarted));
+}
+
+#[test]
+fn update_is_refused_where_nightcap_doesnt_update_itself() {
+    for (instance, install) in [
+        (Instance::Release, Install::Managed),
+        (Instance::Dev, Install::SelfManaged),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = socket_in(&dir);
+        let (core, wakes) = start_as(&socket, instance, install);
+
+        let (effects, response) = exchange(&core, &socket, &wakes, Request::Update);
+
+        assert_eq!(effects, Vec::new());
+        let Response::Error(error) = response else {
+            panic!("expected an error, got {response:?}");
+        };
+        assert_eq!(error.code, ErrorCode::NoUpdater);
+    }
+}
+
+#[test]
 fn the_status_reports_the_last_permission_change() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1322,13 +1354,13 @@ fn terminating_removes_the_socket() {
 }
 
 #[test]
-fn a_self_managed_release_registers_its_login_item_at_launch() {
+fn a_self_managed_release_registers_its_login_item_and_starts_its_updater_at_launch() {
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
 
     assert_eq!(
         core.handle(Event::Launched),
-        vec![Effect::RegisterLoginItem]
+        vec![Effect::RegisterLoginItem, Effect::StartUpdater]
     );
 }
 
@@ -1359,7 +1391,7 @@ fn the_login_item_is_registered_only_once_across_restarts() {
     let (core, _wakes) = start_with(first);
     assert_eq!(
         core.handle(Event::Launched),
-        vec![Effect::RegisterLoginItem]
+        vec![Effect::RegisterLoginItem, Effect::StartUpdater]
     );
     core.handle(Event::LoginItemRegistered);
 
@@ -1371,7 +1403,7 @@ fn the_login_item_is_registered_only_once_across_restarts() {
     };
     let (core, _wakes) = start_with(restarted);
 
-    assert_eq!(core.handle(Event::Launched), Vec::new());
+    assert_eq!(core.handle(Event::Launched), vec![Effect::StartUpdater]);
 }
 
 #[test]

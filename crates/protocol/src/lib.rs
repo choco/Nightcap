@@ -103,6 +103,8 @@ pub enum Request {
     Query(Query),
     /// Reads the config again; answers with the status.
     Reload,
+    /// Starts Sparkle's own check, whose window offers to install (ADR-0015).
+    Update,
 }
 
 /// What the CLI asks Nightcap to do; each one answers with the resulting decision.
@@ -136,6 +138,8 @@ pub enum Response {
 pub enum Payload {
     Status(Status),
     Decision(Decision),
+    /// Sparkle is checking; it shows what it finds in its own window.
+    UpdateCheckStarted,
 }
 
 /// What the core makes of everything it knows: whether Night Shift is forced off or left alone,
@@ -323,6 +327,8 @@ pub enum ErrorCode {
     BadRequest,
     NightShiftUnavailable,
     InvalidConfig,
+    /// The install doesn't update itself: its installer does, or it's a dev build.
+    NoUpdater,
 }
 
 #[cfg(test)]
@@ -396,6 +402,11 @@ mod tests {
     #[test]
     fn decisions_match_the_documented_wire_format() {
         assert_eq!(json(&Request::Reload), r#""reload""#);
+        assert_eq!(json(&Request::Update), r#""update""#);
+        assert_eq!(
+            json(&Response::Ok(Payload::UpdateCheckStarted)),
+            r#"{"ok":"update_check_started"}"#
+        );
         assert_eq!(
             json(&Request::Command(Command::Disable(
                 jiff::SignedDuration::from_mins(90)

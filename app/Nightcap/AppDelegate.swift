@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import NightcapCore
 import ServiceManagement
+import Sparkle
 import UserNotifications
 import os
 
@@ -12,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var nightShift: NightShiftAdapter?
     private var terminationSignal: DispatchSourceSignal?
     private var wakeup: DispatchSourceTimer?
+    private var updater: SPUStandardUpdaterController?
     private var observers: [NSObjectProtocol] = []
 
     static func main() {
@@ -206,6 +208,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch effect {
             case .registerLoginItem:
                 registerLoginItem()
+            case .startUpdater:
+                updater = SPUStandardUpdaterController(
+                    startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+            case .checkForUpdates:
+                guard let updater else {
+                    log.error("the updater isn't running; dropped checkForUpdates")
+                    continue
+                }
+                // A menu-bar-only app has to come forward for Sparkle's window to show in front.
+                NSApp.activate()
+                updater.checkForUpdates(nil)
             case .setNightShift(let enabled):
                 guard let nightShift else {
                     log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")

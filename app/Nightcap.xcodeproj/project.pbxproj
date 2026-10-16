@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		4E1C0A00000000000000000C /* nightcap in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 4E1C0A000000000000000006 /* nightcap */; };
 		4E1C0A00000000000000000D /* NightcapCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000000F /* NightcapCore */; };
+		4E1C0A000000000000000018 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A000000000000000017 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -44,6 +45,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4E1C0A00000000000000000D /* NightcapCore in Frameworks */,
+				4E1C0A000000000000000018 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -89,6 +91,7 @@
 			name = Nightcap;
 			packageProductDependencies = (
 				4E1C0A00000000000000000F /* NightcapCore */,
+				4E1C0A000000000000000017 /* Sparkle */,
 			);
 			productName = Nightcap;
 			productReference = 4E1C0A000000000000000004 /* Nightcap.app */;
@@ -115,6 +118,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				4E1C0A00000000000000000E /* XCLocalSwiftPackageReference "NightcapCore" */,
+				4E1C0A000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4E1C0A000000000000000003 /* Products */;
@@ -182,8 +186,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Nightcap Dev";
 				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.dev;
 				PRODUCT_NAME = Nightcap;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -196,8 +205,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Nightcap";
 				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap;
 				PRODUCT_NAME = Nightcap;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -236,10 +250,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		4E1C0A000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		4E1C0A00000000000000000F /* NightcapCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NightcapCore;
+		};
+		4E1C0A000000000000000017 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4E1C0A000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Signs the packaged zip for Sparkle and writes the appcast beside it: one item, the release
+# being published, which is all Sparkle reads (ADR-0015). The EdDSA key comes from
+# $SPARKLE_PRIVATE_KEY, or else from the login keychain.
+# Usage: release/appcast <Nightcap.app> <out-dir>
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+app="$1"
+out="$2"
+
+repo="choco/nightcap"
+sparkle_version="2.10.0"
+sparkle_sha256="c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
+
+plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Contents/Info.plist"; }
+version="$(plist CFBundleShortVersionString)"
+build="$(plist CFBundleVersion)"
+minimum="$(plist LSMinimumSystemVersion)"
+zip="Nightcap-$version.zip"
+[[ -f "$out/$zip" ]] || { echo "error: $out/$zip is missing; run release/package first" >&2; exit 1; }
+
+tools="$root/build/sparkle-$sparkle_version"
+if [[ ! -x "$tools/bin/sign_update" ]]; then
+  mkdir -p "$tools"
+  archive="$tools/Sparkle-$sparkle_version.tar.xz"
+  curl -fsSL -o "$archive" \
+    "https://github.com/sparkle-project/Sparkle/releases/download/$sparkle_version/Sparkle-$sparkle_version.tar.xz"
+  echo "$sparkle_sha256  $archive" | shasum -a 256 -c - >/dev/null
+  tar -xf "$archive" -C "$tools" ./bin/sign_update
+fi
+
+# Prints: sparkle:edSignature="…" length="…"
+if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+  enclosure="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$tools/bin/sign_update" --ed-key-file - "$out/$zip")"
+else
+  enclosure="$("$tools/bin/sign_update" --account nightcap "$out/$zip")"
+fi
+
+cat > "$out/appcast.xml" <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Nightcap</title>
+    <item>
+      <title>Nightcap $version</title>
+      <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+      <sparkle:version>$build</sparkle:version>
+      <sparkle:shortVersionString>$version</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>$minimum</sparkle:minimumSystemVersion>
+      <enclosure url="https://github.com/$repo/releases/download/v$version/$zip" $enclosure type="application/octet-stream"/>
+    </item>
+  </channel>
+</rss>
+EOF
+xmllint --noout "$out/appcast.xml"

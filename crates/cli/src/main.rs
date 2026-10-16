@@ -55,6 +55,8 @@ enum Command {
     },
     /// Clear the timed disable, every snooze and the manual state.
     Resume,
+    /// Check for an update now; Nightcap shows what it finds and offers to install it.
+    Update,
     /// Read the config again, after changing it.
     Reload {
         /// Keep trying this long for Nightcap to start, e.g. 5s.
@@ -131,6 +133,13 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                 return Err(unexpected_reply());
             };
             println!("Reloaded the config. Rules: {}", rules(&status.rules));
+            return Ok(());
+        }
+        Command::Update => {
+            let Payload::UpdateCheckStarted = request(instance, &Request::Update, None)? else {
+                return Err(unexpected_reply());
+            };
+            println!("Checking for updates; Nightcap shows what it finds.");
             return Ok(());
         }
         Command::On => protocol::Command::On,
