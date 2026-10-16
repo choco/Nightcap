@@ -254,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let accessibility, let core else { return }
         let onboarding = Onboarding(
             accessibility: accessibility,
-            onNotificationsAnswered: { [weak self] in
+            onNotificationsRead: { [weak self] in
                 Task { await self?.reportPermissions() }
             },
             onFinish: { [weak self] websites in

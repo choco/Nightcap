@@ -18,21 +18,23 @@ final class Onboarding: NSObject, NSWindowDelegate {
     )
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let accessibility: AccessibilityPermission
-    private let onNotificationsAnswered: () -> Void
+    private let onNotificationsRead: () -> Void
     private let onFinish: (_ websites: Bool) -> Void
     private var step = Step.welcome
+    private var notifications = UNAuthorizationStatus.notDetermined
     private var websites = false
     private var closedByUser = false
+    private var observer: NSObjectProtocol?
 
-    /// `onNotificationsAnswered` runs once the notification prompt is answered, `onFinish` once
-    /// onboarding ends, either way.
+    /// `onNotificationsRead` runs each time the notification permission is read, which can find
+    /// it changed; `onFinish` once onboarding ends, either way.
     init(
         accessibility: AccessibilityPermission,
-        onNotificationsAnswered: @escaping () -> Void,
+        onNotificationsRead: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool) -> Void
     ) {
         self.accessibility = accessibility
-        self.onNotificationsAnswered = onNotificationsAnswered
+        self.onNotificationsRead = onNotificationsRead
         self.onFinish = onFinish
         super.init()
         window.title = "Welcome to Nightcap"
@@ -40,6 +42,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window.delegate = self
         show(.welcome)
         window.center()
+        // macOS posts nothing when notifications are switched on in System Settings, so the
+        // step re-reads them when the user comes back.
+        observer = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.step == .notifications else { return }
+                Task {
+                    await self.readNotifications()
+                    self.show(.notifications)
+                }
+            }
+        }
     }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
@@ -63,6 +78,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
         if closedByUser { onFinish(websites) }
     }
 
@@ -76,11 +92,28 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 buttons: [("Continue", #selector(next))]
             )
         case .notifications:
-            layout(
-                title: "Notifications",
-                body: "When a change made outside Nightcap overrides one of your rules, Nightcap tells you what it took the change to mean.",
-                buttons: [("Not Now", #selector(next)), ("Allow Notifications", #selector(allowNotifications))]
-            )
+            let purpose = "When a change made outside Nightcap overrides one of your rules, Nightcap tells you what it took the change to mean."
+            switch notifications {
+            case .notDetermined:
+                layout(
+                    title: "Notifications",
+                    body: purpose,
+                    buttons: [("Not Now", #selector(next)), ("Allow Notifications", #selector(allowNotifications))]
+                )
+            // macOS shows its prompt only once, so after a refusal only System Settings can allow them.
+            case .denied:
+                layout(
+                    title: "Notifications",
+                    body: purpose + " Notifications are switched off for Nightcap in System Settings.",
+                    buttons: [("Continue", #selector(next)), ("Open Notification Settings…", #selector(openNotificationSettings))]
+                )
+            default:
+                layout(
+                    title: "Notifications",
+                    body: purpose + "\n\n✓ Notifications are allowed.",
+                    buttons: [("Continue", #selector(next))]
+                )
+            }
         case .websites:
             layout(
                 title: "Websites",
@@ -126,7 +159,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     @objc private func next() {
-        show(step == .welcome ? .notifications : .websites)
+        guard step == .welcome else {
+            show(.websites)
+            return
+        }
+        Task {
+            await readNotifications()
+            show(.notifications)
+        }
+    }
+
+    private func readNotifications() async {
+        notifications = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        onNotificationsRead()
     }
 
     @objc private func allowNotifications() {
@@ -136,9 +181,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
             } catch {
                 log.error("couldn't request notification permission: \(error, privacy: .public)")
             }
-            onNotificationsAnswered()
+            await readNotifications()
             show(.websites)
         }
+    }
+
+    @objc private func openNotificationSettings() {
+        let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
+        NSWorkspace.shared.open(URL(string: pane)!)
     }
 
     @objc private func checkWebsites() {
