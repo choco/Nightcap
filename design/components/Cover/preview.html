@@ -1,0 +1,38 @@
+<!-- @dsCard height=288 -->
+<style>
+  html, body { margin: 0; }
+  .cover { position: relative; width: 960px; height: 288px; background: var(--ground); overflow: hidden; }
+  .cover svg { position: absolute; inset: 0; }
+  .night { fill: var(--night); }
+  .moon { fill: var(--moon); }
+  .ember { fill: var(--ember); }
+  .cut { fill: var(--night); }
+  .tile { rx: var(--radius-md); }
+  .words { position: absolute; left: 48px; bottom: 40px; width: 420px; display: flex; flex-direction: column; gap: var(--space-3); }
+  .name { margin: 0; font: 400 88px/0.92 var(--font-display); color: var(--ink); letter-spacing: -0.01em; }
+  .tagline { margin: 0; font: 400 14px/1.45 var(--font-text); color: var(--ink-muted); }
+</style>
+<div class="cover">
+  <svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+    <!--
+      blocks: night 400×288 (bleeds top, right, bottom), moon space-30 × space-30, ember space-18 × space-18, bottom-flush
+      arrangement: one tall night slab with two warm satellites stepping down at its foot, all right of x = 480
+      pattern: a literal motif, the moon waxing across the slab; Nightcap is the icon's crescent and the night it lives in
+      steps and radii: discs space-12 across at a space-18 pitch; blocks cut by radius-md
+    -->
+    <rect class="night" x="560" y="0" width="400" height="288"/>
+    <rect class="moon tile" x="480" y="168" width="120" height="132"/>
+    <rect class="ember tile" x="600" y="216" width="72" height="84"/>
+    <g>
+      <circle class="moon" cx="640" cy="96" r="24"/><circle class="cut" cx="648" cy="96" r="24"/>
+      <circle class="moon" cx="712" cy="96" r="24"/><circle class="cut" cx="728" cy="96" r="24"/>
+      <circle class="moon" cx="784" cy="96" r="24"/><circle class="cut" cx="812" cy="96" r="24"/>
+      <circle class="moon" cx="856" cy="96" r="24"/><circle class="cut" cx="898" cy="96" r="24"/>
+      <circle class="moon" cx="928" cy="96" r="24"/>
+    </g>
+  </svg>
+  <div class="words">
+    <p class="name">Nightcap</p>
+    <p class="tagline">Switches Night Shift off while the apps and websites you choose are in front.</p>
+  </div>
+</div>

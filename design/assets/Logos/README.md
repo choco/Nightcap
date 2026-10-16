@@ -1,0 +1,1 @@
+The app icon, exactly as the app ships it (`app/icons/AppIcon.svg`): a navy tile, `night` fading to `night-deep`, with the `moon` crescent and its own `shadow-lift`. Use it as Nightcap's mark wherever one is needed: the download button's neighbour, the footer, the favicon. Don't recolour it, crop it or set it on a busy image; on a `night` panel it still reads by its tile.
