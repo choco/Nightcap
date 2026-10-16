@@ -1005,7 +1005,7 @@ impl Core {
         Ok(core)
     }
 
-    /// Only a self-managed release starts at login and updates through Sparkle: an installer
+    /// Only a self-managed release opens at login and updates through Sparkle: an installer
     /// owns a managed one, and a dev build would shadow the installed app (ADR-0015).
     fn updates_itself(&self) -> bool {
         self.install == Install::SelfManaged && self.instance == Instance::Release

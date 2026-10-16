@@ -4,7 +4,7 @@ CoreBrightness reports Night Shift status through one callback, and that callbac
 
 ## Decision
 
-The core is the only part that decides what Night Shift should be doing. It compares every status callback with that desired state:
+The core is the only part that decides what Night Shift should be doing. It compares every status callback with that, the wanted state:
 
 - if the system already matches, nothing happens;
 - if the callback coincides with a computed schedule transition, it is a schedule transition;

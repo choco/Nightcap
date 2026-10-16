@@ -32,7 +32,7 @@ enum Look {
         case .ok: symbol = ("checkmark.circle.fill", [.white, .nightcapGreen], "OK")
         case .off: symbol = ("minus.circle", [.nightcapGrey], "Off")
         case .drifted: symbol = ("exclamationmark.triangle.fill", [.white, .nightcapOrange], "Needs attention")
-        case .broken: symbol = ("xmark.circle.fill", [.white, .nightcapRed], "Problem")
+        case .broken: symbol = ("xmark.circle.fill", [.white, .nightcapRed], "Broken")
         case .todo: return StepRing(current: false)
         case .current: return StepRing(current: true)
         }

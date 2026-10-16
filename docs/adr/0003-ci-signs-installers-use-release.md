@@ -10,7 +10,7 @@ In GitHub Actions:
 2. **Every `v*` tag:** a job on the `xcode-27` runner builds the core with cargo and the shell with Xcode, then assembles the bundle. The `macos-26` runner tops out at the macOS 26 SDK, below the app's 27.0 deployment target.
 3. **Versions** are set before signing. `CFBundleShortVersionString` comes from the tag, which must match the Cargo version. `CFBundleVersion` is the commit count.
 4. **Signing:** the job imports the certificate from an Actions secret into a temporary keychain and signs inside-out with `/usr/bin/codesign`, called by absolute path.
-5. **Verification gate:** the release fails unless the signed app satisfies the signing requirement committed in the repo, and its requirement string matches that one exactly.
+5. **Release gate:** the release fails unless the signed app satisfies the signing requirement committed in the repo, and its requirement string matches that one exactly.
 6. **Packaging:** the app is zipped in a way that preserves symlinks, with no extended attributes.
 7. **Publishing:** a Linux job publishes the release with `Nightcap-<version>.zip`, a `SHA256SUMS` asset and the appcast (ADR-0015).
 
@@ -22,7 +22,7 @@ Why this wins:
 - A new Mac needs neither the certificate nor any credentials.
 - The shell can use current Xcode and Swift.
 - Installers stay thin: fetch, check the hash, copy.
-- It is how Ghostty and Glide ship. The verification gate exists because Glide once shipped unsigned releases through a broken shim.
+- It is how Ghostty and Glide ship. The release gate exists because Glide once shipped unsigned releases through a broken shim.
 
 This rests on grants surviving an update to a new path signed with the same certificate, which holds on macOS 27: a store-path app started by launchd, and a self-managed install updated by Sparkle, both kept Accessibility and notifications.
 
