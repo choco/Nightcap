@@ -35,6 +35,7 @@
           packages = [
             (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
             pkgs.gh
+            pkgs.librsvg
           ];
           # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo
           # builds with Xcode's tools instead, matching CI and the Swift shell.

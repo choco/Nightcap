@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Renders app/icons/AppIcon.svg into every size of the app's icon set. The menu-bar icons are
+# vector images in the asset catalog, used as they are.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+set_dir=app/Nightcap/Assets.xcassets/AppIcon.appiconset
+for size in 16 32 128 256 512; do
+  rsvg-convert -w "$size" -h "$size" app/icons/AppIcon.svg -o "$set_dir/icon_${size}x${size}.png"
+  rsvg-convert -w $((size * 2)) -h $((size * 2)) app/icons/AppIcon.svg -o "$set_dir/icon_${size}x${size}@2x.png"
+done

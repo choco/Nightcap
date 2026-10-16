@@ -10,6 +10,7 @@ Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo a
 - `build-app [--release]`: builds `build/xcode/<Debug|Release>/Nightcap.app`, unsigned. Debug is the dev build (`io.github.choco.nightcap.dev`).
 - `run-dev`: builds, signs and launches the dev build.
 - `run-tests`: runs the Rust tests.
+- `render-icons`: renders `app/icons/AppIcon.svg` into the app's icon set. The menu-bar moons are SVGs in `app/Nightcap/Assets.xcassets`, used as they are.
 
 Swift files under `app/Nightcap/` join the app target automatically (a folder-synced group); the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and `NightcapCore.swift` are build outputs: change their sources and rebuild.
 
