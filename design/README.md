@@ -53,6 +53,15 @@ Write the way the app talks: plain, specific, and about what the user sees.
 - Illustrations stay geometric: moons, discs, crescents cut from `night` and `moon`, a sun at the edge of a hero or a dusk panel. No mascots, no faces.
 - Doodles are line art in the iconography's style (24 grid, 1.5px strokes): moons, suns, stars, sparkles and small dots, scattered evenly through a page's margins and sparsely across its middle, never over text. Most are drawn in a faint `ink-muted`, a fifth or so in a faint gold; on phones keep about one in four.
 
+## In the app
+
+The app is a native Mac app and looks like one; this book's web look stays on the web.
+
+- Use the system font, the system's window, group and control colours, and the user's accent colour for primary buttons and links. Build it in AppKit.
+- Carry the brand over where the app already shares it: the app icon and the menu-bar moons, `ok`, `drift`, `broken` and `off` with their shapes, capsule buttons, 12-point groups and 7-point tiles, and the voice.
+- Allow two brand moments: the wordmark in onboarding's header, in Caprasimo at 26 points (the app bundles the face with its licence), and the gold of onboarding's current step, `moon-text` by day and `moon` at night.
+- Keep Figtree and Martian Mono, the navy surfaces, gold primary buttons, doodles, the tint and ambient motion on the web.
+
 ## Iconography
 
 - The app icon (`Logos/nightcap-app-icon.svg`, from the repo's `app/icons/AppIcon.svg`) stands for Nightcap wherever a mark is needed: downloads, the footer, favicons.
