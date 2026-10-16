@@ -29,9 +29,25 @@ enum Snapshot {
                     text: "The config file is invalid: line 4: unknown field `domian`.",
                     restore: FixButton(title: "Reload", fix: .reload), accept: nil),
                 SettingsCheck(kind: .adHocRules, state: .ok, text: "2 ad-hoc rules.", restore: nil, accept: nil),
+            ],
+            configPath: "\(NSHomeDirectory())/.config/nightcap/config.toml",
+            rules: [
+                SettingsRule(
+                    identity: .app("com.figma.Desktop"), label: "From your config", snoozed: false,
+                    action: RuleAction(title: "Snooze", command: .snooze(.app("com.figma.Desktop")))),
+                SettingsRule(
+                    identity: .domain("figma.com"), label: "Snoozed until 07:12", snoozed: true,
+                    action: RuleAction(title: "Unsnooze", command: .unsnooze(.domain("figma.com")))),
+                SettingsRule(
+                    identity: .app("com.apple.Photos"), label: "Ad-hoc", snoozed: false,
+                    action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.Photos")))),
+                SettingsRule(
+                    identity: .domain("youtube.com"), label: "Ad-hoc", snoozed: false,
+                    action: RuleAction(title: "Remove", command: .removeRule(.domain("youtube.com")))),
             ])
         let window = SettingsWindow(
-            current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {}, onClose: {})
+            current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
+            export: { _ in "" }, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             for tab in SettingsWindow.Tab.allCases {

@@ -18,7 +18,8 @@ use crate::adhoc;
 use crate::state::{Persisted, Store};
 use crate::{
     Attention, Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry,
-    MenuIcon, MenuItem, SettingsCheck, SettingsSwitch, Setup, Waker,
+    MenuIcon, MenuItem, RuleAction, SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker,
+    normalize_domain,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -3194,4 +3195,108 @@ fn opening_at_login_removed_in_system_settings_is_announced() {
                 body: "Open Nightcap’s settings to turn it back on, or to keep it off.".to_owned(),
             })
     );
+}
+
+#[test]
+fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[rules]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n",
+    );
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    let photos = RuleIdentity::App("com.apple.Photos".to_owned());
+    send(&core, &socket, &wakes, Command::AddRule(photos.clone()));
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(domain("youtube.com")),
+    );
+    send(&core, &socket, &wakes, Command::Snooze(domain("figma.com")));
+    let rule = |identity: RuleIdentity, label: &str, snoozed, title: &str, command| SettingsRule {
+        identity,
+        label: label.to_owned(),
+        snoozed,
+        action: RuleAction {
+            title: title.to_owned(),
+            command,
+        },
+    };
+
+    assert_eq!(
+        core.settings().rules,
+        vec![
+            rule(
+                figma(),
+                "From your config",
+                false,
+                "Snooze",
+                Command::Snooze(figma())
+            ),
+            rule(
+                domain("figma.com"),
+                "Snoozed until 07:00",
+                true,
+                "Unsnooze",
+                Command::Unsnooze(domain("figma.com"))
+            ),
+            rule(
+                photos.clone(),
+                "Ad-hoc",
+                false,
+                "Remove",
+                Command::RemoveRule(photos)
+            ),
+            rule(
+                domain("youtube.com"),
+                "Ad-hoc",
+                false,
+                "Remove",
+                Command::RemoveRule(domain("youtube.com"))
+            ),
+        ]
+    );
+}
+
+#[test]
+fn the_rules_tab_shows_where_the_config_is_and_copies_the_ad_hoc_rules_for_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(domain("figma.com")),
+    );
+
+    assert_eq!(
+        core.settings().config_path,
+        config_beside(&socket).display().to_string()
+    );
+    assert_eq!(
+        core.export(ExportFormat::Nix),
+        "{ app = [ \"com.figma.Desktop\" ]; domain = [ \"figma.com\" ]; }\n"
+    );
+    assert_eq!(
+        core.export(ExportFormat::Toml),
+        "[rules]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n"
+    );
+}
+
+#[test]
+fn a_typed_domain_is_normalized_or_turned_down() {
+    assert_eq!(
+        normalize_domain("Docs.Figma.COM".to_owned()),
+        Some("docs.figma.com".to_owned())
+    );
+    assert_eq!(normalize_domain("https://figma.com/file".to_owned()), None);
+    assert_eq!(normalize_domain("*.figma.com".to_owned()), None);
 }

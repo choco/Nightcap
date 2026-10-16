@@ -1,6 +1,7 @@
 // `NSItemBadge.indicator` is imported as shared mutable state, though it only makes a badge.
 @preconcurrency import AppKit
 import NightcapCore
+import UniformTypeIdentifiers
 
 /// Nightcap's settings, as the core describes them (`Core.settings()`). The shell only draws
 /// them, rebuilding the shown tab whenever the snapshot changes while the window is open.
@@ -29,6 +30,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private let choose: (Command) -> Void
     private let perform: (Fix) -> Void
     private let checkForUpdates: (() -> Void)?
+    private let export: (ExportFormat) -> String
+    /// The format "Copy" last wrote, kept across redraws.
+    private var exportFormat = ExportFormat.nix
     private let onClose: () -> Void
     private var window: NSWindow?
     private var tab = Tab.general
@@ -48,12 +52,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         choose: @escaping (Command) -> Void,
         perform: @escaping (Fix) -> Void,
         checkForUpdates: (() -> Void)?,
+        export: @escaping (ExportFormat) -> String,
         onClose: @escaping () -> Void
     ) {
         self.current = current
         self.choose = choose
         self.perform = perform
         self.checkForUpdates = checkForUpdates
+        self.export = export
         self.onClose = onClose
         super.init()
     }
@@ -270,12 +276,144 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     private func rulesPane(_ settings: Settings) -> NSView {
         let check = { (kind: CheckKind) in settings.checks.first { $0.kind == kind } }
+        let path = (settings.configPath as NSString).abbreviatingWithTildeInPath
+        var files = [cell(row(title: "Config file", detail: path, accessory: nil), check(.configFile))]
+        // The ad-hoc rules file is mentioned only when something's wrong with it.
+        if let adHoc = check(.adHocRules), adHoc.state == .drifted || adHoc.state == .broken {
+            files.append(cell(row(title: "Ad-hoc rules", detail: nil, accessory: nil), adHoc))
+        }
+        let rules =
+            settings.rules.isEmpty
+            ? [Look.padded(Look.secondary("No rules yet.", width: Self.width - 28), top: 11, bottom: 11)]
+            : settings.rules.map(ruleRow)
         return pane([
-            block("Files", [
-                cell(row(title: "Config file", detail: nil, accessory: nil), check(.configFile)),
-                cell(row(title: "Ad-hoc rules", detail: nil, accessory: nil), check(.adHocRules)),
-            ]),
+            group(files),
+            note("Night Shift is forced off while one of these is in front."),
+            group(rules),
+            rulesToolbar(),
+            note("Ad-hoc rules stay in Nightcap until you copy them into your config."),
         ])
+    }
+
+    /// A rule's icon, name and what it is, its label and its one action.
+    private func ruleRow(_ rule: SettingsRule) -> NSView {
+        let (name, detail, icon) = describe(rule.identity)
+        let texts = NSStackView(views: [
+            Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
+            Look.secondary(detail, width: 260),
+        ])
+        texts.orientation = .vertical
+        texts.alignment = .leading
+        texts.spacing = 2
+        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let action = Look.button(rule.action.title, .small) { [choose] in choose(rule.action.command) }
+        let row = NSStackView(views: [icon, texts, Chip(rule.label, tinted: rule.snoozed), action])
+        row.orientation = .horizontal
+        row.distribution = .fill
+        row.alignment = .centerY
+        row.spacing = 14
+        return Look.padded(row, top: 11, bottom: 11)
+    }
+
+    /// An app by the name and icon of its bundle, if it's installed, and a website by its domain.
+    private func describe(_ identity: RuleIdentity) -> (String, String, NSView) {
+        switch identity {
+        case .app(let bundleId):
+            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
+                return (bundleId, "Not installed on this Mac", Tile(symbol: "app"))
+            }
+            let icon = NSImageView(image: NSWorkspace.shared.icon(forFile: url.path))
+            icon.imageScaling = .scaleProportionallyUpOrDown
+            icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: 26).isActive = true
+            return (FileManager.default.displayName(atPath: url.path), bundleId, icon)
+        case .domain(let domain):
+            return (domain, "Website, with its subdomains", Tile(symbol: "globe"))
+        }
+    }
+
+    private func rulesToolbar() -> NSView {
+        let addApp = Look.button("Add App…", .regular) { [weak self] in self?.addApp() }
+        let addWebsite = Look.button("Add Website…", .regular) { [weak self] in self?.addWebsite() }
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let label = NSTextField(labelWithString: "Copy for config as")
+        label.font = .systemFont(ofSize: 12)
+        label.textColor = .nightcapSecondary
+        let format = NSPopUpButton(frame: .zero, pullsDown: false)
+        format.addItems(withTitles: ["Nix", "TOML"])
+        format.controlSize = .small
+        format.font = .systemFont(ofSize: 12)
+        format.selectItem(at: exportFormat == .nix ? 0 : 1)
+        Look.attach(format) { [weak self, weak format] in
+            self?.exportFormat = format?.indexOfSelectedItem == 1 ? .toml : .nix
+        }
+        let copy = Look.button("Copy", .regular) {}
+        Look.attach(copy) { [weak self, weak copy] in
+            guard let self else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(export(exportFormat), forType: .string)
+            copy?.title = "Copied"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copy?.title = "Copy" }
+        }
+        let toolbar = NSStackView(views: [addApp, addWebsite, spacer, label, format, copy])
+        toolbar.orientation = .horizontal
+        toolbar.distribution = .fill
+        toolbar.alignment = .centerY
+        toolbar.spacing = 8
+        toolbar.setCustomSpacing(16, after: addWebsite)
+        return toolbar
+    }
+
+    /// The Applications folder, for picking an app to add a rule for.
+    private func addApp() {
+        guard let window else { return }
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Add"
+        panel.message = "Choose an app to force Night Shift off in."
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier else { return }
+            self?.choose(.addRule(.app(bundleId)))
+        }
+    }
+
+    /// A sheet asking for a domain, which says what it will add as the user types and adds
+    /// nothing that isn't one.
+    private func addWebsite() {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = "Add a Website"
+        let hint = "Night Shift is forced off on it and on its subdomains."
+        alert.informativeText = hint
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+        field.placeholderString = "figma.com"
+        alert.accessoryView = field
+        let add = alert.addButton(withTitle: "Add")
+        alert.addButton(withTitle: "Cancel")
+        add.isEnabled = false
+        let typing = NotificationCenter.default.addObserver(
+            forName: NSControl.textDidChangeNotification, object: field, queue: .main
+        ) { [weak alert, weak add, weak field] _ in
+            MainActor.assumeIsolated {
+                let domain = field.flatMap { normalizeDomain(text: $0.stringValue) }
+                add?.isEnabled = domain != nil
+                alert?.informativeText = domain.map { "Adds \($0) and its subdomains." } ?? hint
+            }
+        }
+        alert.window.initialFirstResponder = field
+        alert.beginSheetModal(for: window) { [weak self] response in
+            NotificationCenter.default.removeObserver(typing)
+            guard response == .alertFirstButtonReturn,
+                  let domain = normalizeDomain(text: field.stringValue)
+            else { return }
+            self?.choose(.addRule(.domain(domain)))
+        }
+    }
+
+    private func note(_ text: String) -> NSView {
+        Look.padded(Look.secondary(text, width: Self.width - 8), top: 0, left: 4, bottom: 0, right: 4)
     }
 
     // MARK: Building blocks
@@ -300,6 +438,17 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         heading.textColor = .nightcapSecondary
         let indented = NSStackView(views: [heading])
         indented.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
+        let group = group(cells)
+        let block = NSStackView(views: [indented, group])
+        block.orientation = .vertical
+        block.alignment = .leading
+        block.spacing = 6
+        group.widthAnchor.constraint(equalTo: block.widthAnchor).isActive = true
+        return block
+    }
+
+    /// A rounded group of cells, separated by hairlines.
+    private func group(_ cells: [NSView]) -> NSView {
         var views: [NSView] = []
         for (index, cell) in cells.enumerated() {
             if index > 0 { views.append(Hairline()) }
@@ -312,13 +461,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         for view in views {
             view.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
         }
-        let group = Group(rows)
-        let block = NSStackView(views: [indented, group])
-        block.orientation = .vertical
-        block.alignment = .leading
-        block.spacing = 6
-        group.widthAnchor.constraint(equalTo: block.widthAnchor).isActive = true
-        return block
+        return Group(rows)
     }
 
     /// A setting's row with the status of its check, if it has one, right under it.

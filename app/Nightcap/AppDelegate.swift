@@ -325,6 +325,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             perform: { [weak self] fix in self?.perform(fix) },
             checkForUpdates: checkForUpdates,
+            export: { core.export(format: $0) },
             onClose: { [weak self] in
                 guard let self else { return }
                 dockIcon.hide(for: .settings)

@@ -18,9 +18,9 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ErrorReply, Install, Instance,
-    NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason, Request,
-    Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
+    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install,
+    Instance, NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason,
+    Request, Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
     WebsiteChecking,
 };
 
@@ -73,6 +73,12 @@ pub enum CheckState {
 }
 
 #[uniffi::remote(Enum)]
+pub enum ExportFormat {
+    Nix,
+    Toml,
+}
+
+#[uniffi::remote(Enum)]
 pub enum OnOff {
     On,
     Off,
@@ -121,6 +127,33 @@ pub struct Settings {
     pub open_at_login: Option<SettingsSwitch>,
     /// Shown inline, each under the setting it belongs to.
     pub checks: Vec<SettingsCheck>,
+    /// Where the config is read from, whether or not it exists.
+    pub config_path: String,
+    /// Every rule: the config's, then the ad-hoc ones.
+    pub rules: Vec<SettingsRule>,
+}
+
+/// A rule as the Rules tab lists it: its label and the one thing to do about it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SettingsRule {
+    pub identity: RuleIdentity,
+    /// "From your config", "Snoozed until 07:00" or "Ad-hoc".
+    pub label: String,
+    pub snoozed: bool,
+    pub action: RuleAction,
+}
+
+/// Choosing it sends `command` back as `Event::CommandChosen`.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct RuleAction {
+    pub title: String,
+    pub command: Command,
+}
+
+/// The domain a domain rule would have for what the user typed, or None when it isn't one.
+#[uniffi::export]
+pub fn normalize_domain(text: String) -> Option<String> {
+    domain::normalize(text.trim())
 }
 
 /// A check as Settings shows it, with what can be done about it.
@@ -531,6 +564,11 @@ impl Core {
         effects
     }
 
+    /// The ad-hoc rules, written for the config (ADR-0009).
+    pub fn export(&self, format: ExportFormat) -> String {
+        adhoc::export(&self.state().ad_hoc, format)
+    }
+
     pub fn settings(&self) -> Settings {
         let state = self.state();
         let on = state.website_checking();
@@ -541,6 +579,12 @@ impl Core {
                 command: Command::Websites(on_off(!on)),
             },
             // Registered but waiting for approval counts as on; its check explains the rest.
+            config_path: self.config_file.display().to_string(),
+            rules: state
+                .rules
+                .iter()
+                .map(|rule| state.settings_rule(rule))
+                .collect(),
             open_at_login: state
                 .login_item
                 .filter(|_| self.updates_itself())
@@ -1609,6 +1653,44 @@ impl State {
             )
         } else {
             toggle(name, None, true, Command::RemoveRule(identity))
+        }
+    }
+
+    /// A rule's row in the Rules tab, acted on as the menu's toggles are (ADR-0009): a config
+    /// rule is snoozed and unsnoozed, an ad-hoc one removed.
+    fn settings_rule(&self, rule: &Rule) -> SettingsRule {
+        let identity = rule.identity.clone();
+        let snoozed = self
+            .snoozes
+            .iter()
+            .any(|snoozed| same_rule(snoozed, &identity));
+        let (label, title, command) = if snoozed {
+            (
+                format!("Snoozed{}", self.until_snoozes_end()),
+                "Unsnooze",
+                Command::Unsnooze(identity.clone()),
+            )
+        } else if rule.source == RuleSource::Config {
+            (
+                "From your config".to_owned(),
+                "Snooze",
+                Command::Snooze(identity.clone()),
+            )
+        } else {
+            (
+                "Ad-hoc".to_owned(),
+                "Remove",
+                Command::RemoveRule(identity.clone()),
+            )
+        };
+        SettingsRule {
+            identity,
+            label,
+            snoozed,
+            action: RuleAction {
+                title: title.to_owned(),
+                command,
+            },
         }
     }
 
