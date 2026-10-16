@@ -9,7 +9,7 @@ root="$(git rev-parse --show-toplevel)"
 app="$1"
 out="$2"
 
-repo="choco/nightcap"
+repo="choco/Nightcap"
 sparkle_version="2.10.0"
 sparkle_sha256="c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
 
