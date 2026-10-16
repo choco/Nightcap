@@ -54,8 +54,11 @@ enum Look {
     static func label(
         _ text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor, width: CGFloat
     ) -> NSTextField {
-        let font = NSFont.systemFont(ofSize: size, weight: weight)
-        let lineHeight = (size * 1.4).rounded()
+        label(text, font: .systemFont(ofSize: size, weight: weight), color: color, width: width)
+    }
+
+    static func label(_ text: String, font: NSFont, color: NSColor, width: CGFloat) -> NSTextField {
+        let lineHeight = (font.pointSize * 1.4).rounded()
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight
         paragraph.maximumLineHeight = lineHeight
@@ -103,7 +106,7 @@ enum Look {
         let button = NSButton(title: title, target: nil, action: nil)
         button.isBordered = false
         button.attributedTitle = NSAttributedString(
-            string: title, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.nightcapLink])
+            string: title, attributes: [.font: NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.linkColor])
         attach(button, run)
         return button
     }
@@ -171,8 +174,8 @@ final class CapsuleButton: NSButton {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let fill: NSColor =
                 switch (primary, isHighlighted) {
-                case (true, false): .nightcapAccent
-                case (true, true): .nightcapAccentPressed
+                case (true, false): .controlAccentColor
+                case (true, true): NSColor.controlAccentColor.withSystemEffect(.pressed)
                 case (false, false): .nightcapControl
                 case (false, true): .nightcapControlPressed
                 }
@@ -183,7 +186,8 @@ final class CapsuleButton: NSButton {
     }
 }
 
-/// A step's ring: hollow and grey until it's reached, accent with a pulsing dot while current.
+/// A step's ring: hollow and grey until it's reached, the brand's gold with a pulsing dot while
+/// current.
 final class StepRing: NSView {
     private let current: Bool
     private let ring = CAShapeLayer()
@@ -227,8 +231,8 @@ final class StepRing: NSView {
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            ring.strokeColor = (current ? NSColor.nightcapAccent : NSColor.nightcapGrey.withAlphaComponent(0.7)).cgColor
-            dot.backgroundColor = NSColor.nightcapAccent.cgColor
+            ring.strokeColor = (current ? NSColor.nightcapMoon : NSColor.nightcapGrey.withAlphaComponent(0.7)).cgColor
+            dot.backgroundColor = NSColor.nightcapMoon.cgColor
         }
     }
 }
@@ -371,7 +375,7 @@ final class Tint: NSView {
 
     override func updateLayer() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = tinted ? NSColor.nightcapAccent.withAlphaComponent(0.07).cgColor : nil
+            layer?.backgroundColor = tinted ? NSColor.nightcapMoon.withAlphaComponent(0.08).cgColor : nil
         }
     }
 }
@@ -415,9 +419,9 @@ extension NSColor {
     static var nightcapTile: NSColor {
         appearance(light: 0x000000, dark: 0xffffff, lightAlpha: 0.07, darkAlpha: 0.1)
     }
-    static var nightcapAccent: NSColor { appearance(light: 0x0a72e8, dark: 0x0a84ff) }
-    static var nightcapAccentPressed: NSColor { appearance(light: 0x0861c7, dark: 0x0a74e0) }
-    static var nightcapLink: NSColor { appearance(light: 0x0060c7, dark: 0x5aa9ff) }
+    /// The design system's gold for marks: its `moon-text` by day, since the moon itself is too
+    /// pale to see on a light window, and the moon at night.
+    static var nightcapMoon: NSColor { appearance(light: 0x8a5b00, dark: 0xf6d58a) }
     static var nightcapGreen: NSColor { appearance(light: 0x22b33a, dark: 0x30d158) }
     static var nightcapOrange: NSColor { appearance(light: 0xf08a00, dark: 0xff9f0a) }
     static var nightcapRed: NSColor { appearance(light: 0xe5372c, dark: 0xff453a) }
@@ -436,4 +440,26 @@ final class Action: NSObject {
     @objc func run() {
         body()
     }
+}
+
+extension NSFont {
+    /// The wordmark's face, Caprasimo, which the app bundles beside its licence. Missing, it's a
+    /// broken bundle, not something to work around.
+    static func nightcapWordmark(size: CGFloat) -> NSFont {
+        registerBundledFonts
+        guard let font = NSFont(name: "Caprasimo-Regular", size: size) else {
+            fatalError("Caprasimo isn't in the app bundle")
+        }
+        return font
+    }
+
+    private static let registerBundledFonts: Void = {
+        guard let url = Bundle.main.url(forResource: "Caprasimo-Regular", withExtension: "ttf") else {
+            fatalError("Caprasimo-Regular.ttf isn't in the app bundle")
+        }
+        var error: Unmanaged<CFError>?
+        if !CTFontManagerRegisterFontsForURL(url as CFURL, .process, &error) {
+            fatalError("couldn't register Caprasimo: \(error!.takeRetainedValue())")
+        }
+    }()
 }

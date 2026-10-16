@@ -238,7 +238,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let icon = NSImageView(image: NSApp.applicationIconImage)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.translatesAutoresizingMaskIntoConstraints = false
-        let title = Look.label("Nightcap", size: 20, weight: .semibold, color: .labelColor, width: 400)
+        let title = Look.label("Nightcap", font: .nightcapWordmark(size: 26), color: .labelColor, width: 400)
         let text = Look.label(
             "Nightcap switches Night Shift off while the apps and websites you choose are in front, and gives it back when you leave them. The rest of the time it follows your Night Shift schedule.",
             size: 13, weight: .regular, color: .nightcapSecondary, width: Self.width - 48 - 66)
