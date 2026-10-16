@@ -11,8 +11,8 @@ In GitHub Actions:
 3. **Versions** are set before signing. `CFBundleShortVersionString` comes from the tag, which must match the Cargo version. `CFBundleVersion` is the commit count.
 4. **Signing:** the job imports the certificate from an Actions secret into a temporary keychain and signs inside-out with `/usr/bin/codesign`, called by absolute path.
 5. **Release gate:** the release fails unless the signed app satisfies the signing requirement committed in the repo, and its requirement string matches that one exactly.
-6. **Packaging:** the app is zipped in a way that preserves symlinks, with no extended attributes.
-7. **Publishing:** a Linux job publishes the release with `Nightcap-<version>.zip`, a `SHA256SUMS` asset and the appcast (ADR-0015).
+6. **Packaging:** the app is zipped in a way that preserves symlinks, with no extended attributes. For first installs from the site, the same signed app also goes into a DMG to drag into Applications, signed with the same certificate.
+7. **Publishing:** a Linux job publishes the release with `Nightcap-<version>.zip`, `Nightcap-<version>.dmg`, a `SHA256SUMS` asset and the appcast (ADR-0015).
 
 This repo ships no installer. `docs/installing.md` is the contract every installer relies on. Its hard rule: install the bundle byte-for-byte unchanged. A strip or re-sign replaces the signature and loses every grant; nixpkgs' fixup phase does exactly that unless `dontFixup` is set.
 
