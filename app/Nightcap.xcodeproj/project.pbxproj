@@ -195,7 +195,8 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.dev;
-				PRODUCT_NAME = Nightcap;
+				PRODUCT_MODULE_NAME = Nightcap;
+				PRODUCT_NAME = "Nightcap Dev";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_VERSION = 6.0;

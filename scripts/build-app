@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds Nightcap.app with xcodebuild into build/xcode/<Debug|Release>/, unsigned.
+# Builds the app with xcodebuild into build/xcode/<Debug|Release>/, unsigned.
 # Debug is the dev build; pass --release for a release build. Run build-core first,
 # with the same flag.
 set -euo pipefail

@@ -7,7 +7,7 @@ cd "$root"
 
 scripts/build-core
 scripts/build-app
-app=build/xcode/Debug/Nightcap.app
+app="build/xcode/Debug/Nightcap Dev.app"
 release/sign "$app"
 
 # Through LaunchServices, so macOS attributes permission grants to the app rather than
