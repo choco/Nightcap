@@ -40,6 +40,22 @@ enum Snapshot {
                 try! png.write(to: url)
             }
         }
+        let onboarding = Onboarding(
+            accessibilityGranted: { false }, askForAccessibility: {}, opensAtLogin: false,
+            chooseOpenAtLogin: { _ in }, onNotificationsRead: {}, onFinish: { _ in })
+        let states: [(String, Onboarding.Answers, Onboarding.Row?)] = [
+            ("first", Onboarding.Answers(), .notifications),
+            ("accessibility", Onboarding.Answers(notifications: .allowed, websites: true), .accessibility),
+            ("answered", Onboarding.Answers(notifications: .allowed, websites: false, openAtLogin: true), nil),
+        ]
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (state, answers, current) in states {
+                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-onboarding-\(state)-\(name).png")
+                guard let png = onboarding.snapshot(answers, current: current) else { fatalError("couldn't render \(state)") }
+                try! png.write(to: url)
+            }
+        }
         for icon in [MenuIcon.on, .off, .forcedOff] {
             for attention in [false, true] {
                 let name = "icon-\(icon)-\(attention ? "attention" : "plain").png"

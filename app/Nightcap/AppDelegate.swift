@@ -72,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The context first, so a force still in place after a crash holds without a flash.
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         startNightShift()
+        // Onboarding, which the launch can open, asks about opening at login only where Nightcap
+        // opens itself, and starts from where the login item stands.
+        reportLoginItem()
         apply(core.handle(event: .launched))
         // The menu-bar item appears once onboarding is done.
         if onboarding == nil { showStatusMenu() }
@@ -278,7 +281,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showOnboarding() {
         guard let accessibility, let core else { return }
         let onboarding = Onboarding(
-            accessibility: accessibility,
+            accessibilityGranted: { accessibility.granted },
+            askForAccessibility: { accessibility.ask() },
+            opensAtLogin: core.settings().openAtLogin?.on,
+            chooseOpenAtLogin: { [weak self] on in
+                self?.apply(core.handle(event: .commandChosen(command: .openAtLogin(on ? .on : .off))))
+            },
             onNotificationsRead: { [weak self] in
                 Task { await self?.reportSystemState() }
             },

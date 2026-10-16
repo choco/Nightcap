@@ -142,7 +142,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             defer: false)
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.backgroundColor = .settingsWindow
+        window.backgroundColor = .nightcapWindow
         window.toolbarStyle = .preference
         let toolbar = NSToolbar(identifier: "settings")
         toolbar.delegate = self
@@ -168,23 +168,24 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let size = content.fittingSize
         // The title bar and toolbar, which `frameRect(forContentRect:)` leaves out.
         let chrome = window.frame.height - window.contentLayoutRect.height
+        let container = Backdrop()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(content)
+        // Pinned to the top only, at its own height: while the window animates to a new
+        // height, it neither stretches nor squeezes the content.
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            content.topAnchor.constraint(equalTo: container.topAnchor),
+        ])
+        // The new content goes in before the window takes its size: resizing first would
+        // draw the old content squeezed into the new size.
+        window.contentView = container
         window.setFrame(
             NSRect(
                 x: window.frame.minX, y: window.frame.maxY - size.height - chrome,
                 width: size.width, height: size.height + chrome),
             display: true, animate: animates && window.isVisible)
-        let container = Backdrop()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(content)
-        // Pinned to the top: while the window animates to a new height, the extra room stays
-        // below the content instead of stretching it.
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            content.topAnchor.constraint(equalTo: container.topAnchor),
-            content.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
-        ])
-        window.contentView = container
         markTabs(settings)
     }
 
@@ -209,7 +210,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let toggle = NSSwitch()
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
-        attach(toggle) { [choose] in choose(websites.command) }
+        Look.attach(toggle) { [choose] in choose(websites.command) }
         var websitesDetail = "Also force Night Shift off on the websites you choose, in Safari and Chrome. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name."
         if websites.locked { websitesDetail += " Set in your config." }
         // Accessibility goes unmentioned while website checking doesn't need it.
@@ -225,7 +226,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                     row(
                         title: "Schedule and strength",
                         detail: "Set in System Settings. Nightcap follows them.",
-                        accessory: button("Open Night Shift Settings…", size: .regular) {
+                        accessory: Look.button("Open Night Shift Settings…", .regular) {
                             let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
                             NSWorkspace.shared.open(URL(string: pane)!)
                         }),
@@ -247,7 +248,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                             ? "Updates come from your installer."
                             : "Checks for updates once a day and installs them when you quit.",
                         accessory: checkForUpdates.map { update in
-                            button("Check for Updates…", size: .regular, update)
+                            Look.button("Check for Updates…", .regular, update)
                         }),
                     nil),
             ]),
@@ -260,7 +261,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         guard let openAtLogin = settings.openAtLogin else { return [] }
         let toggle = NSSwitch()
         toggle.state = openAtLogin.on ? .on : .off
-        attach(toggle) { [choose] in choose(openAtLogin.command) }
+        Look.attach(toggle) { [choose] in choose(openAtLogin.command) }
         let problem = settings.checks.first {
             $0.kind == .openAtLogin && ($0.state == .drifted || $0.state == .broken)
         }
@@ -296,7 +297,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private func block(_ title: String, _ cells: [NSView]) -> NSView {
         let heading = NSTextField(labelWithString: title)
         heading.font = .systemFont(ofSize: 12, weight: .semibold)
-        heading.textColor = .settingsSecondary
+        heading.textColor = .nightcapSecondary
         let indented = NSStackView(views: [heading])
         indented.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
         var views: [NSView] = []
@@ -338,10 +339,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let textWidth = Self.width - 28 - accessoryWidth
         var texts: [NSView] = []
         if let title {
-            texts.append(label(title, size: 13, weight: .medium, color: .labelColor, width: textWidth))
+            texts.append(Look.label(title, size: 13, weight: .medium, color: .labelColor, width: textWidth))
         }
         if let detail {
-            texts.append(secondary(detail, width: textWidth))
+            texts.append(Look.secondary(detail, width: textWidth))
         }
         let text = NSStackView(views: texts)
         text.orientation = .vertical
@@ -353,7 +354,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 14
-        return padded(row, top: 11, bottom: 11)
+        return Look.padded(row, top: 11, bottom: 11)
     }
 
     /// A check's symbol, its line of text and what can be done about it, under its setting.
@@ -361,19 +362,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// on one.
     private func status(_ check: SettingsCheck) -> NSView {
         let fixes = [check.restore, check.accept].compactMap { $0 }.map { fix in
-            button(fix.title, size: .small) { [perform] in perform(fix.fix) }
+            Look.button(fix.title, .small) { [perform] in perform(fix.fix) }
         }
         let inline = fixes.count < 2 ? fixes : []
         let inlineWidth = inline.reduce(0) { $0 + $1.fittingSize.width + 8 }
-        let text = secondary(check.text, width: Self.width - 28 - 18 - 8 - inlineWidth)
+        let text = Look.secondary(check.text, width: Self.width - 28 - 18 - 8 - inlineWidth)
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [badge(check.state), text] + inline)
+        let line = NSStackView(views: [Look.mark(Look.Mark(check.state)), text] + inline)
         line.orientation = .horizontal
         line.distribution = .fill
         line.alignment = .centerY
         line.spacing = 8
         guard inline.isEmpty, !fixes.isEmpty else {
-            return padded(line, top: 0, bottom: 11)
+            return Look.padded(line, top: 0, bottom: 11)
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -388,225 +389,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         for view in [line, buttons] {
             view.widthAnchor.constraint(equalTo: status.widthAnchor).isActive = true
         }
-        return padded(status, top: 0, bottom: 11)
-    }
-
-    /// `content` inside 14-point sides and the given top and bottom, held by constraints.
-    private func padded(_ content: NSView, top: CGFloat, bottom: CGFloat) -> NSView {
-        let box = NSView()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        box.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 14),
-            content.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -14),
-            content.topAnchor.constraint(equalTo: box.topAnchor, constant: top),
-            content.bottomAnchor.constraint(equalTo: box.bottomAnchor, constant: -bottom),
-        ])
-        return box
-    }
-
-    /// An 18-point SF Symbol: a white mark on a filled circle or triangle, or a grey dash.
-    private func badge(_ state: CheckState) -> NSImageView {
-        let (symbol, colors, description): (String, [NSColor], String) =
-            switch state {
-            case .ok: ("checkmark.circle.fill", [.white, .settingsGreen], "OK")
-            case .off: ("minus.circle", [.settingsGrey], "Off")
-            case .drifted: ("exclamationmark.triangle.fill", [.white, .settingsOrange], "Needs attention")
-            case .broken: ("xmark.circle.fill", [.white, .settingsRed], "Problem")
-            }
-        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-            .applying(NSImage.SymbolConfiguration(paletteColors: colors))
-        let image = NSImageView(
-            image: NSImage(systemSymbolName: symbol, accessibilityDescription: description)!
-                .withSymbolConfiguration(configuration)!)
-        image.widthAnchor.constraint(equalToConstant: 18).isActive = true
-        image.heightAnchor.constraint(equalToConstant: 18).isActive = true
-        return image
-    }
-
-    private func secondary(_ text: String, width: CGFloat) -> NSTextField {
-        label(text, size: 12, weight: .regular, color: .settingsSecondary, width: width)
-    }
-
-    /// Wrapping text with the mockup's line height, 1.4 times the font size.
-    private func label(
-        _ text: String, size: CGFloat, weight: NSFont.Weight, color: NSColor, width: CGFloat
-    ) -> NSTextField {
-        let font = NSFont.systemFont(ofSize: size, weight: weight)
-        let lineHeight = (size * 1.4).rounded()
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = lineHeight
-        paragraph.maximumLineHeight = lineHeight
-        let label = NSTextField(wrappingLabelWithString: "")
-        label.attributedStringValue = NSAttributedString(
-            string: text,
-            attributes: [
-                .font: font,
-                .foregroundColor: color,
-                .paragraphStyle: paragraph,
-                // Centers the glyphs in the taller line, as CSS does.
-                .baselineOffset: (lineHeight - font.ascender + font.descender) / 4,
-            ])
-        label.preferredMaxLayoutWidth = width
-        return label
-    }
-
-    private func button(_ title: String, size: NSControl.ControlSize, _ run: @escaping () -> Void) -> NSButton {
-        let button = CapsuleButton(title: title, small: size == .small)
-        attach(button, run)
-        return button
-    }
-
-    private func attach(_ control: NSControl, _ run: @escaping () -> Void) {
-        let action = Action(run)
-        control.target = action
-        control.action = #selector(Action.run)
-        objc_setAssociatedObject(control, &Action.key, action, .OBJC_ASSOCIATION_RETAIN)
-    }
-}
-
-/// The mockup's button: a capsule with a hairline border and a soft shadow, which AppKit's own
-/// push button loses on a white group. 13-point text in 24 points, or 12 in 20 when small.
-private final class CapsuleButton: NSButton {
-    private let small: Bool
-    private var padding: CGFloat { small ? 10 : 13 }
-
-    init(title: String, small: Bool) {
-        self.small = small
-        super.init(frame: .zero)
-        self.title = title
-        font = .systemFont(ofSize: small ? 12 : 13)
-        isBordered = false
-        bezelStyle = .push
-        wantsLayer = true
-        setButtonType(.momentaryChange)
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("not built from a nib")
-    }
-
-    override var intrinsicContentSize: NSSize {
-        let width = attributedTitle.size().width
-        return NSSize(width: (width + padding * 2).rounded(.up), height: small ? 20 : 24)
-    }
-
-    override var isHighlighted: Bool {
-        didSet { needsDisplay = true }
-    }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        guard let layer else { return }
-        layer.cornerRadius = bounds.height / 2
-        layer.borderWidth = 0.5
-        layer.shadowOffset = NSSize(width: 0, height: -0.5)
-        layer.shadowRadius = 0.75
-        layer.shadowOpacity = 1
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            let fill = isHighlighted ? NSColor.settingsControlPressed : NSColor.settingsControl
-            layer.backgroundColor = fill.cgColor
-            layer.borderColor = NSColor.settingsControlBorder.cgColor
-            layer.shadowColor = NSColor.black.withAlphaComponent(0.14).cgColor
-        }
-    }
-}
-
-/// The window's own colour behind the tabs, which the mockup sets apart from the groups.
-private final class Backdrop: NSView {
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.settingsWindow.cgColor
-        }
-    }
-}
-
-/// A rounded group of rows, sized by its content.
-private final class Group: NSView {
-    init(_ content: NSView) {
-        super.init(frame: .zero)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    required init?(coder: NSCoder) {
-        fatalError("not built from a nib")
-    }
-
-    override var wantsUpdateLayer: Bool { true }
-
-    override func updateLayer() {
-        guard let layer else { return }
-        layer.cornerRadius = 12
-        layer.borderWidth = 0.5
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer.borderColor = NSColor.settingsSeparator.cgColor
-            layer.backgroundColor = NSColor.settingsGroup.cgColor
-        }
-    }
-}
-
-/// The mockup's 0.5-point line between rows.
-private final class Hairline: NSView {
-    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 0.5) }
-    override var wantsUpdateLayer: Bool { true }
-    override func updateLayer() {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.backgroundColor = NSColor.settingsSeparator.cgColor
-        }
-    }
-}
-
-/// The mockup's palette, light and dark.
-private extension NSColor {
-    static func appearance(light: UInt32, dark: UInt32, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> NSColor {
-        NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            let hex = isDark ? dark : light
-            return NSColor(
-                srgbRed: CGFloat((hex >> 16) & 0xff) / 255,
-                green: CGFloat((hex >> 8) & 0xff) / 255,
-                blue: CGFloat(hex & 0xff) / 255,
-                alpha: isDark ? darkAlpha : lightAlpha)
-        }
-    }
-
-    static var settingsWindow: NSColor { appearance(light: 0xf4f4f6, dark: 0x1e1e21) }
-    static var settingsGroup: NSColor { appearance(light: 0xffffff, dark: 0x2b2b2e) }
-    static var settingsSeparator: NSColor {
-        appearance(light: 0x000000, dark: 0xffffff, lightAlpha: 0.1, darkAlpha: 0.09)
-    }
-    static var settingsSecondary: NSColor { appearance(light: 0x5f5f64, dark: 0xa9a9af) }
-    static var settingsControl: NSColor { appearance(light: 0xffffff, dark: 0x3a3a3e) }
-    static var settingsControlPressed: NSColor { appearance(light: 0xe8e8ec, dark: 0x4a4a4f) }
-    static var settingsControlBorder: NSColor {
-        appearance(light: 0x000000, dark: 0xffffff, lightAlpha: 0.16, darkAlpha: 0.12)
-    }
-    static var settingsGreen: NSColor { appearance(light: 0x22b33a, dark: 0x30d158) }
-    static var settingsOrange: NSColor { appearance(light: 0xf08a00, dark: 0xff9f0a) }
-    static var settingsRed: NSColor { appearance(light: 0xe5372c, dark: 0xff453a) }
-    static var settingsGrey: NSColor { appearance(light: 0xa1a1a6, dark: 0x6e6e73) }
-}
-
-/// A control's target that runs a closure; the control keeps it alive.
-private final class Action: NSObject {
-    nonisolated(unsafe) static var key = 0
-    private let body: () -> Void
-
-    init(_ body: @escaping () -> Void) {
-        self.body = body
-    }
-
-    @objc func run() {
-        body()
+        return Look.padded(status, top: 0, bottom: 11)
     }
 }
