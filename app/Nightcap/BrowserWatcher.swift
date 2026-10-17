@@ -30,6 +30,9 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
     private static let readBudget: TimeInterval = 0.3
     private static let maxVisited = 200
     private static let maxDepth = 15
+    /// A browser that's still launching refuses observers until its Accessibility is up.
+    private static let observeRetryInterval: TimeInterval = 0.25
+    private static let observeRetries = 40
 
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "browser")
     private let onHost: @Sendable (UInt64, String?) -> Void
@@ -75,18 +78,37 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
                 report(generation, nil, force: true)
                 return
             }
-            let app = AXUIElementCreateApplication(pid)
-            let refcon = Unmanaged.passUnretained(self).toOpaque()
-            for notification in Self.notifications {
-                let error = AXObserverAddNotification(observer, app, notification as CFString, refcon)
-                if error != .success {
-                    log.error("couldn't observe \(notification, privacy: .public): \(error.rawValue)")
-                }
-            }
             CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), .defaultMode)
             watch = Watch(pid: pid, generation: generation, observer: observer)
+            observe(Self.notifications, generation: generation, retriesLeft: Self.observeRetries)
             scheduleRead()
         }
+    }
+
+    /// Adds `notifications` to the current watch. The ones a launching browser can't take yet
+    /// are retried, and once they're all in place the page is read again: until then, nothing
+    /// would announce it.
+    private func observe(_ notifications: [String], generation: UInt64, retriesLeft: Int) {
+        guard let current = watch, current.generation == generation else { return }
+        let app = AXUIElementCreateApplication(current.pid)
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        var refused: [String] = []
+        for notification in notifications {
+            let error = AXObserverAddNotification(current.observer, app, notification as CFString, refcon)
+            if error == .cannotComplete, retriesLeft > 0 {
+                refused.append(notification)
+            } else if error != .success {
+                log.error("couldn't observe \(notification, privacy: .public): \(error.rawValue)")
+            }
+        }
+        guard !refused.isEmpty else {
+            if retriesLeft < Self.observeRetries { scheduleRead() }
+            return
+        }
+        let timer = Timer(timeInterval: Self.observeRetryInterval, repeats: false) { [self, refused] _ in
+            observe(refused, generation: generation, retriesLeft: retriesLeft - 1)
+        }
+        RunLoop.current.add(timer, forMode: .default)
     }
 
     func stop() {
