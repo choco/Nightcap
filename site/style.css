@@ -119,7 +119,8 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .sun-disc { position: absolute; inset: 0; border-radius: 50%; background: var(--moon); }
 
 .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding-block: 24px; }
-.brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 700; font-size: 18px; }
+/* The wordmark: the icon beside the name in the display face. */
+.brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-family: var(--font-display); font-size: 30px; line-height: 1; }
 .brand:hover { color: var(--ink); }
 .nav-group { display: inline-flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px; background: var(--nav-bg); box-shadow: inset 0 0 0 1px var(--line); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
 .nav-link { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border-radius: 999px; color: var(--ink); font-weight: 600; font-size: 14px; text-decoration: none; transition: background-color 160ms ease; }
@@ -352,6 +353,7 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 @media (max-width: 560px) {
   :root { --lr: min(92px, 24vw); }
   .brand-name, .nav-wide { display: none; }
+  .brand img { width: 36px; height: 36px; }
   .nav { gap: 6px; flex-wrap: nowrap; }
   .nav-group { padding: 2px; }
   .nav-link { padding: 0 9px; font-size: 13px; height: 28px; }

@@ -31,7 +31,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 - Set everything else in Figtree: `lead` under a headline, `body` for running text, `title` for cards and steps, `small` for captions, `label` in capitals for eyebrows.
 - Set commands, config, rule identities, versions and times in Martian Mono (`code`, `data`): anything a user might type back.
 - All three faces are under the SIL Open Font License; their licences sit in `licenses/` and ship with the font files.
-- The wordmark is "Nightcap" in Caprasimo at `display-m` or larger, beside or under the app icon, in `ink` (or `starlight` on a night panel). It has no separate logo file.
+- The wordmark is "Nightcap" in Caprasimo at `display-m` or larger, beside or under the app icon, in `ink` (or `starlight` on a night panel). In the site's nav it's 30px beside a 44px icon, the one place Caprasimo goes below 40px on wide screens. It has no separate logo file.
 - Keep running text near 65 characters a line; balance headlines.
 
 ## Space and shape

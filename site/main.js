@@ -333,12 +333,12 @@ function makeDoodles(bottom, hero) {
   // A doodle at (x, y) spans at most 36px, the largest sun.
   const covers = (x, y) => hero.clear.some((r) => x + 36 > r.left && x < r.right && y + 36 > r.top && y < r.bottom);
   const open = placed.filter((d) => d.y > hero.height || !covers(d.x / 100 * hero.width, d.y));
-  const wanted = Math.round((hero.width * hero.height) / (150 * 150));
+  const wanted = Math.round((hero.width * hero.height) / (110 * 110));
   for (let tries = 0, added = 0; tries < 4000 && added < wanted; tries++) {
     const px = between(12, hero.width - 12);
     const y = between(12, hero.height - 12);
     const x = px / hero.width * 100;
-    if (covers(px, y) || open.some((d) => Math.hypot((d.x - x) / 100 * hero.width, d.y - y) < 120)) continue;
+    if (covers(px, y) || open.some((d) => Math.hypot((d.x - x) / 100 * hero.width, d.y - y) < 92)) continue;
     open.push(doodle(drawKind([]), x, y));
     added++;
   }
@@ -350,9 +350,10 @@ function drawDoodles() {
   const heroBox = hero.getBoundingClientRect();
   const heroHeight = hero.offsetHeight;
   const pageHeight = page.offsetHeight;
-  const clear = ['.nav', '.hero-text', '.scene', '.hero-cue'].map((selector) => {
+  // The nav gets a narrower margin than the content, so the band above the content fills too.
+  const clear = [['.nav', 12], ['.hero-text', 26], ['.scene', 26], ['.hero-cue', 20]].map(([selector, margin]) => {
     const r = hero.querySelector(selector).getBoundingClientRect();
-    return { left: r.left - heroBox.left - 28, right: r.right - heroBox.left + 28, top: r.top - heroBox.top - 24, bottom: r.bottom - heroBox.top + 24 };
+    return { left: r.left - heroBox.left - margin, right: r.right - heroBox.left + margin, top: r.top - heroBox.top - margin, bottom: r.bottom - heroBox.top + margin };
   });
   const all = makeDoodles(pageHeight, { width: heroBox.width, height: heroHeight, clear });
   const render = (box, list) => box.replaceChildren(...list.map((d) => {
