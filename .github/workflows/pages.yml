@@ -24,7 +24,21 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Pages keys a deployment by its commit and ignores a second deploy of the same one, so a push
+      # carrying a version that isn't released yet leaves the deploy to that version's release.
+      - name: Check whether the release deploys this commit
+        id: pending
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          released="$(gh release list --repo "$GITHUB_REPOSITORY" --json tagName --jq '.[].tagName')"
+          if ! grep -qx "v$(scripts/version)" <<<"$released"; then
+            echo "::notice::v$(scripts/version) isn't released yet, so its release deploys the site"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Assemble the site and the newest release's appcast
+        if: steps.pending.outputs.release != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -43,7 +57,9 @@ jobs:
                | {version: ("'"${tag#v}"'"), url: .url}' > build/site/download.json
           fi
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: steps.pending.outputs.release != 'true'
         with:
           path: build/site
       - id: deployment
+        if: steps.pending.outputs.release != 'true'
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
