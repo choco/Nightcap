@@ -197,8 +197,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// A tab with a problem in it gets an indicator badge, the way System Settings marks items
-    /// that need attention.
+    /// that need attention. Before macOS 26 toolbar items take no badge, and the problem shows
+    /// only in its pane.
     private func markTabs(_ settings: Settings) {
+        guard #available(macOS 26, *) else { return }
         for item in window?.toolbar?.items ?? [] {
             guard let tab = Tab(rawValue: item.itemIdentifier.rawValue) else { continue }
             let kinds = Self.checksByTab[tab] ?? []

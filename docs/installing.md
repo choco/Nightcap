@@ -1,6 +1,6 @@
 # Installing Nightcap
 
-This is the contract for anyone packaging Nightcap: a Nix module, a Homebrew cask, or a script. Nightcap needs macOS 27 on Apple silicon.
+This is the contract for anyone packaging Nightcap: a Nix module, a Homebrew cask, or a script. Nightcap needs macOS 15 or later on Apple silicon.
 
 ## What a release publishes
 

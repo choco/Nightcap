@@ -47,7 +47,7 @@
           + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
             export CC=/usr/bin/cc CXX=/usr/bin/c++ AR=/usr/bin/ar
             export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
-            export MACOSX_DEPLOYMENT_TARGET=27.0
+            export MACOSX_DEPLOYMENT_TARGET=15.0
           '';
         };
       });

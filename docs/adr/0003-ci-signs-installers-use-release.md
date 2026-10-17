@@ -1,5 +1,5 @@
 ---
-status: superseded in part by ADR-0017
+status: superseded in part by ADR-0017 and ADR-0018
 ---
 
 # CI builds, signs and publishes; installers use the signed release unchanged

@@ -6,7 +6,7 @@ import PackageDescription
 // main-actor default isolation, which the app target uses (ADR-0002).
 let package = Package(
     name: "NightcapCore",
-    platforms: [.macOS("27.0")],
+    platforms: [.macOS("15.0")],
     products: [
         .library(name: "NightcapCore", targets: ["NightcapCore"]),
     ],
