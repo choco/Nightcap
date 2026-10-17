@@ -16,6 +16,16 @@
     const theme = localStorage.getItem('nightcap-theme');
     if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
   } catch (e) {}
+  // Safari draws a page under an iPhone's status bar only once it's scrolled, so on iPhones with
+  // a notch or Dynamic Island, held upright, the hero starts with room for the bar (style.css)
+  // that main.js scrolls past. Their screens are taller than 2:1; the iPhone SE's is 16:9.
+  {
+    const notched = /iPhone/.test(navigator.userAgent) && Math.max(screen.width, screen.height) > 2 * Math.min(screen.width, screen.height);
+    const portrait = matchMedia('(orientation: portrait)');
+    const mark = () => document.documentElement.classList.toggle('status-runway', notched && portrait.matches);
+    mark();
+    portrait.addEventListener('change', mark);
+  }
 </script>
 <link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">

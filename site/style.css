@@ -119,6 +119,16 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .sun-disc { position: absolute; inset: 0; border-radius: 50%; background: var(--moon); }
 
 .nav { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding-block: 24px; }
+/* The nav keeps to the sections' column while the hero's is clearly wider, and joins the hero's
+   once the difference would be too small to look deliberate. */
+@media (min-width: 1040px) {
+  .hero > .wrap > .nav { width: 100%; max-width: 864px; margin-inline: auto; }
+}
+/* Below this the nav's wide link would push the Night Shift switch onto a second row. */
+@media (max-width: 720px) {
+  .nav { gap: 12px 16px; }
+  .nav .nav-wide { display: none; }
+}
 /* The wordmark: the icon beside the name in the display face. */
 .brand { display: flex; align-items: center; gap: 12px; color: var(--ink); text-decoration: none; font-family: var(--font-display); font-size: 30px; line-height: 1; }
 .brand:hover { color: var(--ink); }
@@ -131,6 +141,11 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .switch-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #ffffff; box-shadow: 0 1px 2px rgba(11, 19, 48, 0.3); transition: left 160ms ease; }
 .shift-switch[aria-pressed="true"] .switch-track { background: var(--ember); }
 .shift-switch[aria-pressed="true"] .switch-knob { left: 16px; }
+
+/* Room above the nav on an upright iPhone with a notch (index.html marks it), which main.js
+   scrolls past on arrival: Safari draws a page under the status bar only once it's scrolled, so
+   this puts the sky and the sun there. */
+.status-runway .hero { --runway: 80px; padding-top: var(--runway); }
 
 /* The hero's column is wider than the sections', and on screens wider than phones it fills the
    first screen up to 940px tall, with the content centred in it. The headline scales with the
@@ -352,7 +367,7 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 /* Phones */
 @media (max-width: 560px) {
   :root { --lr: min(92px, 24vw); }
-  .brand-name, .nav-wide { display: none; }
+  .brand-name { display: none; }
   .brand img { width: 36px; height: 36px; }
   .nav { gap: 6px; flex-wrap: nowrap; }
   .nav-group { padding: 2px; }
@@ -367,10 +382,7 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
   .scene-bar { gap: 0.83em; padding: 0 0.67em; }
   .scene-window { left: 5%; top: 40%; width: 62%; height: 54%; }
   .scene-menu { width: 19.7em; }
-  /* Room above the nav that main.js scrolls past on arrival: Safari draws a page under its
-     status bar only once it's scrolled, so this puts the sky and the sun there. */
-  .hero { --runway: 80px; padding-top: var(--runway); }
-  .celestial { width: 240px; right: -96px; top: calc(var(--runway) - 150px); }
+  .celestial { width: 240px; right: -96px; top: calc(var(--runway, 0px) - 150px); }
   .desk-menu-inline, .sky-strip { display: none; }
   .desk-menu-below { display: block; }
   .desk-window { top: 16%; height: 52%; width: 62%; }

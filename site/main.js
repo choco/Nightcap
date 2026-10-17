@@ -40,8 +40,9 @@ shiftSwitch.addEventListener('click', () => {
   showDesk();
 });
 
-// On phones the hero starts with a runway for Safari's status bar (style.css), scrolled past on
-// arrival unless the link points into the page or the reader has already scrolled.
+// On an upright iPhone with a notch the hero starts with a runway for Safari's status bar
+// (index.html, style.css), scrolled past on arrival unless the link points into the page or the
+// reader has already scrolled.
 const runway = parseFloat(getComputedStyle(document.querySelector('.hero')).paddingTop);
 if (runway > 0 && !location.hash && window.scrollY < runway) window.scrollTo({ top: runway, behavior: 'instant' });
 
@@ -239,10 +240,10 @@ function showMoment(index) {
 showMoment(3);
 
 // Doodles: the margins get a jittered, staggered grid (one per cell, so no clumps or gaps),
-// the centre a few kept far apart, and the hero's open space a scatter around its content,
-// which no doodle covers. Kinds come from shuffled decks and never repeat a neighbour; each
-// kind's sizes cycle through small, medium and large. Seeded, so the layout is the same on
-// every visit.
+// the centre a few kept far apart, and the hero's open space a scatter around its content. None
+// covers the hero's content or a section's. Kinds come from shuffled decks and never repeat a
+// neighbour; each kind's sizes cycle through small, medium and large. Seeded, so the layout is
+// the same on every visit.
 const DOODLE_PATHS = {
   star: '<path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   sparkle: '<path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
@@ -356,6 +357,15 @@ function drawDoodles() {
     return { left: r.left - heroBox.left - margin, right: r.right - heroBox.left + margin, top: r.top - heroBox.top - margin, bottom: r.bottom - heroBox.top + margin };
   });
   const all = makeDoodles(pageHeight, { width: heroBox.width, height: heroHeight, clear });
+  const pageBox = page.getBoundingClientRect();
+  const content = [...page.querySelectorAll('main > section:not(.dusk) > *, main > .dusk, main > footer')].map((node) => {
+    const r = node.getBoundingClientRect();
+    return { left: r.left - pageBox.left - 12, right: r.right - pageBox.left + 12, top: r.top - pageBox.top - 12, bottom: r.bottom - pageBox.top + 12 };
+  });
+  const offContent = (d) => {
+    const x = d.x / 100 * pageBox.width;
+    return !content.some((r) => x + d.size > r.left && x < r.right && d.y + d.size > r.top && d.y < r.bottom);
+  };
   const render = (box, list) => box.replaceChildren(...list.map((d) => {
     const outer = el('span', 'doodle' + (d.keep ? ' keep' : ''));
     outer.style.cssText = `left:${d.x.toFixed(2)}%;top:${Math.round(d.y)}px;width:${d.size}px;height:${d.size}px;transform:rotate(${d.rot}deg);color:var(${d.gold ? '--doodle-gold' : '--doodle'})`;
@@ -366,7 +376,7 @@ function drawDoodles() {
     return outer;
   }));
   render(document.querySelector('[data-doodles="hero"]'), all.filter((d) => d.y + d.size < heroHeight));
-  render(document.querySelector('[data-doodles="page"]'), all.filter((d) => d.y > heroHeight && d.y + d.size < pageHeight - 24));
+  render(document.querySelector('[data-doodles="page"]'), all.filter((d) => d.y > heroHeight && d.y + d.size < pageHeight - 24 && offContent(d)));
 }
 drawDoodles();
 let resizeTimer;
@@ -375,8 +385,10 @@ function redrawDoodles() {
   resizeTimer = setTimeout(drawDoodles, 200);
 }
 window.addEventListener('resize', redrawDoodles);
-// The web fonts arriving reflow the hero's text, which the doodles keep clear of.
-new ResizeObserver(redrawDoodles).observe(document.querySelector('.hero-text'));
+// The web fonts arriving reflow the text, which the doodles keep clear of.
+const reflow = new ResizeObserver(redrawDoodles);
+reflow.observe(document.querySelector('.hero-text'));
+reflow.observe(page);
 
 // The download buttons point at the newest release's DMG, as the Pages deploy writes it into
 // download.json. Until it loads, or where the site has none, they lead to the releases page.
