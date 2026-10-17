@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Notarizes a signed Nightcap.app and staples the ticket to it, so Gatekeeper accepts the app
+# offline, from the zip and from the DMG alike. The App Store Connect team key comes from
+# $NOTARY_KEY (the .p8's contents), $NOTARY_KEY_ID and $NOTARY_ISSUER_ID, or else from the
+# "nightcap" notarytool profile in the login keychain.
+# Usage: release/notarize <Nightcap.app>
+set -euo pipefail
+
+if [[ $# -ne 1 ]]; then
+  echo "usage: release/notarize <Nightcap.app>" >&2
+  exit 1
+fi
+app="$1"
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+if [[ -n "${NOTARY_KEY:-}" ]]; then
+  printf '%s\n' "$NOTARY_KEY" > "$work/key.p8"
+  credentials=(--key "$work/key.p8" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+else
+  credentials=(--keychain-profile nightcap)
+fi
+
+/usr/bin/ditto -c -k --keepParent "$app" "$work/Nightcap.zip"
+xcrun notarytool submit "$work/Nightcap.zip" "${credentials[@]}" --wait --output-format json > "$work/submission.json"
+read -r id status < <(python3 -c 'import json, sys; s = json.load(open(sys.argv[1])); print(s["id"], s["status"])' "$work/submission.json")
+if [[ "$status" != Accepted ]]; then
+  xcrun notarytool log "$id" "${credentials[@]}" >&2
+  echo "error: notarization finished as $status" >&2
+  exit 1
+fi
+xcrun stapler staple "$app"

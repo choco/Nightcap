@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0017
+---
+
 # CI builds, signs and publishes; installers use the signed release unchanged
 
 Permission grants survive an update only if the new build satisfies the same signing requirement, so every build that reaches a Mac must be signed with the same certificate (ADR-0004). The shell needs current Xcode and Swift. Nightcap is installed by package managers whose packaging lives outside this repo, such as nix-darwin and home-manager in the author's nix-config. The repo is public, so a release downloads without credentials.

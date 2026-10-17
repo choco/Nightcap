@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Signs Nightcap.app inside-out with hardened runtime, using the certificate named by the
-# committed signing requirement. Releases get the release entitlements, dev builds the dev
-# ones.
+# Signs Nightcap.app inside-out with hardened runtime, using the Developer ID Application
+# certificate of the team the committed signing requirement names. Releases get a secure
+# timestamp, which notarization requires; dev builds get their own entitlements.
 # Usage: release/sign <Nightcap.app> [--keychain <path>]
 set -euo pipefail
 
@@ -16,22 +16,31 @@ elif [[ $# -ne 1 ]]; then
 fi
 
 requirement="$root/release/signing-requirement.txt"
-if [[ ! -f "$requirement" ]]; then
-  echo "error: $requirement is missing; create the signing certificate first" >&2
+team="$(sed -n 's/.*certificate leaf\[subject\.OU\] = "\{0,1\}\([A-Z0-9]*\)"\{0,1\}$/\1/p' "$requirement")"
+if [[ -z "$team" ]]; then
+  echo "error: $requirement names no team" >&2
   exit 1
 fi
-identity="$(sed -n 's/.*certificate leaf = H"\([0-9a-fA-F]*\)".*/\1/p' "$requirement")"
-
-sign() {
-  /usr/bin/codesign --force --options runtime --timestamp=none \
-    --sign "$identity" ${keychain:+--keychain "$keychain"} "$@"
-}
+identities="$(security find-identity -v -p codesigning ${keychain:+"$keychain"} \
+  | grep -F "\"Developer ID Application: " | grep -F "($team)\"" | awk '{print $2}' || true)"
+if [[ -z "$identities" || "$identities" == *$'\n'* ]]; then
+  echo "error: expected one valid Developer ID Application identity for team $team, found:" >&2
+  echo "${identities:-none}" >&2
+  exit 1
+fi
 
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")"
-entitlements="$root/release/release.entitlements"
+timestamp=--timestamp
+entitlements=()
 if [[ "$bundle_id" == *.dev ]]; then
-  entitlements="$root/release/dev.entitlements"
+  timestamp=--timestamp=none
+  entitlements=(--entitlements "$root/release/dev.entitlements")
 fi
+
+sign() {
+  /usr/bin/codesign --force --options runtime "$timestamp" \
+    --sign "$identities" ${keychain:+--keychain "$keychain"} "$@"
+}
 
 # Sparkle's helpers in the order its docs give, keeping their own entitlements. --deep would
 # give them the app's instead.
@@ -41,4 +50,4 @@ for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Up
 done
 sign "$sparkle"
 sign "$app/Contents/Helpers/nightcap"
-sign --entitlements "$entitlements" "$app"
+sign ${entitlements[@]+"${entitlements[@]}"} "$app"

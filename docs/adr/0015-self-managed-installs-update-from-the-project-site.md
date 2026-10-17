@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0017
+---
+
 # Self-managed installs update through Sparkle from a feed on the project's site, and open at login only by choice; managed installs leave both to their installer
 
 Nightcap is installed two ways. A package manager such as Nix puts the bundle where the user can't write it (the Nix store), starts it from a LaunchAgent, and owns its updates. Brew or a manual drag-install puts it in `/Applications`, where nothing else updates it or starts it at login. The official homebrew/cask tap only accepts apps that pass Gatekeeper, which a self-signed, un-notarized app doesn't, so brew installs come from a personal tap whose cask strips the quarantine flag. Every update must keep the Accessibility and notification grants, which are tied to the signing requirement (ADR-0004). The project has a small website on GitHub Pages, so the feed URL every installed copy keeps can be one the project controls. Starting at every login is a choice the user should make: macOS announces a newly added login item with its own notification, which arrives with no context when nobody asked for it.

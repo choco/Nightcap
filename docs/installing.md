@@ -6,8 +6,8 @@ This is the contract for anyone packaging Nightcap: a Nix module, a Homebrew cas
 
 Every release on GitHub carries four files:
 
-- `Nightcap-<version>.zip`: the signed app, `Nightcap.app`. Installers and Sparkle's updates use it.
-- `Nightcap-<version>.dmg`: the same app in a disk image to drag into Applications, for people downloading it from the site. The disk image itself is unsigned, so macOS mounts it without asking; the app inside carries the signature.
+- `Nightcap-<version>.zip`: the signed and notarized app, `Nightcap.app`, with its notarization ticket stapled. Installers and Sparkle's updates use it.
+- `Nightcap-<version>.dmg`: the same app in a disk image to drag into Applications, for people downloading it from the site. The disk image itself is unsigned, so macOS mounts it without asking; the app inside carries the signature and the ticket.
 - `SHA256SUMS`: the zip's and the DMG's SHA-256. Check downloads against it.
 - `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://choco.github.io/Nightcap/appcast.xml`, which always serves the newest one.
 
@@ -20,7 +20,7 @@ Every release on GitHub carries four files:
 3. **Start it.** A managed install starts `Contents/MacOS/Nightcap` from a LaunchAgent, pointing straight at the installed path, with `KeepAlive` so launchd restarts it. A self-managed install opens itself at login if the user chose that.
 4. **Put the CLI on `PATH`.** It's `Contents/Helpers/nightcap`; link it, don't copy it.
 
-A downloaded zip carries the quarantine flag. Nightcap isn't notarized, so a cask removes the flag after installing: `xattr -dr com.apple.quarantine Nightcap.app`.
+A downloaded zip carries the quarantine flag; leave it. The stapled ticket lets Gatekeeper accept the app offline, and the first launch asks only whether to open an app downloaded from the internet.
 
 ## Where Nightcap keeps its files
 

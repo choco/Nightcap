@@ -2,9 +2,8 @@
 # Builds Nightcap-<version>.dmg from a signed Nightcap.app, for first installs from the web: the
 # app beside a link to /Applications on the brand's background. Its checksum joins SHA256SUMS.
 # Sparkle and installers keep the zip.
-# The disk image itself stays unsigned. Gatekeeper refuses to mount a downloaded disk image whose
-# signature doesn't lead to Apple, but mounts an unsigned one and checks the app when it opens,
-# so signing it would add a second "Open Anyway" before the app's own.
+# The disk image itself stays unsigned: Gatekeeper mounts an unsigned image without asking and
+# checks the app when it opens, so the app's own notarization ticket covers the DMG as well.
 # Usage: release/dmg <Nightcap.app> <out-dir>
 set -euo pipefail
 

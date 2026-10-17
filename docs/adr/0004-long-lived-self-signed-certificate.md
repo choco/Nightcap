@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0017
+---
+
 # One self-signed certificate, valid for 20+ years
 
 macOS ties every permission grant to the app's signing requirement. For a self-signed app, that is the bundle ID `io.github.choco.nightcap` plus the hash of the signing certificate itself. Re-issuing the certificate, even with the same key, changes the hash and loses every grant. Nightcap runs only on the author's own machines, so there is no notarization.

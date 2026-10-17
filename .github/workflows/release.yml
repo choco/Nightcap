@@ -37,6 +37,12 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
           echo "SIGNING_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
       - run: release/sign build/xcode/Release/Nightcap.app --keychain "$SIGNING_KEYCHAIN"
+      - name: Notarize
+        env:
+          NOTARY_KEY: ${{ secrets.NOTARY_KEY }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: release/notarize build/xcode/Release/Nightcap.app
       - run: release/verify build/xcode/Release/Nightcap.app
       - run: release/package build/xcode/Release/Nightcap.app build/dist
       - name: Install dmgbuild

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # The release gate: fails unless the app satisfies the committed signing requirement,
-# its designated requirement matches it exactly, and its executables link only system
-# libraries and the embedded Sparkle (ADR-0015). Usage: release/verify <Nightcap.app>
+# its designated requirement matches it exactly, it carries a notarization ticket that
+# Gatekeeper accepts (ADR-0017), and its executables link only system libraries and the
+# embedded Sparkle (ADR-0015). Usage: release/verify <Nightcap.app>
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -13,6 +14,14 @@ expected="$(cat "$root/release/signing-requirement.txt")"
 actual="$(/usr/bin/codesign --display --requirements - "$app" 2>&1 | sed -n 's/^designated => //p')"
 if [[ "$actual" != "$expected" ]]; then
   echo "error: designated requirement is '$actual', expected '$expected'" >&2
+  exit 1
+fi
+
+xcrun stapler validate -q "$app"
+if ! assessment="$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1)" \
+  || ! grep -qx 'source=Notarized Developer ID' <<<"$assessment"; then
+  echo "error: Gatekeeper doesn't accept the app as notarized:" >&2
+  echo "$assessment" >&2
   exit 1
 fi
 

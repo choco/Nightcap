@@ -5,17 +5,17 @@ How a signed Nightcap.app gets from a tagged commit to a published release that 
 ## Language
 
 **Certificate**:
-The one self-signed code-signing certificate that every release and dev build is signed with, valid for decades.
+The Developer ID Application certificate Apple issues to the project's team, which every release and dev build is signed with. A renewed one keeps every grant.
 
 **Signing requirement**:
-The rule macOS uses to recognise the app across updates: the bundle ID plus the hash of the certificate. Every grant is tied to it.
+The rule macOS uses to recognise the app across updates: the bundle ID plus the team its certificate was issued to. Every grant is tied to it.
 
 **Release gate**:
-The checks a signed app must pass before it's published: it satisfies the signing requirement exactly, links only allowed libraries, and can accept updates.
+The checks a signed app must pass before it's published: it satisfies the signing requirement exactly, Gatekeeper accepts it as notarized, it links only allowed libraries, and it can accept updates.
 _Avoid_: verification gate
 
 **Release**:
-A tagged build of Nightcap.app, signed, passed through the release gate, and published as a zip with its checksums and appcast.
+A tagged build of Nightcap.app, signed, notarized, passed through the release gate, and published as a zip and a DMG with their checksums and the appcast.
 
 **Installer**:
 What puts a release on a Mac, such as the Nix package or the brew cask. A managed install's installer also starts and updates it.
