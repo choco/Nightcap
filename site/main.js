@@ -40,6 +40,19 @@ shiftSwitch.addEventListener('click', () => {
   showDesk();
 });
 
+// On phones the hero starts with a runway for Safari's status bar (style.css), scrolled past on
+// arrival unless the link points into the page or the reader has already scrolled.
+const runway = parseFloat(getComputedStyle(document.querySelector('.hero')).paddingTop);
+if (runway > 0 && !location.hash && window.scrollY < runway) window.scrollTo({ top: runway, behavior: 'instant' });
+
+// The end of the page in view, for the body's background (style.css).
+function markEnd() {
+  document.body.classList.toggle('at-end', window.scrollY + window.innerHeight / 2 > root.scrollHeight / 2);
+}
+markEnd();
+window.addEventListener('scroll', markEnd, { passive: true });
+window.addEventListener('resize', markEnd);
+
 // The true-colour circle follows the pointer, staying under it through scrolling. After 2.5 s
 // still, it wanders inside the lens area of the section most in view, or, on phones, which
 // have no pointer to steer it, over the hero poster. It writes CSS variables, so a frame never

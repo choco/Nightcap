@@ -54,7 +54,15 @@
 :root[data-theme="dark"] .sun-scene { display: none; }
 
 html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-text); }
+body { margin: 0; color: var(--ink); font-family: var(--font-text); }
+/* Safari paints its status bar and toolbar strips, and the overscroll past either end, in the
+   body's background, which the page covers everywhere else: the hero's sky at the top, the
+   ground once main.js marks the end in view, and under the page tint's two layers, flattened,
+   while Night Shift is on. The tint's mask isolates its layers, so the first one's multiply
+   composites as a plain mix. */
+body { --edge: var(--hero-top); background-color: color-mix(in srgb, color-mix(in srgb, var(--edge) 78%, rgb(255 138 46)) 90%, rgb(255 154 77)); }
+body.at-end { --edge: var(--ground); }
+body:has(.shift-off) { background-color: var(--edge); }
 a { color: var(--moon-text); }
 a:hover { color: var(--ink); }
 h1, h2, p { margin: 0; }
@@ -278,13 +286,16 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 /* Phones */
 @media (max-width: 560px) {
   :root { --lr: min(92px, 24vw); }
-  .brand-name, .shift-label { display: none; }
+  .brand-name, .nav-wide { display: none; }
   .nav { gap: 6px; flex-wrap: nowrap; }
   .nav-group { padding: 2px; }
   .nav-link { padding: 0 9px; font-size: 13px; height: 28px; }
   .hero-title { font-size: clamp(32px, 10.2vw, 44px); }
   .poster { margin-inline: auto; }
-  .celestial { width: 240px; right: -96px; top: -150px; }
+  /* Room above the nav that main.js scrolls past on arrival: Safari draws a page under its
+     status bar only once it's scrolled, so this puts the sky and the sun there. */
+  .hero { --runway: 80px; padding-top: var(--runway); }
+  .celestial { width: 240px; right: -96px; top: calc(var(--runway) - 150px); }
   .desk-menu-inline, .sky-strip { display: none; }
   .desk-menu-below { display: block; }
   .desk-window { top: 16%; height: 52%; width: 62%; }
@@ -295,4 +306,6 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
   .dusk-title { font-size: 34px; }
   .dusk .dusk-sun { right: 10%; width: 96px; height: 96px; bottom: -50px; }
   .doodle:not(.keep) { display: none; }
+  .site-footer { flex-direction: column; gap: 16px; }
+  .footer-links { justify-content: center; }
 }
