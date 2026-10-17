@@ -10,8 +10,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Opens Settings: on the problem's tab for the problem line, on the last tab otherwise.
     private let openSettings: (_ onProblem: Bool) -> Void
     private let onOpen: () -> Void
-    /// Nil unless Sparkle runs, which it does in self-managed installs only.
-    private let checkForUpdates: (() -> Void)?
     /// What the open menu shows, so `refresh()` redraws it only when that changed.
     private var shown: Menu?
     /// The mockup's orange dot, over the template moon so the moon still follows the menu
@@ -28,14 +26,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         current: @escaping () -> Menu,
         choose: @escaping (Command) -> Void,
         openSettings: @escaping (_ onProblem: Bool) -> Void,
-        onOpen: @escaping () -> Void,
-        checkForUpdates: (() -> Void)?
+        onOpen: @escaping () -> Void
     ) {
         self.current = current
         self.choose = choose
         self.openSettings = openSettings
         self.onOpen = onOpen
-        self.checkForUpdates = checkForUpdates
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -173,9 +169,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ","))
-        if checkForUpdates != nil {
-            menu.addItem(NSMenuItem(title: "Check for Updates…", action: #selector(checkNow), keyEquivalent: ""))
-        }
         menu.addItem(NSMenuItem(title: "Quit Nightcap", action: #selector(quit), keyEquivalent: "q"))
         menu.items.filter { $0.action != nil }.forEach { $0.target = self }
     }
@@ -202,10 +195,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func problemLineChosen() {
         openSettings(true)
-    }
-
-    @objc private func checkNow() {
-        checkForUpdates?()
     }
 
     @objc private func quit() {

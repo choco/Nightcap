@@ -318,8 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onOpen: { [weak self] in
                 Task { await self?.reportSystemState() }
-            },
-            checkForUpdates: checkForUpdates)
+            })
         settingsWindow = SettingsWindow(
             current: { core.settings() },
             choose: { [weak self] command in
