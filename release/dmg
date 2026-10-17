@@ -1,25 +1,24 @@
 #!/usr/bin/env bash
 # Builds Nightcap-<version>.dmg from a signed Nightcap.app, for first installs from the web: the
-# app beside a link to /Applications on the brand's background, signed with the certificate the
-# signing requirement names. Its checksum joins SHA256SUMS. Sparkle and installers keep the zip.
-# Usage: release/dmg <Nightcap.app> <out-dir> [--keychain <path>]
+# app beside a link to /Applications on the brand's background. Its checksum joins SHA256SUMS.
+# Sparkle and installers keep the zip.
+# The disk image itself stays unsigned. Gatekeeper refuses to mount a downloaded disk image whose
+# signature doesn't lead to Apple, but mounts an unsigned one and checks the app when it opens,
+# so signing it would add a second "Open Anyway" before the app's own.
+# Usage: release/dmg <Nightcap.app> <out-dir>
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
-app="${1:-}"
-out="${2:-}"
-keychain=
-if [[ $# -eq 4 && "$3" == "--keychain" ]]; then
-  keychain="$4"
-elif [[ $# -ne 2 ]]; then
-  echo "usage: release/dmg <Nightcap.app> <out-dir> [--keychain <path>]" >&2
+if [[ $# -ne 2 ]]; then
+  echo "usage: release/dmg <Nightcap.app> <out-dir>" >&2
   exit 1
 fi
+app="$1"
+out="$2"
 
 assets="$root/release/dmg-assets"
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 dmg="Nightcap-$version.dmg"
-identity="$(sed -n 's/.*certificate leaf = H"\([0-9a-fA-F]*\)".*/\1/p' "$root/release/signing-requirement.txt")"
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -29,6 +28,5 @@ tiffutil -cathidpicheck "$assets/background.png" "$assets/background@2x.png" -ou
 mkdir -p "$out"
 rm -f "$out/$dmg"
 dmgbuild -s "$assets/settings.py" -D app="$app" -D background="$work/background.tiff" Nightcap "$out/$dmg"
-/usr/bin/codesign --force --timestamp=none --sign "$identity" ${keychain:+--keychain "$keychain"} "$out/$dmg"
 hdiutil verify -quiet "$out/$dmg"
 (cd "$out" && shasum -a 256 "$dmg" >> SHA256SUMS)

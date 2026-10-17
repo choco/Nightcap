@@ -7,7 +7,7 @@ This is the contract for anyone packaging Nightcap: a Nix module, a Homebrew cas
 Every release on GitHub carries four files:
 
 - `Nightcap-<version>.zip`: the signed app, `Nightcap.app`. Installers and Sparkle's updates use it.
-- `Nightcap-<version>.dmg`: the same app in a disk image to drag into Applications, for people downloading it from the site. It's signed with the same certificate.
+- `Nightcap-<version>.dmg`: the same app in a disk image to drag into Applications, for people downloading it from the site. The disk image itself is unsigned, so macOS mounts it without asking; the app inside carries the signature.
 - `SHA256SUMS`: the zip's and the DMG's SHA-256. Check downloads against it.
 - `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://choco.github.io/Nightcap/appcast.xml`, which always serves the newest one.
 
