@@ -43,15 +43,15 @@ Write the way the app talks: plain, specific, and about what the user sees.
 ## Motion
 
 - The main idea moves: the screen warms and cools. A `tint` overlay fades in over 900ms, ease-in-out, when "Night Shift" starts, and out over 450ms when Nightcap forces it off, the same direction every time. A true-colour circle, cut out of the tint, follows the pointer and wanders over the nearest illustration when the pointer rests.
-- Everything else moves slowly and by itself, like a night sky: doodles twinkle, drift and sway, suns and orbit rings turn over a minute or more, an illustration bobs a few pixels. Headlines rise in once, on load, with a little spring; buttons spring on hover.
+- Everything else moves slowly and by itself, like a night sky: doodles twinkle, drift and sway, suns and orbit rings turn over a minute or more. Headlines rise in once, on load, with a little spring; buttons spring on hover.
 - Motion never carries meaning on its own, and never loops fast enough to pull the eye from the text.
 - With reduced motion, swap states instantly and keep everything still.
 
 ## Imagery
 
-- Show the real thing: the Mac menu bar with the moon in it, the Nightcap menu, a screen with and without the tint. Build these as live mocks with the `Menu` component and `tint`, not screenshots, so they follow the theme.
+- Show the real thing: the Mac menu bar with the moon in it, the Nightcap menu, a screen with and without the tint. Build these as live mocks with the `Menu` component and `tint`, not screenshots, so they follow the theme. The hero's mock is the one in macOS's own light or dark look, scaling as one piece like a screenshot, so the first thing a visitor sees is the app on a Mac.
 - Illustrations stay geometric: moons, discs, crescents cut from `night` and `moon`, a sun at the edge of a hero or a dusk panel. No mascots, no faces.
-- Doodles are line art in the iconography's style (24 grid, 1.5px strokes): moons, suns, stars, sparkles and small dots, scattered evenly through a page's margins and sparsely across its middle, never over text. Most are drawn in a faint `ink-muted`, a fifth or so in a faint gold; on phones keep about one in four.
+- Doodles are line art in the iconography's style (24 grid, 1.5px strokes): moons, suns, stars, sparkles and small dots, scattered evenly through a page's margins, sparsely across its middle and more densely through the hero's open space, never over text or a mock. Most are drawn in a faint `ink-muted`, a fifth or so in a faint gold; on phones keep about one in four.
 
 ## In the app
 

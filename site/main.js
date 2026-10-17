@@ -55,7 +55,7 @@ window.addEventListener('resize', markEnd);
 
 // The true-colour circle follows the pointer, staying under it through scrolling. After 2.5 s
 // still, it wanders inside the lens area of the section most in view, or, on phones, which
-// have no pointer to steer it, over the hero poster. It writes CSS variables, so a frame never
+// have no pointer to steer it, over the hero's scene. It writes CSS variables, so a frame never
 // lays the page out again.
 const lens = { client: null, lastMove: 0, area: null, picked: 0, pos: null };
 page.addEventListener('pointermove', (event) => {
@@ -89,7 +89,7 @@ function tick(now) {
     target = { x: lens.client.x - box.left, y: lens.client.y - box.top };
   } else {
     if (!lens.area || now - lens.picked > 300) {
-      lens.area = phone.matches ? page.querySelector('.poster') : mostVisibleArea();
+      lens.area = phone.matches ? page.querySelector('.scene') : mostVisibleArea();
       lens.picked = now;
     }
     if (!lens.area) return;
@@ -154,6 +154,10 @@ function menuEntry(entry) {
   row.append(text, el('span', 'menu-key', entry.key || ''));
   return row;
 }
+
+// The hero's scene: the menu while Figma is in front.
+document.querySelector('[data-scene-menu]').replaceChildren(...MENUS.figma.map(menuEntry));
+document.querySelector('[data-scene-moon]').innerHTML = MOON_FORCED;
 
 let front = 'figma';
 let picked = false;
@@ -234,10 +238,11 @@ function showMoment(index) {
 }
 showMoment(3);
 
-// Doodles: the margins get a jittered, staggered grid (one per cell, so no clumps or gaps)
-// and the centre a few kept far apart. Kinds come from shuffled decks and never repeat a
-// neighbour; each kind's sizes cycle through small, medium and large. Seeded, so the layout
-// is the same on every visit.
+// Doodles: the margins get a jittered, staggered grid (one per cell, so no clumps or gaps),
+// the centre a few kept far apart, and the hero's open space a scatter around its content,
+// which no doodle covers. Kinds come from shuffled decks and never repeat a neighbour; each
+// kind's sizes cycle through small, medium and large. Seeded, so the layout is the same on
+// every visit.
 const DOODLE_PATHS = {
   star: '<path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
   sparkle: '<path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
@@ -246,7 +251,7 @@ const DOODLE_PATHS = {
   sun: '<g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4.4"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.4 5.4l1.9 1.9M16.7 16.7l1.9 1.9M5.4 18.6l1.9-1.9M16.7 7.3l1.9-1.9"/></g>',
 };
 
-function makeDoodles(bottom) {
+function makeDoodles(bottom, hero) {
   let seed = 20261016;
   const rand = () => {
     seed = (seed + 0x6d2b79f5) | 0;
@@ -325,13 +330,31 @@ function makeDoodles(bottom) {
     if (centre.every((d) => Math.hypot((d.x - x) / 100 * 1440, d.y - y) > 300)) centre.push({ x, y });
   }
   centre.forEach((d) => placed.push(doodle(drawKind([]), d.x, d.y)));
-  return placed;
+  // A doodle at (x, y) spans at most 36px, the largest sun.
+  const covers = (x, y) => hero.clear.some((r) => x + 36 > r.left && x < r.right && y + 36 > r.top && y < r.bottom);
+  const open = placed.filter((d) => d.y > hero.height || !covers(d.x / 100 * hero.width, d.y));
+  const wanted = Math.round((hero.width * hero.height) / (150 * 150));
+  for (let tries = 0, added = 0; tries < 4000 && added < wanted; tries++) {
+    const px = between(12, hero.width - 12);
+    const y = between(12, hero.height - 12);
+    const x = px / hero.width * 100;
+    if (covers(px, y) || open.some((d) => Math.hypot((d.x - x) / 100 * hero.width, d.y - y) < 120)) continue;
+    open.push(doodle(drawKind([]), x, y));
+    added++;
+  }
+  return open;
 }
 
 function drawDoodles() {
-  const heroHeight = document.querySelector('.hero').offsetHeight;
+  const hero = document.querySelector('.hero');
+  const heroBox = hero.getBoundingClientRect();
+  const heroHeight = hero.offsetHeight;
   const pageHeight = page.offsetHeight;
-  const all = makeDoodles(pageHeight);
+  const clear = ['.nav', '.hero-text', '.scene', '.hero-cue'].map((selector) => {
+    const r = hero.querySelector(selector).getBoundingClientRect();
+    return { left: r.left - heroBox.left - 28, right: r.right - heroBox.left + 28, top: r.top - heroBox.top - 24, bottom: r.bottom - heroBox.top + 24 };
+  });
+  const all = makeDoodles(pageHeight, { width: heroBox.width, height: heroHeight, clear });
   const render = (box, list) => box.replaceChildren(...list.map((d) => {
     const outer = el('span', 'doodle' + (d.keep ? ' keep' : ''));
     outer.style.cssText = `left:${d.x.toFixed(2)}%;top:${Math.round(d.y)}px;width:${d.size}px;height:${d.size}px;transform:rotate(${d.rot}deg);color:var(${d.gold ? '--doodle-gold' : '--doodle'})`;
@@ -346,10 +369,13 @@ function drawDoodles() {
 }
 drawDoodles();
 let resizeTimer;
-window.addEventListener('resize', () => {
+function redrawDoodles() {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(drawDoodles, 200);
-});
+}
+window.addEventListener('resize', redrawDoodles);
+// The web fonts arriving reflow the hero's text, which the doodles keep clear of.
+new ResizeObserver(redrawDoodles).observe(document.querySelector('.hero-text'));
 
 // The download buttons point at the newest release's DMG, as the Pages deploy writes it into
 // download.json. Until it loads, or where the site has none, they lead to the releases page.
