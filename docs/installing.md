@@ -9,7 +9,7 @@ Every release on GitHub carries four files:
 - `Nightcap-<version>.zip`: the signed and notarized app, `Nightcap.app`, with its notarization ticket stapled. Installers and Sparkle's updates use it.
 - `Nightcap-<version>.dmg`: the same app in a disk image to drag into Applications, for people downloading it from the site. The disk image itself is unsigned, so macOS mounts it without asking; the app inside carries the signature and the ticket.
 - `SHA256SUMS`: the zip's and the DMG's SHA-256. Check downloads against it.
-- `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://choco.github.io/Nightcap/appcast.xml`, which always serves the newest one.
+- `appcast.xml`: Sparkle's feed for this release. Installed copies read it from `https://nightcap.choco.me/appcast.xml`, which always serves the newest one.
 
 ## Installing the app
 

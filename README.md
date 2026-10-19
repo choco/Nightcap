@@ -4,7 +4,7 @@
 
 Night Shift, with exceptions. Nightcap sits in your menu bar and turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them. The rest of the time, your schedule runs as usual.
 
-[Download for Mac](https://choco.github.io/Nightcap/) · macOS 15 or later, Apple silicon · Free and open source
+[Download for Mac](https://nightcap.choco.me/) · macOS 15 or later, Apple silicon · Free and open source
 
 ## What it does
 
@@ -17,7 +17,7 @@ Night Shift, with exceptions. Nightcap sits in your menu bar and turns Night Shi
 
 ## Install
 
-Download the DMG from [the site](https://choco.github.io/Nightcap/), or the zip from [Releases](https://github.com/choco/Nightcap/releases), and drag Nightcap to Applications. Releases are signed and notarized. The first time it opens, Nightcap asks about notifications, website checking and opening at login; you can change each later in Settings.
+Download the DMG from [the site](https://nightcap.choco.me/), or the zip from [Releases](https://github.com/choco/Nightcap/releases), and drag Nightcap to Applications. Releases are signed and notarized. The first time it opens, Nightcap asks about notifications, website checking and opening at login; you can change each later in Settings.
 
 A copy in Applications checks for updates once a day and installs them when it quits.
 

@@ -1,5 +1,5 @@
 ---
-status: superseded in part by ADR-0017
+status: superseded in part by ADR-0017 and ADR-0019
 ---
 
 # Self-managed installs update through Sparkle from a feed on the project's site, and open at login only by choice; managed installs leave both to their installer
