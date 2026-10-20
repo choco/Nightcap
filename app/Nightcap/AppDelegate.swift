@@ -300,12 +300,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             choose: { [weak self] command in
                 self?.apply(core.handle(event: .commandChosen(command: command)))
             },
+            onNotificationsRead: { [weak self] in
+                Task { await self?.reportSystemState() }
+            },
             onFinish: { [weak self] websites in
                 guard let self else { return }
                 apply(core.handle(event: .onboardingFinished(websites: websites)))
                 self.onboarding = nil
                 dockIcon.hide(for: .onboarding)
                 showStatusMenu()
+                statusMenu?.pointOut()
             })
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)

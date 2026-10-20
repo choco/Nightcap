@@ -1,5 +1,6 @@
 import AppKit
 import NightcapCore
+import UserNotifications
 import os
 
 /// Onboarding (ADR-0015, ADR-0016, ADR-0020): one step at a time under a stage that illustrates
@@ -72,6 +73,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
     private let onFinish: (_ websites: Bool) -> Void
+    private let onNotificationsRead: () -> Void
     /// The apps suggested on this Mac, then any the user chose; the ones with a rule already come
     /// ticked and can't be changed.
     private var apps: [GridItem]
@@ -95,6 +97,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var customHours: (from: TimeOfDay, to: TimeOfDay)
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
+    private var addedApps = 0
+    private var addedSites = 0
+    private var notifications = UNAuthorizationStatus.notDetermined
+    private var wantsNotifications = false
+    /// Whether Nightcap is to open at login; nil where it never opens itself.
+    private var opensAtLogin: Bool?
+    private var poll: Timer?
 
     /// `choose` sends a command to the core, as the menu does; `onFinish` runs once onboarding
     /// ends, by Done or the close button.
@@ -104,6 +113,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
+        onNotificationsRead: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool) -> Void
     ) {
         self.setup = setup
@@ -111,6 +121,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.askForAccessibility = askForAccessibility
         self.choose = choose
         self.onFinish = onFinish
+        self.onNotificationsRead = onNotificationsRead
+        opensAtLogin = setup.opensAtLogin
         let ruled = Dictionary(rules.map { ($0.identity, $0.label) }, uniquingKeysWith: { first, _ in first })
         apps = Self.suggestedApps.compactMap { suggestion in
             GridItem(app: suggestion.bundleId, kind: suggestion.kind, ruled: ruled[.app(suggestion.bundleId)])
@@ -145,6 +157,38 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         draw()
         window.center()
+        Task { await readNotifications() }
+        // macOS posts nothing when notifications are switched in System Settings, so they're
+        // re-read every second while onboarding is open.
+        let poll = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                _ = Task { await self?.readNotifications() }
+            }
+        }
+        poll.tolerance = 0.25
+        RunLoop.main.add(poll, forMode: .common)
+        self.poll = poll
+    }
+
+    #if DEBUG
+    /// Notifications as snapshots show them, whatever this Mac's permission is.
+    private var frozen = false
+    #endif
+
+    private func readNotifications() async {
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        #if DEBUG
+        if frozen { return }
+        #endif
+        onNotificationsRead()
+        guard status != notifications else { return }
+        notifications = status
+        // Only the last step's rows depend on it; redrawing elsewhere could end a drag.
+        if step == .lastThings || step == .ready { draw() }
+    }
+
+    private var notificationsAllowed: Bool {
+        notifications == .authorized || notifications == .provisional
     }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
@@ -175,12 +219,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
+        poll?.invalidate()
         if closedByUser { onFinish(websites == true) }
     }
 
     #if DEBUG
     /// The window as a PNG at `step`, for comparing against the prototype.
     func snapshot(_ step: Step, page: WebsitesPage = .ask, reviewing: Bool = false) -> Data? {
+        frozen = true
+        notifications = .notDetermined
         self.reviewing = reviewing
         guard let index = steps.firstIndex(of: step) else { return nil }
         self.index = index
@@ -214,7 +261,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         steps.append(.apps)
         if setup.websitesFromConfig != false { steps.append(.websites) }
-        steps += [.lastThings, .ready]
+        if !notificationsAllowed || opensAtLogin != nil { steps.append(.lastThings) }
+        steps.append(.ready)
         return steps
     }
 
@@ -351,9 +399,91 @@ final class Onboarding: NSObject, NSWindowDelegate {
             })]
         case .websites:
             return websitesControls()
-        default:
-            return []
+        case .lastThings:
+            var options: [NSView] = []
+            if !notificationsAllowed {
+                let title = "Tell me when a rule is snoozed"
+                let detail = "If you turn Night Shift on in Control Center while a rule holds it off, Nightcap snoozes the rule until the schedule’s next change, and says so in a notification."
+                // macOS shows its prompt only once, so after a refusal only System Settings can.
+                options.append(notifications == .denied
+                    ? option(title, detail + " Notifications are switched off for Nightcap in System Settings.", button: Look.button("Open Notification Settings…", .regular) {
+                        let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
+                        NSWorkspace.shared.open(URL(string: pane)!)
+                    })
+                    : option(title, detail, ticked: wantsNotifications) { [weak self] in self?.wantsNotifications = $0 })
+            }
+            if let opensAtLogin {
+                options.append(option(
+                    "Open at login", "So your rules apply from the start. Nightcap lives in the menu bar, with no Dock icon.",
+                    ticked: opensAtLogin) { [weak self] in self?.opensAtLogin = $0 })
+            }
+            return [rows(options)]
+        case .ready:
+            return [summaryGrid()]
         }
+    }
+
+    /// A choice with a checkbox, unticked unless it's on already.
+    private func option(_ title: String, _ detail: String, ticked: Bool, toggle: @escaping (Bool) -> Void) -> NSView {
+        let box = NSButton(checkboxWithTitle: title, target: nil, action: nil)
+        box.font = .systemFont(ofSize: 13)
+        box.state = ticked ? .on : .off
+        Look.attach(box) { [weak box] in toggle(box?.state == .on) }
+        return option(box, detail)
+    }
+
+    /// A choice that only a button outside Nightcap can make.
+    private func option(_ title: String, _ detail: String, button: NSButton) -> NSView {
+        let name = Look.label(title, size: 13, weight: .regular, color: .labelColor, width: 400)
+        name.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let line = NSStackView(views: [name, button])
+        line.orientation = .horizontal
+        line.distribution = .fill
+        return option(line, detail)
+    }
+
+    private func option(_ top: NSView, _ detail: String) -> NSView {
+        let note = Look.padded(
+            Look.secondary(detail, width: Self.textWidth - 60), top: 0, left: 20, bottom: 0, right: 0)
+        let column = NSStackView(views: [top, note])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 2
+        top.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
+        return Look.padded(column, top: 10, left: 12, bottom: 10, right: 12)
+    }
+
+    /// What onboarding set up, two to a row.
+    private func summaryGrid() -> NSView {
+        let granted = accessibilityGranted()
+        var lines: [(String, String, Bool)] = []
+        if setup.nightShift.strength != nil { lines.append(("Strength", Self.warmth(strength), true)) }
+        if setup.nightShift.schedule != nil { lines.append(("Schedule", Self.describe(schedule), true)) }
+        lines.append(("Apps", Self.rules(addedApps, "rule"), addedApps > 0))
+        switch websites {
+        case true? where !granted: lines.append(("Websites", "Needs Accessibility", false))
+        case true?: lines.append(("Websites", addedSites > 0 ? Self.rules(addedSites, "site") : "On", true))
+        default: lines.append(("Websites", "Off", false))
+        }
+        let notificationsOn = notificationsAllowed
+        lines.append(("Notifications", notificationsOn ? "On" : "Off", notificationsOn))
+        if let opensAtLogin { lines.append(("Open at login", opensAtLogin ? "On" : "Off", opensAtLogin)) }
+        var rowViews: [NSView] = []
+        for start in stride(from: 0, to: lines.count, by: 2) {
+            let cells = lines[start..<min(start + 2, lines.count)].enumerated().map { column, line in
+                Divided(summary(line.0, line.1, done: line.2), left: column > 0) as NSView
+            }
+            let row = NSStackView(views: cells.count == 2 ? cells : cells + [NSView()])
+            row.orientation = .horizontal
+            row.distribution = .fillEqually
+            row.spacing = 0
+            rowViews.append(row)
+        }
+        return rows(rowViews)
+    }
+
+    private static func rules(_ count: Int, _ noun: String) -> String {
+        count == 0 ? "None" : count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
     }
 
     private func websitesControls() -> [NSView] {
@@ -606,14 +736,25 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return group
     }
 
-    private func summary(_ title: String, _ value: String) -> NSView {
+    private func summary(_ title: String, _ value: String, done: Bool = true) -> NSView {
         let name = Look.label(title, size: 13, weight: .regular, color: .labelColor, width: 300)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [Look.mark(.ok), name, Look.secondary(value, width: 300)])
+        let line = NSStackView(views: [Look.mark(done ? .ok : .off), name, Look.secondary(value, width: 300)])
         line.orientation = .horizontal
         line.distribution = .fill
         line.spacing = 10
         return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+    }
+
+    private func askForNotifications() {
+        Task {
+            do {
+                _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            } catch {
+                log.error("couldn't request notification permission: \(error, privacy: .public)")
+            }
+            await readNotifications()
+        }
     }
 
     private static func addRules(_ count: Int) -> String {
@@ -685,7 +826,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .lastThings:
             return (eyebrow, "Two last things", "Both are up to you, and you can change either later in Settings.")
         case .ready:
-            return (eyebrow, "Nightcap is ready", "It lives in the menu bar. You can change any of this later in Settings.")
+            return (eyebrow, "Nightcap is ready", "It lives in the menu bar, under the moon. You can change any of this later in Settings.")
         }
     }
 
@@ -751,8 +892,18 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 },
                 Choice(title: "Skip to Nightcap") { [weak self] in self?.goToNightcap() }
             )
-        case .strength, .lastThings:
+        case .strength:
             return (nil, nil, Choice(title: "Continue", run: next))
+        case .lastThings:
+            return (
+                nil, nil,
+                Choice(title: "Continue") { [weak self] in
+                    guard let self else { return }
+                    if let opensAtLogin { choose(.openAtLogin(opensAtLogin ? .on : .off)) }
+                    if wantsNotifications, notifications == .notDetermined { askForNotifications() }
+                    advance()
+                }
+            )
         case .schedule:
             return (
                 nil, nil,
@@ -771,6 +922,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
                     guard let self else { return }
                     for app in adding { choose(.addRule(.app(app.id))) }
+                    addedApps += adding.count
                     advance()
                 }
             )
@@ -811,6 +963,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
                         guard let self else { return }
                         for site in adding { choose(.addRule(.domain(site.id))) }
+                        addedSites += adding.count
                         advance()
                     }
                 )
@@ -997,6 +1150,34 @@ final class GridCell: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard dividedOnLeft else { return }
+        NSColor.nightcapSeparator.setFill()
+        NSRect(x: 0, y: 0, width: 0.5, height: bounds.height).fill()
+    }
+}
+
+/// A view with a hairline down its left edge, for cells side by side in a group.
+final class Divided: NSView {
+    private let left: Bool
+
+    init(_ content: NSView, left: Bool) {
+        self.left = left
+        super.init(frame: .zero)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard left else { return }
         NSColor.nightcapSeparator.setFill()
         NSRect(x: 0, y: 0, width: 0.5, height: bounds.height).fill()
     }

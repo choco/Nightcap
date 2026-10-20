@@ -64,7 +64,8 @@ enum Snapshot {
                 rules: [SettingsRule(
                     identity: .app("com.apple.Photos"), label: "From your config", snoozed: false,
                     action: RuleAction(title: "Snooze", command: .snooze(.app("com.apple.Photos"))))],
-                accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in }, onFinish: { _ in })
+                accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
+                onNotificationsRead: {}, onFinish: { _ in })
         }
         let newUser = steps(setUp)
         var alreadySetUp = setUp

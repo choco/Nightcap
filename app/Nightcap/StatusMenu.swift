@@ -95,6 +95,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
+    /// Points at the moon once onboarding is done: the only way into Nightcap from then on.
+    func pointOut() {
+        // A turn of the run loop, so the new status item has its place in the menu bar.
+        DispatchQueue.main.async { [weak self] in
+            guard let button = self?.item.button else { return }
+            let popover = NSPopover()
+            popover.behavior = .transient
+            popover.contentViewController = PointOut(popover)
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+    }
+
     /// `onOpen` can learn something the menu should show, which then redraws it in place.
     func menuWillOpen(_ menu: NSMenu) {
         onOpen()
@@ -256,5 +268,36 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+}
+
+/// "Nightcap is up here", under the moon once onboarding is done.
+private final class PointOut: NSViewController {
+    private weak var popover: NSPopover?
+
+    init(_ popover: NSPopover) {
+        self.popover = popover
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
+    }
+
+    override func loadView() {
+        let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: 268)
+        let text = Look.secondary(
+            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while.",
+            width: 268)
+        let ok = Look.button("OK", .primary) { [weak self] in self?.popover?.close() }
+        ok.keyEquivalent = "\r"
+        let stack = NSStackView(views: [title, text, ok])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.setCustomSpacing(10, after: text)
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        ok.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -16).isActive = true
+        view = stack
     }
 }
