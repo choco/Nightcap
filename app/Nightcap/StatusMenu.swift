@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import NightcapCore
 
 /// Nightcap's menu-bar item. The core decides what it shows (`Core.menu()`); this only draws
@@ -269,6 +270,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menuItem.state = item.checked ? .on : .off
         menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
+        if item.command == .toggle, let shortcut = KeyboardShortcuts.getShortcut(for: .nightShift) {
+            // Shown only: while a menu is open, KeyboardShortcuts takes the keys before the menu.
+            menuItem.keyEquivalent = shortcut.nsMenuItemKeyEquivalent ?? ""
+            menuItem.keyEquivalentModifierMask = shortcut.modifiers
+            menuItem.allowsAutomaticKeyEquivalentLocalization = false
+        }
         return menuItem
     }
 

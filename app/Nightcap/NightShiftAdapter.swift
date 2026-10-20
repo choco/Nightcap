@@ -23,6 +23,7 @@ final class NightShiftAdapter {
     private typealias CopyProperty = @convention(c) (NSObject, Selector, NSString) -> Unmanaged<AnyObject>?
     private typealias GetStrength = @convention(c) (NSObject, Selector, UnsafeMutablePointer<Float>) -> Bool
     private typealias SetStrength = @convention(c) (NSObject, Selector, Float, Bool) -> Bool
+    private typealias SetProperty = @convention(c) (NSObject, Selector, AnyObject, NSString) -> Bool
     private typealias SetMode = @convention(c) (NSObject, Selector, Int32) -> Bool
     private typealias SetSchedule = @convention(c) (NSObject, Selector, UnsafeRawPointer) -> Bool
 
@@ -54,6 +55,9 @@ final class NightShiftAdapter {
         "setMode:": "B20@0:8i16",
         "setSchedule:": "B24@0:8r^{?={?=ii}{?=ii}}16",
     ]
+    /// The peek's setter, checked apart from the rest too: without it the shortcut only turns
+    /// Night Shift on or off (ADR-0021).
+    private static let peekEncodings = ["setProperty:forKey:": "B32@0:8@16@24"]
     private static let statusSize = 40
     private static let enabledOffset = 1
     private static let modeOffset = 4
@@ -73,6 +77,8 @@ final class NightShiftAdapter {
     private let setStrengthImplementation: SetStrength?
     private let setMode: SetMode?
     private let setScheduleImplementation: SetSchedule?
+    private let setProperty: SetProperty?
+    private var peeking = false
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
     /// thread with the new status whenever CoreBrightness reports a status change.
@@ -103,18 +109,19 @@ final class NightShiftAdapter {
         getStatus = unsafeBitCast(client.method(for: NSSelectorFromString("getBlueLightStatus:")), to: GetStatus.self)
         setEnabledImplementation = unsafeBitCast(client.method(for: NSSelectorFromString("setEnabled:")), to: SetEnabled.self)
         copyProperty = unsafeBitCast(systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
-        let found = { (encodings: [String: String], what: String) in
+        let found = { (encodings: [String: String], what: String, className: String) in
             encodings.allSatisfy { name, expected in
-                let method = class_getInstanceMethod(classes["CBBlueLightClient"]!, NSSelectorFromString(name))
+                let method = class_getInstanceMethod(classes[className]!, NSSelectorFromString(name))
                 let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
                 if encoding != expected {
-                    log.fault("CBBlueLightClient.\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \(what, privacy: .public) can't be set")
+                    log.fault("\(className, privacy: .public).\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \(what, privacy: .public) can't be set")
                 }
                 return encoding == expected
             }
         }
-        let strengthFound = found(Self.strengthEncodings, "the strength")
-        let scheduleFound = found(Self.scheduleEncodings, "the schedule")
+        let strengthFound = found(Self.strengthEncodings, "the strength", "CBBlueLightClient")
+        let scheduleFound = found(Self.scheduleEncodings, "the schedule", "CBBlueLightClient")
+        let peekFound = found(Self.peekEncodings, "the peek", "BrightnessSystemClient")
         getStrength = strengthFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self) : nil
         setStrengthImplementation = strengthFound
@@ -123,6 +130,8 @@ final class NightShiftAdapter {
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setMode:")), to: SetMode.self) : nil
         setScheduleImplementation = scheduleFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setSchedule:")), to: SetSchedule.self) : nil
+        setProperty = peekFound
+            ? unsafeBitCast(systemClient.method(for: NSSelectorFromString("setProperty:forKey:")), to: SetProperty.self) : nil
 
         let setBlock = unsafeBitCast(client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
         // CoreBrightness calls this on one of its own queues, often several times per change.
@@ -211,6 +220,48 @@ final class NightShiftAdapter {
         }
     }
 
+    /// Shows true colour with Night Shift still on: `BlueLightReductionFactor`, the tint macOS
+    /// fades at each switch, set to 0 (ADR-0021). Nothing to show while Night Shift is off.
+    func peek() {
+        guard !peeking, status?.enabled == true, setFactor(0, fade: 0) else { return }
+        peeking = true
+    }
+
+    /// Ends a peek. The warmth comes back only while Night Shift is still on: the factor tints
+    /// the screen even with Night Shift off, and stays at 0 while it's off, as macOS keeps it.
+    func endPeek() {
+        guard peeking else { return }
+        peeking = false
+        guard status?.enabled == true else { return }
+        _ = setFactor(1, fade: 0.2)
+    }
+
+    /// The factor outlives Nightcap, so a crash mid-peek leaves Night Shift on with no warmth,
+    /// which nothing else puts back.
+    func repairPeek() {
+        guard status?.enabled == true, tintFactor == 0 else { return }
+        log.notice("Night Shift was on without its tint, as a peek a crash cut short leaves it; putting it back")
+        _ = setFactor(1, fade: 0.2)
+    }
+
+    private var tintFactor: Double? {
+        let value = copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), "BlueLightReductionFactor")?
+            .takeRetainedValue() as? [String: Any]
+        return (value?["BlueLightReductionFactorValue"] as? NSNumber)?.doubleValue
+    }
+
+    private func setFactor(_ value: Float, fade: Float) -> Bool {
+        guard let setProperty else { return false }
+        let factor: NSDictionary = [
+            "BlueLightReductionFactorValue": value, "BlueLightReductionFactorFadePeriod": fade, "ForceUpdate": true,
+        ]
+        guard setProperty(systemClient, NSSelectorFromString("setProperty:forKey:"), factor, "BlueLightReductionFactor") else {
+            log.error("CoreBrightness refused the tint factor \(value)")
+            return false
+        }
+        return true
+    }
+
     /// macOS applies a new schedule at once, so it can switch Night Shift on or off.
     func setSchedule(_ schedule: Schedule) {
         guard let setMode, let setScheduleImplementation else {
@@ -239,11 +290,14 @@ final class NightShiftAdapter {
         }
     }
 
+    /// Ends any peek: switching Night Shift on puts the tint back by itself, and switching it off
+    /// needs the factor left at 0.
     func setEnabled(_ enabled: Bool) {
         guard setEnabledImplementation(client, NSSelectorFromString("setEnabled:"), enabled) else {
             log.error("CoreBrightness refused setEnabled(\(enabled))")
             return
         }
+        peeking = false
     }
 
     private static func timeOfDay(_ hour: Int32, _ minute: Int32) -> TimeOfDay? {

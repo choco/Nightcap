@@ -1,5 +1,6 @@
 // `NSItemBadge.indicator` is imported as shared mutable state, though it only makes a badge.
 @preconcurrency import AppKit
+import KeyboardShortcuts
 import NightcapCore
 import UniformTypeIdentifiers
 
@@ -240,6 +241,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                             NSWorkspace.shared.open(URL(string: pane)!)
                         }),
                     check(.nightShift)),
+                cell(
+                    row(
+                        title: "Shortcut",
+                        detail: "Tap it to turn Night Shift on or off. Hold it to see true colour until you let go.",
+                        accessory: KeyboardShortcuts.RecorderCocoa(for: .nightShift)),
+                    nil),
             ]),
             block("Notifications", [
                 cell(

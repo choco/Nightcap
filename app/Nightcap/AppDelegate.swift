@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionsPoll: Timer?
     private var accessibility: AccessibilityPermission?
     private var onboarding: Onboarding?
+    private var shortcut: Shortcut?
     /// What the core last heard, so an unchanged re-read sends nothing.
     private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
     private var reportedLoginItem: LoginItem?
@@ -79,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         apply(core.handle(event: .launched))
         // The menu-bar item appears once onboarding is done.
         if onboarding == nil { showStatusMenu() }
+        listenForShortcut()
         watchPermissions()
         watchSystem()
     }
@@ -100,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        nightShift?.endPeek()
         guard let core else { return }
         apply(core.handle(event: .terminating))
     }
@@ -124,6 +127,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         reportNightShift(status)
         reportStrength()
+        nightShift?.repairPeek()
+    }
+
+    /// The press peeks at once, so a tap that turns Night Shift off shows no flash of warmth. A
+    /// tap that leaves it on, as when CoreBrightness refuses the switch, ends the peek after
+    /// (ADR-0021).
+    private func listenForShortcut() {
+        shortcut = Shortcut(
+            press: { [weak self] in self?.nightShift?.peek() },
+            tap: { [weak self] in
+                guard let self, let core else { return }
+                apply(core.handle(event: .commandChosen(command: .toggle)))
+                nightShift?.endPeek()
+            },
+            release: { [weak self] in self?.nightShift?.endPeek() })
     }
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {

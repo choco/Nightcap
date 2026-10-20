@@ -10,6 +10,7 @@
 		4E1C0A00000000000000000C /* nightcap in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 4E1C0A000000000000000006 /* nightcap */; };
 		4E1C0A00000000000000000D /* NightcapCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000000F /* NightcapCore */; };
 		4E1C0A000000000000000018 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A000000000000000017 /* Sparkle */; };
+		4E1C0A00000000000000001B /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000001A /* KeyboardShortcuts */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -46,6 +47,7 @@
 			files = (
 				4E1C0A00000000000000000D /* NightcapCore in Frameworks */,
 				4E1C0A000000000000000018 /* Sparkle in Frameworks */,
+				4E1C0A00000000000000001B /* KeyboardShortcuts in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -92,6 +94,7 @@
 			packageProductDependencies = (
 				4E1C0A00000000000000000F /* NightcapCore */,
 				4E1C0A000000000000000017 /* Sparkle */,
+				4E1C0A00000000000000001A /* KeyboardShortcuts */,
 			);
 			productName = Nightcap;
 			productReference = 4E1C0A000000000000000004 /* Nightcap.app */;
@@ -119,6 +122,7 @@
 			packageReferences = (
 				4E1C0A00000000000000000E /* XCLocalSwiftPackageReference "NightcapCore" */,
 				4E1C0A000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */,
+				4E1C0A000000000000000019 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4E1C0A000000000000000003 /* Products */;
@@ -262,6 +266,14 @@
 				version = 2.10.0;
 			};
 		};
+		4E1C0A000000000000000019 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sindresorhus/KeyboardShortcuts";
+			requirement = {
+				kind = exactVersion;
+				version = 3.1.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -273,6 +285,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4E1C0A000000000000000016 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		4E1C0A00000000000000001A /* KeyboardShortcuts */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4E1C0A000000000000000019 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
+			productName = KeyboardShortcuts;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

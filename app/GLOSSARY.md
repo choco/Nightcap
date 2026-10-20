@@ -21,6 +21,9 @@ _Avoid_: launch at login
 The window that takes a new user through each choice and grant, once per onboarding version.
 _Avoid_: setup wizard, first run
 
+**Suggestion**:
+An app or website onboarding offers a rule for, already ticked if it has one: installed apps where colour matters, and websites that need true colour, mostly video streaming.
+
 ### Checks
 
 **Check**:
@@ -60,3 +63,13 @@ The menu's line while any problem exists, counting them; it opens Settings where
 
 **Rule toggle**:
 A menu item for the front app or site that adds, removes, snoozes or unsnoozes its rule.
+
+### Shortcut
+
+**Shortcut**:
+Nightcap's one global keyboard shortcut, ⌃⌥⌘N unless the user records another in Settings. A tap turns Night Shift on or off, as the menu does; a hold is a peek.
+_Avoid_: hotkey
+
+**Peek**:
+True colour while the shortcut is held, with Night Shift still on. It drops the tint and nothing else, so the core never learns of it.
+_Avoid_: preview, which is the strength's while its slider moves
