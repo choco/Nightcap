@@ -235,7 +235,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                 cell(
                     row(
                         title: "Schedule and strength",
-                        detail: "Set in System Settings. Nightcap follows them.",
+                        detail: "Kept by macOS. The menu’s slider sets the strength, and your config can set both.",
                         accessory: Look.button("Open Night Shift Settings…", .regular) {
                             let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
                             NSWorkspace.shared.open(URL(string: pane)!)
