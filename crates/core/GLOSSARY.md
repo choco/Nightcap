@@ -7,7 +7,7 @@ How Nightcap decides whether Night Shift is forced off or left alone, from rules
 ### Schedule
 
 **Schedule**:
-Night Shift's schedule in System Settings: off, sunset to sunrise, or custom hours. The system owns it.
+Night Shift's schedule in System Settings: off, sunset to sunrise, or custom hours. The system owns it; Nightcap changes it only when the user asks.
 
 **Scheduled state**:
 Whether the schedule says Night Shift should be on right now.
@@ -17,7 +17,7 @@ A moment when the schedule starts or ends.
 _Avoid_: boundary
 
 **Strength**:
-How warm Night Shift tints the display. The system owns it.
+How warm Night Shift tints the display. The system owns it; Nightcap changes it only when the user asks.
 _Avoid_: temperature, warmth
 
 ### Toggles
