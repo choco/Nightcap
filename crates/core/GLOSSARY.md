@@ -37,6 +37,9 @@ Turning Night Shift on while a force holds it off, from Nightcap or from outside
 **Resume**:
 Clearing the timed disable, every snooze and the manual state at once.
 
+**Tour stand-in**:
+A tour started with Night Shift off has it on for the tour's length, in place of the schedule. The manual state and timed disable wait aside until the tour ends, which puts them back unless the user chose others meanwhile (ADR-0022).
+
 ### Rules
 
 **Context**:
@@ -75,6 +78,9 @@ _Avoid_: Nix rule, static rule
 **Ad-hoc rule**:
 A rule added at runtime and kept by Nightcap until it graduates.
 _Avoid_: runtime rule, dynamic rule
+
+**Tour rule**:
+The app rule for the tour's sample window, held in memory only while the tour runs, and never listed, saved or exported.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, at which point Nightcap drops its own copy.

@@ -3791,3 +3791,312 @@ fn a_typed_domain_is_normalized_or_turned_down() {
     assert_eq!(normalize_domain("https://figma.com/file".to_owned()), None);
     assert_eq!(normalize_domain("*.figma.com".to_owned()), None);
 }
+
+// The tour (ADR-0022).
+
+const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
+
+fn sample_rule() -> Rule {
+    Rule {
+        identity: RuleIdentity::App(SAMPLE.to_owned()),
+        source: RuleSource::Tour,
+    }
+}
+
+fn start_tour(core: &Core, sample: bool) -> Vec<Effect> {
+    core.handle(Event::TourStarted {
+        sample_app: sample.then(|| SAMPLE.to_owned()),
+    })
+}
+
+fn report(core: &Core, enabled: bool) -> Vec<Effect> {
+    core.handle(Event::StatusChanged {
+        enabled,
+        schedule: custom_hours(),
+    })
+}
+
+/// Starts at 20:00, with Night Shift off by the custom hours until 22:00.
+fn start_off_by_the_schedule(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    let (core, wakes, clock) = start_at(socket, "2026-10-16T20:00:00+02:00");
+    report(&core, false);
+    (core, wakes, clock)
+}
+
+/// Starts at 23:00, with Night Shift on by the custom hours until 07:00.
+fn start_on_by_the_schedule(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
+    report(&core, true);
+    (core, wakes, clock)
+}
+
+fn on_for_the_tour() -> Decision {
+    Decision {
+        verdict: Verdict::HandsOff,
+        reasons: vec![Reason::Tour],
+    }
+}
+
+#[test]
+fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+
+    assert_eq!(
+        start_tour(&core, false),
+        vec![Effect::SetNightShift { enabled: true }]
+    );
+    assert_eq!(report(&core, true), Vec::new());
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.decision, on_for_the_tour());
+    assert_eq!(status.manual_state, None);
+}
+
+#[test]
+fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    start_tour(&core, false);
+    report(&core, true);
+
+    assert_eq!(
+        core.handle(Event::TourEnded),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+    assert_eq!(report(&core, false), Vec::new());
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(
+        status.decision.reasons,
+        vec![Reason::Schedule {
+            state: OnOff::Off,
+            until: Some(at("2026-10-16T22:00:00+02:00")),
+        }]
+    );
+    assert_eq!(status.manual_state, None);
+}
+
+#[test]
+fn a_tour_over_a_manual_off_puts_it_back_when_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    send(&core, &socket, &wakes, Command::Off);
+    report(&core, false);
+
+    assert_eq!(
+        start_tour(&core, false),
+        vec![Effect::SetNightShift { enabled: true }]
+    );
+    report(&core, true);
+    assert_eq!(
+        core.handle(Event::TourEnded),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}
+
+#[test]
+fn a_tour_over_a_timed_disable_puts_it_back_with_its_deadline() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Disable(SignedDuration::from_hours(1)),
+    );
+    report(&core, false);
+
+    assert_eq!(
+        start_tour(&core, false),
+        vec![
+            Effect::SetNightShift { enabled: true },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            },
+        ]
+    );
+    report(&core, true);
+    assert_eq!(
+        core.handle(Event::TourEnded),
+        vec![
+            Effect::SetNightShift { enabled: false },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T00:00:00+02:00").into()
+            },
+        ]
+    );
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).decision.reasons,
+        vec![Reason::TimedDisable {
+            until: at("2026-10-17T00:00:00+02:00")
+        }]
+    );
+}
+
+#[test]
+fn while_the_tour_stands_in_a_tap_off_and_on_returns_to_the_tours_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    start_tour(&core, false);
+    report(&core, true);
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::Toggle);
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    report(&core, false);
+    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(response, Response::Ok(Payload::Decision(on_for_the_tour())));
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
+#[test]
+fn a_tour_started_with_night_shift_on_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+
+    assert_eq!(start_tour(&core, false), Vec::new());
+    assert!(matches!(
+        status_of(&core, &socket, &wakes).decision.reasons[..],
+        [Reason::Schedule { .. }]
+    ));
+    assert_eq!(core.handle(Event::TourEnded), Vec::new());
+}
+
+#[test]
+fn the_tour_sample_in_front_forces_night_shift_off_by_its_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core, true);
+
+    assert_eq!(
+        activate(&core, SAMPLE),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+    report(&core, false);
+    assert_eq!(
+        status_of(&core, &socket, &wakes).decision,
+        Decision {
+            verdict: Verdict::ForceOff,
+            reasons: vec![Reason::Rule(sample_rule())],
+        }
+    );
+    assert_eq!(
+        activate(&core, "com.apple.mail"),
+        vec![Effect::SetNightShift { enabled: true }]
+    );
+}
+
+#[test]
+fn outside_a_tour_the_sample_matches_no_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    assert_eq!(activate(&core, SAMPLE), Vec::new());
+
+    start_tour(&core, true);
+    activate(&core, "com.apple.mail");
+    core.handle(Event::TourEnded);
+
+    assert_eq!(activate(&core, SAMPLE), Vec::new());
+}
+
+#[test]
+fn the_tour_samples_rule_is_never_listed_or_saved_and_goes_with_its_snooze() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core, true);
+    let (_, response) = send(
+        &core,
+        &socket,
+        &wakes,
+        Command::Snooze(RuleIdentity::App(SAMPLE.to_owned())),
+    );
+    assert!(matches!(response, Response::Ok(_)), "{response:?}");
+
+    assert!(core.settings().rules.is_empty());
+    assert!(!core.export(ExportFormat::Toml).contains(SAMPLE));
+    let saved = std::fs::read_to_string(socket.with_file_name("state.json")).unwrap();
+    assert!(!saved.contains(SAMPLE), "{saved}");
+
+    core.handle(Event::TourEnded);
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.rules, Vec::new());
+    assert_eq!(status.snoozes, Vec::new());
+}
+
+#[test]
+fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (crashed, wakes, _clock) = start_on_by_the_schedule(&socket);
+    send(&crashed, &socket, &wakes, Command::Off);
+    report(&crashed, false);
+    start_tour(&crashed, false);
+    report(&crashed, true);
+
+    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    let effects = report(&core, true);
+
+    assert_eq!(
+        effects,
+        vec![
+            Effect::SetNightShift { enabled: false },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            },
+        ]
+    );
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}
+
+#[test]
+fn quitting_mid_tour_ends_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_off_by_the_schedule(&socket);
+    start_tour(&core, false);
+    report(&core, true);
+
+    assert_eq!(
+        core.handle(Event::Terminating),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+}
+
+#[test]
+fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    send(&core, &socket, &wakes, Command::Off);
+    report(&core, false);
+    start_tour(&core, false);
+    report(&core, true);
+
+    assert_eq!(start_tour(&core, true), Vec::new());
+    core.handle(Event::TourEnded);
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::Off)
+    );
+}

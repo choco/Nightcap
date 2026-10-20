@@ -334,6 +334,13 @@ pub enum Event {
     OnboardingFinished {
         websites: bool,
     },
+    /// The tour started (ADR-0022). `sample_app` names the tour's sample window, which the shell
+    /// reports as that app while it's key, when the tour opens one.
+    TourStarted {
+        sample_app: Option<String>,
+    },
+    /// The tour ended, or the user ended it.
+    TourEnded,
     /// The user chose one of the core's fixes in Settings.
     FixChosen {
         fix: Fix,
@@ -519,6 +526,7 @@ struct State {
     session: Session,
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
+    tour: Option<Tour>,
     /// Every schedule transition up to here has been applied.
     applied_until: Timestamp,
     /// The wakeup the shell was last asked for.
@@ -650,6 +658,7 @@ impl Core {
             rules: state
                 .rules
                 .iter()
+                .filter(|rule| rule.source != RuleSource::Tour)
                 .map(|rule| state.settings_rule(rule))
                 .collect(),
             open_at_login: state
@@ -921,6 +930,43 @@ impl Core {
                 }
                 Vec::new()
             }
+            Event::TourStarted { sample_app } => {
+                let mut state = self.state();
+                if state.tour.is_some() {
+                    tracing::warn!("a tour started while one runs; keeping the first");
+                    return Vec::new();
+                }
+                let stands_in = state.night_shift == NightShift::Off;
+                tracing::info!(
+                    "tour started{}",
+                    if stands_in {
+                        ", standing in for the schedule with Night Shift on"
+                    } else {
+                        ""
+                    }
+                );
+                let (manual_state, timed_disable) = if stands_in {
+                    (state.manual_state.take(), state.timed_disable.take())
+                } else {
+                    (None, None)
+                };
+                state.tour = Some(Tour {
+                    sample: sample_app.map(|bundle_id| Rule {
+                        identity: RuleIdentity::App(bundle_id),
+                        source: RuleSource::Tour,
+                    }),
+                    stands_in,
+                    manual_state,
+                    timed_disable,
+                });
+                state.lay_out_rules();
+                Vec::new()
+            }
+            Event::TourEnded => {
+                let now = self.clock.now();
+                self.state().end_tour(now);
+                Vec::new()
+            }
             Event::FixChosen { fix } => {
                 let mut effects = Vec::new();
                 match fix {
@@ -1000,8 +1046,11 @@ impl Core {
             }
             Event::Terminating => {
                 // Nightcap can't tell a restart from being removed, so it never leaves a force
-                // behind (ADR-0011).
-                self.state().released = true;
+                // behind (ADR-0011), nor Night Shift on for a tour (ADR-0022).
+                let now = self.clock.now();
+                let mut state = self.state();
+                state.end_tour(now);
+                state.released = true;
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
                 }
@@ -1079,6 +1128,7 @@ impl Core {
                 released: false,
                 session: Session::Active,
                 left_by_last_run: persisted.night_shift,
+                tour: None,
                 applied_until: setup.clock.now(),
                 wakeup: None,
                 accessibility: None,
@@ -1638,6 +1688,19 @@ struct Watch {
     reported: bool,
 }
 
+/// A tour in progress, and what it set aside (ADR-0022).
+struct Tour {
+    /// The rule for the tour's sample window, when it opened one.
+    sample: Option<Rule>,
+    /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
+    /// as the tour started.
+    stands_in: bool,
+    /// The manual state and timed disable from before the tour stood in, which its end puts
+    /// back.
+    manual_state: Option<OnOff>,
+    timed_disable: Option<Timestamp>,
+}
+
 /// What turning Night Shift on overrode.
 #[derive(Default)]
 struct Overridden {
@@ -1674,10 +1737,56 @@ impl State {
             }
         }
         let overrides = !overridden.snoozed.is_empty() || overridden.timed_disable;
-        let scheduled = self.timeline.next_transition(self.applied_until).is_some()
-            && self.timeline.scheduled_state(self.applied_until).map(on_off) == Some(state);
-        self.manual_state = (overrides || !scheduled).then_some(state);
+        self.manual_state = (overrides || !self.given_anyway(state)).then_some(state);
         overridden
+    }
+
+    /// Whether Night Shift is at `state` with no manual state: a tour standing in gives on, and
+    /// otherwise a schedule that switches gives its own.
+    fn given_anyway(&self, state: OnOff) -> bool {
+        if self.tour.as_ref().is_some_and(|tour| tour.stands_in) {
+            return state == OnOff::On;
+        }
+        self.scheduled_anyway(state)
+    }
+
+    fn scheduled_anyway(&self, state: OnOff) -> bool {
+        self.timeline.next_transition(self.applied_until).is_some()
+            && self
+                .timeline
+                .scheduled_state(self.applied_until)
+                .map(on_off)
+                == Some(state)
+    }
+
+    /// The manual state and timed disable once the tour, if one runs, has ended: what the user
+    /// chose while the tour stood in, or else what it set aside.
+    fn after_tour(&self) -> (Option<OnOff>, Option<Timestamp>) {
+        let Some(tour) = self.tour.as_ref().filter(|tour| tour.stands_in) else {
+            return (self.manual_state, self.timed_disable);
+        };
+        let manual_state = self
+            .manual_state
+            .or(tour.manual_state)
+            .filter(|state| !self.scheduled_anyway(*state));
+        (manual_state, self.timed_disable.or(tour.timed_disable))
+    }
+
+    /// Puts back what the tour set aside, short of a timed disable that ran out meanwhile, and
+    /// drops its sample's rule with any snooze of it.
+    fn end_tour(&mut self, now: Timestamp) {
+        let (manual_state, timed_disable) = self.after_tour();
+        let Some(tour) = self.tour.take() else {
+            return;
+        };
+        tracing::info!("tour ended");
+        self.manual_state = manual_state;
+        self.timed_disable = timed_disable.filter(|until| *until > now);
+        if let Some(sample) = tour.sample {
+            self.snoozes
+                .retain(|snoozed| !same_rule(snoozed, &sample.identity));
+        }
+        self.lay_out_rules();
     }
 
     /// Tells the user what an external change overrode, if it collided with a force (ADR-0006).
@@ -1706,11 +1815,22 @@ impl State {
         })
     }
 
+    /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
+    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0022).
     fn snapshot(&self) -> state::Persisted {
+        let (manual_state, timed_disable) = self.after_tour();
+        let sample = self.tour.as_ref().and_then(|tour| tour.sample.as_ref());
         state::Persisted {
-            manual_state: self.manual_state,
-            snoozes: self.snoozes.clone(),
-            timed_disable: self.timed_disable,
+            manual_state,
+            snoozes: self
+                .snoozes
+                .iter()
+                .filter(|snoozed| {
+                    !sample.is_some_and(|sample| same_rule(snoozed, &sample.identity))
+                })
+                .cloned()
+                .collect(),
+            timed_disable,
             websites: self.websites,
             onboarding: self.onboarding,
             notifications_wanted: self.notifications_wanted,
@@ -1844,6 +1964,13 @@ impl State {
             toggle(
                 name,
                 Some("From your config".to_owned()),
+                true,
+                Command::Snooze(identity),
+            )
+        } else if rule.source == RuleSource::Tour {
+            toggle(
+                name,
+                Some("For the tour".to_owned()),
                 true,
                 Command::Snooze(identity),
             )
@@ -2192,6 +2319,7 @@ impl State {
                 Reason::Schedule { until: end, .. } => {
                     Some(format!("Following the schedule{}", until(end)))
                 }
+                Reason::Tour => Some("On for the tour".to_owned()),
                 _ => None,
             });
         }
@@ -2280,7 +2408,14 @@ impl State {
             identity,
             source: RuleSource::AdHoc,
         });
-        self.rules = self.config_rules.iter().cloned().chain(ad_hoc).collect();
+        let sample = self.tour.as_ref().and_then(|tour| tour.sample.clone());
+        self.rules = self
+            .config_rules
+            .iter()
+            .cloned()
+            .chain(ad_hoc)
+            .chain(sample)
+            .collect();
     }
 
     fn check_ad_hoc_rules_on(&self) -> Result<(), ErrorReply> {
@@ -2323,6 +2458,9 @@ impl State {
     fn pass_transition(&mut self) {
         self.manual_state = None;
         self.snoozes.clear();
+        if let Some(tour) = &mut self.tour {
+            tour.manual_state = None;
+        }
     }
 
     fn decide(&self) -> Decision {
@@ -2336,6 +2474,7 @@ impl State {
             snoozes: &self.snoozes,
             timed_disable: self.timed_disable.filter(|_| !self.released),
             manual_state: self.manual_state,
+            tour_stands_in: self.tour.as_ref().is_some_and(|tour| tour.stands_in),
             scheduled_state: self
                 .timeline
                 .scheduled_state(self.applied_until)
@@ -2353,6 +2492,7 @@ fn wanted(decision: &Decision) -> Option<bool> {
             Reason::ManualState { state, .. } | Reason::Schedule { state, .. } => {
                 Some(*state == OnOff::On)
             }
+            Reason::Tour => Some(true),
             Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
         }),
     }

@@ -207,6 +207,7 @@ impl Decision {
                 Some(format!("turned {state} by hand{}", until(*end)))
             }
             Reason::Schedule { .. } => Some("following the schedule".to_owned()),
+            Reason::Tour => Some("on for the tour".to_owned()),
             _ => None,
         });
         let snoozed: Vec<_> = self
@@ -254,6 +255,9 @@ pub enum Reason {
         state: OnOff,
         until: Option<Timestamp>,
     },
+    /// Hands off, with Night Shift on for the tour, which stands in for the schedule while it
+    /// runs (ADR-0022).
+    Tour,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -268,6 +272,7 @@ impl fmt::Display for Rule {
         let source = match self.source {
             RuleSource::Config => "config",
             RuleSource::AdHoc => "ad-hoc",
+            RuleSource::Tour => "tour",
         };
         write!(formatter, "{} ({source} rule)", self.identity)
     }
@@ -318,6 +323,8 @@ impl TryFrom<String> for RuleIdentity {
 pub enum RuleSource {
     Config,
     AdHoc,
+    /// The tour's sample window, held only while the tour runs (ADR-0022).
+    Tour,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

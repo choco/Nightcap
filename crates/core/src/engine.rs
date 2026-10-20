@@ -22,6 +22,8 @@ pub(crate) struct Inputs<'a> {
     /// When the timed disable ends, if one is running.
     pub timed_disable: Option<Timestamp>,
     pub manual_state: Option<OnOff>,
+    /// A tour has Night Shift on for itself, in place of the schedule (ADR-0022).
+    pub tour_stands_in: bool,
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
 }
@@ -53,6 +55,7 @@ pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
             state,
             until: inputs.next_transition,
         }),
+        (None, _) if inputs.tour_stands_in => Some(Reason::Tour),
         (None, Some(state)) => Some(Reason::Schedule {
             state,
             until: inputs.next_transition,
@@ -117,6 +120,7 @@ mod tests {
             snoozes: &[],
             timed_disable: None,
             manual_state: None,
+            tour_stands_in: false,
             scheduled_state: Some(OnOff::On),
             next_transition: Some(at("2026-10-16T05:50:47Z")),
         });
@@ -141,6 +145,7 @@ mod tests {
             snoozes: &[],
             timed_disable: None,
             manual_state: Some(OnOff::Off),
+            tour_stands_in: false,
             scheduled_state: Some(OnOff::On),
             next_transition: Some(at("2026-10-16T05:50:47Z")),
         });
@@ -170,6 +175,7 @@ mod tests {
             snoozes: &[],
             timed_disable: None,
             manual_state: Some(OnOff::On),
+            tour_stands_in: false,
             scheduled_state: Some(OnOff::On),
             next_transition: None,
         });
@@ -193,6 +199,7 @@ mod tests {
             snoozes: &[],
             timed_disable: None,
             manual_state: None,
+            tour_stands_in: false,
             scheduled_state: Some(OnOff::On),
             next_transition: None,
         });
@@ -210,6 +217,7 @@ mod tests {
             snoozes: &[RuleIdentity::App("com.figma.Desktop".to_owned())],
             timed_disable: None,
             manual_state: Some(OnOff::On),
+            tour_stands_in: false,
             scheduled_state: Some(OnOff::On),
             next_transition: Some(at("2026-10-16T05:50:47Z")),
         });
@@ -241,6 +249,7 @@ mod tests {
                 snoozes: &[],
                 timed_disable: Some(at("2026-10-16T01:00:00Z")),
                 manual_state: Some(OnOff::On),
+                tour_stands_in: false,
                 scheduled_state: Some(OnOff::On),
                 next_transition: None,
             })
@@ -277,6 +286,7 @@ mod tests {
                 snoozes: &[],
                 timed_disable: None,
                 manual_state: None,
+                tour_stands_in: false,
                 scheduled_state: Some(OnOff::On),
                 next_transition: None,
             })

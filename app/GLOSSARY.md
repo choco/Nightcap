@@ -21,6 +21,13 @@ _Avoid_: launch at login
 The window that takes a new user through each choice and grant, once per onboarding version.
 _Avoid_: setup wizard, first run
 
+**Tour**:
+An optional walk-through in a panel by the menu-bar moon: the moon, a rule at work, the peek and the menu. Offered at the end of onboarding and from Settings.
+_Avoid_: tutorial, walkthrough
+
+**Tour sample**:
+The tour's own window, opened when none of the user's apps with a rule is running, which a tour rule forces Night Shift off for.
+
 **Suggestion**:
 An app or website onboarding offers a rule for, already ticked if it has one: installed apps where colour matters, and websites that need true colour, mostly video streaming.
 
