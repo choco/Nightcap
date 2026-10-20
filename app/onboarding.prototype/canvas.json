@@ -1,0 +1,203 @@
+{
+  "v": 3,
+  "attachments": {},
+  "boards": {
+    "FoldCompact.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "G3b · One fixed size that fits a small screen",
+      "w": 1280,
+      "x": 1360,
+      "y": 0
+    },
+    "FoldScroll.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "G3a · Grows to the screen, then the checklist scrolls",
+      "w": 1280,
+      "x": 0,
+      "y": 0
+    },
+    "Guided.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "G1, round 4 · Two phases: one page each",
+      "w": 1280,
+      "x": 0,
+      "y": 1400
+    },
+    "GuidedFold.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "G3, round 4 · Two phases: Night Shift folds away",
+      "w": 1280,
+      "x": 2720,
+      "y": 1400
+    },
+    "GuidedR3.dc.html": {
+      "h": 900,
+      "is_interactive": true,
+      "title": "G, round 3 · Checklist: Night Shift first, then Nightcap",
+      "w": 1280,
+      "x": 0,
+      "y": 2800
+    },
+    "GuidedSheet.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "G2, round 4 · Two phases: Night Shift in a sheet",
+      "w": 1280,
+      "x": 1360,
+      "y": 1400
+    },
+    "Main.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "A · The checklist, longer",
+      "w": 1280,
+      "x": 0,
+      "y": 5700
+    },
+    "Setup.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "D · Setup: the checklist, with more to each step",
+      "w": 1280,
+      "x": 0,
+      "y": 4300
+    },
+    "ShowMe.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "C · Show me, on the real screen",
+      "w": 1280,
+      "x": 2720,
+      "y": 5700
+    },
+    "Stage.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "H · Chosen: under a stage, dots in the footer",
+      "w": 1280,
+      "x": 2720,
+      "y": 0
+    },
+    "StageR3.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "H, round 3 · One step at a time, on a live stage",
+      "w": 1280,
+      "x": 1360,
+      "y": 2800
+    },
+    "StageR4.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "H, round 4 · One step at a time, under a stage",
+      "w": 1280,
+      "x": 4080,
+      "y": 1400
+    },
+    "Steps.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "E · Setup: the checklist beside each step",
+      "w": 1280,
+      "x": 1360,
+      "y": 4300
+    },
+    "Tour.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "B · A tour, one step per page",
+      "w": 1280,
+      "x": 1360,
+      "y": 5700
+    },
+    "TourAlone.dc.html": {
+      "h": 800,
+      "is_interactive": true,
+      "title": "F · The tour, on its own and skippable",
+      "w": 1280,
+      "x": 4080,
+      "y": 0
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-19T09:30:00Z",
+    "v": 1
+  },
+  "designSystems": [
+    {
+      "artifact": "https://claude.ai/artifact/ACj6WANfTwWJ9LJRZux9uR",
+      "copiedAt": "2026-10-19T09:30:00Z",
+      "namespace": "nightcap",
+      "title": "Nightcap",
+      "version": "1792258384-2977"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "heading": {
+      "kind": "title1",
+      "maxW": 5360,
+      "text": "Round 5: chosen, H with dots in the footer",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "round1": {
+      "kind": "title1",
+      "maxW": 4000,
+      "text": "Round 1: three ways",
+      "w": 240,
+      "x": 0,
+      "y": 5400
+    },
+    "round2": {
+      "kind": "title1",
+      "maxW": 2640,
+      "text": "Round 2: setup first, then an optional tour",
+      "w": 240,
+      "x": 0,
+      "y": 4000
+    },
+    "round3": {
+      "kind": "title1",
+      "maxW": 2640,
+      "text": "Round 3: Night Shift first, then Nightcap",
+      "w": 240,
+      "x": 0,
+      "y": 2500
+    },
+    "round4": {
+      "kind": "title1",
+      "maxW": 5360,
+      "text": "Round 4: two phases, and a stage that only illustrates",
+      "w": 240,
+      "x": 0,
+      "y": 1100
+    }
+  },
+  "order": [
+    "FoldScroll.dc.html",
+    "FoldCompact.dc.html",
+    "Stage.dc.html",
+    "TourAlone.dc.html",
+    "Guided.dc.html",
+    "GuidedSheet.dc.html",
+    "GuidedFold.dc.html",
+    "StageR4.dc.html",
+    "GuidedR3.dc.html",
+    "StageR3.dc.html",
+    "Setup.dc.html",
+    "Steps.dc.html",
+    "Main.dc.html",
+    "Tour.dc.html",
+    "ShowMe.dc.html"
+  ],
+  "pages": [],
+  "title": "Onboarding Tutorial"
+}

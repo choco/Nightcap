@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Onboarding E: the checklist beside each step</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+@font-face{font-family:"Caprasimo";src:url("ds/nightcap/fonts/Caprasimo-Regular.woff2") format("woff2");font-display:block}
+.mac{--wall:#c9d2e1;--bar:rgba(246,246,248,0.86);--bar-ink:#1d1d1f;--win:#f4f4f6;--side:rgba(0,0,0,0.035);--chrome:#ececef;--group:#ffffff;--sep:rgba(0,0,0,0.1);--ink:#1d1d1f;--ink2:#5f5f64;--ctl:#ffffff;--ctl-edge:rgba(0,0,0,0.16);--accent:#007aff;--gold:#8a5b00;--gold-wash:rgba(138,91,0,0.08);--green:#22b33a;--grey:#a1a1a6;--tile:rgba(0,0,0,0.07);--menu:rgba(240,240,242,0.97);--hi:rgba(0,0,0,0.1);--shadow:0 24px 64px rgba(0,0,0,0.26),0 0 0 0.5px rgba(0,0,0,0.2);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+.mac.dark{--wall:#1b2131;--bar:rgba(28,28,31,0.72);--bar-ink:#f2f2f4;--win:#1e1e21;--side:rgba(255,255,255,0.03);--chrome:#2a2a2d;--group:#2b2b2e;--sep:rgba(255,255,255,0.09);--ink:#f2f2f4;--ink2:#a9a9af;--ctl:#3a3a3e;--ctl-edge:rgba(255,255,255,0.12);--accent:#0a84ff;--gold:#f6d58a;--gold-wash:rgba(246,213,138,0.08);--green:#30d158;--grey:#6e6e73;--tile:rgba(255,255,255,0.1);--menu:rgba(42,42,45,0.97);--hi:rgba(255,255,255,0.14);--shadow:0 24px 64px rgba(0,0,0,0.55),0 0 0 0.5px rgba(255,255,255,0.14)}
+.mac button{font:inherit;color:inherit}
+.mac button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{height:25px;padding:0 13px;border-radius:999px;border:0.5px solid var(--ctl-edge);background:var(--ctl);font-size:13px;cursor:pointer;box-shadow:0 0.5px 0.75px rgba(0,0,0,0.12);flex-shrink:0}
+.btn-primary{background:var(--accent);border-color:transparent;color:#fff !important;box-shadow:none}
+.link{border:0;background:none;padding:0;font-size:12px;color:var(--accent) !important;cursor:pointer}
+.caption{font-size:12px;line-height:17px;color:var(--ink2)}
+.group-label{font-size:11px;font-weight:600;color:var(--ink2);margin:0 0 5px 2px}
+.box{border-radius:7px;border:0.5px solid var(--sep);background:var(--group);overflow:hidden}
+.grid{display:grid;grid-template-columns:1fr 1fr}
+.cell{display:flex;align-items:center;gap:9px;padding:7px 10px;border:0;background:none;cursor:pointer;text-align:left;min-width:0}
+.tile{width:22px;height:22px;border-radius:5px;background:var(--tile);display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:var(--ink2);flex-shrink:0}
+.cell-name{font-size:13px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell-sub{display:block;font-size:11px;line-height:13px;color:var(--ink2)}
+.check{width:14px;height:14px;border-radius:3.5px;border:0.5px solid var(--ctl-edge);background:var(--ctl);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.check.on{background:var(--accent);border-color:transparent}
+.radio{width:14px;height:14px;border-radius:50%;border:0.5px solid var(--ctl-edge);background:var(--ctl);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
+.radio.on{background:var(--accent);border-color:transparent}
+.radio.on::after{content:"";width:6px;height:6px;border-radius:50%;background:#fff}
+.radio-row{width:100%;display:flex;align-items:center;gap:9px;padding:9px 12px;border:0;background:none;cursor:pointer;text-align:left}
+.field{display:inline-block;padding:1px 6px;border-radius:4px;border:0.5px solid var(--ctl-edge);background:var(--ctl);font-size:12px;font-variant-numeric:tabular-nums}
+.slider{flex-grow:1;accent-color:var(--accent);margin:0}
+.switch{width:32px;height:19px;border-radius:999px;border:0;padding:0;background:var(--tile);position:relative;flex-shrink:0;transition:background 250ms}
+.switch.on{background:var(--accent)}
+.knob{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,0.25);transition:left 250ms}
+.switch.on .knob{left:15px}
+.side-item{width:100%;display:flex;gap:10px;align-items:flex-start;padding:7px 8px;border:0;border-radius:7px;text-align:left}
+.pulse{animation:pulse 1.6s ease-in-out infinite alternate}
+@keyframes pulse{from{opacity:1}to{opacity:0.45}}
+.menu-item{display:flex;align-items:flex-start;gap:6px;padding:3px 10px 3px 6px;margin:0 5px;border-radius:5px;font-size:13px;line-height:17px}
+.menu-item:hover{background:var(--accent);color:#fff}
+.menu-item:hover .menu-sub{color:rgba(255,255,255,0.8)}
+.menu-sub{display:block;font-size:11px;line-height:14px;color:var(--ink2)}
+.menu-sep{height:0.5px;background:var(--sep);margin:5px 14px}
+.menu-head{font-size:11px;font-weight:600;color:var(--ink2);padding:4px 16px 2px}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+</style>
+</helmet>
+<div class="mac {{themeClass}}" style="position: relative; width: 1280px; height: 800px; overflow: hidden; background: var(--wall);">
+
+<div style="position: absolute; top: 0; left: 0; right: 0; height: 28px; display: flex; align-items: center; gap: 20px; padding: 0 12px 0 18px; background: var(--bar); color: var(--bar-ink); font-size: 13px; backdrop-filter: blur(24px); z-index: 5;">
+<strong style="font-weight: 700;">{{frontApp}}</strong>
+<span>File</span>
+<span>Edit</span>
+<span>View</span>
+<span>Window</span>
+<span>Help</span>
+<div style="flex-grow: 1;"></div>
+<button aria-label="Nightcap" onClick="{{toggleMenu}}" style="height: 22px; width: 30px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 5px; background: {{moonBg}}; cursor: pointer; padding: 0;">
+<sc-if value="{{moonOn}}" hint-placeholder-val="{{ true }}"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"></path></svg></sc-if>
+<sc-if value="{{moonOff}}" hint-placeholder-val="{{ false }}"><svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"></path></svg></sc-if>
+</button>
+<span>Mon 21:42</span>
+</div>
+
+<div style="position: absolute; left: 50px; top: 80px; width: 640px; height: 480px; border-radius: 12px; overflow: hidden; background: var(--group); box-shadow: var(--shadow); display: flex; flex-direction: column;">
+<div style="height: 38px; flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 0 14px; background: var(--chrome); border-bottom: 0.5px solid var(--sep);">
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #febc2e;"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #28c840;"></span>
+<span style="margin-left: 14px; font-size: 13px; font-weight: 600;">Inbox</span>
+</div>
+<div style="flex-grow: 1; display: flex;">
+<div style="width: 180px; padding: 16px; display: flex; flex-direction: column; gap: 12px; background: var(--win); border-right: 0.5px solid var(--sep);">
+<div style="height: 10px; width: 70%; border-radius: 5px; background: var(--tile);"></div>
+<div style="height: 10px; width: 55%; border-radius: 5px; background: var(--tile);"></div>
+<div style="height: 10px; width: 62%; border-radius: 5px; background: var(--tile);"></div>
+</div>
+<div style="flex-grow: 1; padding: 18px; display: flex; flex-direction: column; gap: 18px;">
+<div style="display: flex; flex-direction: column; gap: 7px;"><div style="height: 10px; width: 40%; border-radius: 5px; background: var(--tile);"></div><div style="height: 8px; width: 85%; border-radius: 4px; background: var(--tile);"></div></div>
+<div style="display: flex; flex-direction: column; gap: 7px;"><div style="height: 10px; width: 32%; border-radius: 5px; background: var(--tile);"></div><div style="height: 8px; width: 78%; border-radius: 4px; background: var(--tile);"></div></div>
+</div>
+</div>
+</div>
+
+<sc-if value="{{windowOpen}}" hint-placeholder-val="{{ true }}">
+<div role="dialog" aria-label="Welcome to Nightcap" style="position: absolute; left: 230px; top: 76px; width: 820px; height: 580px; border-radius: 12px; overflow: hidden; background: var(--win); box-shadow: var(--shadow); z-index: 3; display: flex; flex-direction: column;">
+<div style="height: 28px; flex-shrink: 0; position: relative; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 0.5px solid var(--sep);">
+<span style="width: 12px; height: 12px; border-radius: 50%; background: #ff5f57;"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: var(--tile);"></span>
+<span style="width: 12px; height: 12px; border-radius: 50%; background: var(--tile);"></span>
+<span style="position: absolute; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 600; pointer-events: none;">Welcome to Nightcap</span>
+</div>
+<div style="flex-grow: 1; display: flex; min-height: 0;">
+
+<div style="width: 220px; flex-shrink: 0; padding: 18px 12px 16px; box-sizing: border-box; border-right: 0.5px solid var(--sep); background: var(--side); display: flex; flex-direction: column; gap: 16px;">
+<div style="display: flex; align-items: center; gap: 10px; padding: 0 6px;">
+<div style="width: 38px; height: 38px; flex-shrink: 0; border-radius: 22.45%; background: linear-gradient(#1b2a52, #0b1330); box-shadow: 0 3px 8px rgba(0,0,0,0.22); display: flex; align-items: center; justify-content: center;">
+<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="#f6d58a"></path></svg>
+</div>
+<div style="font-family: Caprasimo, Georgia, serif; font-size: 26px; line-height: 30px;">Nightcap</div>
+</div>
+<div style="display: flex; flex-direction: column; gap: 2px;">
+<sc-for list="{{side}}" as="item" hint-placeholder-count="6">
+<button class="side-item" onClick="{{item.go}}" aria-current="{{item.isCurrent}}" style="background: {{item.wash}}; cursor: {{item.cursor}};">
+<span style="width: 18px; height: 18px; flex-shrink: 0;">
+<sc-if value="{{item.markCurrent}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--gold)" stroke-width="1.5"></circle><circle class="pulse" cx="9" cy="9" r="4.1" fill="var(--gold)"></circle></svg></sc-if>
+<sc-if value="{{item.markOk}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8" fill="var(--green)"></circle><path d="M5.4 9.2l2.4 2.4 4.8-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if>
+<sc-if value="{{item.markOff}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--grey)" stroke-width="1.5"></circle><path d="M5.6 9h6.8" stroke="var(--grey)" stroke-width="1.5" stroke-linecap="round"></path></svg></sc-if>
+<sc-if value="{{item.markTodo}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--grey)" stroke-width="1.5"></circle></svg></sc-if>
+</span>
+<span style="display: flex; flex-direction: column; gap: 1px; min-width: 0;">
+<span style="font-size: 13px; line-height: 18px; font-weight: {{item.weight}}; color: {{item.color}};">{{item.title}}</span>
+<sc-if value="{{item.answer}}" hint-placeholder-val="{{ false }}"><span style="font-size: 11px; line-height: 14px; color: var(--ink2);">{{item.answer}}</span></sc-if>
+</span>
+</button>
+</sc-for>
+</div>
+<div style="flex-grow: 1;"></div>
+<div style="padding: 0 8px; font-size: 11px; line-height: 15px; color: var(--ink2);">You can change all of these later in Settings.</div>
+</div>
+
+<div style="flex-grow: 1; min-width: 0; padding: 26px 30px 20px; box-sizing: border-box; display: flex; flex-direction: column;">
+<div style="font-size: 20px; line-height: 26px; font-weight: 600;">{{heading}}</div>
+<div style="margin-top: 8px; font-size: 13px; line-height: 19px; color: var(--ink2);">{{lede}}</div>
+<div style="margin-top: 20px; flex-grow: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px;">
+
+<sc-if value="{{pane.welcome}}" hint-placeholder-val="{{ true }}">
+<div style="display: flex; gap: 14px;">
+<sc-for list="{{strip}}" as="shot" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 6px; align-items: center;">
+<div style="width: 166px; height: 104px; border-radius: 8px; overflow: hidden; position: relative; background: var(--wall); box-shadow: 0 0 0 0.5px var(--sep);">
+<div style="position: absolute; left: 0; right: 0; top: 0; height: 7px; background: var(--bar);"></div>
+<div style="position: absolute; left: 14px; top: 16px; right: 14px; bottom: 10px; border-radius: 5px; background: var(--group); box-shadow: 0 2px 8px rgba(0,0,0,0.15); overflow: hidden;">
+<sc-if value="{{shot.isFigma}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 16px; top: 12px; width: 40px; height: 40px; border-radius: 50%; background: #2f6fe4;"></div>
+<div style="position: absolute; left: 42px; top: 30px; width: 40px; height: 40px; border-radius: 50%; background: #e84f8a; mix-blend-mode: multiply;"></div>
+<div style="position: absolute; left: 96px; top: 16px; width: 26px; height: 8px; border-radius: 2px; background: #2f6fe4;"></div>
+<div style="position: absolute; left: 96px; top: 30px; width: 26px; height: 8px; border-radius: 2px; background: #e84f8a;"></div>
+</sc-if>
+<sc-if value="{{shot.isMail}}" hint-placeholder-val="{{ true }}">
+<div style="position: absolute; left: 12px; top: 12px; width: 60%; height: 6px; border-radius: 3px; background: var(--tile);"></div>
+<div style="position: absolute; left: 12px; top: 26px; width: 80%; height: 5px; border-radius: 3px; background: var(--tile);"></div>
+<div style="position: absolute; left: 12px; top: 38px; width: 70%; height: 5px; border-radius: 3px; background: var(--tile);"></div>
+<div style="position: absolute; left: 12px; top: 54px; width: 50%; height: 6px; border-radius: 3px; background: var(--tile);"></div>
+</sc-if>
+</div>
+<div style="position: absolute; inset: 0; background: rgba(255, 138, 46, 0.26); opacity: {{shot.tint}};"></div>
+</div>
+<span style="font-size: 11px; color: var(--ink2);">{{shot.label}}</span>
+</div>
+</sc-for>
+</div>
+<div class="caption" style="margin-top: 8px;">Setup takes about a minute: a schedule for Night Shift, the apps and sites that need true colour, and two permissions.</div>
+</sc-if>
+
+<sc-if value="{{pane.nightshift}}" hint-placeholder-val="{{ false }}">
+<div class="box">
+<button class="radio-row" role="radio" aria-checked="{{sunsetOn}}" onClick="{{pickSunset}}">
+<span class="radio {{sunsetClass}}"></span>
+<span style="font-size: 13px; flex-grow: 1;">Sunset to sunrise</span>
+<span style="font-size: 11px; color: var(--ink2);">Tonight 18:41 to 07:52</span>
+</button>
+<button class="radio-row" role="radio" aria-checked="{{customOn}}" onClick="{{pickCustom}}" style="border-top: 0.5px solid var(--sep);">
+<span class="radio {{customClass}}"></span>
+<span style="font-size: 13px; flex-grow: 1;">Custom hours</span>
+<span style="font-size: 12px; color: var(--ink2);"><span class="field">22:00</span> to <span class="field">07:00</span></span>
+</button>
+</div>
+<div class="box" style="display: flex; align-items: center; gap: 10px; padding: 10px 12px;">
+<span style="font-size: 13px; width: 62px;">Strength</span>
+<span style="font-size: 11px; color: var(--ink2);">Less Warm</span>
+<input class="slider" type="range" min="0" max="100" value="{{strength}}" aria-label="Strength" onInput="{{setStrength}}" onChange="{{setStrength}}">
+<span style="font-size: 11px; color: var(--ink2);">More Warm</span>
+</div>
+<div class="caption">Your screen previews this strength while you’re on this step. Drag the slider and watch it change.</div>
+</sc-if>
+
+<sc-if value="{{pane.apps}}" hint-placeholder-val="{{ false }}">
+<sc-for list="{{appGroups}}" as="group" hint-placeholder-count="2">
+<div>
+<div class="group-label">{{group.label}}</div>
+<div class="box grid">
+<sc-for list="{{group.items}}" as="app" hint-placeholder-count="4">
+<button class="cell" onClick="{{app.toggle}}" aria-pressed="{{app.on}}" style="border-top: {{app.borderTop}}; border-left: {{app.borderLeft}};">
+<span class="check {{app.checkClass}}"><sc-if value="{{app.on}}" hint-placeholder-val="{{ true }}"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2l2 2 4-4.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if></span>
+<span class="tile">{{app.letter}}</span>
+<span style="min-width: 0;"><span class="cell-name">{{app.name}}</span><span class="cell-sub">{{app.kind}}</span></span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</sc-if>
+
+<sc-if value="{{pane.sites}}" hint-placeholder-val="{{ false }}">
+<sc-for list="{{siteGroups}}" as="group" hint-placeholder-count="2">
+<div>
+<div class="group-label">{{group.label}}</div>
+<div class="box grid">
+<sc-for list="{{group.items}}" as="site" hint-placeholder-count="6">
+<button class="cell" onClick="{{site.toggle}}" aria-pressed="{{site.on}}" style="border-top: {{site.borderTop}}; border-left: {{site.borderLeft}};">
+<span class="check {{site.checkClass}}"><sc-if value="{{site.on}}" hint-placeholder-val="{{ false }}"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 5.2l2 2 4-4.4" fill="none" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if></span>
+<span class="tile">{{site.letter}}</span>
+<span style="min-width: 0;"><span class="cell-name">{{site.name}}</span><span class="cell-sub">{{site.host}}</span></span>
+</button>
+</sc-for>
+</div>
+</div>
+</sc-for>
+<div class="caption">{{sitesCaption}}</div>
+</sc-if>
+
+<sc-if value="{{pane.ax}}" hint-placeholder-val="{{ false }}">
+<div style="width: 400px; border-radius: 10px; overflow: hidden; background: var(--group); box-shadow: 0 6px 18px rgba(0,0,0,0.12), 0 0 0 0.5px var(--sep);">
+<div style="padding: 8px 12px; font-size: 11px; font-weight: 600; color: var(--ink2); border-bottom: 0.5px solid var(--sep);">System Settings › Privacy & Security › Accessibility</div>
+<div style="display: flex; align-items: center; gap: 10px; padding: 10px 12px;">
+<div style="width: 24px; height: 24px; border-radius: 22.45%; background: linear-gradient(#1b2a52, #0b1330); display: flex; align-items: center; justify-content: center;"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="#f6d58a"></path></svg></div>
+<span style="flex-grow: 1; font-size: 13px;">Nightcap</span>
+<span class="switch {{axSwitchClass}}" aria-hidden="true"><span class="knob"></span></span>
+</div>
+</div>
+<div class="caption">{{axText}}</div>
+</sc-if>
+
+<sc-if value="{{pane.notifications}}" hint-placeholder-val="{{ false }}">
+<div style="width: 380px; display: flex; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--menu); box-shadow: 0 6px 18px rgba(0,0,0,0.14), 0 0 0 0.5px var(--sep);">
+<div style="width: 32px; height: 32px; flex-shrink: 0; border-radius: 22.45%; background: linear-gradient(#1b2a52, #0b1330); display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="#f6d58a"></path></svg></div>
+<div style="flex-grow: 1; display: flex; flex-direction: column; gap: 1px; min-width: 0;">
+<div style="display: flex; gap: 8px;"><span style="flex-grow: 1; font-size: 13px; font-weight: 600;">Night Shift turned on outside Nightcap</span><span style="font-size: 11px; color: var(--ink2);">now</span></div>
+<span style="font-size: 13px;">Snoozed {{noticeApp}} until 07:52.</span>
+</div>
+</div>
+<div class="caption">Without notifications Nightcap still snoozes the rule; the menu shows it either way.</div>
+</sc-if>
+
+<sc-if value="{{pane.ready}}" hint-placeholder-val="{{ false }}">
+<div class="box">
+<sc-for list="{{summary}}" as="line" hint-placeholder-count="5">
+<div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-top: {{line.border}};">
+<span style="width: 18px; height: 18px; flex-shrink: 0;">
+<sc-if value="{{line.ok}}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="8" fill="var(--green)"></circle><path d="M5.4 9.2l2.4 2.4 4.8-5" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></sc-if>
+<sc-if value="{{line.off}}" hint-placeholder-val="{{ false }}"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="7.4" fill="none" stroke="var(--grey)" stroke-width="1.5"></circle><path d="M5.6 9h6.8" stroke="var(--grey)" stroke-width="1.5" stroke-linecap="round"></path></svg></sc-if>
+</span>
+<span style="flex-grow: 1; font-size: 13px;">{{line.title}}</span>
+<span style="font-size: 12px; color: var(--ink2);">{{line.answer}}</span>
+</div>
+</sc-for>
+</div>
+<div style="padding: 12px 14px; border-radius: 7px; background: var(--gold-wash); font-size: 12px; line-height: 17px; color: var(--ink2);">New to Nightcap? The tour shows the menu-bar moon, a rule at work and the shortcut, in about a minute. It’s also in Settings › General.</div>
+</sc-if>
+
+</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 16px;">
+<sc-if value="{{canBack}}" hint-placeholder-val="{{ false }}"><button class="btn" onClick="{{back}}">Back</button></sc-if>
+<sc-if value="{{leftLink}}" hint-placeholder-val="{{ false }}"><button class="link" onClick="{{leftLinkGo}}" style="margin-left: 6px;">{{leftLink}}</button></sc-if>
+<div style="flex-grow: 1;"></div>
+<sc-if value="{{secondaryLabel}}" hint-placeholder-val="{{ false }}"><button class="btn" onClick="{{secondary}}">{{secondaryLabel}}</button></sc-if>
+<button class="{{primaryClass}}" onClick="{{primary}}" style="opacity: {{primaryOpacity}};">{{primaryLabel}}</button>
+</div>
+</div>
+
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{tourNote}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; left: 400px; top: 300px; width: 480px; padding: 18px 20px; box-sizing: border-box; border-radius: 12px; border: 1.5px dashed rgba(12,14,20,0.45); background: rgba(255,255,255,0.82); color: #1d1d1f; z-index: 6; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 18px; display: flex; flex-direction: column; gap: 10px;">
+<span>PROTOTYPE · In the app, the tour starts here: a small panel by the moon. It’s its own board, F, to the right.</span>
+<span><button onClick="{{backToSetup}}" style="border: 0; border-radius: 999px; padding: 3px 10px; background: rgba(12,14,20,0.86); color: #fff; font: inherit; cursor: pointer;">Back to Setup</button></span>
+</div>
+</sc-if>
+
+<sc-if value="{{coach}}" hint-placeholder-val="{{ false }}">
+<div style="position: absolute; top: 36px; right: 70px; width: 300px; padding: 14px 16px; box-sizing: border-box; border-radius: 12px; background: var(--menu); box-shadow: var(--shadow); z-index: 6; display: flex; flex-direction: column; gap: 6px;">
+<div style="position: absolute; top: -6px; right: 22px; width: 12px; height: 12px; background: var(--menu); transform: rotate(45deg);"></div>
+<div style="font-size: 13px; font-weight: 600;">Nightcap is up here</div>
+<div style="font-size: 12px; line-height: 17px; color: var(--ink2);">Open it to force Night Shift off in the app in front, or to turn it off for a while. Hold ⌃⌥⌘N in any app to peek at true colour. The tour is in Settings › General whenever you want it.</div>
+<div style="display: flex; justify-content: flex-end; margin-top: 4px;"><button class="btn btn-primary" onClick="{{coachOk}}">OK</button></div>
+</div>
+</sc-if>
+
+<sc-if value="{{menuOpen}}" hint-placeholder-val="{{ false }}">
+<div role="menu" aria-label="Nightcap" style="position: absolute; top: 30px; right: 70px; width: 280px; padding: 5px 0; border-radius: 10px; background: var(--menu); box-shadow: var(--shadow); z-index: 6; backdrop-filter: blur(30px);">
+<div class="menu-item" style="font-weight: 600;"><span style="width: 12px;"></span><span style="flex-grow: 1;">{{menuStatus}}<span class="menu-sub" style="font-weight: 400;">{{menuReason}}</span></span></div>
+<div class="menu-sep"></div>
+<div class="menu-item"><span style="width: 12px;"></span><span style="flex-grow: 1;">{{menuToggle}}</span><span style="color: var(--ink2);">⌃⌥⌘N</span></div>
+<div class="menu-item"><span style="width: 12px;"></span><span style="flex-grow: 1;">Turn Off For</span><span style="color: var(--ink2);">›</span></div>
+<div class="menu-head">Force Off</div>
+<div class="menu-item"><span style="width: 12px;"></span><span style="flex-grow: 1;">In Mail</span></div>
+<div class="menu-sep"></div>
+<div class="menu-item"><span style="width: 12px;"></span><span style="flex-grow: 1;">Settings…</span><span style="color: var(--ink2);">⌘,</span></div>
+<div class="menu-item"><span style="width: 12px;"></span><span style="flex-grow: 1;">Quit Nightcap</span><span style="color: var(--ink2);">⌘Q</span></div>
+</div>
+</sc-if>
+
+<div aria-hidden="true" style="position: absolute; inset: 0; pointer-events: none; z-index: 10; background: rgba(255, 138, 46, 0.3); opacity: {{tintOpacity}}; transition: opacity {{tintMs}}ms ease-in-out;"></div>
+
+<div style="position: absolute; left: 16px; bottom: 16px; z-index: 11; display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 999px; background: rgba(12, 14, 20, 0.86); color: #e8ebf2; font-family: ui-monospace, Menlo, monospace; font-size: 11px;">
+<span>PROTOTYPE · {{stateLine}}</span>
+<button onClick="{{restart}}" style="border: 0; border-radius: 999px; padding: 3px 9px; background: rgba(255,255,255,0.16); color: #fff; font: inherit; cursor: pointer;">Restart</button>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"darkMode":{"editor":"boolean","default":false,"section":"Scenario"},"nightShiftSetUp":{"editor":"boolean","default":false,"section":"Scenario"},"appsFound":{"editor":"int","default":6,"min":0,"max":6,"section":"Scenario"},"$preview":{"width":1280,"height":800}}'>
+// Apps for colour work start ticked; video players start unticked, since plenty of people like a film warm.
+const APPS = [
+  { name: 'Figma', letter: 'F', kind: 'Design', group: 'work', ticked: true },
+  { name: 'Adobe Photoshop', letter: 'Ps', kind: 'Photo', group: 'work', ticked: true },
+  { name: 'Lightroom Classic', letter: 'Lr', kind: 'Photo', group: 'work', ticked: true },
+  { name: 'TV', letter: 'tv', kind: 'Apple', group: 'video', ticked: false },
+  { name: 'IINA', letter: 'I', kind: 'Player', group: 'video', ticked: false },
+  { name: 'DaVinci Resolve', letter: 'D', kind: 'Video editing', group: 'work', ticked: true },
+];
+const CHOSEN_APP = { name: 'Capture One', letter: 'C', kind: 'Chosen by you', group: 'work', ticked: true };
+const SITES = [
+  { name: 'YouTube', host: 'youtube.com', letter: 'Y', group: 'video' },
+  { name: 'Netflix', host: 'netflix.com', letter: 'N', group: 'video' },
+  { name: 'Twitch', host: 'twitch.tv', letter: 'T', group: 'video' },
+  { name: 'Disney+', host: 'disneyplus.com', letter: 'D', group: 'video' },
+  { name: 'Prime Video', host: 'primevideo.com', letter: 'P', group: 'video' },
+  { name: 'Vimeo', host: 'vimeo.com', letter: 'V', group: 'video' },
+  { name: 'Figma', host: 'figma.com', letter: 'F', group: 'design' },
+  { name: 'Canva', host: 'canva.com', letter: 'C', group: 'design' },
+];
+const STEPS = ['welcome', 'nightshift', 'apps', 'websites', 'notifications', 'login', 'ready'];
+const TITLES = {
+  welcome: 'Welcome',
+  nightshift: 'Night Shift',
+  apps: 'Apps',
+  websites: 'Websites',
+  notifications: 'Notifications',
+  login: 'Open at Login',
+};
+
+function fresh() {
+  return {
+    step: 0, reached: 0, answers: {}, picked: {}, ticked: {}, chosenApp: false,
+    mode: null, strength: 50, web: 'pick', ax: 'idle',
+    windowOpen: true, coach: false, menuOpen: false, tourNote: false,
+  };
+}
+
+function gridItems(list, extra) {
+  return list.map((item, i) => ({
+    ...item,
+    ...extra(item),
+    borderTop: i < 2 ? 'none' : '0.5px solid var(--sep)',
+    borderLeft: i % 2 ? '0.5px solid var(--sep)' : 'none',
+  }));
+}
+
+class Component extends DCLogic {
+  state = fresh();
+
+  answers() {
+    const preset = this.props.nightShiftSetUp ? { nightshift: { mode: 'sunset' } } : {};
+    return { ...preset, ...this.state.answers };
+  }
+
+  found() {
+    const list = APPS.slice(0, Math.max(0, Math.min(6, this.props.appsFound ?? 6)));
+    return this.state.chosenApp ? [...list, CHOSEN_APP] : list;
+  }
+
+  appOn(app) { return this.state.picked[app.name] ?? app.ticked; }
+
+  advance(key, value) {
+    const step = this.state.step + 1;
+    this.setState({
+      answers: { ...this.state.answers, [key]: value },
+      step, reached: Math.max(this.state.reached, step), web: 'pick', mode: null,
+    });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const a = this.answers();
+    const key = STEPS[s.step];
+    const found = this.found();
+    const chosen = found.filter((app) => this.appOn(app));
+    const tickedSites = SITES.filter((site) => s.ticked[site.host]);
+    const mode = s.mode ?? a.nightshift?.mode ?? 'sunset';
+    const scheduled = a.nightshift?.mode ?? null;
+    const preset = !!this.props.nightShiftSetUp;
+
+    const answerText = {
+      welcome: '',
+      nightshift: a.nightshift === undefined ? '' : scheduled === 'sunset' ? 'Sunset to sunrise' : scheduled === 'custom' ? '22:00 to 07:00' : 'No schedule',
+      apps: a.apps === undefined ? '' : a.apps.length ? `${a.apps.length} rule${a.apps.length === 1 ? '' : 's'}` : 'None',
+      websites: a.websites === undefined ? '' : !a.websites.on ? 'Off' : `On${a.websites.sites.length ? `, ${a.websites.sites.length} site${a.websites.sites.length === 1 ? '' : 's'}` : ''}${a.websites.ax ? '' : ', needs Accessibility'}`,
+      notifications: a.notifications === undefined ? '' : a.notifications ? 'Allowed' : 'Not now',
+      login: a.login === undefined ? '' : a.login ? 'On' : 'Not now',
+    };
+    const positive = {
+      welcome: true,
+      nightshift: !!scheduled,
+      apps: !!(a.apps && a.apps.length),
+      websites: !!(a.websites?.on && a.websites.ax),
+      notifications: a.notifications === true,
+      login: a.login === true,
+    };
+
+    const side = STEPS.filter((k) => k !== 'ready').map((k, i) => {
+      const isCurrent = k === key;
+      const answered = a[k] !== undefined;
+      const reachable = i <= s.reached;
+      return {
+        title: TITLES[k],
+        isCurrent,
+        answer: isCurrent ? '' : answerText[k],
+        wash: isCurrent ? 'var(--gold-wash)' : 'transparent',
+        weight: isCurrent ? 600 : 400,
+        color: isCurrent || answered ? 'var(--ink)' : 'var(--ink2)',
+        cursor: reachable && !isCurrent ? 'pointer' : 'default',
+        markCurrent: isCurrent,
+        markOk: !isCurrent && answered && positive[k],
+        markOff: !isCurrent && answered && !positive[k],
+        markTodo: !isCurrent && !answered,
+        go: () => { if (reachable) this.setState({ step: i, web: 'pick', mode: null }); },
+      };
+    });
+
+    let heading = '';
+    let lede = '';
+    let primaryLabel = 'Continue';
+    let primary = () => this.advance(key, true);
+    let primaryOpacity = 1;
+    let secondaryLabel = '';
+    let secondary = () => {};
+    let leftLink = '';
+    let leftLinkGo = () => {};
+    let canBack = s.step > 0;
+    let back = () => this.setState({ step: s.step - 1, web: 'pick', mode: null });
+
+    if (key === 'welcome') {
+      heading = 'Night Shift, with exceptions';
+      lede = 'Night Shift is part of macOS. In the evening it shifts your screen toward warmer colours: fine for reading, wrong for photos, video and design. Nightcap switches Night Shift off while the apps and websites you choose are in front, and gives it back when you leave them.';
+    } else if (key === 'nightshift') {
+      heading = preset ? 'Night Shift is already on a schedule' : 'When should Night Shift come on?';
+      lede = 'These are Night Shift’s own settings, the ones in System Settings › Displays. Nightcap works on top of them and only adds the exceptions.';
+      primaryLabel = preset ? 'Continue' : 'Set Schedule';
+      primary = () => this.advance('nightshift', { mode });
+      if (!preset) {
+        secondaryLabel = 'Not Now';
+        secondary = () => this.advance('nightshift', { mode: null });
+      }
+    } else if (key === 'apps') {
+      heading = 'Apps that need true colour';
+      lede = found.length
+        ? 'While one of these is in front, Nightcap turns Night Shift off. Switch to another app and it comes back. Nightcap found these on your Mac.'
+        : 'Nightcap didn’t find any of the apps it knows need true colour. Choose one here, or later bring an app to the front and pick it under Force Off in Nightcap’s menu.';
+      const n = chosen.length;
+      primaryLabel = n === 0 ? 'Continue' : `Add ${n} Rule${n === 1 ? '' : 's'}`;
+      primary = () => this.advance('apps', chosen.map((app) => app.name));
+      secondaryLabel = n === 0 ? '' : 'Not Now';
+      secondary = () => this.advance('apps', []);
+      if (!s.chosenApp) {
+        leftLink = 'Choose Another App…';
+        leftLinkGo = () => this.setState({ chosenApp: true });
+      }
+    } else if (key === 'websites' && s.web === 'pick') {
+      heading = 'Websites that need true colour';
+      lede = 'Nightcap can do the same for websites in Safari and Chrome. It reads the front tab’s address with Accessibility and keeps only the site’s name.';
+      primaryLabel = 'Turn On';
+      primary = () => this.setState({ web: 'ax', ax: s.ax === 'granted' ? 'granted' : 'idle' });
+      secondaryLabel = 'Not Now';
+      secondary = () => this.advance('websites', { on: false, sites: [], ax: false });
+    } else if (key === 'websites') {
+      heading = 'Allow Accessibility';
+      lede = 'Website checking reads the front tab’s address through Accessibility. In System Settings, switch Nightcap on under Privacy & Security › Accessibility.';
+      back = () => this.setState({ web: 'pick' });
+      const sites = tickedSites.map((site) => site.host);
+      if (s.ax === 'idle') {
+        primaryLabel = 'Allow Accessibility…';
+        primary = () => {
+          this.setState({ ax: 'waiting' });
+          setTimeout(() => this.setState({ ax: 'granted' }), 1600);
+        };
+        secondaryLabel = 'Not Now';
+        secondary = () => this.advance('websites', { on: true, sites, ax: false });
+      } else if (s.ax === 'waiting') {
+        primaryLabel = 'Waiting…';
+        primary = () => {};
+        primaryOpacity = 0.55;
+      } else {
+        primary = () => this.advance('websites', { on: true, sites, ax: true });
+      }
+    } else if (key === 'notifications') {
+      heading = 'When you overrule a rule';
+      lede = 'If you turn Night Shift on in Control Center while a rule holds it off, Nightcap takes it as “not now” and snoozes the rule until the schedule’s next change. A notification tells you so.';
+      primaryLabel = 'Allow Notifications';
+      primary = () => this.advance('notifications', true);
+      secondaryLabel = 'Not Now';
+      secondary = () => this.advance('notifications', false);
+    } else if (key === 'login') {
+      heading = 'Open at login';
+      lede = 'Nightcap can open when you log in, so your rules apply from the start. It lives in the menu bar, with no Dock icon.';
+      primaryLabel = 'Open at Login';
+      primary = () => this.advance('login', true);
+      secondaryLabel = 'Not Now';
+      secondary = () => this.advance('login', false);
+    } else if (key === 'ready') {
+      heading = 'Nightcap is ready';
+      lede = 'Here’s what you set up. You can change any of it later in Settings.';
+      primaryLabel = 'Done';
+      primary = () => this.setState({ windowOpen: false, coach: true });
+      secondaryLabel = 'Take the Tour';
+      secondary = () => this.setState({ windowOpen: false, tourNote: true });
+    }
+
+    const nsPreviewing = s.windowOpen && key === 'nightshift';
+    const onNow = scheduled === 'sunset';
+    const tinted = nsPreviewing || onNow;
+
+    const shotsTint = [1, 0, 1];
+    const groupOf = (list, groups, make) => groups
+      .map(([id, label]) => ({ label, items: gridItems(list.filter((item) => item.group === id), make) }))
+      .filter((g) => g.items.length);
+
+    const summary = ['nightshift', 'apps', 'websites', 'notifications', 'login'].map((k, i) => ({
+      title: TITLES[k],
+      answer: answerText[k] || 'Skipped',
+      ok: positive[k] && a[k] !== undefined,
+      off: !(positive[k] && a[k] !== undefined),
+      border: i === 0 ? 'none' : '0.5px solid var(--sep)',
+    }));
+
+    const pane = {
+      welcome: key === 'welcome',
+      nightshift: key === 'nightshift',
+      apps: key === 'apps' && found.length > 0,
+      sites: key === 'websites' && s.web === 'pick',
+      ax: key === 'websites' && s.web === 'ax',
+      notifications: key === 'notifications',
+      ready: key === 'ready',
+    };
+
+    return {
+      themeClass: this.props.darkMode ? 'dark' : '',
+      frontApp: s.windowOpen ? 'Nightcap' : 'Mail',
+      windowOpen: s.windowOpen,
+      side, heading, lede, pane,
+      primaryLabel, primary, primaryOpacity, secondaryLabel, secondary, leftLink, leftLinkGo,
+      primaryClass: 'btn btn-primary',
+      canBack, back,
+
+      strip: [
+        { label: 'Mail at 21:40', isMail: true, isFigma: false },
+        { label: 'Figma in front', isMail: false, isFigma: true },
+        { label: 'Back to Mail', isMail: true, isFigma: false },
+      ].map((shot, i) => ({ ...shot, tint: shotsTint[i] })),
+
+      sunsetOn: mode === 'sunset',
+      customOn: mode === 'custom',
+      sunsetClass: mode === 'sunset' ? 'on' : '',
+      customClass: mode === 'custom' ? 'on' : '',
+      pickSunset: () => this.setState({ mode: 'sunset' }),
+      pickCustom: () => this.setState({ mode: 'custom' }),
+      strength: s.strength,
+      setStrength: (e) => this.setState({ strength: Number(e.target.value) }),
+
+      appGroups: groupOf(found, [['work', 'For colour work'], ['video', 'Video players']], (app) => ({
+        on: this.appOn(app),
+        checkClass: this.appOn(app) ? 'on' : '',
+        toggle: () => this.setState({ picked: { ...s.picked, [app.name]: !this.appOn(app) } }),
+      })),
+      siteGroups: groupOf(SITES, [['video', 'Video'], ['design', 'Design']], (site) => ({
+        on: !!s.ticked[site.host],
+        checkClass: s.ticked[site.host] ? 'on' : '',
+        toggle: () => this.setState({ ticked: { ...s.ticked, [site.host]: !s.ticked[site.host] } }),
+      })),
+      sitesCaption: tickedSites.length
+        ? `${tickedSites.length} ticked: ${tickedSites.length === 1 ? 'it becomes a rule' : 'they become rules'} when you turn website checking on.`
+        : 'Tick any that need true colour. You can add any other site later from the menu while it’s open.',
+
+      axSwitchClass: s.ax === 'granted' ? 'on' : '',
+      axText: s.ax === 'waiting'
+        ? 'Waiting for System Settings. This turns green the moment Nightcap is allowed.'
+        : s.ax === 'granted'
+          ? 'Allowed. Nightcap can now see which site is in front.'
+          : 'Nightcap asks macOS to open this list for you. You can turn it off there at any time.',
+
+      noticeApp: (a.apps ?? [])[0] ?? 'Figma',
+      summary,
+
+      tourNote: s.tourNote,
+      backToSetup: () => this.setState({ windowOpen: true, tourNote: false }),
+      coach: s.coach,
+      coachOk: () => this.setState({ coach: false }),
+
+      menuOpen: s.menuOpen,
+      toggleMenu: () => this.setState({ menuOpen: !s.menuOpen, coach: false }),
+      moonBg: s.menuOpen ? 'var(--hi)' : 'transparent',
+      moonOn: tinted,
+      moonOff: !tinted,
+      menuStatus: tinted ? 'Night Shift: On' : 'Night Shift: Off',
+      menuReason: nsPreviewing ? 'Previewing the strength' : onNow ? 'Following the schedule until 07:52' : scheduled === 'custom' ? 'Following the schedule until 22:00' : 'No schedule',
+      menuToggle: tinted ? 'Turn Night Shift Off' : 'Turn Night Shift On',
+
+      tintOpacity: tinted ? 0.25 + 0.75 * (s.strength / 100) : 0,
+      tintMs: nsPreviewing ? 180 : 900,
+      stateLine: `step ${key}${key === 'websites' ? ` (${s.web})` : ''} · Night Shift ${nsPreviewing ? 'previewing' : onNow ? 'on' : 'off'}, schedule ${scheduled ?? 'none'}, strength ${s.strength} · app rules: ${(a.apps ?? []).join(', ') || 'none'} · sites: ${(a.websites?.sites ?? []).join(', ') || 'none'}`,
+      restart: () => this.setState(fresh()),
+    };
+  }
+}
+</script>
+</body>
+</html>
