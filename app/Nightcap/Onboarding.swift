@@ -40,6 +40,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
         ("org.videolan.vlc", "Video"),
         ("com.firecore.infuse", "Video"),
     ]
+    /// Websites that need true colour, mostly video streaming, none ticked.
+    private static let suggestedSites: [(name: String, host: String)] = [
+        ("YouTube", "youtube.com"),
+        ("Netflix", "netflix.com"),
+        ("Twitch", "twitch.tv"),
+        ("Disney+", "disneyplus.com"),
+        ("Prime Video", "primevideo.com"),
+        ("Vimeo", "vimeo.com"),
+        ("Figma", "figma.com"),
+        ("Canva", "canva.com"),
+    ]
     /// Three rows of three fit the step; one place is kept for an app the user chooses.
     private static let gridSize = 9
     private static let nightShiftSteps: [Step] = [.alreadySetUp, .strength, .schedule]
@@ -65,6 +76,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// ticked and can't be changed.
     private var apps: [GridItem]
     private var tickedApps: Set<String> = []
+    private let sites: [GridItem]
+    private var tickedSites: Set<String> = []
     private var index = 0
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
@@ -102,6 +115,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
         apps = Self.suggestedApps.compactMap { suggestion in
             GridItem(app: suggestion.bundleId, kind: suggestion.kind, ruled: ruled[.app(suggestion.bundleId)])
         }.prefix(Self.gridSize - 1).map { $0 }
+        sites = Self.suggestedSites.map { site in
+            GridItem(site: site.name, host: site.host, ruled: ruled[.domain(site.host)])
+        }
         strength = setup.nightShift.strength ?? 50
         let current = setup.nightShift.schedule ?? .off
         if case .custom(let from, let to) = current {
@@ -333,9 +349,69 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     draw()
                 }
             })]
+        case .websites:
+            return websitesControls()
         default:
             return []
         }
+    }
+
+    private func websitesControls() -> [NSView] {
+        switch page {
+        case .ask:
+            return [rows([
+                fact(symbol: "globe", "Safari and Chrome.", "It works in the front tab of either."),
+                fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
+                fact(symbol: "lock", "Only the site’s name.", "Like youtube.com; the rest of the address is dropped."),
+            ])]
+        case .accessibility:
+            let granted = accessibilityGranted()
+            let asked = waitingForAccessibility || granted
+            return [rows([
+                progress(asked ? .ok : .current, "Click Allow Accessibility, then Open System Settings when macOS asks."),
+                progress(
+                    granted ? .ok : asked ? .current : .todo,
+                    "Switch Nightcap on under Privacy & Security › Accessibility."),
+                progress(granted ? .ok : .todo, "That’s all. This step moves on by itself the moment Nightcap is allowed."),
+            ])]
+        case .sites:
+            return [grid(sites.map { site in
+                GridCell(site, ticked: site.ruled != nil || tickedSites.contains(site.id)) { [weak self] in
+                    guard let self else { return }
+                    if tickedSites.remove(site.id) == nil { tickedSites.insert(site.id) }
+                    draw()
+                }
+            })]
+        }
+    }
+
+    /// A line of the websites step's facts: a glyph, a few words in bold, then the rest.
+    private func fact(symbol: String, _ lead: String, _ rest: String) -> NSView {
+        let glyph = NSImageView(
+            image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)!
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))!)
+        glyph.contentTintColor = .nightcapSecondary
+        glyph.widthAnchor.constraint(equalToConstant: 18).isActive = true
+        let text = NSMutableAttributedString(
+            attributedString: Look.label("\(lead) \(rest)", size: 12, weight: .regular, color: .labelColor, width: Self.textWidth - 60)
+                .attributedStringValue)
+        text.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: NSRange(location: 0, length: (lead as NSString).length))
+        let label = NSTextField(labelWithAttributedString: text)
+        let line = NSStackView(views: [glyph, label])
+        line.orientation = .horizontal
+        line.spacing = 10
+        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+    }
+
+    /// A line of the Accessibility checklist, marked as done, current or to do.
+    private func progress(_ mark: Look.Mark, _ text: String) -> NSView {
+        let line = NSStackView(views: [
+            Look.mark(mark),
+            Look.label(text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor, width: Self.textWidth - 60),
+        ])
+        line.orientation = .horizontal
+        line.spacing = 10
+        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     /// Cells three to a row in a group, divided by hairlines.
@@ -728,7 +804,16 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     }
                 )
             case .sites:
-                return (nil, Choice(title: "Not Now", run: next), Choice(title: "Add Rules", enabled: false) {})
+                let adding = sites.filter { $0.ruled == nil && tickedSites.contains($0.id) }
+                return (
+                    nil,
+                    Choice(title: "Not Now", run: next),
+                    Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
+                        guard let self else { return }
+                        for site in adding { choose(.addRule(.domain(site.id))) }
+                        advance()
+                    }
+                )
             }
         case .ready:
             return (nil, nil, Choice(title: "Done") { [weak self] in self?.window.performClose(nil) })
@@ -818,6 +903,15 @@ struct GridItem {
     /// Where the rule comes from when it exists already, such as "From your config".
     let ruled: String?
 
+    /// A website by its name, with its domain under it.
+    init(site name: String, host: String, ruled: String?) {
+        id = host
+        self.name = name
+        detail = ruled ?? host
+        icon = nil
+        self.ruled = ruled
+    }
+
     /// The app with this bundle ID, by its installed name and icon, or nil when it isn't
     /// installed.
     init?(app bundleId: String, kind: String, ruled: String?) {
@@ -854,10 +948,16 @@ final class GridCell: NSView {
         checkbox.setAccessibilityLabel(item.name)
         Look.attach(checkbox, toggle)
         self.toggle = item.ruled == nil ? toggle : nil
-        let icon = NSImageView(image: item.icon ?? NSImage())
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        let icon: NSView
+        if let image = item.icon {
+            let view = NSImageView(image: image)
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.widthAnchor.constraint(equalToConstant: 24).isActive = true
+            view.heightAnchor.constraint(equalToConstant: 24).isActive = true
+            icon = view
+        } else {
+            icon = Tile(symbol: "globe")
+        }
         let name = NSTextField(labelWithString: item.name)
         name.font = .systemFont(ofSize: 13)
         name.lineBreakMode = .byTruncatingTail
