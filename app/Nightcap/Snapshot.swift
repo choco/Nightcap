@@ -61,6 +61,9 @@ enum Snapshot {
         let steps = { (nightShift: OnboardingNightShift) in
             Onboarding(
                 steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
+                rules: [SettingsRule(
+                    identity: .app("com.apple.Photos"), label: "From your config", snoozed: false,
+                    action: RuleAction(title: "Snooze", command: .snooze(.app("com.apple.Photos"))))],
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in }, onFinish: { _ in })
         }
         let newUser = steps(setUp)

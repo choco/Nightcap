@@ -294,6 +294,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let accessibility, let core else { return }
         let onboarding = Onboarding(
             steps: core.onboarding(),
+            rules: core.settings().rules,
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
             choose: { [weak self] command in

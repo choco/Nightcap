@@ -21,6 +21,27 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case ask, accessibility, sites
     }
 
+    /// Apps that need true colour, suggested when they're installed, each with a word for what
+    /// it's for.
+    private static let suggestedApps: [(bundleId: String, kind: String)] = [
+        ("com.figma.Desktop", "Design"),
+        ("com.bohemiancoding.sketch3", "Design"),
+        ("com.adobe.illustrator", "Design"),
+        ("com.adobe.Photoshop", "Photo"),
+        ("com.adobe.LightroomClassicCC7", "Photo"),
+        ("com.pixelmatorteam.pixelmator.x", "Photo"),
+        ("com.apple.Photos", "Photo"),
+        ("com.apple.FinalCut", "Video editing"),
+        ("com.blackmagic-design.DaVinciResolve", "Video editing"),
+        ("com.apple.iMovieApp", "Video editing"),
+        ("com.apple.TV", "Video"),
+        ("com.apple.QuickTimePlayerX", "Video"),
+        ("com.colliderli.iina", "Video"),
+        ("org.videolan.vlc", "Video"),
+        ("com.firecore.infuse", "Video"),
+    ]
+    /// Three rows of three fit the step; one place is kept for an app the user chooses.
+    private static let gridSize = 9
     private static let nightShiftSteps: [Step] = [.alreadySetUp, .strength, .schedule]
     private static let nightcapSteps: [Step] = [.apps, .websites, .lastThings]
     private static let size = NSSize(width: 760, height: 540)
@@ -40,6 +61,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
     private let onFinish: (_ websites: Bool) -> Void
+    /// The apps suggested on this Mac, then any the user chose; the ones with a rule already come
+    /// ticked and can't be changed.
+    private var apps: [GridItem]
+    private var tickedApps: Set<String> = []
     private var index = 0
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
@@ -62,6 +87,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// ends, by Done or the close button.
     init(
         steps setup: OnboardingSteps,
+        rules: [SettingsRule],
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
@@ -72,6 +98,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.askForAccessibility = askForAccessibility
         self.choose = choose
         self.onFinish = onFinish
+        let ruled = Dictionary(rules.map { ($0.identity, $0.label) }, uniquingKeysWith: { first, _ in first })
+        apps = Self.suggestedApps.compactMap { suggestion in
+            GridItem(app: suggestion.bundleId, kind: suggestion.kind, ruled: ruled[.app(suggestion.bundleId)])
+        }.prefix(Self.gridSize - 1).map { $0 }
         strength = setup.nightShift.strength ?? 50
         let current = setup.nightShift.schedule ?? .off
         if case .custom(let from, let to) = current {
@@ -285,8 +315,65 @@ final class Onboarding: NSObject, NSWindowDelegate {
             return strengthControls()
         case .schedule:
             return scheduleControls()
+        case .apps where apps.isEmpty:
+            let note = Look.secondary(
+                "Nightcap looks for apps like Figma, Photoshop, Final Cut Pro and DaVinci Resolve, and found none on this Mac. Choose one yourself, or add one later from the menu while it’s in front.",
+                width: Self.textWidth - 150)
+            note.setContentHuggingPriority(.defaultLow, for: .horizontal)
+            let line = NSStackView(views: [note, Look.button("Choose App…", .regular) { [weak self] in self?.chooseApp() }])
+            line.orientation = .horizontal
+            line.distribution = .fill
+            line.spacing = 14
+            return [rows([Look.padded(line, top: 12, left: 14, bottom: 12, right: 14)])]
+        case .apps:
+            return [grid(apps.map { app in
+                GridCell(app, ticked: app.ruled != nil || tickedApps.contains(app.id)) { [weak self] in
+                    guard let self else { return }
+                    if tickedApps.remove(app.id) == nil { tickedApps.insert(app.id) }
+                    draw()
+                }
+            })]
         default:
             return []
+        }
+    }
+
+    /// Cells three to a row in a group, divided by hairlines.
+    private func grid(_ cells: [GridCell]) -> NSView {
+        var lines: [NSView] = []
+        for start in stride(from: 0, to: cells.count, by: 3) {
+            var line = Array(cells[start..<min(start + 3, cells.count)]) as [NSView]
+            while line.count < 3 { line.append(NSView()) }
+            for (column, cell) in line.enumerated() {
+                (cell as? GridCell)?.dividedOnLeft = column > 0
+            }
+            let row = NSStackView(views: line)
+            row.orientation = .horizontal
+            row.distribution = .fillEqually
+            row.spacing = 0
+            lines.append(row)
+        }
+        return rows(lines)
+    }
+
+    /// An app from Applications, like Settings' "Add App…", added to the grid ticked.
+    private func chooseApp() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.application]
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.prompt = "Choose"
+        panel.message = "Choose an app that needs true colour."
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard let self, response == .OK, let url = panel.url,
+                  let bundleId = Bundle(url: url)?.bundleIdentifier
+            else { return }
+            if !apps.contains(where: { $0.id == bundleId }),
+               let item = GridItem(app: bundleId, kind: "Chosen by you", ruled: nil)
+            {
+                apps.append(item)
+            }
+            tickedApps.insert(bundleId)
+            draw()
         }
     }
 
@@ -453,6 +540,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
+    private static func addRules(_ count: Int) -> String {
+        count == 0 ? "Add Rules" : count == 1 ? "Add 1 Rule" : "Add \(count) Rules"
+    }
+
     /// The strength in words, since System Settings shows no number either.
     private static func warmth(_ strength: UInt8) -> String {
         strength < 34 ? "A little warm" : strength < 67 ? "Warm" : "Very warm"
@@ -493,7 +584,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .apps:
             return (
                 eyebrow, "Night Shift, with exceptions",
-                "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you tick is in front, and gives it back when you leave."
+                apps.isEmpty
+                    ? "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you choose is in front, and gives it back when you leave."
+                    : "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you tick is in front, and gives it back when you leave. These are on your Mac."
             )
         case .websites:
             switch page {
@@ -594,10 +687,16 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 }
             )
         case .apps:
+            let adding = apps.filter { $0.ruled == nil && tickedApps.contains($0.id) }
             return (
-                Choice(title: "Choose Another App…") {},
+                apps.isEmpty || apps.count >= Self.gridSize
+                    ? nil : Choice(title: "Choose Another App…") { [weak self] in self?.chooseApp() },
                 Choice(title: "Not Now", run: next),
-                Choice(title: "Add Rules", enabled: false) {}
+                Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
+                    guard let self else { return }
+                    for app in adding { choose(.addRule(.app(app.id))) }
+                    advance()
+                }
             )
         case .websites:
             switch page {
@@ -707,5 +806,98 @@ final class Stage: NSView {
         row.alignment = .centerY
         row.spacing = 5
         return row
+    }
+}
+
+/// A suggestion for a rule: an installed app, or later a website.
+struct GridItem {
+    let id: String
+    let name: String
+    let detail: String
+    let icon: NSImage?
+    /// Where the rule comes from when it exists already, such as "From your config".
+    let ruled: String?
+
+    /// The app with this bundle ID, by its installed name and icon, or nil when it isn't
+    /// installed.
+    init?(app bundleId: String, kind: String, ruled: String?) {
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else { return nil }
+        id = bundleId
+        name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        detail = ruled ?? kind
+        icon = Self.loaded(NSWorkspace.shared.icon(forFile: url.path))
+        self.ruled = ruled
+    }
+}
+
+extension GridItem {
+    /// An app's icon drawn once at the grid's size, since icons from an asset catalog arrive
+    /// blank until something asks for their pixels.
+    static func loaded(_ icon: NSImage) -> NSImage {
+        var rect = NSRect(x: 0, y: 0, width: 48, height: 48)
+        guard let pixels = icon.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return icon }
+        return NSImage(cgImage: pixels, size: NSSize(width: 24, height: 24))
+    }
+}
+
+/// A suggestion in onboarding's grid: a checkbox, the icon and two lines. A click anywhere on it
+/// ticks it, unless its rule exists already.
+final class GridCell: NSView {
+    var dividedOnLeft = false
+    private let checkbox: NSButton
+
+    init(_ item: GridItem, ticked: Bool, toggle: @escaping () -> Void) {
+        checkbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
+        super.init(frame: .zero)
+        checkbox.state = ticked ? .on : .off
+        checkbox.isEnabled = item.ruled == nil
+        checkbox.setAccessibilityLabel(item.name)
+        Look.attach(checkbox, toggle)
+        self.toggle = item.ruled == nil ? toggle : nil
+        let icon = NSImageView(image: item.icon ?? NSImage())
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        let name = NSTextField(labelWithString: item.name)
+        name.font = .systemFont(ofSize: 13)
+        name.lineBreakMode = .byTruncatingTail
+        let detail = NSTextField(labelWithString: item.detail)
+        detail.font = .systemFont(ofSize: 11)
+        detail.textColor = .nightcapSecondary
+        detail.lineBreakMode = .byTruncatingTail
+        for label in [name, detail] {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+        let words = NSStackView(views: [name, detail])
+        words.orientation = .vertical
+        words.alignment = .leading
+        words.spacing = 0
+        let line = NSStackView(views: [checkbox, icon, words])
+        line.orientation = .horizontal
+        line.spacing = 8
+        line.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(line)
+        NSLayoutConstraint.activate([
+            line.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),
+            line.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
+            line.topAnchor.constraint(equalTo: topAnchor, constant: 6),
+            line.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
+    }
+
+    private var toggle: (() -> Void)?
+
+    override func mouseDown(with event: NSEvent) {
+        toggle?()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard dividedOnLeft else { return }
+        NSColor.nightcapSeparator.setFill()
+        NSRect(x: 0, y: 0, width: 0.5, height: bounds.height).fill()
     }
 }
