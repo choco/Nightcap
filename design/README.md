@@ -55,12 +55,14 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 ## In the app
 
-The app is a native Mac app and looks like one; this book's web look stays on the web.
+The app is a native Mac app and looks like one; this book's web look stays on the web. What the app takes from the brand has to sit naturally on macOS.
 
 - Use the system font, the system's window, group and control colours, and the user's accent colour for primary buttons and links. Build it in AppKit.
 - Carry the brand over where the app already shares it: the app icon and the menu-bar moons, `ok`, `drift`, `broken` and `off` with their shapes, capsule buttons, 12-point groups and 7-point tiles, and the voice.
 - Allow two brand moments: the wordmark in onboarding's header, in Caprasimo at 26 points (the app bundles the face with its licence), and the gold of onboarding's current step, `moon-text` by day and `moon` at night.
-- Keep Figtree and Martian Mono, the navy surfaces, gold primary buttons, doodles, the tint and ambient motion on the web.
+- Illustrate a step where a picture shows what it means faster than words, as onboarding's stage does. Draw small live mocks of macOS itself (the menu bar, a window, Control Center, System Settings) in the system's colours, following light and dark, with `tint` over whatever Night Shift is warming, and caption each one.
+- Animate those mocks only to act out what the step describes: an app comes to the front and the tint lifts, a notification slides in. Loops run slowly, the caption says the same thing in words, and with reduced motion each mock shows its end state, still.
+- Keep Figtree and Martian Mono, the navy surfaces, gold primary buttons, doodles and ambient motion on the web.
 
 ## Iconography
 
