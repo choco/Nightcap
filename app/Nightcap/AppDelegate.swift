@@ -311,9 +311,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 apply(core.handle(event: .onboardingFinished(websites: websites)))
                 self.onboarding = nil
-                dockIcon.hide(for: .onboarding)
                 showStatusMenu()
-                statusMenu?.pointOut()
+                // The Dock icon goes once the popover is up, while Nightcap stays active with it.
+                statusMenu?.pointOut { [weak self] in self?.dockIcon.hide(for: .onboarding) }
             })
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)

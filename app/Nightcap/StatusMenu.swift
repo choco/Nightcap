@@ -14,6 +14,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var shown: Menu?
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
+    /// "Nightcap is up here", while it shows.
+    private var pointing: NSPopover?
     /// The mockup's orange dot, over the template moon so the moon still follows the menu
     /// bar's appearance while the dot keeps its colour.
     private let dot = NSView()
@@ -95,20 +97,37 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
-    /// Points at the moon once onboarding is done: the only way into Nightcap from then on.
-    func pointOut() {
-        // A turn of the run loop, so the new status item has its place in the menu bar.
-        DispatchQueue.main.async { [weak self] in
-            guard let button = self?.item.button else { return }
+    /// Points at the moon once onboarding is done: the only way into Nightcap from then on. It
+    /// stays until OK or the menu opens. A popover, since on macOS 27 the system draws the
+    /// status item, and only AppKit knows where it is. `onShown` runs once it's up and focused.
+    func pointOut(onShown: @escaping () -> Void) {
+        // A moment for the new status item to take its place in the menu bar.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, let button = item.button else { return }
             let popover = NSPopover()
-            popover.behavior = .transient
-            popover.contentViewController = PointOut(popover)
+            popover.behavior = .applicationDefined
+            let content = PointOut { [weak self] in self?.stopPointing() }
+            popover.contentViewController = content
+            popover.contentSize = content.size
+            // Focused, as a popover the user opened would be; without it the popover's glass washes
+            // out. Nightcap is still the active app from the click on Done, so nothing else loses
+            // the focus to it.
+            NSApp.activate()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+            pointing = popover
+            onShown()
         }
+    }
+
+    private func stopPointing() {
+        pointing?.close()
+        pointing = nil
     }
 
     /// `onOpen` can learn something the menu should show, which then redraws it in place.
     func menuWillOpen(_ menu: NSMenu) {
+        stopPointing()
         onOpen()
     }
 
@@ -271,33 +290,37 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 }
 
-/// "Nightcap is up here", under the moon once onboarding is done.
+/// "Nightcap is up here", under the moon once onboarding is done, at a fixed width with the
+/// height its words need.
 private final class PointOut: NSViewController {
-    private weak var popover: NSPopover?
+    private static let width: CGFloat = 300
+    private let onOK: () -> Void
+    private(set) var size = NSSize(width: width, height: 0)
 
-    init(_ popover: NSPopover) {
-        self.popover = popover
+    init(onOK: @escaping () -> Void) {
+        self.onOK = onOK
         super.init(nibName: nil, bundle: nil)
+        let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
+        // The system's label colours, which stay readable on the popover's glass.
+        let text = Look.label(
+            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while.",
+            size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
+        let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
+        let buttons = NSStackView(views: [NSView(), ok])
+        buttons.orientation = .horizontal
+        let stack = NSStackView(views: [title, text, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.setCustomSpacing(12, after: text)
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        stack.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
+        buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
+        size = NSSize(width: Self.width, height: stack.fittingSize.height)
+        view = stack
     }
 
     required init?(coder: NSCoder) {
         fatalError("not built from a nib")
-    }
-
-    override func loadView() {
-        let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: 268)
-        let text = Look.secondary(
-            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while.",
-            width: 268)
-        let ok = Look.button("OK", .primary) { [weak self] in self?.popover?.close() }
-        ok.keyEquivalent = "\r"
-        let stack = NSStackView(views: [title, text, ok])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
-        stack.setCustomSpacing(10, after: text)
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
-        ok.trailingAnchor.constraint(equalTo: stack.trailingAnchor, constant: -16).isActive = true
-        view = stack
     }
 }

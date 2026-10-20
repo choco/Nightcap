@@ -904,9 +904,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         start.spacing = 8
         let end = NSStackView(views: trailing)
         end.spacing = 8
-        let dots = StepDots(groups: dotGroups)
         let footer = NSView()
-        for view in [start, end, dots] {
+        for view in [start, end] {
             view.translatesAutoresizingMaskIntoConstraints = false
             footer.addSubview(view)
         }
@@ -916,9 +915,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
             start.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
             end.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
             end.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
-            dots.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
-            dots.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
         ])
+        // Ready sums up the steps rather than being one, so it has no dots.
+        if step != .ready {
+            let dots = StepDots(groups: dotGroups)
+            dots.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(dots)
+            NSLayoutConstraint.activate([
+                dots.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+                dots.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            ])
+        }
         return footer
     }
 
