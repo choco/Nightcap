@@ -74,6 +74,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let choose: (Command) -> Void
     private let onFinish: (_ websites: Bool) -> Void
     private let onNotificationsRead: () -> Void
+    private let sun: Sun?
+    /// The window's lasting content: the stage, whose loops would restart if it were rebuilt, and
+    /// the page under it, which is.
+    private var stage: Stage?
+    private var pageArea: NSView?
     /// The apps suggested on this Mac, then any the user chose; the ones with a rule already come
     /// ticked and can't be changed.
     private var apps: [GridItem]
@@ -98,6 +103,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
     private var addedApps = 0
+    /// The first app given a rule here, which the last step's notification names.
+    private var firstApp: String?
     private var addedSites = 0
     private var notifications = UNAuthorizationStatus.notDetermined
     private var wantsNotifications = false
@@ -110,6 +117,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     init(
         steps setup: OnboardingSteps,
         rules: [SettingsRule],
+        sun: Sun?,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
@@ -122,6 +130,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.choose = choose
         self.onFinish = onFinish
         self.onNotificationsRead = onNotificationsRead
+        self.sun = sun
         opensAtLogin = setup.opensAtLogin
         let ruled = Dictionary(rules.map { ($0.identity, $0.label) }, uniquingKeysWith: { first, _ in first })
         apps = Self.suggestedApps.compactMap { suggestion in
@@ -305,13 +314,31 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     // MARK: Drawing
 
-    /// Rebuilds the window's content for where onboarding is now. The window keeps one size.
+    /// Shows where onboarding is now: the stage's scene, which changes only with it, and the
+    /// page, rebuilt each time. The window keeps one size.
     private func draw() {
+        if stage == nil { build() }
+        guard let stage, let pageArea else { return }
+        stage.strength = strength
+        stage.show(scene)
+        pageArea.subviews.forEach { $0.removeFromSuperview() }
+        let page = pageView()
+        page.translatesAutoresizingMaskIntoConstraints = false
+        pageArea.addSubview(page)
+        NSLayoutConstraint.activate([
+            page.leadingAnchor.constraint(equalTo: pageArea.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: pageArea.trailingAnchor),
+            page.topAnchor.constraint(equalTo: pageArea.topAnchor),
+            page.bottomAnchor.constraint(equalTo: pageArea.bottomAnchor),
+        ])
+    }
+
+    private func build() {
         let content = Backdrop()
         let band = window.frame.height - window.contentLayoutRect.height
-        let stage = Stage(band: band)
-        let page = pageView()
-        for view in [stage, page] {
+        let stage = Stage(band: band, height: Self.stageHeight, sun: sun)
+        let pageArea = NSView()
+        for view in [stage, pageArea] {
             view.translatesAutoresizingMaskIntoConstraints = false
             content.addSubview(view)
         }
@@ -320,12 +347,32 @@ final class Onboarding: NSObject, NSWindowDelegate {
             stage.trailingAnchor.constraint(equalTo: content.trailingAnchor),
             stage.topAnchor.constraint(equalTo: content.topAnchor),
             stage.heightAnchor.constraint(equalToConstant: Self.stageHeight),
-            page.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            page.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            page.topAnchor.constraint(equalTo: stage.bottomAnchor),
-            page.bottomAnchor.constraint(equalTo: content.bottomAnchor),
+            pageArea.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            pageArea.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            pageArea.topAnchor.constraint(equalTo: stage.bottomAnchor),
+            pageArea.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         window.contentView = content
+        self.stage = stage
+        self.pageArea = pageArea
+    }
+
+    /// The step's illustration.
+    private var scene: Scene {
+        switch step {
+        case .alreadySetUp: .timeline(setup.nightShift.schedule ?? .sunsetToSunrise)
+        case .strength: .strength
+        case .schedule: schedule == .off ? .byHand : .timeline(schedule)
+        case .apps: .apps
+        case .websites:
+            switch page {
+            case .ask: .address
+            case .accessibility: .accessibility(granted: accessibilityGranted())
+            case .sites: .sites
+            }
+        case .lastThings: .lastThings(app: firstApp ?? "Figma")
+        case .ready: .ready
+        }
     }
 
     /// The step's words and controls, over its footer.
@@ -593,6 +640,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             guard let self, let slider else { return }
             strength = UInt8(slider.doubleValue.rounded())
             choose(slider.dragging ? .previewStrength(strength) : .strength(strength))
+            stage?.strength = strength
             showPreview(slider.dragging)
         }
         slider.onRelease = { [weak self, weak slider] in
@@ -691,6 +739,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         for radio in radios {
             radio.button.state = Self.sameKind(radio.schedule(), schedule) ? .on : .off
         }
+        stage?.show(scene)
     }
 
     /// An hour and minute field; editing it picks custom hours.
@@ -923,6 +972,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     guard let self else { return }
                     for app in adding { choose(.addRule(.app(app.id))) }
                     addedApps += adding.count
+                    firstApp = firstApp ?? adding.first?.name
                     advance()
                 }
             )
@@ -1002,7 +1052,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
 /// Onboarding's stage: a soft gradient behind the step's illustration, under the title band
 /// with the wordmark.
 final class Stage: NSView {
-    init(band: CGFloat) {
+    private let sun: Sun?
+    /// Where the illustration's centre sits: in the middle of what the title band leaves.
+    private let middle: CGFloat
+    private var scene: Scene?
+    private var art: NSView?
+
+    /// The strength the mocks of a screen show, which the strength step's follows as it moves.
+    var strength: UInt8 = 50 {
+        didSet { (art as? StrengthArt)?.strength = strength }
+    }
+
+    init(band: CGFloat, height: CGFloat, sun: Sun?) {
+        self.sun = sun
+        middle = band + (height - band) / 2
         super.init(frame: .zero)
         let wordmark = Self.wordmark()
         let line = Hairline()
@@ -1021,6 +1084,23 @@ final class Stage: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("not built from a nib")
+    }
+
+    /// Replaces the illustration when the scene changes; the same one keeps its loops running.
+    func show(_ scene: Scene) {
+        guard scene != self.scene else { return }
+        self.scene = scene
+        art?.removeFromSuperview()
+        let art = StageArt.view(for: scene, strength: strength, sun: sun)
+        art.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(art)
+        NSLayoutConstraint.activate([
+            art.centerXAnchor.constraint(equalTo: centerXAnchor),
+            art.centerYAnchor.constraint(equalTo: topAnchor, constant: middle),
+            art.widthAnchor.constraint(equalToConstant: art.frame.width),
+            art.heightAnchor.constraint(equalToConstant: art.frame.height),
+        ])
+        self.art = art
     }
 
     /// Drawn rather than a gradient layer, which snapshots wouldn't show.

@@ -295,6 +295,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let onboarding = Onboarding(
             steps: core.onboarding(),
             rules: core.settings().rules,
+            sun: nightShift?.sunTimes.flatMap { times in
+                guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
+                return Sun(sunset: sunset, sunrise: sunrise)
+            },
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
             choose: { [weak self] command in

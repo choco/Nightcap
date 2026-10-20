@@ -64,6 +64,9 @@ enum Snapshot {
                 rules: [SettingsRule(
                     identity: .app("com.apple.Photos"), label: "From your config", snoozed: false,
                     action: RuleAction(title: "Snooze", command: .snooze(.app("com.apple.Photos"))))],
+                sun: Sun(
+                    sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
+                    sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
                 onNotificationsRead: {}, onFinish: { _ in })
         }
