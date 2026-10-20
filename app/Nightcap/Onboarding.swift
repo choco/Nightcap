@@ -49,6 +49,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var waitingForAccessibility = false
     private var websites: Bool?
     private var closedByUser = false
+    /// The strength as last set here or read from the Mac, 0 to 100.
+    private var strength: UInt8
+    /// The schedule the user picked, which Continue writes; it starts at the Mac's, or at sunset to
+    /// sunrise where Night Shift has none.
+    private var schedule: Schedule
+    private var customHours: (from: TimeOfDay, to: TimeOfDay)
+    private weak var previewNote: NSTextField?
+    private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
 
     /// `choose` sends a command to the core, as the menu does; `onFinish` runs once onboarding
     /// ends, by Done or the close button.
@@ -64,6 +72,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.askForAccessibility = askForAccessibility
         self.choose = choose
         self.onFinish = onFinish
+        strength = setup.nightShift.strength ?? 50
+        let current = setup.nightShift.schedule ?? .off
+        if case .custom(let from, let to) = current {
+            customHours = (from, to)
+        } else {
+            customHours = (TimeOfDay(hour: 22, minute: 0), TimeOfDay(hour: 7, minute: 0))
+        }
+        schedule = current == .off ? .sunsetToSunrise : current
         super.init()
         window.title = "Welcome to Nightcap"
         window.titleVisibility = .hidden
@@ -252,8 +268,207 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return page
     }
 
-    /// The step's controls, which later slices of onboarding fill in.
-    private var controls: [NSView] { [] }
+    /// The step's controls between its words and its footer.
+    private var controls: [NSView] {
+        switch step {
+        case .alreadySetUp:
+            return [
+                rows([
+                    summary("Strength", Self.warmth(strength)),
+                    summary("Schedule", Self.describe(schedule)),
+                ]),
+                Look.secondary(
+                    "Skipping leaves them exactly as they are. You can change them any time in System Settings › Displays.",
+                    width: Self.textWidth),
+            ]
+        case .strength:
+            return strengthControls()
+        case .schedule:
+            return scheduleControls()
+        default:
+            return []
+        }
+    }
+
+    /// The slider previews the strength on the screen while it's dragged, and saves it on release,
+    /// as the menu's does.
+    private func strengthControls() -> [NSView] {
+        let slider = StrengthSlider(value: Double(strength), minValue: 0, maxValue: 100, target: nil, action: nil)
+        slider.isContinuous = true
+        slider.setAccessibilityLabel("Strength")
+        Look.attach(slider) { [weak self, weak slider] in
+            guard let self, let slider else { return }
+            strength = UInt8(slider.doubleValue.rounded())
+            choose(slider.dragging ? .previewStrength(strength) : .strength(strength))
+            showPreview(slider.dragging)
+        }
+        slider.onRelease = { [weak self, weak slider] in
+            guard let self, let slider else { return }
+            strength = UInt8(slider.doubleValue.rounded())
+            choose(.strength(strength))
+            showPreview(false)
+        }
+        let less = Look.secondary("Less Warm", width: 80)
+        let more = Look.secondary("More Warm", width: 80)
+        let line = NSStackView(views: [less, slider, more])
+        line.orientation = .horizontal
+        line.spacing = 12
+        let note = Look.secondary("Drag the slider to try it on your screen.", width: Self.textWidth)
+        previewNote = note
+        let facts = NSStackView(views: [
+            fact("Part of macOS", "In System Settings › Displays, and in Control Center."),
+            fact("Colour, not brightness", "It warms the colours. Brightness stays where it is."),
+            fact("By hand or on a schedule", "You choose which on the next step."),
+        ])
+        facts.orientation = .horizontal
+        facts.alignment = .top
+        facts.distribution = .fillEqually
+        facts.spacing = 20
+        facts.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
+        return [rows([Look.padded(line, top: 10, left: 14, bottom: 10, right: 14)]), note, facts]
+    }
+
+    /// Says so while the screen shows the strength, which it does only during a drag.
+    private func showPreview(_ previewing: Bool) {
+        guard let previewNote else { return }
+        let text = previewing ? "Your screen is showing this strength now." : "Drag the slider to try it on your screen."
+        let replacement = Look.label(
+            text, size: 12, weight: .regular, color: previewing ? .nightcapMoon : .nightcapSecondary,
+            width: Self.textWidth)
+        previewNote.attributedStringValue = replacement.attributedStringValue
+    }
+
+    private func fact(_ title: String, _ text: String) -> NSView {
+        let width = (Self.textWidth - 40) / 3
+        let stack = NSStackView(views: [
+            Look.label(title, size: 12, weight: .semibold, color: .labelColor, width: width),
+            Look.label(text, size: 11, weight: .regular, color: .nightcapSecondary, width: width),
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        return stack
+    }
+
+    /// Radio buttons for the schedule. They sit in rows of their own, so they're kept in step by
+    /// hand, without redrawing, which would take the focus from the time fields.
+    private func scheduleControls() -> [NSView] {
+        radios = []
+        let custom = { [weak self] () -> Schedule in
+            guard let self else { return .off }
+            return .custom(from: customHours.from, to: customHours.to)
+        }
+        let hours = NSStackView(views: [
+            timeField(customHours.from) { [weak self] in self?.customHours.from = $0 },
+            Look.secondary("to", width: 20),
+            timeField(customHours.to) { [weak self] in self?.customHours.to = $0 },
+        ])
+        hours.spacing = 6
+        return [
+            rows([
+                radioRow("On a schedule: sunset to sunrise", detail: Look.secondary("Follows your location", width: 200)) {
+                    .sunsetToSunrise
+                },
+                radioRow("On a schedule: custom hours", detail: hours, custom),
+                radioRow("By hand", detail: Look.secondary("Only when you turn it on", width: 200)) { .off },
+            ]),
+            Look.secondary(
+                "Either way, you can turn it on or off any time from Control Center or Nightcap’s menu.",
+                width: Self.textWidth),
+        ]
+    }
+
+    private func radioRow(_ title: String, detail: NSView, _ schedule: @escaping () -> Schedule) -> NSView {
+        let button = NSButton(radioButtonWithTitle: title, target: nil, action: nil)
+        button.font = .systemFont(ofSize: 13)
+        let chosen = schedule()
+        button.state = Self.sameKind(chosen, self.schedule) ? .on : .off
+        Look.attach(button) { [weak self] in self?.pick(schedule()) }
+        radios.append((button, schedule))
+        button.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let line = NSStackView(views: [button, detail])
+        line.orientation = .horizontal
+        line.distribution = .fill
+        line.spacing = 12
+        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+    }
+
+    private func pick(_ schedule: Schedule) {
+        self.schedule = schedule
+        for radio in radios {
+            radio.button.state = Self.sameKind(radio.schedule(), schedule) ? .on : .off
+        }
+    }
+
+    /// An hour and minute field; editing it picks custom hours.
+    private func timeField(_ time: TimeOfDay, set: @escaping (TimeOfDay) -> Void) -> NSDatePicker {
+        let picker = NSDatePicker()
+        picker.datePickerStyle = .textField
+        picker.datePickerElements = .hourMinute
+        picker.font = .systemFont(ofSize: 12)
+        picker.dateValue = Calendar.current.date(
+            bySettingHour: Int(time.hour), minute: Int(time.minute), second: 0, of: Date())!
+        Look.attach(picker) { [weak self, weak picker] in
+            guard let self, let picker else { return }
+            let parts = Calendar.current.dateComponents([.hour, .minute], from: picker.dateValue)
+            set(TimeOfDay(hour: UInt8(parts.hour!), minute: UInt8(parts.minute!)))
+            pick(.custom(from: customHours.from, to: customHours.to))
+        }
+        return picker
+    }
+
+    private static func sameKind(_ a: Schedule, _ b: Schedule) -> Bool {
+        switch (a, b) {
+        case (.off, .off), (.sunsetToSunrise, .sunsetToSunrise), (.custom, .custom): true
+        default: false
+        }
+    }
+
+    /// Rows in a group, divided by hairlines, as wide as the text.
+    private func rows(_ views: [NSView]) -> NSView {
+        var arranged: [NSView] = []
+        for (index, view) in views.enumerated() {
+            if index > 0 { arranged.append(Hairline()) }
+            arranged.append(view)
+        }
+        let stack = NSStackView(views: arranged)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 0
+        for view in arranged {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
+        let group = Group(stack)
+        group.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
+        return group
+    }
+
+    private func summary(_ title: String, _ value: String) -> NSView {
+        let name = Look.label(title, size: 13, weight: .regular, color: .labelColor, width: 300)
+        name.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let line = NSStackView(views: [Look.mark(.ok), name, Look.secondary(value, width: 300)])
+        line.orientation = .horizontal
+        line.distribution = .fill
+        line.spacing = 10
+        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+    }
+
+    /// The strength in words, since System Settings shows no number either.
+    private static func warmth(_ strength: UInt8) -> String {
+        strength < 34 ? "A little warm" : strength < 67 ? "Warm" : "Very warm"
+    }
+
+    private static func describe(_ schedule: Schedule) -> String {
+        switch schedule {
+        case .off: "By hand"
+        case .sunsetToSunrise: "Sunset to sunrise"
+        case .custom(let from, let to): "\(clock(from)) to \(clock(to))"
+        }
+    }
+
+    private static func clock(_ time: TimeOfDay) -> String {
+        String(format: "%02d:%02d", time.hour, time.minute)
+    }
 
     private var words: (eyebrow: String, heading: String, lede: String) {
         let eyebrow = self.eyebrow
@@ -367,8 +582,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 },
                 Choice(title: "Skip to Nightcap") { [weak self] in self?.goToNightcap() }
             )
-        case .strength, .schedule, .lastThings:
+        case .strength, .lastThings:
             return (nil, nil, Choice(title: "Continue", run: next))
+        case .schedule:
+            return (
+                nil, nil,
+                Choice(title: "Continue") { [weak self] in
+                    guard let self else { return }
+                    if schedule != setup.nightShift.schedule { choose(.setSchedule(schedule)) }
+                    advance()
+                }
+            )
         case .apps:
             return (
                 Choice(title: "Choose Another App…") {},

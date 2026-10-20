@@ -18,20 +18,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// bar's appearance while the dot keeps its colour.
     private let dot = NSView()
 
-    /// Its `mouseDown` tracks the whole drag and returns only once the mouse goes up, so moves
-    /// inside it are a drag and its return is the release.
-    private final class StrengthSlider: NSSlider {
-        private(set) var dragging = false
-        var onRelease: () -> Void = {}
-
-        override func mouseDown(with event: NSEvent) {
-            dragging = true
-            super.mouseDown(with: event)
-            dragging = false
-            onRelease()
-        }
-    }
-
     /// Boxes a command for `NSMenuItem.representedObject`, which takes only objects.
     private final class Choice: NSObject {
         let command: Command

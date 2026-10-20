@@ -431,6 +431,21 @@ extension NSColor {
     static var nightcapStageBottom: NSColor { appearance(light: 0xd6dde9, dark: 0x1b202b) }
 }
 
+/// A strength slider, 0 to 100, for the menu and onboarding. Its `mouseDown` tracks the whole
+/// drag and returns only once the mouse goes up, so moves inside it are a drag, which previews,
+/// and its return is the release, which saves.
+final class StrengthSlider: NSSlider {
+    private(set) var dragging = false
+    var onRelease: () -> Void = {}
+
+    override func mouseDown(with event: NSEvent) {
+        dragging = true
+        super.mouseDown(with: event)
+        dragging = false
+        onRelease()
+    }
+}
+
 /// Onboarding's step markers: a dot per step in groups, the current one a gold pill. Steps
 /// already reached can be clicked.
 final class StepDots: NSView {
