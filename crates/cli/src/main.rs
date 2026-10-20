@@ -328,6 +328,26 @@ fn unexpected_reply() -> Failure {
     ))
 }
 
+fn schedule_text(schedule: Schedule) -> String {
+    match schedule {
+        Schedule::Off => "off".to_owned(),
+        Schedule::SunsetToSunrise => "sunset to sunrise".to_owned(),
+        Schedule::Custom { from, to } => format!("{} to {}", time_of_day(from), time_of_day(to)),
+    }
+}
+
+/// The config's value, when it sets one that differs from the Mac's (ADR-0020).
+fn from_config<T: PartialEq + Copy>(
+    config: Option<T>,
+    mac: Option<T>,
+    text: impl Fn(T) -> String,
+) -> String {
+    match config {
+        Some(value) if Some(value) != mac => format!(" (the config says {})", text(value)),
+        _ => String::new(),
+    }
+}
+
 fn print_status(status: &Status) {
     let install = match status.install {
         Install::Managed => "managed by its installer",
@@ -338,14 +358,7 @@ fn print_status(status: &Status) {
         NightShift::On => "on",
         NightShift::Off => "off",
     };
-    let schedule = match status.schedule {
-        None => "unknown".to_owned(),
-        Some(Schedule::Off) => "off".to_owned(),
-        Some(Schedule::SunsetToSunrise) => "sunset to sunrise".to_owned(),
-        Some(Schedule::Custom { from, to }) => {
-            format!("{} to {}", time_of_day(from), time_of_day(to))
-        }
-    };
+    let schedule = status.schedule.map_or("unknown".to_owned(), schedule_text);
     let scheduled = match (status.schedule, status.scheduled_state) {
         (Some(Schedule::Off), _) | (None, _) => String::new(),
         (Some(_), None) => ", waiting for sun times".to_owned(),
@@ -368,9 +381,16 @@ fn print_status(status: &Status) {
         "Night Shift: {night_shift}, {}",
         status.decision.describe(&TimeZone::system())
     );
-    println!("Schedule: {schedule}{scheduled}");
+    println!(
+        "Schedule: {schedule}{scheduled}{}",
+        from_config(status.config_schedule, status.schedule, schedule_text)
+    );
     if let Some(strength) = status.strength {
-        println!("Strength: {strength}");
+        println!(
+            "Strength: {strength}{}",
+            from_config(status.config_strength, status.strength, |value| value
+                .to_string())
+        );
     }
     let host = match (&status.host, status.watching) {
         (Some(host), _) => format!(", on {host}"),

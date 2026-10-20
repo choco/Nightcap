@@ -9,6 +9,8 @@ use jiff::Timestamp;
 use nightcap_protocol::{CheckKind, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
+use crate::config::NightShiftConfig;
+
 const VERSION: u32 = 1;
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,6 +37,9 @@ pub(crate) struct Persisted {
     /// The schedule transition that ends the manual state, the snoozes and `night_shift`, if
     /// one was coming: macOS applies its own schedule there.
     pub(crate) until: Option<Timestamp>,
+    /// The strength and schedule last applied from the config: a config value applies again
+    /// only once it differs (ADR-0020).
+    pub(crate) applied_from_config: NightShiftConfig,
 }
 
 impl Persisted {

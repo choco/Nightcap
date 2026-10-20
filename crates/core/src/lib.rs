@@ -24,6 +24,7 @@ use nightcap_protocol::{
     WebsiteChecking,
 };
 
+use config::NightShiftConfig;
 use engine::{Context, Inputs};
 use schedule::{SunTimes, Timeline};
 
@@ -105,6 +106,7 @@ pub enum Command {
     OpenAtLogin(OnOff),
     Strength(u8),
     PreviewStrength(u8),
+    SetSchedule(Schedule),
 }
 
 /// What the menu shows. The core decides it; the shell only draws it.
@@ -133,6 +135,30 @@ pub struct Settings {
     pub config_path: String,
     /// Every rule: the config's, then the ad-hoc ones.
     pub rules: Vec<SettingsRule>,
+}
+
+/// What onboarding asks, pulled like the menu: the shell only draws it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct OnboardingSteps {
+    pub night_shift: OnboardingNightShift,
+    /// Website checking as the config sets it, which answers its step for good.
+    pub websites_from_config: Option<bool>,
+    /// Whether Nightcap opens at login now, or None where it never opens itself.
+    pub opens_at_login: Option<bool>,
+}
+
+/// Onboarding's Night Shift steps, which set the strength and the schedule (ADR-0020).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct OnboardingNightShift {
+    /// How warm, unless the config sets it or the strength can't be read.
+    pub ask_strength: bool,
+    /// When it comes on, unless the config sets it or Night Shift is unavailable.
+    pub ask_schedule: bool,
+    /// On a schedule already, so onboarding offers to skip to Nightcap's part.
+    pub already_set_up: bool,
+    /// The Mac's values, which the steps start from.
+    pub strength: Option<u8>,
+    pub schedule: Option<Schedule>,
 }
 
 /// A rule as the Rules tab lists it: its label and the one thing to do about it.
@@ -362,6 +388,11 @@ pub enum Effect {
     SetNightShift {
         enabled: bool,
     },
+    /// Writes Night Shift's schedule. macOS applies it at once, so it can switch Night Shift
+    /// on or off.
+    SetSchedule {
+        schedule: Schedule,
+    },
     /// Writes the strength, 0 to 100. Uncommitted, it's a preview: macOS shows it, even with
     /// Night Shift off, but doesn't save it.
     SetStrength {
@@ -464,6 +495,11 @@ struct State {
     websites: bool,
     onboarding: u32,
     config_websites: Option<bool>,
+    config_night_shift: NightShiftConfig,
+    applied_from_config: NightShiftConfig,
+    /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
+    /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
+    keep_on_with_schedule_off: bool,
     /// The frontmost app's name, for the menu.
     app_name: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
@@ -586,6 +622,18 @@ impl Core {
     /// The ad-hoc rules, written for the config (ADR-0009).
     pub fn export(&self, format: ExportFormat) -> String {
         adhoc::export(&self.state().ad_hoc, format)
+    }
+
+    pub fn onboarding(&self) -> OnboardingSteps {
+        let state = self.state();
+        OnboardingSteps {
+            night_shift: state.onboarding_night_shift(),
+            websites_from_config: state.config_websites,
+            opens_at_login: state
+                .login_item
+                .filter(|_| self.updates_itself())
+                .map(|item| item != LoginItem::NotRegistered),
+        }
     }
 
     pub fn settings(&self) -> Settings {
@@ -755,8 +803,15 @@ impl Core {
                 let mut state = self.state();
                 let mut effects = Vec::new();
                 if state.onboarding < ONBOARDING {
-                    // The config can answer website checking; opening at login it can't.
-                    if state.config_websites.is_some() && !state.opens_itself_at_login {
+                    // The config can answer website checking and Night Shift; opening at login
+                    // it can't.
+                    let night_shift = state.onboarding_night_shift();
+                    let night_shift_answered =
+                        !night_shift.ask_strength && !night_shift.ask_schedule;
+                    if state.config_websites.is_some()
+                        && night_shift_answered
+                        && !state.opens_itself_at_login
+                    {
                         state.onboarding = ONBOARDING;
                     } else {
                         effects.push(Effect::ShowOnboarding {
@@ -767,6 +822,7 @@ impl Core {
                 if self.updates_itself() {
                     effects.push(Effect::StartUpdater);
                 }
+                state.apply_config_night_shift(&mut effects);
                 effects
             }
             Event::AppActivated {
@@ -832,6 +888,7 @@ impl Core {
                     NightShift::Off
                 };
                 state.pending_write = None;
+                let keep_on = std::mem::take(&mut state.keep_on_with_schedule_off);
                 let previous = state.timeline.schedule.replace(schedule);
                 if state.session == Session::Back {
                     // The shell's fresh read after returning: nobody could change Night Shift by
@@ -843,6 +900,9 @@ impl Core {
                     // transition and whatever it switched isn't an external change.
                     tracing::info!("schedule edited");
                     state.pass_transition();
+                    if keep_on && schedule == Schedule::Off && !enabled {
+                        state.set_manual_state(OnOff::On);
+                    }
                     Vec::new()
                 } else {
                     self.reconcile(&mut state, enabled).into_iter().collect()
@@ -882,7 +942,7 @@ impl Core {
                         }
                     }
                     // An invalid config shows in its check again.
-                    Fix::Reload => _ = self.reload(),
+                    Fix::Reload => _ = self.reload(&mut effects),
                     _ => tracing::debug!("{fix:?} is the shell's to carry out"),
                 }
                 effects
@@ -963,6 +1023,7 @@ impl Core {
                 let config = config::Config {
                     rules: Vec::new(),
                     websites: None,
+                    night_shift: NightShiftConfig::default(),
                     found: true,
                 };
                 (config, Some(error))
@@ -1004,6 +1065,9 @@ impl Core {
                 websites: persisted.websites,
                 onboarding: persisted.onboarding,
                 config_websites: config.websites,
+                config_night_shift: config.night_shift,
+                applied_from_config: persisted.applied_from_config,
+                keep_on_with_schedule_off: false,
                 app_name: None,
                 is_browser: false,
                 watch: None,
@@ -1073,7 +1137,7 @@ impl Core {
                     .to_owned(),
                 })
             }
-            Request::Reload => match self.reload() {
+            Request::Reload => match self.reload(effects) {
                 Ok(()) => self.status(),
                 Err(error) => Response::Error(ErrorReply {
                     code: ErrorCode::InvalidConfig,
@@ -1084,13 +1148,15 @@ impl Core {
     }
 
     /// Loads the config again; an invalid one keeps the rules loaded before.
-    fn reload(&self) -> Result<(), String> {
+    fn reload(&self, effects: &mut Vec<Effect>) -> Result<(), String> {
         match config::load(&self.config_file) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
                 let mut state = self.state();
                 state.config_rules = config.rules;
                 state.config_websites = config.websites;
+                state.config_night_shift = config.night_shift;
+                state.apply_config_night_shift(effects);
                 state.config_error = None;
                 state.config_found = config.found;
                 drop(state);
@@ -1121,6 +1187,7 @@ impl Core {
                 | Command::Resume
                 | Command::Strength(_)
                 | Command::PreviewStrength(_)
+                | Command::SetSchedule(_)
         );
         if needs_night_shift && night_shift == NightShift::Unavailable {
             return Err(refused(
@@ -1200,6 +1267,25 @@ impl Core {
                     effects.push(Effect::SetStrength {
                         value: *value,
                         commit,
+                    });
+                    Ok(())
+                }
+            }
+            Command::SetSchedule(schedule) => {
+                let time_of_day = |time: &TimeOfDay| time.hour < 24 && time.minute < 60;
+                if let Schedule::Custom { from, to } = schedule
+                    && !(time_of_day(from) && time_of_day(to))
+                {
+                    Err(refused(
+                        ErrorCode::BadRequest,
+                        "custom hours are times of day, from 00:00 to 23:59",
+                    ))
+                } else {
+                    tracing::info!("schedule set on command");
+                    state.keep_on_with_schedule_off =
+                        *schedule == Schedule::Off && night_shift == NightShift::On;
+                    effects.push(Effect::SetSchedule {
+                        schedule: *schedule,
                     });
                     Ok(())
                 }
@@ -1493,9 +1579,11 @@ impl Core {
             install: self.install,
             night_shift: state.night_shift,
             strength: state.strength,
+            config_strength: state.config_night_shift.strength,
             decision: state.decide(),
             manual_state: state.manual_state,
             schedule: state.timeline.schedule,
+            config_schedule: state.config_night_shift.schedule,
             scheduled_state: state
                 .timeline
                 .scheduled_state(state.applied_until)
@@ -1626,6 +1714,50 @@ impl State {
             announced: self.announced.clone(),
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
+            applied_from_config: self.applied_from_config,
+        }
+    }
+
+    fn onboarding_night_shift(&self) -> OnboardingNightShift {
+        let available = self.night_shift != NightShift::Unavailable;
+        let ask_strength = self.strength.is_some() && self.config_night_shift.strength.is_none();
+        let ask_schedule = available && self.config_night_shift.schedule.is_none();
+        OnboardingNightShift {
+            ask_strength,
+            ask_schedule,
+            already_set_up: (ask_strength || ask_schedule)
+                && self
+                    .timeline
+                    .schedule
+                    .is_some_and(|schedule| schedule != Schedule::Off),
+            strength: self.strength,
+            schedule: self.timeline.schedule,
+        }
+    }
+
+    /// Writes the config's strength and schedule where they changed since last applied, once
+    /// Night Shift, and for the strength its value, is known (ADR-0020).
+    fn apply_config_night_shift(&mut self, effects: &mut Vec<Effect>) {
+        if self.night_shift == NightShift::Unavailable {
+            return;
+        }
+        let wanted = self.config_night_shift;
+        if wanted.strength != self.applied_from_config.strength && self.strength.is_some() {
+            if let Some(value) = wanted.strength {
+                tracing::info!("strength set to {value} from the config");
+                effects.push(Effect::SetStrength {
+                    value,
+                    commit: true,
+                });
+            }
+            self.applied_from_config.strength = wanted.strength;
+        }
+        if wanted.schedule != self.applied_from_config.schedule {
+            if let Some(schedule) = wanted.schedule {
+                tracing::info!("schedule set from the config");
+                effects.push(Effect::SetSchedule { schedule });
+            }
+            self.applied_from_config.schedule = wanted.schedule;
         }
     }
 

@@ -134,6 +134,8 @@ pub enum Command {
     Strength(u8),
     /// Shows a strength, 0 to 100, without saving it, while a slider moves; `Strength` ends it.
     PreviewStrength(u8),
+    /// Sets Night Shift's schedule, which macOS applies at once (ADR-0020).
+    SetSchedule(Schedule),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,11 +327,15 @@ pub struct Status {
     pub night_shift: NightShift,
     /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
     pub strength: Option<u8>,
+    /// The strength the config sets, if it sets one (ADR-0020).
+    pub config_strength: Option<u8>,
     pub decision: Decision,
     /// The on or off the user set last; it lasts until the next schedule transition.
     pub manual_state: Option<OnOff>,
     /// None until the shell first reports Night Shift's status.
     pub schedule: Option<Schedule>,
+    /// The schedule the config sets, if it sets one (ADR-0020).
+    pub config_schedule: Option<Schedule>,
     /// None while the schedule, or the sun times it needs, aren't known.
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
@@ -533,6 +539,7 @@ mod tests {
                 install: Install::SelfManaged,
                 night_shift: NightShift::On,
                 strength: Some(60),
+                config_strength: None,
                 decision: Decision {
                     verdict: Verdict::HandsOff,
                     reasons: Vec::new(),
@@ -545,6 +552,7 @@ mod tests {
                     },
                     to: TimeOfDay { hour: 7, minute: 0 },
                 }),
+                config_schedule: None,
                 scheduled_state: Some(OnOff::Off),
                 next_transition: Some("2026-10-16T20:00:00Z".parse().unwrap()),
                 frontmost_app: Some("com.apple.Safari".to_owned()),
@@ -569,7 +577,7 @@ mod tests {
                     text: "x".to_owned(),
                 }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
         );
     }
 
@@ -594,6 +602,12 @@ mod tests {
         assert_eq!(
             json(&Request::Command(Command::PreviewStrength(60))),
             r#"{"command":{"preview_strength":60}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::SetSchedule(
+                Schedule::SunsetToSunrise
+            ))),
+            r#"{"command":{"set_schedule":"sunset_to_sunrise"}}"#
         );
         assert_eq!(
             json(&Decision {

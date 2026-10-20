@@ -15,11 +15,12 @@ use nightcap_protocol::{
 };
 
 use crate::adhoc;
+use crate::config::NightShiftConfig;
 use crate::state::{Persisted, Store};
 use crate::{
     Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
-    MenuItem, ProblemLine, RuleAction, SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker,
-    normalize_domain,
+    MenuItem, OnboardingNightShift, OnboardingSteps, ProblemLine, RuleAction, SettingsCheck,
+    SettingsRule, SettingsSwitch, Setup, Waker, normalize_domain,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -465,6 +466,227 @@ fn a_strength_above_100_is_refused() {
 
     assert_eq!(effects, Vec::new());
     assert_eq!(refusal(response), ErrorCode::BadRequest);
+}
+
+#[test]
+fn set_schedule_writes_it_and_answers_with_the_decision() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_at_strength_60(&socket);
+    let decision = status_of(&core, &socket, &wakes).decision;
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::SetSchedule(custom_hours()));
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetSchedule {
+            schedule: custom_hours()
+        }]
+    );
+    assert_eq!(response, Response::Ok(Payload::Decision(decision)));
+}
+
+#[test]
+fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    send(&core, &socket, &wakes, Command::SetSchedule(Schedule::Off));
+    // macOS switches Night Shift off along with the schedule.
+    let effects = core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+
+    assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
+    assert_eq!(
+        status_of(&core, &socket, &wakes).manual_state,
+        Some(OnOff::On)
+    );
+}
+
+#[test]
+fn set_schedule_while_night_shift_is_unavailable_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::SetSchedule(Schedule::Off));
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(refusal(response), ErrorCode::NightShiftUnavailable);
+}
+
+#[test]
+fn custom_hours_that_arent_times_of_day_are_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_at_strength_60(&socket);
+    let hours = Schedule::Custom {
+        from: TimeOfDay {
+            hour: 24,
+            minute: 0,
+        },
+        to: TimeOfDay { hour: 7, minute: 0 },
+    };
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::SetSchedule(hours));
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(refusal(response), ErrorCode::BadRequest);
+}
+
+/// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
+/// `Launched`.
+fn report_night_shift(core: &Core, schedule: Schedule, strength: u8) {
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule,
+    });
+    core.handle(Event::StrengthChanged { value: strength });
+}
+
+#[test]
+fn the_configs_night_shift_values_are_applied_at_launch() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
+    );
+    let (core, _wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    assert_eq!(
+        launch(&core),
+        vec![
+            Effect::SetStrength {
+                value: 40,
+                commit: true
+            },
+            Effect::SetSchedule {
+                schedule: Schedule::SunsetToSunrise
+            },
+        ]
+    );
+}
+
+#[test]
+fn the_configs_night_shift_values_apply_once_and_a_change_made_since_stays() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
+    );
+    let (core, _wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+    launch(&core);
+
+    // The user moved the strength in System Settings, then Nightcap started again.
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:05:00+02:00");
+    report_night_shift(&core, Schedule::SunsetToSunrise, 70);
+
+    assert_eq!(launch(&core), Vec::new());
+}
+
+#[test]
+fn the_status_shows_the_configs_night_shift_values_beside_the_macs() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
+    );
+    let (core, wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    let status = status_of(&core, &socket, &wakes);
+
+    assert_eq!(
+        (status.strength, status.config_strength),
+        (Some(60), Some(40))
+    );
+    assert_eq!(
+        (status.schedule, status.config_schedule),
+        (Some(Schedule::Off), Some(Schedule::SunsetToSunrise))
+    );
+}
+
+#[test]
+fn reloading_applies_only_the_night_shift_value_that_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
+    );
+    let (core, wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+    launch(&core);
+
+    write_config(
+        &socket,
+        "[night_shift]\nstrength = 50\nschedule = \"sunset-to-sunrise\"\n",
+    );
+    let (effects, _) = exchange(&core, &socket, &wakes, Request::Reload);
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetStrength {
+            value: 50,
+            commit: true
+        }]
+    );
+}
+
+#[test]
+fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[night_shift]\nstrength = 40\n");
+    let (core, wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+    launch(&core);
+
+    write_config(&socket, "");
+    let (taken_out, _) = exchange(&core, &socket, &wakes, Request::Reload);
+    write_config(&socket, "[night_shift]\nstrength = 40\n");
+    let (put_back, _) = exchange(&core, &socket, &wakes, Request::Reload);
+
+    assert_eq!(taken_out, Vec::new());
+    assert_eq!(
+        put_back,
+        vec![Effect::SetStrength {
+            value: 40,
+            commit: true
+        }]
+    );
+}
+
+#[test]
+fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    for night_shift in [
+        "strength = 101",
+        "schedule = \"dusk\"",
+        "schedule = \"22:00-7am\"",
+        "schedule = \"24:00-07:00\"",
+    ] {
+        write_config(&socket, &format!("[night_shift]\n{night_shift}\n"));
+        let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+        assert_eq!(effects, Vec::new(), "{night_shift}");
+        assert_eq!(refusal(response), ErrorCode::InvalidConfig, "{night_shift}");
+    }
 }
 
 #[test]
@@ -2544,8 +2766,85 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
     );
 }
 
+fn shows_onboarding(effects: &[Effect]) -> bool {
+    effects
+        .iter()
+        .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
+}
+
 #[test]
-fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask() {
+fn onboarding_asks_about_night_shift_starting_from_the_macs_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start(&socket_in(&dir));
+    report_night_shift(&core, Schedule::Off, 60);
+
+    assert_eq!(
+        core.onboarding(),
+        OnboardingSteps {
+            night_shift: OnboardingNightShift {
+                ask_strength: true,
+                ask_schedule: true,
+                already_set_up: false,
+                strength: Some(60),
+                schedule: Some(Schedule::Off),
+            },
+            websites_from_config: None,
+            opens_at_login: None,
+        }
+    );
+}
+
+#[test]
+fn onboarding_offers_to_skip_night_shift_once_its_on_a_schedule() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start(&socket_in(&dir));
+    report_night_shift(&core, Schedule::SunsetToSunrise, 60);
+
+    assert!(core.onboarding().night_shift.already_set_up);
+}
+
+#[test]
+fn onboarding_leaves_out_what_the_config_sets() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n[night_shift]\nstrength = 40\n");
+    let (core, _wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    let steps = core.onboarding();
+
+    assert!(!steps.night_shift.ask_strength);
+    assert!(steps.night_shift.ask_schedule);
+    assert_eq!(steps.websites_from_config, Some(true));
+}
+
+#[test]
+fn a_config_that_sets_website_checking_and_night_shift_leaves_onboarding_nothing_to_ask() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n",
+    );
+    let (core, _wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    assert!(!shows_onboarding(&core.handle(Event::Launched)));
+}
+
+#[test]
+fn a_config_that_sets_only_website_checking_still_leaves_night_shift_to_ask() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = false\n");
+    let (core, _wakes) = start(&socket);
+    report_night_shift(&core, Schedule::Off, 60);
+
+    assert!(shows_onboarding(&core.handle(Event::Launched)));
+}
+
+#[test]
+fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask_without_night_shift() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(&socket, "websites = false\n");
@@ -2614,12 +2913,14 @@ fn a_status_query_is_answered_on_the_next_tick() {
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
             strength: None,
+            config_strength: None,
             decision: Decision {
                 verdict: Verdict::HandsOff,
                 reasons: Vec::new(),
             },
             manual_state: None,
             schedule: None,
+            config_schedule: None,
             scheduled_state: None,
             next_transition: None,
             frontmost_app: None,
@@ -2822,6 +3123,10 @@ fn saved_state_loads_back() {
         announced: vec![CheckKind::Accessibility],
         night_shift: Some(OnOff::Off),
         until: Some(at("2026-10-17T07:00:00+02:00")),
+        applied_from_config: NightShiftConfig {
+            strength: Some(40),
+            schedule: Some(custom_hours()),
+        },
     };
 
     store.save(&state).unwrap();

@@ -23,6 +23,8 @@ final class NightShiftAdapter {
     private typealias CopyProperty = @convention(c) (NSObject, Selector, NSString) -> Unmanaged<AnyObject>?
     private typealias GetStrength = @convention(c) (NSObject, Selector, UnsafeMutablePointer<Float>) -> Bool
     private typealias SetStrength = @convention(c) (NSObject, Selector, Float, Bool) -> Bool
+    private typealias SetMode = @convention(c) (NSObject, Selector, Int32) -> Bool
+    private typealias SetSchedule = @convention(c) (NSObject, Selector, UnsafeRawPointer) -> Bool
 
     private static let frameworkPath = "/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness"
 
@@ -45,6 +47,13 @@ final class NightShiftAdapter {
         "getStrength:": "B24@0:8^f16",
         "setStrength:commit:": "B24@0:8f16B20",
     ]
+    /// Checked apart from the rest too: without them, onboarding sends the user to System
+    /// Settings to choose the schedule (ADR-0020). The custom hours are
+    /// {{int hour, int minute} from, {int hour, int minute} to}.
+    private static let scheduleEncodings = [
+        "setMode:": "B20@0:8i16",
+        "setSchedule:": "B24@0:8r^{?={?=ii}{?=ii}}16",
+    ]
     private static let statusSize = 40
     private static let enabledOffset = 1
     private static let modeOffset = 4
@@ -62,6 +71,8 @@ final class NightShiftAdapter {
     private let copyProperty: CopyProperty
     private let getStrength: GetStrength?
     private let setStrengthImplementation: SetStrength?
+    private let setMode: SetMode?
+    private let setScheduleImplementation: SetSchedule?
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
     /// thread with the new status whenever CoreBrightness reports a status change.
@@ -92,18 +103,26 @@ final class NightShiftAdapter {
         getStatus = unsafeBitCast(client.method(for: NSSelectorFromString("getBlueLightStatus:")), to: GetStatus.self)
         setEnabledImplementation = unsafeBitCast(client.method(for: NSSelectorFromString("setEnabled:")), to: SetEnabled.self)
         copyProperty = unsafeBitCast(systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
-        let strengthFound = Self.strengthEncodings.allSatisfy { name, expected in
-            let method = class_getInstanceMethod(classes["CBBlueLightClient"]!, NSSelectorFromString(name))
-            let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
-            if encoding != expected {
-                log.fault("CBBlueLightClient.\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); the strength is unavailable")
+        let found = { (encodings: [String: String], what: String) in
+            encodings.allSatisfy { name, expected in
+                let method = class_getInstanceMethod(classes["CBBlueLightClient"]!, NSSelectorFromString(name))
+                let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
+                if encoding != expected {
+                    log.fault("CBBlueLightClient.\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \(what, privacy: .public) can't be set")
+                }
+                return encoding == expected
             }
-            return encoding == expected
         }
+        let strengthFound = found(Self.strengthEncodings, "the strength")
+        let scheduleFound = found(Self.scheduleEncodings, "the schedule")
         getStrength = strengthFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self) : nil
         setStrengthImplementation = strengthFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setStrength:commit:")), to: SetStrength.self) : nil
+        setMode = scheduleFound
+            ? unsafeBitCast(client.method(for: NSSelectorFromString("setMode:")), to: SetMode.self) : nil
+        setScheduleImplementation = scheduleFound
+            ? unsafeBitCast(client.method(for: NSSelectorFromString("setSchedule:")), to: SetSchedule.self) : nil
 
         let setBlock = unsafeBitCast(client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
         // CoreBrightness calls this on one of its own queues, often several times per change.
@@ -188,6 +207,34 @@ final class NightShiftAdapter {
         let selector = NSSelectorFromString("setStrength:commit:")
         guard setStrengthImplementation(client, selector, Float(value) / 100, commit) else {
             log.error("CoreBrightness refused setStrength(\(value), commit: \(commit))")
+            return
+        }
+    }
+
+    /// macOS applies a new schedule at once, so it can switch Night Shift on or off.
+    func setSchedule(_ schedule: Schedule) {
+        guard let setMode, let setScheduleImplementation else {
+            log.error("the schedule can't be set; dropped setSchedule")
+            return
+        }
+        let mode: Int32
+        switch schedule {
+        case .off: mode = 0
+        case .sunsetToSunrise: mode = 1
+        case .custom(let from, let to):
+            mode = 2
+            // Mode 2 uses whatever custom hours are stored, so they go in first.
+            let hours = [Int32(from.hour), Int32(from.minute), Int32(to.hour), Int32(to.minute)]
+            let stored = hours.withUnsafeBytes {
+                setScheduleImplementation(client, NSSelectorFromString("setSchedule:"), $0.baseAddress!)
+            }
+            guard stored else {
+                log.error("CoreBrightness refused the custom hours")
+                return
+            }
+        }
+        guard setMode(client, NSSelectorFromString("setMode:"), mode) else {
+            log.error("CoreBrightness refused setMode(\(mode))")
             return
         }
     }

@@ -446,6 +446,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     continue
                 }
                 nightShift.setEnabled(enabled)
+            case .setSchedule(let schedule):
+                guard let nightShift else {
+                    log.error("Night Shift is unavailable; dropped setSchedule")
+                    continue
+                }
+                nightShift.setSchedule(schedule)
             case .setStrength(let value, let commit):
                 guard let nightShift else {
                     log.error("Night Shift is unavailable; dropped setStrength(value: \(value))")
