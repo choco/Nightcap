@@ -56,25 +56,37 @@ enum Snapshot {
                 try! png.write(to: url)
             }
         }
-        let onboarding = { (websitesFromConfig: Bool?) in
+        let setUp = OnboardingNightShift(
+            askStrength: true, askSchedule: true, alreadySetUp: false, strength: 60, schedule: .off)
+        let steps = { (nightShift: OnboardingNightShift) in
             Onboarding(
-                accessibilityGranted: { false }, askForAccessibility: {}, opensAtLogin: false,
-                websitesFromConfig: websitesFromConfig, chooseOpenAtLogin: { _ in }, onNotificationsRead: {},
-                onFinish: { _ in })
+                steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
+                accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in }, onFinish: { _ in })
         }
-        let chosen = onboarding(nil)
-        let fromConfig = onboarding(false)
-        let states: [(String, Onboarding, Onboarding.Answers, Onboarding.Row?)] = [
-            ("first", chosen, Onboarding.Answers(), .notifications),
-            ("accessibility", chosen, Onboarding.Answers(notifications: .allowed, websites: true), .accessibility),
-            ("answered", chosen, Onboarding.Answers(notifications: .allowed, websites: false, openAtLogin: true), nil),
-            ("config", fromConfig, Onboarding.Answers(notifications: .allowed, websites: false), .openAtLogin),
+        let newUser = steps(setUp)
+        var alreadySetUp = setUp
+        alreadySetUp.alreadySetUp = true
+        alreadySetUp.schedule = .sunsetToSunrise
+        let nightShiftUser = steps(alreadySetUp)
+        let states: [(String, Onboarding, Onboarding.Step, Onboarding.WebsitesPage, Bool)] = [
+            ("already-set-up", nightShiftUser, .alreadySetUp, .ask, false),
+            ("review", nightShiftUser, .strength, .ask, true),
+            ("strength", newUser, .strength, .ask, false),
+            ("schedule", newUser, .schedule, .ask, false),
+            ("apps", newUser, .apps, .ask, false),
+            ("websites", newUser, .websites, .ask, false),
+            ("accessibility", newUser, .websites, .accessibility, false),
+            ("sites", newUser, .websites, .sites, false),
+            ("last-things", newUser, .lastThings, .ask, false),
+            ("ready", newUser, .ready, .ask, false),
         ]
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (state, onboarding, answers, current) in states {
+            for (state, onboarding, step, page, reviewing) in states {
                 let url = URL(fileURLWithPath: folder).appendingPathComponent("app-onboarding-\(state)-\(name).png")
-                guard let png = onboarding.snapshot(answers, current: current) else { fatalError("couldn't render \(state)") }
+                guard let png = onboarding.snapshot(step, page: page, reviewing: reviewing) else {
+                    fatalError("couldn't render \(state)")
+                }
                 try! png.write(to: url)
             }
         }

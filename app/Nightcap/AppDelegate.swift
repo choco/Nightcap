@@ -292,17 +292,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         guard let accessibility, let core else { return }
-        let settings = core.settings()
         let onboarding = Onboarding(
+            steps: core.onboarding(),
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
-            opensAtLogin: settings.openAtLogin?.on,
-            websitesFromConfig: settings.websiteChecking.locked ? settings.websiteChecking.on : nil,
-            chooseOpenAtLogin: { [weak self] on in
-                self?.apply(core.handle(event: .commandChosen(command: .openAtLogin(on ? .on : .off))))
-            },
-            onNotificationsRead: { [weak self] in
-                Task { await self?.reportSystemState() }
+            choose: { [weak self] command in
+                self?.apply(core.handle(event: .commandChosen(command: command)))
             },
             onFinish: { [weak self] websites in
                 guard let self else { return }

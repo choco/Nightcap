@@ -426,6 +426,93 @@ extension NSColor {
     static var nightcapOrange: NSColor { appearance(light: 0xf08a00, dark: 0xff9f0a) }
     static var nightcapRed: NSColor { appearance(light: 0xe5372c, dark: 0xff453a) }
     static var nightcapGrey: NSColor { appearance(light: 0xa1a1a6, dark: 0x6e6e73) }
+    /// Onboarding's stage, a soft fall from top to bottom behind its illustrations.
+    static var nightcapStageTop: NSColor { appearance(light: 0xe9edf4, dark: 0x272d3b) }
+    static var nightcapStageBottom: NSColor { appearance(light: 0xd6dde9, dark: 0x1b202b) }
+}
+
+/// Onboarding's step markers: a dot per step in groups, the current one a gold pill. Steps
+/// already reached can be clicked.
+final class StepDots: NSView {
+    struct Dot {
+        enum State { case current, done, todo }
+        let state: State
+        let label: String
+        let go: (() -> Void)?
+    }
+
+    init(groups: [[Dot]]) {
+        super.init(frame: .zero)
+        var views: [NSView] = []
+        for (index, group) in groups.enumerated() {
+            if index > 0 {
+                let gap = NSView()
+                gap.widthAnchor.constraint(equalToConstant: 10).isActive = true
+                views.append(gap)
+            }
+            views += group.map(DotView.init)
+        }
+        let stack = NSStackView(views: views)
+        stack.orientation = .horizontal
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
+    }
+
+    /// One dot, with room around it to click.
+    private final class DotView: NSView {
+        private let dot: Dot
+
+        init(_ dot: Dot) {
+            self.dot = dot
+            super.init(frame: .zero)
+            widthAnchor.constraint(equalToConstant: dot.state == .current ? 24 : 12).isActive = true
+            heightAnchor.constraint(equalToConstant: 22).isActive = true
+            setAccessibilityElement(true)
+            setAccessibilityRole(dot.go == nil ? .staticText : .button)
+            setAccessibilityLabel(dot.state == .current ? "\(dot.label), current step" : dot.label)
+        }
+
+        required init?(coder: NSCoder) {
+            fatalError("not built from a nib")
+        }
+
+        override func draw(_ dirtyRect: NSRect) {
+            let width: CGFloat = dot.state == .current ? 18 : 6
+            let pill = NSRect(x: (bounds.width - width) / 2, y: (bounds.height - 6) / 2, width: width, height: 6)
+            let colour: NSColor =
+                switch dot.state {
+                case .current: .nightcapMoon
+                case .done: .nightcapSecondary
+                case .todo: .nightcapControlBorder
+                }
+            colour.setFill()
+            NSBezierPath(roundedRect: pill, xRadius: 3, yRadius: 3).fill()
+        }
+
+        override func resetCursorRects() {
+            if dot.go != nil { addCursorRect(bounds, cursor: .pointingHand) }
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            dot.go?()
+        }
+
+        override func accessibilityPerformPress() -> Bool {
+            dot.go?()
+            return dot.go != nil
+        }
+    }
 }
 
 /// A control's target that runs a closure; the control keeps it alive.

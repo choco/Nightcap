@@ -1,101 +1,88 @@
 import AppKit
-import UserNotifications
+import NightcapCore
 import os
 
-/// Onboarding, version 1 (ADR-0015, ADR-0016): a line on what Nightcap does over a checklist,
-/// one row per choice. The current row explains itself and asks; an answered one shows its
-/// answer and can be changed. Closing the window finishes onboarding with what was chosen so
-/// far. Quitting Nightcap leaves it unfinished.
+/// Onboarding (ADR-0015, ADR-0016, ADR-0020): one step at a time under a stage that illustrates
+/// it. Night Shift comes first, set up or kept as it is, then Nightcap's own steps. Closing the
+/// window finishes onboarding with what was chosen so far. Quitting Nightcap leaves it
+/// unfinished.
 final class Onboarding: NSObject, NSWindowDelegate {
-    enum Row: CaseIterable {
-        case notifications, websites, accessibility, openAtLogin
+    enum Step: Equatable {
+        /// Night Shift is on a schedule already: the user keeps it, or reviews it.
+        case alreadySetUp
+        case strength, schedule, apps, websites
+        /// Notifications and opening at login.
+        case lastThings
+        case ready
     }
 
-    struct Answers: Equatable {
-        enum Notifications { case allowed, notAllowed, notNow }
-
-        var notifications: Notifications?
-        var websites: Bool?
-        var accessibility: Bool?
-        var openAtLogin: Bool?
+    /// The websites step asks first, then for Accessibility, then for the sites.
+    enum WebsitesPage: Equatable {
+        case ask, accessibility, sites
     }
 
-    private static let width: CGFloat = 560
-    /// A row's text: the group, less its padding, the mark and the gap after it.
-    private static let textWidth: CGFloat = width - 48 - 28 - 18 - 12
+    private static let nightShiftSteps: [Step] = [.alreadySetUp, .strength, .schedule]
+    private static let nightcapSteps: [Step] = [.apps, .websites, .lastThings]
+    private static let size = NSSize(width: 760, height: 540)
+    private static let stageHeight: CGFloat = 224
+    private static let margin: CGFloat = 36
+    private static let textWidth = size.width - margin * 2
 
     private let window = NSWindow(
-        contentRect: NSRect(x: 0, y: 0, width: width, height: 400),
-        styleMask: [.titled, .closable],
+        contentRect: NSRect(origin: .zero, size: size),
+        styleMask: [.titled, .closable, .fullSizeContentView],
         backing: .buffered,
         defer: false
     )
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
+    private let setup: OnboardingSteps
     private let accessibilityGranted: () -> Bool
     private let askForAccessibility: () -> Void
-    /// Nil where Nightcap doesn't open itself at login, so the row doesn't show.
-    private let opensAtLogin: Bool?
-    /// The config's `websites`, which answers its row for good; nil when the config leaves it
-    /// to the user.
-    private let websitesFromConfig: Bool?
-    private let chooseOpenAtLogin: (Bool) -> Void
-    private let onNotificationsRead: () -> Void
+    private let choose: (Command) -> Void
     private let onFinish: (_ websites: Bool) -> Void
-    private var answers = Answers()
-    private var current: Row?
-    private var notifications = UNAuthorizationStatus.notDetermined
+    private var index = 0
+    /// The furthest step reached, whose dot and those before it can be clicked.
+    private var reached = 0
+    /// Someone who already uses Night Shift chose to look over its settings.
+    private var reviewing = false
+    private var page = WebsitesPage.ask
     private var waitingForAccessibility = false
+    private var websites: Bool?
     private var closedByUser = false
-    private var poll: Timer?
-    #if DEBUG
-    /// Set by snapshots, so the real notification permission can't change what they show.
-    private var frozen = false
-    #endif
 
-    /// `opensAtLogin` is whether Nightcap opens at login now, or nil where it never opens
-    /// itself. `onNotificationsRead` runs each time the notification permission is read, which
-    /// can find it changed; `onFinish` once onboarding ends, either way.
+    /// `choose` sends a command to the core, as the menu does; `onFinish` runs once onboarding
+    /// ends, by Done or the close button.
     init(
+        steps setup: OnboardingSteps,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
-        opensAtLogin: Bool?,
-        websitesFromConfig: Bool?,
-        chooseOpenAtLogin: @escaping (Bool) -> Void,
-        onNotificationsRead: @escaping () -> Void,
+        choose: @escaping (Command) -> Void,
         onFinish: @escaping (_ websites: Bool) -> Void
     ) {
+        self.setup = setup
         self.accessibilityGranted = accessibilityGranted
         self.askForAccessibility = askForAccessibility
-        self.opensAtLogin = opensAtLogin
-        self.websitesFromConfig = websitesFromConfig
-        self.chooseOpenAtLogin = chooseOpenAtLogin
-        self.onNotificationsRead = onNotificationsRead
+        self.choose = choose
         self.onFinish = onFinish
         super.init()
         window.title = "Welcome to Nightcap"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.backgroundColor = .nightcapWindow
-        // An install that already opens at login has its answer.
-        if opensAtLogin == true { answers.openAtLogin = true }
-        if let websitesFromConfig {
-            answers.websites = websitesFromConfig
-            if websitesFromConfig, accessibilityGranted() { answers.accessibility = true }
+        // An empty toolbar makes the title bar the stage's title band, with the traffic lights
+        // centred in it beside the wordmark.
+        window.toolbar = NSToolbar(identifier: "onboarding")
+        window.toolbarStyle = .unifiedCompact
+        window.titlebarSeparatorStyle = .none
+        // The config answers website checking for good; it can still need Accessibility.
+        if setup.websitesFromConfig == true {
+            websites = true
+            page = accessibilityGranted() ? .sites : .accessibility
         }
-        advance()
         draw()
         window.center()
-        Task { await readNotifications() }
-        // macOS posts nothing when notifications are switched in System Settings, so the row
-        // re-reads them every second while onboarding is open.
-        let poll = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                _ = Task { await self?.readNotifications() }
-            }
-        }
-        poll.tolerance = 0.25
-        RunLoop.main.add(poll, forMode: .common)
-        self.poll = poll
     }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
@@ -107,13 +94,16 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// The Accessibility row turns green the moment the grant arrives.
+    /// The Accessibility page moves on once the grant arrives, a moment after showing it.
     func accessibilityChanged() {
-        guard answers.websites == true, answers.accessibility != true, accessibilityGranted() else { return }
-        answers.accessibility = true
+        guard step == .websites, page == .accessibility, accessibilityGranted() else { return }
         waitingForAccessibility = false
-        advance()
         draw()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, step == .websites, page == .accessibility else { return }
+            page = .sites
+            draw()
+        }
     }
 
     /// Asked only when the user closes the window, never when Nightcap quits.
@@ -123,20 +113,22 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        poll?.invalidate()
-        if closedByUser { onFinish(answers.websites == true) }
+        if closedByUser { onFinish(websites == true) }
     }
 
     #if DEBUG
-    /// The window's content as a PNG, in the given state, for comparing against the mockup.
-    func snapshot(_ answers: Answers, current: Row?) -> Data? {
-        frozen = true
-        self.answers = answers
-        self.current = current
-        window.alphaValue = 0
+    /// The window as a PNG at `step`, for comparing against the prototype.
+    func snapshot(_ step: Step, page: WebsitesPage = .ask, reviewing: Bool = false) -> Data? {
+        self.reviewing = reviewing
+        guard let index = steps.firstIndex(of: step) else { return nil }
+        self.index = index
+        reached = index
+        self.page = page
         draw()
+        window.alphaValue = 0
         window.orderFront(nil)
-        guard let view = window.contentView else { return nil }
+        // The frame view, so the traffic lights come out too.
+        guard let view = window.contentView?.superview else { return nil }
         view.layoutSubtreeIfNeeded()
         view.displayIfNeeded()
         guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
@@ -145,333 +137,351 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
     #endif
 
-    // MARK: The checklist
+    // MARK: The steps
 
-    private var rows: [Row] {
-        Row.allCases.filter { row in
-            switch row {
-            case .accessibility: answers.websites == true
-            case .openAtLogin: opensAtLogin != nil
-            default: true
+    /// The steps this user takes, in order: Night Shift's unless the config sets it, then
+    /// Nightcap's.
+    private var steps: [Step] {
+        let nightShift = setup.nightShift
+        var steps: [Step] = []
+        if nightShift.alreadySetUp && !reviewing {
+            steps.append(.alreadySetUp)
+        } else {
+            if nightShift.askStrength { steps.append(.strength) }
+            if nightShift.askSchedule { steps.append(.schedule) }
+        }
+        steps.append(.apps)
+        if setup.websitesFromConfig != false { steps.append(.websites) }
+        steps += [.lastThings, .ready]
+        return steps
+    }
+
+    private var step: Step { steps[index] }
+
+    private func go(to index: Int) {
+        self.index = index
+        reached = max(reached, index)
+        draw()
+    }
+
+    private func advance() {
+        go(to: index + 1)
+    }
+
+    private func goToNightcap() {
+        go(to: steps.firstIndex { Self.nightcapSteps.contains($0) }!)
+    }
+
+    /// Where Back goes: an earlier page of the websites step, or the step before.
+    private var back: (() -> Void)? {
+        if step == .websites, page != .ask, setup.websitesFromConfig == nil {
+            return { [weak self] in
+                self?.page = .ask
+                self?.draw()
             }
         }
-    }
-
-    private func answered(_ row: Row) -> Bool {
-        switch row {
-        case .notifications: answers.notifications != nil
-        case .websites: answers.websites != nil
-        case .accessibility: answers.accessibility != nil
-        case .openAtLogin: answers.openAtLogin != nil
+        if index == 0, reviewing {
+            return { [weak self] in
+                self?.reviewing = false
+                self?.go(to: 0)
+            }
         }
-    }
-
-    /// The first row still to answer becomes current; with none left, onboarding is complete.
-    private func advance() {
-        current = rows.first { !answered($0) }
-    }
-
-    private func readNotifications() async {
-        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-        #if DEBUG
-        if frozen { return }
-        #endif
-        notifications = status
-        onNotificationsRead()
-        // Notifications allowed already, or since, have their answer.
-        if status == .authorized || status == .provisional, answers.notifications != .allowed {
-            answers.notifications = .allowed
-            if current == .notifications { advance() }
+        guard index > 0 else { return nil }
+        return { [weak self] in
+            guard let self else { return }
+            go(to: index - 1)
         }
-        draw()
-    }
-
-    private func answer(_ change: (inout Answers) -> Void) {
-        change(&answers)
-        advance()
-        draw()
     }
 
     // MARK: Drawing
 
-    private var drawn: (Answers, Row?, UNAuthorizationStatus, Bool)?
-
-    /// Rebuilds the window when what it shows changed, then fits the window to it at once,
-    /// keeping its top edge: animating the frame would show the new rows in the old size.
+    /// Rebuilds the window's content for where onboarding is now. The window keeps one size.
     private func draw() {
-        let state = (answers, current, notifications, waitingForAccessibility)
-        if let drawn, drawn == state { return }
-        drawn = state
-        let content = NSStackView(views: [intro(), checklist(), footer()])
-        content.orientation = .vertical
-        content.alignment = .leading
-        content.spacing = 18
-        content.edgeInsets = NSEdgeInsets(top: 18, left: 24, bottom: 20, right: 24)
-        content.setCustomSpacing(22, after: content.views[1])
-        for view in content.views {
-            view.widthAnchor.constraint(equalToConstant: Self.width - 48).isActive = true
+        let content = Backdrop()
+        let band = window.frame.height - window.contentLayoutRect.height
+        let stage = Stage(band: band)
+        let page = pageView()
+        for view in [stage, page] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            content.addSubview(view)
         }
-        let size = content.fittingSize
-        let chrome = window.frame.height - window.contentLayoutRect.height
-        let backdrop = Backdrop()
-        content.translatesAutoresizingMaskIntoConstraints = false
-        backdrop.addSubview(content)
         NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
+            stage.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stage.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            stage.topAnchor.constraint(equalTo: content.topAnchor),
+            stage.heightAnchor.constraint(equalToConstant: Self.stageHeight),
+            page.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            page.topAnchor.constraint(equalTo: stage.bottomAnchor),
+            page.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
-        // The new rows go in before the window takes their size: resizing first would draw
-        // the old rows squeezed into the new size.
-        window.contentView = backdrop
-        window.setFrame(
-            NSRect(
-                x: window.frame.minX, y: window.frame.maxY - size.height - chrome,
-                width: size.width, height: size.height + chrome),
-            display: true)
+        window.contentView = content
     }
 
-    /// The app icon beside what Nightcap does.
-    private func intro() -> NSView {
-        // The icon's tile fills 80% of its image, so a 64-point image shows the mockup's
-        // 52-point tile, 6 points in.
-        let icon = NSImageView(image: NSApp.applicationIconImage)
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        let title = Look.label("Nightcap", font: .nightcapWordmark(size: 26), color: .labelColor, width: 400)
-        let text = Look.label(
-            "Nightcap switches Night Shift off while the apps and websites you choose are in front, and gives it back when you leave them. The rest of the time it follows your Night Shift schedule.",
-            size: 13, weight: .regular, color: .nightcapSecondary, width: Self.width - 48 - 66)
-        let words = NSStackView(views: [title, text])
-        words.orientation = .vertical
-        words.alignment = .leading
-        words.spacing = 4
-        words.translatesAutoresizingMaskIntoConstraints = false
-        let intro = NSView()
-        intro.addSubview(icon)
-        intro.addSubview(words)
-        NSLayoutConstraint.activate([
-            icon.widthAnchor.constraint(equalToConstant: 64),
-            icon.heightAnchor.constraint(equalToConstant: 64),
-            icon.leadingAnchor.constraint(equalTo: intro.leadingAnchor, constant: -6),
-            icon.topAnchor.constraint(equalTo: intro.topAnchor, constant: -6),
-            words.leadingAnchor.constraint(equalTo: intro.leadingAnchor, constant: 66),
-            words.trailingAnchor.constraint(equalTo: intro.trailingAnchor),
-            words.topAnchor.constraint(equalTo: intro.topAnchor),
-            words.bottomAnchor.constraint(lessThanOrEqualTo: intro.bottomAnchor),
-            intro.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
-        ])
-        return intro
-    }
-
-    private func checklist() -> NSView {
-        var views: [NSView] = []
-        for (index, row) in rows.enumerated() {
-            if index > 0 { views.append(Hairline()) }
-            views.append(view(for: row))
-        }
-        let stack = NSStackView(views: views)
+    /// The step's words and controls, over its footer.
+    private func pageView() -> NSView {
+        let words = self.words
+        var column: [NSView] = [
+            Look.label(words.eyebrow, size: 12, weight: .semibold, color: .nightcapMoon, width: Self.textWidth),
+            Look.label(words.heading, size: 20, weight: .semibold, color: .labelColor, width: Self.textWidth),
+            Look.label(words.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
+        ]
+        column += controls
+        let stack = NSStackView(views: column)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 0
-        for view in views {
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        stack.spacing = 8
+        stack.setCustomSpacing(2, after: column[0])
+        stack.setCustomSpacing(6, after: column[1])
+        stack.setCustomSpacing(14, after: column[2])
+        let footer = footerView()
+        let page = NSView()
+        for view in [stack, footer] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            page.addSubview(view)
         }
-        return Group(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: Self.margin),
+            stack.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -Self.margin),
+            stack.topAnchor.constraint(equalTo: page.topAnchor, constant: 20),
+            footer.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: Self.margin),
+            footer.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -Self.margin),
+            footer.bottomAnchor.constraint(equalTo: page.bottomAnchor, constant: -16),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: footer.topAnchor, constant: -12),
+        ])
+        return page
     }
 
-    private func footer() -> NSView {
-        let note = Look.secondary("You can change all of these later in Settings.", width: 360)
-        note.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let done = Look.button("Done", current == nil ? .primary : .regular) { [weak self] in
-            self?.window.performClose(nil)
+    /// The step's controls, which later slices of onboarding fill in.
+    private var controls: [NSView] { [] }
+
+    private var words: (eyebrow: String, heading: String, lede: String) {
+        let eyebrow = self.eyebrow
+        switch step {
+        case .alreadySetUp:
+            return (
+                eyebrow, "You already use Night Shift",
+                "Nightcap found your Night Shift settings. Keep them as they are and go straight to Nightcap, or look over them first."
+            )
+        case .strength:
+            return reviewing
+                ? (eyebrow, "How warm Night Shift gets", "This is your current strength. Drag to change it.")
+                : (
+                    eyebrow, "This is Night Shift",
+                    "Night Shift is part of macOS. It shifts your screen toward warmer colours, which many people prefer in the evening. Choose how warm it gets."
+                )
+        case .schedule:
+            return (
+                eyebrow, "When should it come on?",
+                "Night Shift can come on by itself on a schedule, or only when you turn it on."
+            )
+        case .apps:
+            return (
+                eyebrow, "Night Shift, with exceptions",
+                "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you tick is in front, and gives it back when you leave."
+            )
+        case .websites:
+            switch page {
+            case .ask:
+                return (
+                    eyebrow, "Websites too?",
+                    "Nightcap can do the same for websites: Night Shift goes off while a site you choose is in the front tab."
+                )
+            case .accessibility:
+                return (
+                    eyebrow, "Allow Accessibility",
+                    "Nightcap reads the front tab’s address through Accessibility, which macOS asks you to allow once."
+                )
+            case .sites:
+                return (
+                    eyebrow, "Which websites need true colour?",
+                    "Tick any that do. You can add any other site later from the menu while it’s open."
+                )
+            }
+        case .lastThings:
+            return (eyebrow, "Two last things", "Both are up to you, and you can change either later in Settings.")
+        case .ready:
+            return (eyebrow, "Nightcap is ready", "It lives in the menu bar. You can change any of this later in Settings.")
         }
-        let footer = NSStackView(views: [note, done])
-        footer.orientation = .horizontal
-        footer.distribution = .fill
-        footer.alignment = .centerY
-        footer.spacing = 12
+    }
+
+    /// The step's group and place in it, in the current step's gold: "Nightcap · 2 of 3".
+    private var eyebrow: String {
+        guard step != .ready else { return "Done" }
+        let isNightShift = Self.nightShiftSteps.contains(step)
+        let group = steps.filter { (isNightShift ? Self.nightShiftSteps : Self.nightcapSteps).contains($0) }
+        let name = isNightShift ? "Night Shift" : "Nightcap"
+        guard group.count > 1, let place = group.firstIndex(of: step) else { return name }
+        return "\(name) · \(place + 1) of \(group.count)"
+    }
+
+    private func footerView() -> NSView {
+        let actions = self.actions
+        var leading: [NSView] = []
+        if let back { leading.append(Look.button("Back", .regular, back)) }
+        if let link = actions.link { leading.append(Look.link(link.title, link.run)) }
+        var trailing: [NSView] = []
+        if let secondary = actions.secondary { trailing.append(Look.button(secondary.title, .regular, secondary.run)) }
+        let primary = Look.button(actions.primary.title, .primary, actions.primary.run)
+        primary.isEnabled = actions.primary.enabled
+        primary.keyEquivalent = "\r"
+        trailing.append(primary)
+        let start = NSStackView(views: leading)
+        start.spacing = 8
+        let end = NSStackView(views: trailing)
+        end.spacing = 8
+        let dots = StepDots(groups: dotGroups)
+        let footer = NSView()
+        for view in [start, end, dots] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            footer.heightAnchor.constraint(equalToConstant: 25),
+            start.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+            start.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            end.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            end.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+            dots.centerXAnchor.constraint(equalTo: footer.centerXAnchor),
+            dots.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+        ])
         return footer
     }
 
-    /// A row's mark, title and either its question or its answer.
-    private func view(for row: Row) -> NSView {
-        let isCurrent = row == current
-        let (title, result, positive) = summary(of: row)
-        let mark: Look.Mark =
-            isCurrent ? .current : result == nil ? .todo : positive ? .ok : .off
-        let heading = Look.label(
-            title, size: 13, weight: .medium,
-            color: result == nil && !isCurrent ? .nightcapSecondary : .labelColor, width: 300)
-        heading.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        var line: [NSView] = [heading]
-        if let result, !isCurrent {
-            if row == .websites, websitesFromConfig != nil {
-                line.append(Look.secondary(result, width: 180))
-            } else {
-                line.append(Look.secondary(result, width: 120))
-                line.append(Look.link("Change") { [weak self] in
-                    self?.current = row
-                    self?.draw()
-                })
-            }
-        }
-        let header = NSStackView(views: line)
-        header.orientation = .horizontal
-        header.distribution = .fill
-        header.alignment = .centerY
-        header.spacing = 8
-        var column: [NSView] = [header]
-        if isCurrent {
-            let (body, actions) = question(for: row)
-            let text = Look.secondary(body, width: Self.textWidth)
-            let spacer = NSView()
-            spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            let buttons = NSStackView(views: [spacer] + actions)
-            buttons.orientation = .horizontal
-            buttons.distribution = .fill
-            buttons.spacing = 8
-            column += [text, buttons]
-        }
-        let words = NSStackView(views: column)
-        words.orientation = .vertical
-        words.alignment = .leading
-        words.spacing = 0
-        words.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
-        if column.count > 1 {
-            words.setCustomSpacing(6, after: column[0])
-            words.setCustomSpacing(12, after: column[1])
-        }
-        for view in column {
-            view.widthAnchor.constraint(equalTo: words.widthAnchor).isActive = true
-        }
-        // A point lower, centring the mark on the title's line.
-        let markView = Look.padded(Look.mark(mark), top: 1, left: 0, bottom: 0, right: 0)
-        let content = NSStackView(views: [markView, words])
-        content.orientation = .horizontal
-        content.alignment = .top
-        content.spacing = 12
-        return Tint(Look.padded(content, top: 12, bottom: 12), tinted: isCurrent)
+    private struct Choice {
+        let title: String
+        var enabled = true
+        let run: () -> Void
     }
 
-    /// A row's title, and its answer once it has one, with whether that answer is a yes.
-    private func summary(of row: Row) -> (String, String?, Bool) {
-        switch row {
-        case .notifications:
-            let result: String? =
-                switch answers.notifications {
-                case .allowed: "Allowed"
-                case .notAllowed: "Not allowed"
-                case .notNow: "Not now"
-                case nil: nil
-                }
-            return ("Notifications", result, answers.notifications == .allowed)
-        case .websites:
-            let result = answers.websites.map { $0 ? "On" : "Off" }
+    /// The step's buttons: a link beside Back, then the one to press last on the right.
+    private var actions: (link: Choice?, secondary: Choice?, primary: Choice) {
+        let next: () -> Void = { [weak self] in self?.advance() }
+        switch step {
+        case .alreadySetUp:
             return (
-                "Website checking",
-                websitesFromConfig == nil ? result : result.map { "\($0), from your config" },
-                answers.websites == true
+                nil,
+                Choice(title: "Review Settings") { [weak self] in
+                    self?.reviewing = true
+                    self?.go(to: 0)
+                },
+                Choice(title: "Skip to Nightcap") { [weak self] in self?.goToNightcap() }
             )
-        case .accessibility:
-            return ("Accessibility", answers.accessibility.map { $0 ? "Allowed" : "Not now" }, answers.accessibility == true)
-        case .openAtLogin:
-            return ("Open at login", answers.openAtLogin.map { $0 ? "On" : "Not now" }, answers.openAtLogin == true)
-        }
-    }
-
-    /// The current row's explanation and its buttons, the one to press last.
-    private func question(for row: Row) -> (String, [NSButton]) {
-        switch row {
-        case .notifications:
-            let purpose = "When a change made outside Nightcap overrides one of your rules, Nightcap tells you what it took the change to mean."
-            let notNow = Look.button("Not Now", .regular) { [weak self] in
-                self?.answer { $0.notifications = .notNow }
-            }
-            // macOS shows its prompt only once, so after a refusal only System Settings can.
-            guard notifications != .denied else {
-                return (
-                    purpose + " Notifications are switched off for Nightcap in System Settings.",
-                    [notNow, Look.button("Open Notification Settings…", .primary) {
-                        let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
-                        NSWorkspace.shared.open(URL(string: pane)!)
-                    }]
-                )
-            }
-            return (purpose, [notNow, Look.button("Allow Notifications", .primary) { [weak self] in
-                self?.allowNotifications()
-            }])
-        case .websites:
+        case .strength, .schedule, .lastThings:
+            return (nil, nil, Choice(title: "Continue", run: next))
+        case .apps:
             return (
-                "Nightcap can also force Night Shift off on websites you choose, in Safari and Chrome. It reads the front tab’s address with Accessibility and keeps only the site’s name.",
-                [
-                    Look.button("Not Now", .regular) { [weak self] in
-                        self?.answer {
-                            $0.websites = false
-                            $0.accessibility = nil
-                        }
+                Choice(title: "Choose Another App…") {},
+                Choice(title: "Not Now", run: next),
+                Choice(title: "Add Rules", enabled: false) {}
+            )
+        case .websites:
+            switch page {
+            case .ask:
+                return (
+                    nil,
+                    Choice(title: "Not Now") { [weak self] in
+                        self?.websites = false
+                        self?.advance()
                     },
-                    Look.button("Turn On", .primary) { [weak self] in
+                    Choice(title: "Turn On") { [weak self] in
                         guard let self else { return }
-                        let granted = accessibilityGranted()
-                        answer {
-                            $0.websites = true
-                            if granted { $0.accessibility = true }
-                        }
-                    },
-                ]
-            )
-        case .accessibility:
-            guard !waitingForAccessibility else {
-                let waiting = Look.button("Waiting…", .regular) {}
-                waiting.isEnabled = false
-                return (
-                    "Waiting for System Settings. Switch Nightcap on under Privacy & Security → Accessibility; this row turns green the moment it’s allowed.",
-                    [waiting]
+                        websites = true
+                        page = accessibilityGranted() ? .sites : .accessibility
+                        draw()
+                    }
                 )
-            }
-            return (
-                "Website checking needs Accessibility. Allow Nightcap in System Settings → Privacy & Security → Accessibility.",
-                [
-                    Look.button("Not Now", .regular) { [weak self] in
-                        self?.answer { $0.accessibility = false }
-                    },
-                    Look.button("Allow Accessibility…", .primary) { [weak self] in
+            case .accessibility where waitingForAccessibility || accessibilityGranted():
+                return (nil, nil, Choice(title: "Waiting…", enabled: false) {})
+            case .accessibility:
+                return (
+                    nil,
+                    Choice(title: "Not Now", run: next),
+                    Choice(title: "Allow Accessibility…") { [weak self] in
                         guard let self else { return }
                         waitingForAccessibility = true
                         askForAccessibility()
                         draw()
-                    },
-                ]
-            )
-        case .openAtLogin:
-            return (
-                "Nightcap can open when you log in, so your rules apply from the start. You can change this later in Settings.",
-                [
-                    Look.button("Not Now", .regular) { [weak self] in
-                        self?.chooseOpenAtLogin(false)
-                        self?.answer { $0.openAtLogin = false }
-                    },
-                    Look.button("Open at Login", .primary) { [weak self] in
-                        self?.chooseOpenAtLogin(true)
-                        self?.answer { $0.openAtLogin = true }
-                    },
-                ]
-            )
+                    }
+                )
+            case .sites:
+                return (nil, Choice(title: "Not Now", run: next), Choice(title: "Add Rules", enabled: false) {})
+            }
+        case .ready:
+            return (nil, nil, Choice(title: "Done") { [weak self] in self?.window.performClose(nil) })
         }
     }
 
-    private func allowNotifications() {
-        Task {
-            do {
-                _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-            } catch {
-                log.error("couldn't request notification permission: \(error, privacy: .public)")
+    /// A dot per step in two groups, Night Shift's and Nightcap's.
+    private var dotGroups: [[StepDots.Dot]] {
+        let steps = self.steps
+        return [Self.nightShiftSteps, Self.nightcapSteps].map { group in
+            steps.enumerated().filter { group.contains($0.element) }.map { place, step in
+                StepDots.Dot(
+                    state: place == index ? .current : place < index ? .done : .todo,
+                    label: Self.name(of: step),
+                    go: place != index && place <= reached ? { [weak self] in self?.go(to: place) } : nil)
             }
-            let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-            notifications = status
-            onNotificationsRead()
-            answer { $0.notifications = status == .authorized || status == .provisional ? .allowed : .notAllowed }
+        }.filter { !$0.isEmpty }
+    }
+
+    private static func name(of step: Step) -> String {
+        switch step {
+        case .alreadySetUp: "Night Shift"
+        case .strength: "Strength"
+        case .schedule: "Schedule"
+        case .apps: "Apps"
+        case .websites: "Websites"
+        case .lastThings: "Notifications and login"
+        case .ready: "Ready"
         }
+    }
+}
+
+/// Onboarding's stage: a soft gradient behind the step's illustration, under the title band
+/// with the wordmark.
+final class Stage: NSView {
+    init(band: CGFloat) {
+        super.init(frame: .zero)
+        let wordmark = Self.wordmark()
+        let line = Hairline()
+        for view in [wordmark, line] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            wordmark.centerXAnchor.constraint(equalTo: centerXAnchor),
+            wordmark.centerYAnchor.constraint(equalTo: topAnchor, constant: band / 2),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor),
+            line.trailingAnchor.constraint(equalTo: trailingAnchor),
+            line.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("not built from a nib")
+    }
+
+    /// Drawn rather than a gradient layer, which snapshots wouldn't show.
+    override func draw(_ dirtyRect: NSRect) {
+        NSGradient(starting: .nightcapStageTop, ending: .nightcapStageBottom)?.draw(in: bounds, angle: -90)
+    }
+
+    /// The app icon beside "Nightcap" in Caprasimo at 26 points, one of the brand's two moments
+    /// in the app (design/README.md). The icon's tile fills 80% of its image, so a 28-point
+    /// image shows a 22-point tile.
+    private static func wordmark() -> NSView {
+        let icon = NSImageView(image: NSApp.applicationIconImage)
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        let name = NSTextField(labelWithString: "Nightcap")
+        name.font = .nightcapWordmark(size: 26)
+        name.textColor = .labelColor
+        let row = NSStackView(views: [icon, name])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 5
+        return row
     }
 }
