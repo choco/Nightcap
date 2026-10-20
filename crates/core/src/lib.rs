@@ -103,6 +103,8 @@ pub enum Command {
     Unsnooze(RuleIdentity),
     Websites(OnOff),
     OpenAtLogin(OnOff),
+    Strength(u8),
+    PreviewStrength(u8),
 }
 
 /// What the menu shows. The core decides it; the shell only draws it.
@@ -218,6 +220,11 @@ pub enum MenuIcon {
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum MenuEntry {
+    /// The strength's slider, 0 to 100, under the status line. Moving it sends
+    /// `PreviewStrength`, and letting go sends `Strength`.
+    Strength {
+        value: u8,
+    },
     Item {
         item: MenuItem,
     },
@@ -280,6 +287,11 @@ pub enum Event {
     StatusChanged {
         enabled: bool,
         schedule: Schedule,
+    },
+    /// The strength, 0 to 100, as the shell read it. CoreBrightness announces no strength
+    /// change, so the shell reads it whenever something is about to show it.
+    StrengthChanged {
+        value: u8,
     },
     /// Sunrises and sunsets from CoreBrightness, from the day before to the day after. The
     /// shell reports them at launch, on waking and before each `TimerFired`, so they never run
@@ -349,6 +361,12 @@ pub enum Effect {
     StopWatching,
     SetNightShift {
         enabled: bool,
+    },
+    /// Writes the strength, 0 to 100. Uncommitted, it's a preview: macOS shows it, even with
+    /// Night Shift off, but doesn't save it.
+    SetStrength {
+        value: u8,
+        commit: bool,
     },
     /// Replaces any earlier wakeup; the shell answers with `TimerFired`.
     ScheduleWakeup {
@@ -429,6 +447,7 @@ struct Setup {
 /// keeps across restarts.
 struct State {
     night_shift: NightShift,
+    strength: Option<u8>,
     manual_state: Option<OnOff>,
     timeline: Timeline,
     context: Context,
@@ -644,6 +663,9 @@ impl Core {
                 }
             },
         }];
+        if let Some(value) = state.strength {
+            entries.insert(0, MenuEntry::Strength { value });
+        }
         // A timed disable matters while Night Shift is on or forced off, or when the schedule
         // turns it on before the longest one would end.
         let longest = SignedDuration::from_mins(DISABLE_CHOICES[DISABLE_CHOICES.len() - 1].0);
@@ -826,6 +848,10 @@ impl Core {
                     self.reconcile(&mut state, enabled).into_iter().collect()
                 }
             }
+            Event::StrengthChanged { value } => {
+                self.state().strength = Some(value);
+                Vec::new()
+            }
             Event::OnboardingFinished { websites } => {
                 let mut state = self.state();
                 state.onboarding = ONBOARDING;
@@ -961,6 +987,7 @@ impl Core {
             requests: Mutex::new(requests),
             state: Mutex::new(State {
                 night_shift: NightShift::Unavailable,
+                strength: None,
                 manual_state: persisted.manual_state,
                 timeline: Timeline {
                     schedule: None,
@@ -1087,7 +1114,13 @@ impl Core {
         let night_shift = self.state().night_shift;
         let needs_night_shift = matches!(
             command,
-            Command::On | Command::Off | Command::Toggle | Command::Disable(_) | Command::Resume
+            Command::On
+                | Command::Off
+                | Command::Toggle
+                | Command::Disable(_)
+                | Command::Resume
+                | Command::Strength(_)
+                | Command::PreviewStrength(_)
         );
         if needs_night_shift && night_shift == NightShift::Unavailable {
             return Err(refused(
@@ -1144,6 +1177,31 @@ impl Core {
                         ErrorCode::NoLoginItem,
                         "this install doesn't open itself at login: its installer starts it, or it's a dev build",
                     ))
+                }
+            }
+            Command::Strength(value) | Command::PreviewStrength(value) => {
+                if state.strength.is_none() {
+                    Err(refused(
+                        ErrorCode::StrengthUnavailable,
+                        "Night Shift's strength can't be read on this Mac",
+                    ))
+                } else if *value > 100 {
+                    Err(refused(
+                        ErrorCode::BadRequest,
+                        format!("a strength is 0 to 100, not {value}"),
+                    ))
+                } else {
+                    let commit = matches!(command, Command::Strength(_));
+                    if commit {
+                        tracing::info!("strength set to {value}");
+                    } else {
+                        tracing::debug!("previewing strength {value}");
+                    }
+                    effects.push(Effect::SetStrength {
+                        value: *value,
+                        commit,
+                    });
+                    Ok(())
                 }
             }
             Command::Websites(chosen) => {
@@ -1434,6 +1492,7 @@ impl Core {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: self.install,
             night_shift: state.night_shift,
+            strength: state.strength,
             decision: state.decide(),
             manual_state: state.manual_state,
             schedule: state.timeline.schedule,

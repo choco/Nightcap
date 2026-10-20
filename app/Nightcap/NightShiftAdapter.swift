@@ -21,6 +21,8 @@ final class NightShiftAdapter {
     private typealias SetEnabled = @convention(c) (NSObject, Selector, Bool) -> Bool
     private typealias SetBlock = @convention(c) (NSObject, Selector, @escaping @convention(block) () -> Void) -> Void
     private typealias CopyProperty = @convention(c) (NSObject, Selector, NSString) -> Unmanaged<AnyObject>?
+    private typealias GetStrength = @convention(c) (NSObject, Selector, UnsafeMutablePointer<Float>) -> Bool
+    private typealias SetStrength = @convention(c) (NSObject, Selector, Float, Bool) -> Bool
 
     private static let frameworkPath = "/System/Library/PrivateFrameworks/CoreBrightness.framework/CoreBrightness"
 
@@ -37,6 +39,12 @@ final class NightShiftAdapter {
             "copyPropertyForKey:": "@24@0:8@16",
         ],
     ]
+    /// Checked apart from the rest: without them Night Shift still works, with no strength to
+    /// show or set (ADR-0020).
+    private static let strengthEncodings = [
+        "getStrength:": "B24@0:8^f16",
+        "setStrength:commit:": "B24@0:8f16B20",
+    ]
     private static let statusSize = 40
     private static let enabledOffset = 1
     private static let modeOffset = 4
@@ -52,6 +60,8 @@ final class NightShiftAdapter {
     private let getStatus: GetStatus
     private let setEnabledImplementation: SetEnabled
     private let copyProperty: CopyProperty
+    private let getStrength: GetStrength?
+    private let setStrengthImplementation: SetStrength?
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
     /// thread with the new status whenever CoreBrightness reports a status change.
@@ -82,6 +92,18 @@ final class NightShiftAdapter {
         getStatus = unsafeBitCast(client.method(for: NSSelectorFromString("getBlueLightStatus:")), to: GetStatus.self)
         setEnabledImplementation = unsafeBitCast(client.method(for: NSSelectorFromString("setEnabled:")), to: SetEnabled.self)
         copyProperty = unsafeBitCast(systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
+        let strengthFound = Self.strengthEncodings.allSatisfy { name, expected in
+            let method = class_getInstanceMethod(classes["CBBlueLightClient"]!, NSSelectorFromString(name))
+            let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
+            if encoding != expected {
+                log.fault("CBBlueLightClient.\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); the strength is unavailable")
+            }
+            return encoding == expected
+        }
+        getStrength = strengthFound
+            ? unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self) : nil
+        setStrengthImplementation = strengthFound
+            ? unsafeBitCast(client.method(for: NSSelectorFromString("setStrength:commit:")), to: SetStrength.self) : nil
 
         let setBlock = unsafeBitCast(client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
         // CoreBrightness calls this on one of its own queues, often several times per change.
@@ -143,6 +165,31 @@ final class NightShiftAdapter {
             sunrises: dates(["previousSunrise", "sunrise", "nextSunrise"]),
             sunsets: dates(["previousSunset", "sunset", "nextSunset"])
         )
+    }
+
+    /// How warm Night Shift tints the display, 0 to 100, or nil when CoreBrightness can't say.
+    /// macOS announces no change to it, so it's read whenever it's needed.
+    var strength: UInt8? {
+        guard let getStrength else { return nil }
+        var value: Float = -1
+        guard getStrength(client, NSSelectorFromString("getStrength:"), &value), (0...1).contains(value) else {
+            log.error("CoreBrightness didn't report a usable strength")
+            return nil
+        }
+        return UInt8((value * 100).rounded())
+    }
+
+    /// Uncommitted, macOS shows the strength, even with Night Shift off, but doesn't save it.
+    func setStrength(_ value: UInt8, commit: Bool) {
+        guard let setStrengthImplementation else {
+            log.error("the strength is unavailable; dropped setStrength(\(value))")
+            return
+        }
+        let selector = NSSelectorFromString("setStrength:commit:")
+        guard setStrengthImplementation(client, selector, Float(value) / 100, commit) else {
+            log.error("CoreBrightness refused setStrength(\(value), commit: \(commit))")
+            return
+        }
     }
 
     func setEnabled(_ enabled: Bool) {

@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the core last heard, so an unchanged re-read sends nothing.
     private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
     private var reportedLoginItem: LoginItem?
+    private var reportedStrength: UInt8?
     private let dockIcon = DockIcon()
     private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon)
     private var observers: [NSObjectProtocol] = []
@@ -122,11 +123,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         reportNightShift(status)
+        reportStrength()
     }
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
         guard let core else { return }
         apply(core.handle(event: .statusChanged(enabled: status.enabled, schedule: status.schedule)))
+    }
+
+    /// CoreBrightness announces no strength change, so the strength is read whenever something
+    /// may be about to show it: at launch, with every re-read of the permissions (the menu
+    /// opening, Settings or onboarding open, an app switch), before each tick, which answers the
+    /// CLI, and after each saved write. A read costs under a millisecond.
+    private func reportStrength() {
+        guard let core, let strength = nightShift?.strength, strength != reportedStrength else { return }
+        reportedStrength = strength
+        apply(core.handle(event: .strengthChanged(value: strength)))
     }
 
     /// CoreBrightness reports sun times only a day either side of now, so they're re-read
@@ -394,6 +406,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// nothing when the user switches either in System Settings.
     private func reportSystemState() async {
         reportLoginItem()
+        reportStrength()
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         let notifications: NotificationPermission =
             switch settings.authorizationStatus {
@@ -411,6 +424,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func tick() {
         guard let core else { return }
+        reportStrength()
         apply(core.tick())
     }
 
@@ -432,6 +446,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     continue
                 }
                 nightShift.setEnabled(enabled)
+            case .setStrength(let value, let commit):
+                guard let nightShift else {
+                    log.error("Night Shift is unavailable; dropped setStrength(value: \(value))")
+                    continue
+                }
+                nightShift.setStrength(value, commit: commit)
+                // A preview isn't the strength, so only a saved one is read back.
+                if commit { reportStrength() }
             case .scheduleWakeup(let at):
                 scheduleWakeup(at: at)
             case .cancelWakeup:

@@ -369,6 +369,105 @@ fn the_status_reports_night_shift_as_last_observed() {
 }
 
 #[test]
+fn the_status_reports_the_strength_as_last_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    assert_eq!(status_of(&core, &socket, &wakes).strength, None);
+
+    core.handle(Event::StrengthChanged { value: 60 });
+
+    assert_eq!(status_of(&core, &socket, &wakes).strength, Some(60));
+}
+
+/// Night Shift reported off with no schedule, at a strength of 60.
+fn start_at_strength_60(socket: &Path) -> (Core, mpsc::Receiver<()>) {
+    let (core, wakes) = start(socket);
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+    core.handle(Event::StrengthChanged { value: 60 });
+    (core, wakes)
+}
+
+#[test]
+fn strength_sets_it_and_answers_with_the_decision() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_at_strength_60(&socket);
+    let decision = status_of(&core, &socket, &wakes).decision;
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Strength(40));
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetStrength {
+            value: 40,
+            commit: true
+        }]
+    );
+    assert_eq!(response, Response::Ok(Payload::Decision(decision)));
+}
+
+#[test]
+fn previewing_a_strength_writes_it_without_saving_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_at_strength_60(&socket);
+
+    let (effects, _) = send(&core, &socket, &wakes, Command::PreviewStrength(80));
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetStrength {
+            value: 80,
+            commit: false
+        }]
+    );
+}
+
+#[test]
+fn strength_while_night_shift_is_unavailable_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Strength(40));
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(refusal(response), ErrorCode::NightShiftUnavailable);
+}
+
+#[test]
+fn strength_before_the_shell_could_read_it_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start(&socket);
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::PreviewStrength(40));
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(refusal(response), ErrorCode::StrengthUnavailable);
+}
+
+#[test]
+fn a_strength_above_100_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes) = start_at_strength_60(&socket);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Strength(101));
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(refusal(response), ErrorCode::BadRequest);
+}
+
+#[test]
 fn on_while_night_shift_is_off_turns_it_on_and_sets_the_manual_state() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -1840,8 +1939,29 @@ fn entry_titled(core: &Core, prefix: &str) -> Option<MenuEntry> {
     core.menu().entries.into_iter().find(|entry| match entry {
         MenuEntry::Item { item } => item.title.starts_with(prefix),
         MenuEntry::Submenu { title, .. } | MenuEntry::Header { title } => title.starts_with(prefix),
-        MenuEntry::Separator => false,
+        MenuEntry::Strength { .. } | MenuEntry::Separator => false,
     })
+}
+
+#[test]
+fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start(&socket_in(&dir));
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+    assert!(
+        !core
+            .menu()
+            .entries
+            .iter()
+            .any(|entry| matches!(entry, MenuEntry::Strength { .. }))
+    );
+
+    core.handle(Event::StrengthChanged { value: 60 });
+
+    assert_eq!(core.menu().entries[0], MenuEntry::Strength { value: 60 });
 }
 
 #[test]
@@ -2493,6 +2613,7 @@ fn a_status_query_is_answered_on_the_next_tick() {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             night_shift: NightShift::Unavailable,
+            strength: None,
             decision: Decision {
                 verdict: Verdict::HandsOff,
                 reasons: Vec::new(),

@@ -55,6 +55,12 @@ enum Command {
     },
     /// Clear the timed disable, every snooze and the manual state.
     Resume,
+    /// Show how warm Night Shift tints the display, or set it, from 0 to 100.
+    Strength {
+        /// 0 is the least warm, 100 the warmest.
+        #[arg(value_parser = clap::value_parser!(u8).range(0..=100))]
+        value: Option<u8>,
+    },
     /// Check for an update now; Nightcap shows what it finds and offers to install it.
     Update,
     /// Turn website checking on or off: domain rules need it, and it needs Accessibility.
@@ -197,6 +203,28 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             return Ok(());
         }
         Command::Rules { action } => return run_rules(instance, action),
+        Command::Strength { value: None } => {
+            let Payload::Status(status) = request(instance, &Request::Query(Query::Status), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            let Some(strength) = status.strength else {
+                return Err(Failure::Rejected(ErrorReply {
+                    code: protocol::ErrorCode::StrengthUnavailable,
+                    message: "Night Shift's strength can't be read on this Mac".to_owned(),
+                }));
+            };
+            println!("Strength: {strength}");
+            return Ok(());
+        }
+        Command::Strength { value: Some(value) } => {
+            let command = protocol::Command::Strength(value);
+            let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
+                return Err(unexpected_reply());
+            };
+            println!("Strength set to {value}.");
+            return Ok(());
+        }
         Command::Update => {
             let Payload::UpdateCheckStarted = request(instance, &Request::Update, None)? else {
                 return Err(unexpected_reply());
@@ -341,6 +369,9 @@ fn print_status(status: &Status) {
         status.decision.describe(&TimeZone::system())
     );
     println!("Schedule: {schedule}{scheduled}");
+    if let Some(strength) = status.strength {
+        println!("Strength: {strength}");
+    }
     let host = match (&status.host, status.watching) {
         (Some(host), _) => format!(", on {host}"),
         (None, true) => ", host unknown".to_owned(),

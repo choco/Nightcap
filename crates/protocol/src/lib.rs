@@ -130,6 +130,10 @@ pub enum Command {
     Websites(OnOff),
     /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0015).
     OpenAtLogin(OnOff),
+    /// Sets Night Shift's strength, 0 to 100, and saves it (ADR-0020).
+    Strength(u8),
+    /// Shows a strength, 0 to 100, without saving it, while a slider moves; `Strength` ends it.
+    PreviewStrength(u8),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -319,6 +323,8 @@ pub struct Status {
     pub version: String,
     pub install: Install,
     pub night_shift: NightShift,
+    /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
+    pub strength: Option<u8>,
     pub decision: Decision,
     /// The on or off the user set last; it lasts until the next schedule transition.
     pub manual_state: Option<OnOff>,
@@ -468,6 +474,8 @@ pub enum ErrorCode {
     ProtocolMismatch,
     BadRequest,
     NightShiftUnavailable,
+    /// Night Shift works, but its strength can't be read or set on this Mac.
+    StrengthUnavailable,
     InvalidConfig,
     /// The install doesn't update itself: its installer does, or it's a dev build.
     NoUpdater,
@@ -524,6 +532,7 @@ mod tests {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
                 night_shift: NightShift::On,
+                strength: Some(60),
                 decision: Decision {
                     verdict: Verdict::HandsOff,
                     reasons: Vec::new(),
@@ -560,7 +569,7 @@ mod tests {
                     text: "x".to_owned(),
                 }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
         );
     }
 
@@ -577,6 +586,14 @@ mod tests {
                 jiff::SignedDuration::from_mins(90)
             ))),
             r#"{"command":{"disable":"PT1H30M"}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::Strength(60))),
+            r#"{"command":{"strength":60}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::PreviewStrength(60))),
+            r#"{"command":{"preview_strength":60}}"#
         );
         assert_eq!(
             json(&Decision {

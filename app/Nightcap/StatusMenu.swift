@@ -12,9 +12,25 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let onOpen: () -> Void
     /// What the open menu shows, so `refresh()` redraws it only when that changed.
     private var shown: Menu?
+    /// The open menu's strength slider, moved in place when only the strength changed.
+    private weak var slider: NSSlider?
     /// The mockup's orange dot, over the template moon so the moon still follows the menu
     /// bar's appearance while the dot keeps its colour.
     private let dot = NSView()
+
+    /// Its `mouseDown` tracks the whole drag and returns only once the mouse goes up, so moves
+    /// inside it are a drag and its return is the release.
+    private final class StrengthSlider: NSSlider {
+        private(set) var dragging = false
+        var onRelease: () -> Void = {}
+
+        override func mouseDown(with event: NSEvent) {
+            dragging = true
+            super.mouseDown(with: event)
+            dragging = false
+            onRelease()
+        }
+    }
 
     /// Boxes a command for `NSMenuItem.representedObject`, which takes only objects.
     private final class Choice: NSObject {
@@ -58,7 +74,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// moon's "z", and inside the status item's square.
     static let dotOffset = CGPoint(x: 9.2, y: 7.5)
 
-    /// Redraws the icon, and the menu too while it's open and what it shows changed.
+    /// Redraws the icon, and the menu too while it's open and what it shows changed. A new
+    /// strength alone moves the slider in place, since rebuilding the menu would end a drag.
     func refresh() {
         let snapshot = current()
         let image = Self.image(for: snapshot.icon)
@@ -68,9 +85,28 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         item.button?.image = image
         item.button?.appearsDisabled = snapshot.icon == .unavailable
         dot.isHidden = snapshot.problemLine == nil
-        if shown != nil, snapshot != shown, let menu = item.menu {
+        guard let shown, snapshot != shown, let menu = item.menu else { return }
+        if let slider, Self.apartFromStrength(snapshot) == Self.apartFromStrength(shown),
+           let strength = Self.strength(in: snapshot)
+        {
+            self.shown = snapshot
+            if NSEvent.pressedMouseButtons == 0 { slider.doubleValue = Double(strength) }
+        } else {
             menuNeedsUpdate(menu)
         }
+    }
+
+    private static func strength(in menu: Menu) -> UInt8? {
+        for entry in menu.entries {
+            if case .strength(let value) = entry { return value }
+        }
+        return nil
+    }
+
+    private static func apartFromStrength(_ menu: Menu) -> Menu {
+        var menu = menu
+        menu.entries.removeAll { if case .strength = $0 { true } else { false } }
+        return menu
     }
 
     /// `onOpen` can learn something the menu should show, which then redraws it in place.
@@ -152,6 +188,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         for entry in snapshot.entries {
             switch entry {
+            case .strength(let value):
+                menu.addItem(strengthItem(value))
             case .item(let item):
                 menu.addItem(menuItem(item))
             case .submenu(let title, let items):
@@ -171,6 +209,39 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ","))
         menu.addItem(NSMenuItem(title: "Quit Nightcap", action: #selector(quit), keyEquivalent: "q"))
         menu.items.filter { $0.action != nil }.forEach { $0.target = self }
+    }
+
+    /// The strength's slider, inset like the items' titles and as wide as the menu.
+    private func strengthItem(_ value: UInt8) -> NSMenuItem {
+        let slider = StrengthSlider(
+            value: Double(value), minValue: 0, maxValue: 100, target: self, action: #selector(strengthMoved(_:)))
+        slider.isContinuous = true
+        slider.onRelease = { [weak self, weak slider] in
+            guard let self, let slider else { return }
+            choose(.strength(UInt8(slider.doubleValue.rounded())))
+        }
+        slider.controlSize = .small
+        slider.setAccessibilityLabel("Strength")
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
+        view.autoresizingMask = [.width]
+        view.addSubview(slider)
+        NSLayoutConstraint.activate([
+            slider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
+            slider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            slider.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        self.slider = slider
+        let item = NSMenuItem()
+        item.view = view
+        return item
+    }
+
+    /// A drag previews the strength, and the release saves it. Moving it any other way, such as
+    /// with VoiceOver, saves it at once.
+    @objc private func strengthMoved(_ sender: StrengthSlider) {
+        let value = UInt8(sender.doubleValue.rounded())
+        choose(sender.dragging ? .previewStrength(value) : .strength(value))
     }
 
     private func menuItem(_ item: MenuItem) -> NSMenuItem {
