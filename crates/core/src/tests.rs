@@ -753,6 +753,57 @@ fn toggle_inverts_night_shift_as_last_observed() {
     assert_eq!(response, by_hand(OnOff::Off));
 }
 
+/// The answer to a command that leaves Night Shift on at 23:00 by the custom hours.
+fn following_the_custom_hours_until_morning() -> Response {
+    Response::Ok(Payload::Decision(Decision {
+        verdict: Verdict::HandsOff,
+        reasons: vec![Reason::Schedule {
+            state: OnOff::On,
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+        }],
+    }))
+}
+
+#[test]
+fn toggling_night_shift_off_and_back_on_follows_the_schedule_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    send(&core, &socket, &wakes, Command::Toggle);
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
+    });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(response, following_the_custom_hours_until_morning());
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+    assert_eq!(entry_titled(&core, "Resume"), None);
+}
+
+#[test]
+fn on_while_the_schedule_has_night_shift_on_sets_no_manual_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+
+    assert_eq!(effects, Vec::new());
+    assert_eq!(response, following_the_custom_hours_until_morning());
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
+}
+
 #[test]
 fn a_command_while_night_shift_is_unavailable_is_refused() {
     let dir = tempfile::tempdir().unwrap();
@@ -871,7 +922,7 @@ fn an_external_change_is_adopted_as_the_manual_state() {
 }
 
 #[test]
-fn an_external_change_back_to_the_schedule_replaces_the_manual_state() {
+fn an_external_change_back_to_the_schedule_ends_the_manual_state() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
@@ -885,15 +936,13 @@ fn an_external_change_back_to_the_schedule_replaces_the_manual_state() {
         schedule: custom_hours(),
     });
 
-    core.handle(Event::StatusChanged {
+    let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
     });
 
-    assert_eq!(
-        status_of(&core, &socket, &wakes).manual_state,
-        Some(OnOff::Off)
-    );
+    assert_eq!(effects, Vec::new());
+    assert_eq!(status_of(&core, &socket, &wakes).manual_state, None);
 }
 
 #[test]
@@ -945,9 +994,11 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
         schedule: custom_hours(),
     });
 
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.scheduled_state, Some(OnOff::Off));
     assert_eq!(
-        status_of(&core, &socket, &wakes).manual_state,
-        Some(OnOff::Off)
+        status.next_transition,
+        Some(at("2026-10-16T22:00:00+02:00"))
     );
 }
 

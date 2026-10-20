@@ -1648,7 +1648,8 @@ struct Overridden {
 impl State {
     /// Sets the manual state the way `on`, `off` and external changes do (ADR-0006): turning
     /// Night Shift on while it's forced off snoozes the forcing rules and cancels a timed
-    /// disable.
+    /// disable. Short of a force, a state that a switching schedule gives anyway is no manual
+    /// state, so turning Night Shift off and back on follows the schedule again.
     fn set_manual_state(&mut self, state: OnOff) -> Overridden {
         let mut overridden = Overridden::default();
         let decision = self.decide();
@@ -1672,7 +1673,10 @@ impl State {
                 self.timed_disable = None;
             }
         }
-        self.manual_state = Some(state);
+        let overrides = !overridden.snoozed.is_empty() || overridden.timed_disable;
+        let scheduled = self.timeline.next_transition(self.applied_until).is_some()
+            && self.timeline.scheduled_state(self.applied_until).map(on_off) == Some(state);
+        self.manual_state = (overrides || !scheduled).then_some(state);
         overridden
     }
 

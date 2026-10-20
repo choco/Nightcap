@@ -23,7 +23,7 @@ _Avoid_: temperature, warmth
 ### Toggles
 
 **Manual state**:
-The on/off the user set last, through Nightcap or by an adopted external change. It lasts until the next schedule transition.
+The on/off the user set last, through Nightcap or by an adopted external change. It lasts until the next schedule transition. Short of overriding a force, an on/off that a switching schedule gives anyway is none, so turning Night Shift off and back on follows the schedule again.
 
 **External change**:
 A Night Shift toggle made outside Nightcap, in Control Center or System Settings.
