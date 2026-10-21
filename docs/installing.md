@@ -18,7 +18,7 @@ Every release on GitHub carries four files:
    - If your installer updates Nightcap, keep the bundle's folder read-only to the user, as the Nix store is. Nightcap then sees a *managed install*: it never updates itself and never adds a login item, and `nightcap update` refuses, pointing at you.
    - If the folder is writable, as `/Applications` is, Nightcap is *self-managed*. It checks the appcast once a day, downloads updates in the background, and installs them when it quits. It opens at login if the user chooses it, in onboarding or in Settings.
 3. **Start it.** A managed install starts `Contents/MacOS/Nightcap` from a LaunchAgent, pointing straight at the installed path, with `KeepAlive` so launchd restarts it. A self-managed install opens itself at login if the user chose that.
-4. **Put the CLI on `PATH`.** It's `Contents/Helpers/nightcap`; link it, don't copy it.
+4. **Put the CLI on `PATH`.** It's `Contents/Helpers/nightcap`; link it, don't copy it. `Contents/Helpers` also holds `Tour Sample.app`, which the in-app tour opens; leave it where it is.
 
 A downloaded zip carries the quarantine flag; leave it. The stapled ticket lets Gatekeeper accept the app offline, and the first launch asks only whether to open an app downloaded from the internet.
 
@@ -44,7 +44,13 @@ websites = true
 [rules]
 app = ["com.figma.Desktop", "com.adobe.Photoshop"]
 domain = ["figma.com"]
+
+[night_shift]
+strength = 60
+schedule = "sunset-to-sunrise"
 ```
+
+`[night_shift]` can set Night Shift's `strength`, 0 to 100, and its `schedule`: `"off"`, `"sunset-to-sunrise"`, or custom hours such as `"22:00-07:00"`. Each is optional. Both stay the system's: Nightcap applies a value when Nightcap starts or reloads and finds it changed since it last applied it, so a change the user makes in System Settings afterwards stands until the config changes again. A value the config sets is no longer asked about in onboarding.
 
 An app rule forces Night Shift off while that app is in front. A domain rule does it while Safari or Chrome shows that domain or any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Write domains bare, with no scheme, path, port or wildcard. Domain rules apply while website checking is on, which the user chooses in onboarding or Settings unless the config sets `websites`. Website checking needs the Accessibility permission, which Nightcap asks for when it's turned on.
 
