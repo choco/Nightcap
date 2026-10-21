@@ -82,11 +82,17 @@ enum StageArt {
             NSRect(x: x(now) - 1, y: bar.minY, width: 2, height: bar.height).fill()
             NSGraphicsContext.restoreGraphicsState()
             let small = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
-            Paint.text("00:00", small, .nightcapSecondary, at: NSPoint(x: 0, y: 72))
-            for (quarter, hour) in ["06:00", "12:00", "18:00"].enumerated() {
-                Paint.text(hour, small, .nightcapSecondary, centredAt: NSPoint(x: width * CGFloat(quarter + 1) / 4, y: 79))
+            let nowFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+            let nowHalf = ("Now" as NSString).size(withAttributes: [.font: nowFont]).width / 2 + 4
+            // An hour's label gives way to "Now" where the two would overlap.
+            for (index, hour) in ["00:00", "06:00", "12:00", "18:00"].enumerated() {
+                let half = (hour as NSString).size(withAttributes: [.font: small]).width / 2
+                // 00:00 sits at the bar's left edge rather than centred on it.
+                let centre = index == 0 ? half : width * CGFloat(index) / 4
+                guard abs(centre - x(now)) > half + nowHalf else { continue }
+                Paint.text(hour, small, .nightcapSecondary, centredAt: NSPoint(x: centre, y: 79))
             }
-            Paint.text("Now", .systemFont(ofSize: 10, weight: .semibold), .controlAccentColor, centredAt: NSPoint(x: x(now), y: 79))
+            Paint.text("Now", nowFont, .controlAccentColor, centredAt: NSPoint(x: x(now), y: 79))
             Paint.text(caption, .systemFont(ofSize: 12), .labelColor, centredAt: NSPoint(x: width / 2, y: 104))
         }
     }
