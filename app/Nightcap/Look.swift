@@ -126,6 +126,9 @@ final class CapsuleButton: NSButton {
     private let style: Look.ButtonStyle
     private var small: Bool { style == .small }
     private var padding: CGFloat { small ? 10 : 13 }
+    /// Acts on a click into a window that isn't key, as in the tour's panel, which never takes
+    /// the focus.
+    var actsOnFirstClick = false
 
     init(title: String, style: Look.ButtonStyle) {
         self.style = style
@@ -144,6 +147,10 @@ final class CapsuleButton: NSButton {
 
     required init?(coder: NSCoder) {
         fatalError("not built from a nib")
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        actsOnFirstClick || super.acceptsFirstMouse(for: event)
     }
 
     override var intrinsicContentSize: NSSize {

@@ -13,21 +13,32 @@ extension KeyboardShortcuts.Name {
 final class Shortcut {
     private static let tap: TimeInterval = 0.3
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "shortcut")
+    private let onPress: () -> Void
+    private let onTap: () -> Void
+    private let onRelease: () -> Void
     private var pressed: Date?
 
     /// `press` runs as the key goes down, then either `tap` or `release` as it comes up.
     init(press: @escaping () -> Void, tap: @escaping () -> Void, release: @escaping () -> Void) {
-        KeyboardShortcuts.onKeyDown(for: .nightShift) { [weak self] in
-            guard let self, pressed == nil else { return }
-            pressed = Date()
-            press()
-        }
-        KeyboardShortcuts.onKeyUp(for: .nightShift) { [weak self] in
-            guard let self, let pressed else { return }
-            self.pressed = nil
-            let held = Date().timeIntervalSince(pressed)
-            log.info("shortcut \(held < Self.tap ? "tapped" : "held", privacy: .public) for \(held, format: .fixed(precision: 2), privacy: .public) s")
-            if held < Self.tap { tap() } else { release() }
-        }
+        onPress = press
+        onTap = tap
+        onRelease = release
+        KeyboardShortcuts.onKeyDown(for: .nightShift) { [weak self] in self?.press() }
+        KeyboardShortcuts.onKeyUp(for: .nightShift) { [weak self] in self?.release() }
+    }
+
+    /// The key going down, on the keyboard or on the tour's keycaps.
+    func press() {
+        guard pressed == nil else { return }
+        pressed = Date()
+        onPress()
+    }
+
+    func release() {
+        guard let pressed else { return }
+        self.pressed = nil
+        let held = Date().timeIntervalSince(pressed)
+        log.info("shortcut \(held < Self.tap ? "tapped" : "held", privacy: .public) for \(held, format: .fixed(precision: 2), privacy: .public) s")
+        if held < Self.tap { onTap() } else { onRelease() }
     }
 }

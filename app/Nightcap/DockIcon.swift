@@ -19,11 +19,13 @@ final class DockIcon {
     /// With no reason left, the icon goes at once while Nightcap isn't the active app, or has a
     /// focused window of its own to stay active with. Otherwise it waits for Nightcap to stop
     /// being active: dropping it then would make macOS hand the focus to another app, and move
-    /// the user to whichever Space that app's windows are on.
+    /// the user to whichever Space that app's windows are on. Asking again once a window has the
+    /// focus drops it then.
     func hide(for reason: Reason) {
         reasons.remove(reason)
         guard reasons.isEmpty else { return }
         guard NSApp.isActive, NSApp.keyWindow == nil else {
+            stopWaiting()
             NSApp.setActivationPolicy(.accessory)
             return
         }

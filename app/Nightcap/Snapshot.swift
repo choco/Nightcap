@@ -1,9 +1,11 @@
 #if DEBUG
 import AppKit
+import KeyboardShortcuts
 import NightcapCore
 
 /// Dev builds only: with `NIGHTCAP_SNAPSHOT` set to a folder, Nightcap renders the settings
-/// window's tabs, light and dark, from the mockup's scenario into that folder, then quits.
+/// window's tabs, onboarding's steps and the tour's panel, light and dark, from the mockups'
+/// scenarios into that folder, then quits.
 enum Snapshot {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
@@ -47,7 +49,7 @@ enum Snapshot {
             ])
         let window = SettingsWindow(
             current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
-            export: { _ in "" }, onClose: {})
+            export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             for tab in SettingsWindow.Tab.allCases {
@@ -68,7 +70,7 @@ enum Snapshot {
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
                     sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
-                onNotificationsRead: {}, onFinish: { _ in })
+                onNotificationsRead: {}, onFinish: { _, _ in })
         }
         let newUser = steps(setUp)
         var alreadySetUp = setUp
@@ -93,6 +95,35 @@ enum Snapshot {
                 let url = URL(fileURLWithPath: folder).appendingPathComponent("app-onboarding-\(state)-\(name).png")
                 guard let png = onboarding.snapshot(step, page: page, reviewing: reviewing) else {
                     fatalError("couldn't render \(state)")
+                }
+                try! png.write(to: url)
+            }
+        }
+        let tour = Tour(
+            standsIn: true, shortcut: KeyboardShortcuts.Shortcut(.n, modifiers: [.control, .option, .command]),
+            browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
+            press: {}, release: {}, begin: {}, onEnd: { _ in })
+        let sample = Tour.sampleApp
+        let tourStates: [(String, Tour.Step, front: String?, ruled: Bool, returned: Bool, siteRuled: Bool, siteLeft: Bool)] = [
+            ("moon", .moon, nil, false, false, false, false),
+            ("rule", .rule, nil, false, false, false, false),
+            ("rule-in-front", .rule, sample, false, false, false, false),
+            ("rule-ruled", .rule, sample, true, false, false, false),
+            ("rule-returned", .rule, nil, true, true, false, false),
+            ("site", .site, "com.apple.Safari", false, false, false, false),
+            ("site-ruled", .site, "com.apple.Safari", false, false, true, false),
+            ("site-left", .site, nil, false, false, true, true),
+            ("peek", .peek, nil, false, false, false, false),
+            ("end", .end, nil, false, false, false, false),
+        ]
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (state, step, front, ruled, returned, siteRuled, siteLeft) in tourStates {
+                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-tour-\(state)-\(name).png")
+                guard let png = tour.snapshot(
+                    step, front: front, ruled: ruled, returned: returned, siteRuled: siteRuled, siteLeft: siteLeft)
+                else {
+                    fatalError("couldn't render the tour at \(state)")
                 }
                 try! png.write(to: url)
             }

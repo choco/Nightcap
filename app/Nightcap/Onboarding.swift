@@ -72,7 +72,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let accessibilityGranted: () -> Bool
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
-    private let onFinish: (_ websites: Bool) -> Void
+    private let onFinish: (_ websites: Bool, _ tour: Bool) -> Void
     private let onNotificationsRead: () -> Void
     private let sun: Sun?
     /// The window's lasting content: the stage, whose loops would restart if it were rebuilt, and
@@ -111,9 +111,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// Whether Nightcap is to open at login; nil where it never opens itself.
     private var opensAtLogin: Bool?
     private var poll: Timer?
+    private var takesTour = false
 
     /// `choose` sends a command to the core, as the menu does; `onFinish` runs once onboarding
-    /// ends, by Done or the close button.
+    /// ends, by Done, Take the Tour or the close button.
     init(
         steps setup: OnboardingSteps,
         rules: [SettingsRule],
@@ -122,7 +123,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
         onNotificationsRead: @escaping () -> Void,
-        onFinish: @escaping (_ websites: Bool) -> Void
+        onFinish: @escaping (_ websites: Bool, _ tour: Bool) -> Void
     ) {
         self.setup = setup
         self.accessibilityGranted = accessibilityGranted
@@ -229,7 +230,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         poll?.invalidate()
-        if closedByUser { onFinish(websites == true) }
+        if closedByUser { onFinish(websites == true, takesTour) }
     }
 
     #if DEBUG
@@ -875,7 +876,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .lastThings:
             return (eyebrow, "Two last things", "Both are up to you, and you can change either later in Settings.")
         case .ready:
-            return (eyebrow, "Nightcap is ready", "It lives in the menu bar, under the moon. You can change any of this later in Settings.")
+            return (
+                eyebrow, "Nightcap is ready",
+                "It lives in the menu bar, under the moon. You can change any of this later in Settings, along with the shortcut. New to Nightcap? The tour shows a rule at work, in about a minute.")
         }
     }
 
@@ -1026,7 +1029,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 )
             }
         case .ready:
-            return (nil, nil, Choice(title: "Done") { [weak self] in self?.window.performClose(nil) })
+            return (
+                nil,
+                Choice(title: "Take the Tour") { [weak self] in
+                    self?.takesTour = true
+                    self?.window.performClose(nil)
+                },
+                Choice(title: "Done") { [weak self] in self?.window.performClose(nil) }
+            )
         }
     }
 

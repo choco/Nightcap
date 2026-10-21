@@ -11,7 +11,18 @@
 		4E1C0A00000000000000000D /* NightcapCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000000F /* NightcapCore */; };
 		4E1C0A000000000000000018 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A000000000000000017 /* Sparkle */; };
 		4E1C0A00000000000000001B /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000001A /* KeyboardShortcuts */; };
+		4E1C0A000000000000000027 /* Tour Sample.app in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 4E1C0A00000000000000001D /* Tour Sample.app */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4E1C0A000000000000000026 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4E1C0A000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4E1C0A00000000000000001E;
+			remoteInfo = "Tour Sample";
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
 		4E1C0A00000000000000000B /* Copy Helpers */ = {
@@ -21,6 +32,7 @@
 			dstSubfolderSpec = 1;
 			files = (
 				4E1C0A00000000000000000C /* nightcap in Copy Helpers */,
+				4E1C0A000000000000000027 /* Tour Sample.app in Copy Helpers */,
 			);
 			name = "Copy Helpers";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -30,12 +42,18 @@
 /* Begin PBXFileReference section */
 		4E1C0A000000000000000004 /* Nightcap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nightcap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E1C0A000000000000000006 /* nightcap */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; name = nightcap; path = ../build/cli/nightcap; sourceTree = SOURCE_ROOT; };
+		4E1C0A00000000000000001D /* Tour Sample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Tour Sample.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4E1C0A000000000000000005 /* Nightcap */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Nightcap;
+			sourceTree = "<group>";
+		};
+		4E1C0A00000000000000001C /* TourSample */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = TourSample;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -51,6 +69,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E1C0A000000000000000020 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -58,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				4E1C0A000000000000000005 /* Nightcap */,
+				4E1C0A00000000000000001C /* TourSample */,
 				4E1C0A000000000000000006 /* nightcap */,
 				4E1C0A000000000000000003 /* Products */,
 			);
@@ -67,6 +93,7 @@
 			isa = PBXGroup;
 			children = (
 				4E1C0A000000000000000004 /* Nightcap.app */,
+				4E1C0A00000000000000001D /* Tour Sample.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -86,6 +113,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				4E1C0A000000000000000025 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4E1C0A000000000000000005 /* Nightcap */,
@@ -98,6 +126,25 @@
 			);
 			productName = Nightcap;
 			productReference = 4E1C0A000000000000000004 /* Nightcap.app */;
+			productType = "com.apple.product-type.application";
+		};
+		4E1C0A00000000000000001E /* Tour Sample */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4E1C0A000000000000000022 /* Build configuration list for PBXNativeTarget "Tour Sample" */;
+			buildPhases = (
+				4E1C0A00000000000000001F /* Sources */,
+				4E1C0A000000000000000020 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4E1C0A00000000000000001C /* TourSample */,
+			);
+			name = "Tour Sample";
+			productName = "Tour Sample";
+			productReference = 4E1C0A00000000000000001D /* Tour Sample.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -130,6 +177,7 @@
 			projectRoot = "";
 			targets = (
 				4E1C0A000000000000000007 /* Nightcap */,
+				4E1C0A00000000000000001E /* Tour Sample */,
 			);
 		};
 /* End PBXProject section */
@@ -152,7 +200,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E1C0A00000000000000001F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4E1C0A000000000000000025 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4E1C0A00000000000000001E /* Tour Sample */;
+			targetProxy = 4E1C0A000000000000000026 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4E1C0A000000000000000011 /* Debug */ = {
@@ -227,6 +290,36 @@
 			};
 			name = Release;
 		};
+		4E1C0A000000000000000023 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tour Sample";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.dev.tour-sample;
+				PRODUCT_NAME = "Tour Sample";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4E1C0A000000000000000024 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tour Sample";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.tour-sample;
+				PRODUCT_NAME = "Tour Sample";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -244,6 +337,15 @@
 			buildConfigurations = (
 				4E1C0A000000000000000014 /* Debug */,
 				4E1C0A000000000000000015 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4E1C0A000000000000000022 /* Build configuration list for PBXNativeTarget "Tour Sample" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E1C0A000000000000000023 /* Debug */,
+				4E1C0A000000000000000024 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

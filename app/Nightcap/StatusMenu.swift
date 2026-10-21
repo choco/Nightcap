@@ -11,6 +11,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Opens Settings: on the problem's tab for the problem line, on the last tab otherwise.
     private let openSettings: (_ onProblem: Bool) -> Void
     private let onOpen: () -> Void
+    private let onClose: () -> Void
     /// What the open menu shows, so `refresh()` redraws it only when that changed.
     private var shown: Menu?
     /// The open menu's strength slider, moved in place when only the strength changed.
@@ -31,12 +32,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         current: @escaping () -> Menu,
         choose: @escaping (Command) -> Void,
         openSettings: @escaping (_ onProblem: Bool) -> Void,
-        onOpen: @escaping () -> Void
+        onOpen: @escaping () -> Void,
+        onClose: @escaping () -> Void
     ) {
         self.current = current
         self.choose = choose
         self.openSettings = openSettings
         self.onOpen = onOpen
+        self.onClose = onClose
         super.init()
         let menu = NSMenu()
         menu.delegate = self
@@ -99,8 +102,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// Points at the moon once onboarding is done: the only way into Nightcap from then on. It
-    /// stays until OK or the menu opens. A popover, since on macOS 27 the system draws the
-    /// status item, and only AppKit knows where it is. `onShown` runs once it's up and focused.
+    /// stays until OK: on macOS 27, a status item's click never arrives while a popover hangs
+    /// from it. A popover, since on macOS 27 the system draws the status item, and only AppKit
+    /// knows where it is. `onShown` runs once it's up and focused.
     func pointOut(onShown: @escaping () -> Void) {
         // A moment for the new status item to take its place in the menu bar.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
@@ -134,6 +138,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     func menuDidClose(_ menu: NSMenu) {
         shown = nil
+        onClose()
     }
 
     /// The mockup's moons, template images from the asset catalog.
@@ -310,7 +315,7 @@ private final class PointOut: NSViewController {
         let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
-            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while.",
+            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while. Click OK, then the moon. The shortcut and the tour are in Settings.",
             size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
         let buttons = NSStackView(views: [NSView(), ok])

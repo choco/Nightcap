@@ -33,7 +33,8 @@ if [[ "$bundle_id" != *.dev && -z "$public_key" ]]; then
   exit 1
 fi
 
-for binary in "$app/Contents/MacOS/Nightcap" "$app/Contents/Helpers/nightcap"; do
+for binary in "$app/Contents/MacOS/Nightcap" "$app/Contents/Helpers/nightcap" \
+  "$app/Contents/Helpers/Tour Sample.app/Contents/MacOS/Tour Sample"; do
   foreign="$(otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^(/usr/lib/|/System/|@rpath/Sparkle\.framework/)' || true)"
   if [[ -n "$foreign" ]]; then
     echo "error: $binary links non-system libraries:" >&2

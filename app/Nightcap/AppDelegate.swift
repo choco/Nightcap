@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import NightcapCore
 import ServiceManagement
 import Sparkle
@@ -22,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var accessibility: AccessibilityPermission?
     private var onboarding: Onboarding?
     private var shortcut: Shortcut?
+    private var tour: Tour?
     /// What the core last heard, so an unchanged re-read sends nothing.
     private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
     private var reportedLoginItem: LoginItem?
@@ -103,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         nightShift?.endPeek()
+        tour?.end()
         guard let core else { return }
         apply(core.handle(event: .terminating))
     }
@@ -135,13 +138,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (ADR-0021).
     private func listenForShortcut() {
         shortcut = Shortcut(
-            press: { [weak self] in self?.nightShift?.peek() },
+            press: { [weak self] in
+                self?.nightShift?.peek()
+                self?.tour?.shortcutPressed()
+            },
             tap: { [weak self] in
                 guard let self, let core else { return }
                 apply(core.handle(event: .commandChosen(command: .toggle)))
                 nightShift?.endPeek()
+                tour?.shortcutTapped()
             },
-            release: { [weak self] in self?.nightShift?.endPeek() })
+            release: { [weak self] in
+                self?.nightShift?.endPeek()
+                self?.tour?.shortcutReleased()
+            })
+    }
+
+    /// From onboarding's end or Settings, once their window is gone, as the click that started the
+    /// tour ends: the panel then keeps the focus. `onShown` runs once it's up.
+    private func startTour(onShown: () -> Void = {}) {
+        if let tour {
+            tour.reveal()
+            return
+        }
+        guard let core else { return }
+        let tour = Tour(
+            standsIn: nightShift?.status?.enabled == false,
+            shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
+            browser: tourBrowser(core.settings()),
+            press: { [weak self] in self?.shortcut?.press() },
+            release: { [weak self] in self?.shortcut?.release() },
+            begin: { [weak self] in self?.apply(core.handle(event: .tourStarted)) },
+            onEnd: { [weak self] begun in
+                guard let self else { return }
+                self.tour = nil
+                if begun { apply(core.handle(event: .tourEnded)) }
+            })
+        self.tour = tour
+        tour.start()
+        onShown()
+    }
+
+    /// The default browser, for the tour's site step, while website checking can watch it.
+    private func tourBrowser(_ settings: Settings) -> Tour.Browser? {
+        guard settings.websiteChecking.on, accessibility?.granted == true,
+              let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
+              let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
+        else { return nil }
+        return Tour.Browser(bundleId: bundleId, name: FileManager.default.displayName(atPath: url.path))
     }
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
@@ -227,6 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
         apply(core.handle(event: .appActivated(
             bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
+        tour?.frontmostChanged(bundleId)
     }
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0012).
@@ -325,13 +370,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onNotificationsRead: { [weak self] in
                 Task { await self?.reportSystemState() }
             },
-            onFinish: { [weak self] websites in
+            onFinish: { [weak self] websites, tour in
                 guard let self else { return }
                 apply(core.handle(event: .onboardingFinished(websites: websites)))
                 self.onboarding = nil
                 showStatusMenu()
-                // The Dock icon goes once the popover is up, while Nightcap stays active with it.
-                statusMenu?.pointOut { [weak self] in self?.dockIcon.hide(for: .onboarding) }
+                // The Dock icon goes once the popover or the tour's panel is up, while Nightcap
+                // stays active with it.
+                let hideDockIcon: () -> Void = { [weak self] in self?.dockIcon.hide(for: .onboarding) }
+                guard tour else {
+                    statusMenu?.pointOut(onShown: hideDockIcon)
+                    return
+                }
+                DispatchQueue.main.async { [weak self] in self?.startTour(onShown: hideDockIcon) }
             })
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)
@@ -346,13 +397,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             current: { core.menu() },
             choose: { [weak self] command in
                 self?.apply(core.handle(event: .commandChosen(command: command)))
+                self?.tour?.chose(command)
             },
             openSettings: { [weak self] onProblem in
                 self?.showSettings(onProblem ? SettingsWindow.tab(for: core.settings()) : nil)
             },
             onOpen: { [weak self] in
+                self?.tour?.menuOpened()
                 Task { await self?.reportSystemState() }
-            })
+            },
+            onClose: { [weak self] in self?.tour?.menuClosed() })
         settingsWindow = SettingsWindow(
             current: { core.settings() },
             choose: { [weak self] command in
@@ -361,6 +415,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             perform: { [weak self] fix in self?.perform(fix) },
             checkForUpdates: checkForUpdates,
             export: { core.export(format: $0) },
+            takeTour: { [weak self] in
+                guard let self else { return }
+                settingsWindow?.close()
+                DispatchQueue.main.async { [weak self] in
+                    self?.startTour { [weak self] in self?.dockIcon.hide(for: .settings) }
+                }
+            },
             onClose: { [weak self] in
                 guard let self else { return }
                 dockIcon.hide(for: .settings)
@@ -503,6 +564,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Whatever changed the core's state changed the icon too, CLI commands included.
         statusMenu?.refresh()
         settingsWindow?.refresh()
+        if let tour, let core { tour.forcedChanged(core.menu().icon == .forcedOff) }
     }
 
     private func checkForUpdates() {

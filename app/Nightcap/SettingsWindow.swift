@@ -32,6 +32,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private let perform: (Fix) -> Void
     private let checkForUpdates: (() -> Void)?
     private let export: (ExportFormat) -> String
+    private let takeTour: () -> Void
     /// The format "Copy" last wrote, kept across redraws.
     private var exportFormat = ExportFormat.nix
     private let onClose: () -> Void
@@ -54,6 +55,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         perform: @escaping (Fix) -> Void,
         checkForUpdates: (() -> Void)?,
         export: @escaping (ExportFormat) -> String,
+        takeTour: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
         self.current = current
@@ -61,6 +63,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         self.perform = perform
         self.checkForUpdates = checkForUpdates
         self.export = export
+        self.takeTour = takeTour
         self.onClose = onClose
         super.init()
     }
@@ -88,6 +91,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let settings = current()
         guard settings != shown else { return }
         draw(settings)
+    }
+
+    func close() {
+        window?.close()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -257,6 +264,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                     check(.notifications)),
             ]),
             block("Nightcap", openAtLogin(settings) + [
+                cell(
+                    row(
+                        title: "Tour",
+                        detail: "A rule at work, the peek and the menu, in about a minute.",
+                        accessory: Look.button("Take the Tour", .regular) { [takeTour] in takeTour() }),
+                    nil),
                 cell(
                     row(
                         title: "Version \(version)",

@@ -50,4 +50,5 @@ for helper in XPCServices/Installer.xpc XPCServices/Downloader.xpc Autoupdate Up
 done
 sign "$sparkle"
 sign "$app/Contents/Helpers/nightcap"
+sign "$app/Contents/Helpers/Tour Sample.app"
 sign ${entitlements[@]+"${entitlements[@]}"} "$app"

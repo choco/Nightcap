@@ -22,11 +22,11 @@ The window that takes a new user through each choice and grant, once per onboard
 _Avoid_: setup wizard, first run
 
 **Tour**:
-An optional walk-through in a panel by the menu-bar moon: the moon, a rule at work, the peek and the menu. Offered at the end of onboarding and from Settings.
+An optional walk-through in a floating panel: the moon, a rule the user makes and sees act, for an app and where it can for a site, and the peek. Offered at the end of onboarding and from Settings, and every step can be skipped.
 _Avoid_: tutorial, walkthrough
 
 **Tour sample**:
-The tour's own window, opened when none of the user's apps with a rule is running, which a tour rule forces Night Shift off for.
+The tour's own app, Tour Sample, which the user adds a tour rule for from the menu, to see the rule act. The tour uses it even when one of the user's apps with a rule is running.
 
 **Suggestion**:
 An app or website onboarding offers a rule for, already ticked if it has one: installed apps where colour matters, and websites that need true colour, mostly video streaming.

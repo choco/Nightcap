@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import NightcapCore
 
 /// What onboarding's stage shows for a step: a small live mock of macOS that acts out what the
@@ -277,6 +278,10 @@ enum StageArt {
             NSRect(x: menu.minX + 10, y: y, width: menu.width - 20, height: 0.5).fill()
             y += 6
             Paint.text("Turn Night Shift Off", item, .labelColor, at: NSPoint(x: menu.minX + 12, y: y))
+            if let keys = KeyboardShortcuts.getShortcut(for: .nightShift)?.description {
+                let width = (keys as NSString).size(withAttributes: [.font: item]).width
+                Paint.text(keys, item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 12 - width, y: y))
+            }
             y += 18
             Paint.text("Turn Off For", item, .labelColor, at: NSPoint(x: menu.minX + 12, y: y))
             Paint.text("›", item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 18, y: y))
