@@ -115,24 +115,43 @@ requestAnimationFrame(tick);
 // The live Mac: the Nightcap menu as the app builds it, for whatever is in front.
 const MOON_ON = '<svg viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="currentColor"/></svg>';
 const MOON_FORCED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke-width="2" stroke-linejoin="round"/><path d="M15.5 2.5h4l-4 4.5h4" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const MOON_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke-width="2" stroke-linejoin="round"/></svg>';
+const MOONS = { on: MOON_ON, forced: MOON_FORCED, off: MOON_OFF };
+// The menu's other images, drawn like the moons: a 24 grid, 2px strokes, round joins.
+const glyph = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+const ICONS = {
+  timer: glyph('<circle cx="12" cy="13.5" r="7.5"/><path d="M12 10v3.5l2.3 2.3M9.5 2.5h5"/>'),
+  globe: glyph('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z"/>'),
+  gear: glyph('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.2"/>'),
+  power: glyph('<path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/>'),
+};
+// The slider's ends, as the app draws them: a small four-rayed sun, a large eight-rayed one.
+const SUN_LESS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>';
+const SUN_MORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>';
+const APPS = { mail: ['M', '#3d6fd6'], figma: ['F', '#a259ff'], safari: ['S', '#1d9bf0'] };
 const SUNRISE = '07:52';
+const KEYS = '⌃⌥⌘N';
 const item = (title, extra = {}) => ({ title, ...extra });
-const tail = [item('Settings…', { key: '⌘,' }), item('Quit Nightcap', { key: '⌘Q' })];
+// The Night Shift item, which opens the menu: checked while on, why, and what choosing it does.
+const nightShift = (moon, reason, detail) => ({ nightShift: true, moon, reason, detail });
+const STRENGTH = { slider: 0.62 };
+const turnOffFor = item('Turn Off For', { key: '›', icon: 'timer' });
+const tail = [item('Settings…', { key: '⌘,', icon: 'gear' }), item('Quit Nightcap', { key: '⌘Q', icon: 'power' })];
 const MENUS = {
   mail: [
-    item('Night Shift: On', { status: true, subtitle: `Following the schedule until ${SUNRISE}` }), 'sep',
-    item('Turn Night Shift Off'), item('Turn Off For', { key: '▸' }), { header: 'Force Off' },
-    item('In Mail'), 'sep', ...tail,
+    nightShift('on', `Following the schedule until ${SUNRISE}`), STRENGTH, 'sep',
+    turnOffFor, 'sep', { header: 'Force Off' },
+    item('In Mail', { app: 'mail' }), 'sep', ...tail,
   ],
   figma: [
-    item('Night Shift: Forced Off', { status: true, subtitle: 'While Figma is in front' }), 'sep',
-    item('Turn Night Shift On', { subtitle: `Snoozes the Figma rule until ${SUNRISE}` }), item('Turn Off For', { key: '▸' }), { header: 'Force Off' },
-    item('In Figma', { check: true, subtitle: 'From your config' }), 'sep', ...tail,
+    nightShift('forced', 'While Figma is in front', `Snoozes the Figma rule until ${SUNRISE}`), STRENGTH, 'sep',
+    turnOffFor, 'sep', { header: 'Force Off' },
+    item('In Figma', { check: true, subtitle: 'From your config', app: 'figma' }), 'sep', ...tail,
   ],
   safari: [
-    item('Night Shift: Forced Off', { status: true, subtitle: 'While youtube.com is in front' }), 'sep',
-    item('Turn Night Shift On', { subtitle: `Snoozes the youtube.com rule until ${SUNRISE}` }), item('Turn Off For', { key: '▸' }), { header: 'Force Off' },
-    item('In Safari'), item('On youtube.com', { check: true, indented: true }), 'sep', ...tail,
+    nightShift('forced', 'While youtube.com is in front', `Snoozes the youtube.com rule until ${SUNRISE}`), STRENGTH, 'sep',
+    turnOffFor, 'sep', { header: 'Force Off' },
+    item('In Safari', { app: 'safari' }), item('On youtube.com', { check: true, indented: true, icon: 'globe' }), 'sep', ...tail,
   ],
 };
 const APP_NAMES = { mail: 'Mail', figma: 'Figma', safari: 'Safari' };
@@ -147,12 +166,34 @@ function el(tag, className, text) {
 function menuEntry(entry) {
   if (entry === 'sep') return el('div', 'menu-sep');
   if (entry.header) return el('div', 'menu-header', entry.header);
-  const row = el('div', 'menu-item' + (entry.status ? ' menu-status' : '') + (entry.indented ? ' menu-indented' : ''));
-  row.append(el('span', 'menu-check', entry.check ? '✓' : ''));
+  if (entry.slider !== undefined) {
+    const slider = el('div', 'menu-slider');
+    const less = el('span', 'menu-sun menu-sun-less');
+    less.innerHTML = SUN_LESS;
+    const track = el('span', 'menu-track');
+    track.style.setProperty('--value', entry.slider);
+    track.append(el('span', 'menu-track-fill'), el('span', 'menu-track-knob'));
+    const more = el('span', 'menu-sun menu-sun-more');
+    more.innerHTML = SUN_MORE;
+    slider.append(less, track, more);
+    return slider;
+  }
+  const row = el('div', 'menu-item' + (entry.indented ? ' menu-indented' : ''));
+  row.append(el('span', 'menu-check', entry.check || entry.moon === 'on' ? '✓' : ''));
+  const image = el('span', 'menu-image');
+  if (entry.app) {
+    const [letter, tile] = APPS[entry.app];
+    const app = el('span', 'menu-app', letter);
+    app.style.setProperty('--tile', tile);
+    image.append(app);
+  } else {
+    image.innerHTML = entry.nightShift ? MOONS[entry.moon] : ICONS[entry.icon] || '';
+  }
   const text = el('span', 'menu-text');
-  text.append(el('span', 'menu-title', entry.title));
-  if (entry.subtitle) text.append(el('span', 'menu-subtitle', entry.subtitle));
-  row.append(text, el('span', 'menu-key', entry.key || ''));
+  text.append(el('span', 'menu-title', entry.nightShift ? 'Night Shift' : entry.title));
+  [entry.nightShift ? entry.reason : entry.subtitle, entry.detail].filter(Boolean)
+    .forEach((line) => text.append(el('span', 'menu-subtitle', line)));
+  row.append(image, text, el('span', 'menu-key', entry.nightShift ? KEYS : entry.key || ''));
   return row;
 }
 
@@ -190,11 +231,11 @@ setInterval(() => {
 
 // One evening: what each moment does to the screen and the menu.
 const MOMENTS = [
-  { time: '18:36', title: 'Sunset', warm: true, body: 'The schedule starts Night Shift, and Nightcap leaves it alone while Mail is in front.', status: 'Night Shift: On', reason: `Following the schedule until ${SUNRISE}`, item: 'In Mail' },
-  { time: '21:15', title: 'You open Figma', warm: false, body: 'Figma has a rule, so Nightcap switches Night Shift off. The colours on screen are the colours in the file.', status: 'Night Shift: Forced Off', reason: 'While Figma is in front', item: 'In Figma', check: true, note: 'From your config' },
-  { time: '22:40', title: 'Back to Mail', warm: true, body: 'Mail has no rule. Night Shift comes straight back, warm as before.', status: 'Night Shift: On', reason: `Following the schedule until ${SUNRISE}`, item: 'In Mail' },
-  { time: '23:30', title: 'You want it warm', warm: true, body: 'You turn Night Shift on from the menu while Figma is in front. Nightcap takes it as meant: the Figma rule snoozes until sunrise.', status: 'Night Shift: On', reason: `Turned on by hand until ${SUNRISE}`, item: 'In Figma', note: `Snoozed until ${SUNRISE}` },
-  { time: SUNRISE, title: 'Sunrise', warm: false, body: 'The schedule ends Night Shift, and the snooze ends with it. Tonight, Figma is true colour again.', status: 'Night Shift: Forced Off', reason: 'While Figma is in front', item: 'In Figma', check: true, note: 'From your config' },
+  { time: '18:36', title: 'Sunset', warm: true, body: 'The schedule starts Night Shift, and Nightcap leaves it alone while Mail is in front.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'In Mail' },
+  { time: '21:15', title: 'You open Figma', warm: false, body: 'Figma has a rule, so Nightcap switches Night Shift off. The colours on screen are the colours in the file.', moon: 'forced', reason: 'While Figma is in front', detail: `Snoozes the Figma rule until ${SUNRISE}`, app: 'figma', item: 'In Figma', check: true, note: 'From your config' },
+  { time: '22:40', title: 'Back to Mail', warm: true, body: 'Mail has no rule. Night Shift comes straight back, warm as before.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'In Mail' },
+  { time: '23:30', title: 'You want it warm', warm: true, body: 'You turn Night Shift on from the menu while Figma is in front. Nightcap takes it as meant: the Figma rule snoozes until sunrise.', moon: 'on', reason: `Turned on by hand until ${SUNRISE}`, app: 'figma', item: 'In Figma', note: `Snoozed until ${SUNRISE}` },
+  { time: SUNRISE, title: 'Sunrise', warm: false, body: 'The schedule ends Night Shift, and the snooze ends with it. Tonight, Figma is true colour again.', moon: 'forced', reason: 'While Figma is in front', detail: `Snoozes the Figma rule until ${SUNRISE}`, app: 'figma', item: 'In Figma', check: true, note: 'From your config' },
 ];
 const momentsBox = document.querySelector('[data-moments]');
 const sky = document.querySelector('[data-sky]');
@@ -227,17 +268,109 @@ function showMoment(index) {
   momentBody.classList.remove('swap');
   void momentBody.offsetWidth;
   momentBody.classList.add('swap');
-  const status = el('div', 'menu-card-status');
-  status.append(el('strong', '', moment.status), el('span', '', moment.reason));
-  const row = el('div', 'menu-card-item');
-  const text = el('span', '', moment.item);
-  if (moment.note) text.append(el('span', 'menu-card-note', moment.note));
-  row.append(el('span', '', moment.check ? '✓' : ''), text);
-  momentMenu.replaceChildren(status, el('div', 'menu-card-sep'), el('div', 'menu-card-header', 'Force Off'), row);
+  momentMenu.replaceChildren(...[
+    nightShift(moment.moon, moment.reason, moment.detail), 'sep', { header: 'Force Off' },
+    item(moment.item, { app: moment.app, check: moment.check, subtitle: moment.note }),
+  ].map(menuEntry));
+  const state = { on: 'on', forced: 'forced off', off: 'off' }[moment.moon];
   momentMenu.setAttribute('role', 'img');
-  momentMenu.setAttribute('aria-label', `Nightcap's menu: ${moment.status}, ${moment.reason}`);
+  momentMenu.setAttribute('aria-label', `Nightcap's menu: Night Shift ${state}, ${moment.reason}`);
 }
 showMoment(3);
+
+// The shortcut: one set of keys under two cards, telling a tap from a hold as the app does.
+// Until pressed, the keys act it out on the cards: a tap, a tap back, then a hold. Pressed, the
+// press lifts the page's warmth at once, and a release within 0.3 s was a tap, which switches
+// the page's Night Shift as the nav's switch does. The card for the move that happened lights.
+{
+  const section = document.querySelector('#shortcut');
+  const tray = section.querySelector('[data-shortcut-keys]');
+  const keys = tray.querySelector('.keys');
+  const hint = section.querySelector('[data-key-hint]');
+  const tapCard = section.querySelector('[data-move="tap"]');
+  const holdCard = section.querySelector('[data-move="hold"]');
+  const paint = (card, warm, moon) => {
+    card.querySelector('[data-mini-tint]').classList.toggle('on', warm);
+    card.querySelector('[data-mini-moon]').innerHTML = MOONS[moon];
+  };
+  const light = (card) => [tapCard, holdCard].forEach((c) => c.classList.toggle('lit', c === card));
+  const showTap = (on) => paint(tapCard, on, on ? 'on' : 'off');
+  const showHold = (peeking) => paint(holdCard, !peeking, 'on');
+  showTap(true);
+  showHold(false);
+
+  const timers = [];
+  const at = (ms, run) => timers.push(setTimeout(run, ms));
+  function demo() {
+    at(0, () => keys.classList.add('down'));
+    at(140, () => { keys.classList.remove('down'); light(tapCard); showTap(false); });
+    at(1700, () => keys.classList.add('down'));
+    at(1840, () => { keys.classList.remove('down'); showTap(true); });
+    at(3300, () => { keys.classList.add('down'); light(holdCard); showHold(true); });
+    at(5500, () => { keys.classList.remove('down'); showHold(false); });
+    at(6800, () => { light(null); demo(); });
+  }
+  if (!reducedMotion.matches) demo();
+  let demoing = !reducedMotion.matches;
+
+  let pressedAt = null;
+  let lastMove = null;
+  function press() {
+    if (pressedAt !== null) return;
+    if (demoing) {
+      demoing = false;
+      timers.forEach(clearTimeout);
+      light(null);
+      showTap(shiftOn);
+    }
+    pressedAt = performance.now();
+    keys.classList.add('down');
+    if (!shiftOn) return;
+    showHold(true);
+    page.classList.remove('peek-return');
+    page.classList.add('peeking');
+    hint.textContent = 'True colour while you hold. Let go and the warmth comes back.';
+  }
+  function release() {
+    if (pressedAt === null) return;
+    const held = performance.now() - pressedAt;
+    pressedAt = null;
+    keys.classList.remove('down');
+    showHold(false);
+    const peeked = page.classList.contains('peeking');
+    page.classList.remove('peeking');
+    if (held < 300) {
+      shiftSwitch.click();
+      showTap(shiftOn);
+      light(tapCard);
+      hint.textContent = shiftOn ? 'A tap: Night Shift is back on. Now hold the keys.' : 'A tap: Night Shift is off, page and all. Tap again to turn it back on.';
+      lastMove = 'tap';
+    } else if (peeked) {
+      page.classList.add('peek-return');
+      setTimeout(() => page.classList.remove('peek-return'), 300);
+      light(holdCard);
+      hint.textContent = lastMove === 'tap' ? 'A hold: a peek, and Night Shift stayed on.' : 'A hold: a peek. Now tap the keys instead.';
+      lastMove = 'hold';
+    } else {
+      hint.textContent = 'Night Shift is off, so there was nothing to peek past. Tap to turn it back on.';
+    }
+  }
+  tray.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    tray.setPointerCapture(event.pointerId);
+    press();
+  });
+  tray.addEventListener('pointerup', release);
+  tray.addEventListener('pointercancel', release);
+  tray.addEventListener('keydown', (event) => {
+    if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) {
+      event.preventDefault();
+      press();
+    }
+  });
+  tray.addEventListener('keyup', (event) => { if (event.key === ' ' || event.key === 'Enter') release(); });
+  tray.addEventListener('click', (event) => event.preventDefault());
+}
 
 // Doodles: the margins get a jittered, staggered grid (one per cell, so no clumps or gaps),
 // the centre a few kept far apart, and the hero's open space a scatter around its content. None

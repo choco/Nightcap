@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nightcap</title>
-<meta name="description" content="Nightcap turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them.">
-<meta property="og:title" content="Nightcap: Night Shift, with exceptions">
-<meta property="og:description" content="Nightcap turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them.">
+<meta name="description" content="Nightcap brings Night Shift to your menu bar: set how warm it gets, switch it or peek past it with a shortcut, and keep it off for the apps and websites you choose.">
+<meta property="og:title" content="Nightcap: Night Shift, made yours">
+<meta property="og:description" content="Nightcap brings Night Shift to your menu bar: set how warm it gets, switch it or peek past it with a shortcut, and keep it off for the apps and websites you choose.">
 <meta name="theme-color" content="#dde5f6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#16224b" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -73,8 +73,8 @@
       <header id="top" class="hero-content">
         <div class="hero-text">
           <span class="eyebrow">For Mac · free and open source</span>
-          <h1 class="hero-title"><span class="rise">Night Shift,</span> <span class="rise rise-late">with exceptions.</span></h1>
-          <p class="lead fade-in">Nightcap sits in your menu bar and turns Night Shift off while the apps and websites you choose are in front, and back on when you leave them. The rest of the time, your schedule runs as usual.</p>
+          <h1 class="hero-title"><span class="rise">Night Shift,</span> <span class="rise rise-late">made yours.</span></h1>
+          <p class="lead fade-in">Nightcap brings Night Shift to your menu bar. Set how warm it gets, switch it or peek past it with a shortcut, and keep it off while the apps and websites you choose are in front.</p>
           <div class="cta-row">
             <a class="button button-primary spring" href="https://github.com/choco/Nightcap/releases/latest" data-download>Download for Mac <span class="button-version" data-version hidden></span></a>
             <span class="requirement">macOS 15 or later, Apple silicon</span>
@@ -166,6 +166,37 @@
       </figure>
     </section>
 
+    <section id="shortcut" class="section shortcut" data-lens-section>
+      <div class="split-heading">
+        <h2>One shortcut, two moves</h2>
+        <p class="section-text">Set a shortcut in Settings, <kbd>⌃⌥⌘N</kbd> to start with, and it works from any app. A tap switches Night Shift. A hold is a peek: true colour until you let go, then the warmth comes straight back.</p>
+      </div>
+      <div class="moves">
+        <figure class="move" data-move="tap">
+          <div class="mini" data-mini aria-hidden="true">
+            <div class="mini-bar"><span class="mini-app">Figma</span><span class="nav-spacer"></span><span class="mini-moon" data-mini-moon></span><span class="mini-clock">23:41</span></div>
+            <div class="mini-win"><div class="figma-board"><div class="poster-circle"></div><div class="poster-square"></div><div class="poster-bar"></div></div></div>
+            <div class="mini-tint on" data-mini-tint><span></span><span></span></div>
+          </div>
+          <figcaption><span class="move-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="10.5" rx="3"/><path d="M12 3v3.4M6.6 4.6l1.6 2.6M17.4 4.6l-1.6 2.6"/></svg></span><span class="move-text"><strong>Tap</strong>Night Shift turns off, and stays off until you tap again.</span></figcaption>
+        </figure>
+        <figure class="move" data-move="hold">
+          <div class="mini" data-mini aria-hidden="true">
+            <div class="mini-bar"><span class="mini-app">Figma</span><span class="nav-spacer"></span><span class="mini-moon" data-mini-moon></span><span class="mini-clock">23:41</span></div>
+            <div class="mini-win"><div class="figma-board"><div class="poster-circle"></div><div class="poster-square"></div><div class="poster-bar"></div></div></div>
+            <div class="mini-tint on" data-mini-tint><span></span><span></span></div>
+          </div>
+          <figcaption><span class="move-glyph" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5a9.5 9.5 0 1 1-9.5 9.5"/><rect x="8" y="8" width="8" height="8" rx="2"/></svg></span><span class="move-text"><strong>Hold</strong>True colour while you hold. Night Shift stays on, and the moon says so.</span></figcaption>
+        </figure>
+      </div>
+      <div class="shortcut-try">
+        <button class="keytray" type="button" data-shortcut-keys aria-label="Control Option Command N: tap to turn this page's Night Shift off or on, hold to see it in true colour">
+          <span class="keys" aria-hidden="true"><span class="key">⌃</span><span class="key">⌥</span><span class="key">⌘</span><span class="key">N</span></span>
+        </button>
+        <p class="key-hint" data-key-hint aria-live="polite">Try the shortcut: tap the keys, then hold them.</p>
+      </div>
+    </section>
+
     <section id="evening" class="section evening" data-lens-section>
       <div class="split-heading">
         <h2>Overrule it anytime</h2>
@@ -175,7 +206,7 @@
       <div class="moments" role="group" aria-label="Moments of one evening" data-lens-area data-moments></div>
       <div class="moment-detail">
         <p class="moment-body swap" data-moment-body></p>
-        <div class="menu-card" data-moment-menu></div>
+        <div class="menu menu-card" data-moment-menu></div>
       </div>
     </section>
 
@@ -183,13 +214,15 @@
       <div class="cli-text">
         <h2>Made to be scripted</h2>
         <p class="section-text">Everything in the menu is also a <code>nightcap</code> command. Bind it to a key with skhd, Raycast or Karabiner, run it from a script, or read the status as JSON.</p>
-        <p class="note">Rules can also live in a plain config file, next to the rest of your setup.</p>
+        <p class="note">Rules, and Night Shift's strength and schedule, can also live in a plain config file, next to the rest of your setup.</p>
       </div>
       <div class="terminal" data-lens-area role="figure" aria-label="A terminal session with the nightcap command">
         <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> disable <span class="t-arg">1h30m</span></div>
         <div class="term-line t-out">Night Shift <span class="t-warm">forced off</span> by a timed disable until 01:00</div>
         <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> rules add <span class="t-arg">domain:figma.com</span></div>
         <div class="term-line t-out">Added domain:figma.com. Night Shift <span class="t-warm">forced off</span> by a timed disable until 01:00.</div>
+        <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> strength <span class="t-arg">40</span></div>
+        <div class="term-line t-out">Strength set to 40.</div>
         <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> resume</div>
         <div class="term-line t-out">Night Shift following the schedule</div>
         <div class="term-line"><span class="t-prompt">$ </span><span class="t-cmd">nightcap</span> status <span class="t-arg">--json</span> | jq -r <span class="t-arg">.decision.verdict</span></div>
