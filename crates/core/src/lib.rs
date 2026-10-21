@@ -334,11 +334,8 @@ pub enum Event {
     OnboardingFinished {
         websites: bool,
     },
-    /// The tour started (ADR-0022). `sample_app` names the tour's sample window, which the shell
-    /// reports as that app while it's key, when the tour opens one.
-    TourStarted {
-        sample_app: Option<String>,
-    },
+    /// The tour started (ADR-0022).
+    TourStarted,
     /// The tour ended, or the user ended it.
     TourEnded,
     /// The user chose one of the core's fixes in Settings.
@@ -930,7 +927,7 @@ impl Core {
                 }
                 Vec::new()
             }
-            Event::TourStarted { sample_app } => {
+            Event::TourStarted => {
                 let mut state = self.state();
                 if state.tour.is_some() {
                     tracing::warn!("a tour started while one runs; keeping the first");
@@ -951,10 +948,7 @@ impl Core {
                     (None, None)
                 };
                 state.tour = Some(Tour {
-                    sample: sample_app.map(|bundle_id| Rule {
-                        identity: RuleIdentity::App(bundle_id),
-                        source: RuleSource::Tour,
-                    }),
+                    rules: Vec::new(),
                     stands_in,
                     manual_state,
                     timed_disable,
@@ -1512,6 +1506,13 @@ impl Core {
         {
             return Ok(());
         }
+        // A rule added during the tour is the tour's, which nothing keeps past it (ADR-0022).
+        if let Some(tour) = &mut state.tour {
+            tracing::info!("added a tour rule: {}", loggable(&identity));
+            tour.rules.push(identity);
+            state.lay_out_rules();
+            return Ok(());
+        }
         state.check_ad_hoc_rules_on()?;
         state.ad_hoc.push(identity.clone());
         if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
@@ -1528,6 +1529,19 @@ impl Core {
 
     fn remove_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
         let identity = normalize_identity(identity)?;
+        if let Some(tour) = &mut state.tour
+            && let Some(index) = tour
+                .rules
+                .iter()
+                .position(|rule| same_rule(rule, &identity))
+        {
+            tour.rules.remove(index);
+            state
+                .snoozes
+                .retain(|snoozed| !same_rule(snoozed, &identity));
+            state.lay_out_rules();
+            return Ok(());
+        }
         let Some(index) = state
             .ad_hoc
             .iter()
@@ -1690,8 +1704,8 @@ struct Watch {
 
 /// A tour in progress, and what it set aside (ADR-0022).
 struct Tour {
-    /// The rule for the tour's sample window, when it opened one.
-    sample: Option<Rule>,
+    /// The rules the user added during the tour, which it holds instead of ad-hoc ones.
+    rules: Vec<RuleIdentity>,
     /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
     /// as the tour started.
     stands_in: bool,
@@ -1773,7 +1787,7 @@ impl State {
     }
 
     /// Puts back what the tour set aside, short of a timed disable that ran out meanwhile, and
-    /// drops its sample's rule with any snooze of it.
+    /// drops the rules added during it with their snoozes.
     fn end_tour(&mut self, now: Timestamp) {
         let (manual_state, timed_disable) = self.after_tour();
         let Some(tour) = self.tour.take() else {
@@ -1782,10 +1796,8 @@ impl State {
         tracing::info!("tour ended");
         self.manual_state = manual_state;
         self.timed_disable = timed_disable.filter(|until| *until > now);
-        if let Some(sample) = tour.sample {
-            self.snoozes
-                .retain(|snoozed| !same_rule(snoozed, &sample.identity));
-        }
+        self.snoozes
+            .retain(|snoozed| !tour.rules.iter().any(|rule| same_rule(snoozed, rule)));
         self.lay_out_rules();
     }
 
@@ -1819,15 +1831,13 @@ impl State {
     /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0022).
     fn snapshot(&self) -> state::Persisted {
         let (manual_state, timed_disable) = self.after_tour();
-        let sample = self.tour.as_ref().and_then(|tour| tour.sample.as_ref());
+        let tour_rules = self.tour.as_ref().map_or(&[][..], |tour| &tour.rules);
         state::Persisted {
             manual_state,
             snoozes: self
                 .snoozes
                 .iter()
-                .filter(|snoozed| {
-                    !sample.is_some_and(|sample| same_rule(snoozed, &sample.identity))
-                })
+                .filter(|snoozed| !tour_rules.iter().any(|rule| same_rule(snoozed, rule)))
                 .cloned()
                 .collect(),
             timed_disable,
@@ -1972,7 +1982,7 @@ impl State {
                 name,
                 Some("For the tour".to_owned()),
                 true,
-                Command::Snooze(identity),
+                Command::RemoveRule(identity),
             )
         } else {
             toggle(name, None, true, Command::RemoveRule(identity))
@@ -2408,13 +2418,21 @@ impl State {
             identity,
             source: RuleSource::AdHoc,
         });
-        let sample = self.tour.as_ref().and_then(|tour| tour.sample.clone());
+        let tour = self
+            .tour
+            .iter()
+            .flat_map(|tour| &tour.rules)
+            .cloned()
+            .map(|identity| Rule {
+                identity,
+                source: RuleSource::Tour,
+            });
         self.rules = self
             .config_rules
             .iter()
             .cloned()
             .chain(ad_hoc)
-            .chain(sample)
+            .chain(tour)
             .collect();
     }
 

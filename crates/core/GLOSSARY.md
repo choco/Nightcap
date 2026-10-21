@@ -81,7 +81,7 @@ A rule added at runtime and kept by Nightcap until it graduates.
 _Avoid_: runtime rule, dynamic rule
 
 **Tour rule**:
-The app rule for the tour's sample window, held in memory only while the tour runs, and never listed, saved or exported.
+A rule the user adds while the tour runs, held in memory only until it ends, and never listed, saved or exported.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, at which point Nightcap drops its own copy.

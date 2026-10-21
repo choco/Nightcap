@@ -3833,10 +3833,8 @@ fn sample_rule() -> Rule {
     }
 }
 
-fn start_tour(core: &Core, sample: bool) -> Vec<Effect> {
-    core.handle(Event::TourStarted {
-        sample_app: sample.then(|| SAMPLE.to_owned()),
-    })
+fn start_tour(core: &Core) -> Vec<Effect> {
+    core.handle(Event::TourStarted)
 }
 
 fn report(core: &Core, enabled: bool) -> Vec<Effect> {
@@ -3874,7 +3872,7 @@ fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour(
     let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
 
     assert_eq!(
-        start_tour(&core, false),
+        start_tour(&core),
         vec![Effect::SetNightShift { enabled: true }]
     );
     assert_eq!(report(&core, true), Vec::new());
@@ -3889,7 +3887,7 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
-    start_tour(&core, false);
+    start_tour(&core);
     report(&core, true);
 
     assert_eq!(
@@ -3918,7 +3916,7 @@ fn a_tour_over_a_manual_off_puts_it_back_when_it_ends() {
     report(&core, false);
 
     assert_eq!(
-        start_tour(&core, false),
+        start_tour(&core),
         vec![Effect::SetNightShift { enabled: true }]
     );
     report(&core, true);
@@ -3947,7 +3945,7 @@ fn a_tour_over_a_timed_disable_puts_it_back_with_its_deadline() {
     report(&core, false);
 
     assert_eq!(
-        start_tour(&core, false),
+        start_tour(&core),
         vec![
             Effect::SetNightShift { enabled: true },
             Effect::ScheduleWakeup {
@@ -3979,7 +3977,7 @@ fn while_the_tour_stands_in_a_tap_off_and_on_returns_to_the_tours_on() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
-    start_tour(&core, false);
+    start_tour(&core);
     report(&core, true);
 
     let (effects, _) = send(&core, &socket, &wakes, Command::Toggle);
@@ -3998,7 +3996,7 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
 
-    assert_eq!(start_tour(&core, false), Vec::new());
+    assert_eq!(start_tour(&core), Vec::new());
     assert!(matches!(
         status_of(&core, &socket, &wakes).decision.reasons[..],
         [Reason::Schedule { .. }]
@@ -4007,24 +4005,29 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
 }
 
 #[test]
-fn the_tour_sample_in_front_forces_night_shift_off_by_its_rule() {
+fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    start_tour(&core, true);
+    start_tour(&core);
+    assert_eq!(activate(&core, SAMPLE), Vec::new());
 
-    assert_eq!(
-        activate(&core, SAMPLE),
-        vec![Effect::SetNightShift { enabled: false }]
+    let (effects, response) = send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(sample_rule().identity),
     );
-    report(&core, false);
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
-        status_of(&core, &socket, &wakes).decision,
-        Decision {
+        response,
+        Response::Ok(Payload::Decision(Decision {
             verdict: Verdict::ForceOff,
             reasons: vec![Reason::Rule(sample_rule())],
-        }
+        }))
     );
+    report(&core, false);
     assert_eq!(
         activate(&core, "com.apple.mail"),
         vec![Effect::SetNightShift { enabled: true }]
@@ -4035,10 +4038,14 @@ fn the_tour_sample_in_front_forces_night_shift_off_by_its_rule() {
 fn outside_a_tour_the_sample_matches_no_rule() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
-    assert_eq!(activate(&core, SAMPLE), Vec::new());
-
-    start_tour(&core, true);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(sample_rule().identity),
+    );
     activate(&core, "com.apple.mail");
     core.handle(Event::TourEnded);
 
@@ -4046,21 +4053,107 @@ fn outside_a_tour_the_sample_matches_no_rule() {
 }
 
 #[test]
-fn the_tour_samples_rule_is_never_listed_or_saved_and_goes_with_its_snooze() {
+fn removing_the_samples_rule_mid_tour_drops_it() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    start_tour(&core, true);
+    start_tour(&core);
+    activate(&core, SAMPLE);
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(sample_rule().identity),
+    );
+    report(&core, false);
+
+    let (effects, response) = send(
+        &core,
+        &socket,
+        &wakes,
+        Command::RemoveRule(sample_rule().identity),
+    );
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert!(matches!(response, Response::Ok(_)), "{response:?}");
+    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
+}
+
+#[test]
+fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    core.handle(Event::AppActivated {
+        bundle_id: Some(SAMPLE.to_owned()),
+        name: Some("Tour Sample".to_owned()),
+        is_browser: false,
+    });
+    assert_eq!(
+        app_toggle(&core),
+        toggle_item(
+            "In Tour Sample",
+            false,
+            Command::AddRule(sample_rule().identity)
+        )
+    );
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule(sample_rule().identity),
+    );
+
+    assert_eq!(
+        app_toggle(&core),
+        subtitled(
+            "In Tour Sample",
+            "For the tour",
+            true,
+            Command::RemoveRule(sample_rule().identity)
+        )
+    );
+}
+
+#[test]
+fn rules_added_mid_tour_are_never_listed_or_saved_and_go_with_their_snoozes() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    let site = RuleIdentity::Domain("choco.me".to_owned());
+    for identity in [sample_rule().identity, site.clone()] {
+        let (_, response) = send(&core, &socket, &wakes, Command::AddRule(identity));
+        assert!(matches!(response, Response::Ok(_)), "{response:?}");
+    }
     let (_, response) = send(
         &core,
         &socket,
         &wakes,
-        Command::Snooze(RuleIdentity::App(SAMPLE.to_owned())),
+        Command::Snooze(sample_rule().identity),
     );
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
 
+    assert_eq!(
+        status_of(&core, &socket, &wakes).rules,
+        vec![
+            sample_rule(),
+            Rule {
+                identity: site,
+                source: RuleSource::Tour,
+            },
+        ]
+    );
     assert!(core.settings().rules.is_empty());
     assert!(!core.export(ExportFormat::Toml).contains(SAMPLE));
+    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
+    let kept = std::fs::read_to_string(rules_file).unwrap_or_default();
+    assert!(
+        !kept.contains(SAMPLE) && !kept.contains("choco.me"),
+        "{kept}"
+    );
     let saved = std::fs::read_to_string(socket.with_file_name("state.json")).unwrap();
     assert!(!saved.contains(SAMPLE), "{saved}");
 
@@ -4071,13 +4164,50 @@ fn the_tour_samples_rule_is_never_listed_or_saved_and_goes_with_its_snooze() {
 }
 
 #[test]
+fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    report(&core, true);
+    start_tour(&core);
+
+    send(&core, &socket, &wakes, Command::AddRule(figma()));
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).rules,
+        vec![app_rule("com.figma.Desktop")]
+    );
+    core.handle(Event::TourEnded);
+    assert_eq!(
+        status_of(&core, &socket, &wakes).rules,
+        vec![app_rule("com.figma.Desktop")]
+    );
+}
+
+#[test]
+fn removing_an_ad_hoc_rule_mid_tour_removes_it_for_good() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let mail = RuleIdentity::App("com.apple.mail".to_owned());
+    send(&core, &socket, &wakes, Command::AddRule(mail.clone()));
+    start_tour(&core);
+
+    send(&core, &socket, &wakes, Command::RemoveRule(mail));
+    core.handle(Event::TourEnded);
+
+    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
+}
+
+#[test]
 fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_it() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (crashed, wakes, _clock) = start_on_by_the_schedule(&socket);
     send(&crashed, &socket, &wakes, Command::Off);
     report(&crashed, false);
-    start_tour(&crashed, false);
+    start_tour(&crashed);
     report(&crashed, true);
 
     let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
@@ -4103,7 +4233,7 @@ fn quitting_mid_tour_ends_it() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, _wakes, _clock) = start_off_by_the_schedule(&socket);
-    start_tour(&core, false);
+    start_tour(&core);
     report(&core, true);
 
     assert_eq!(
@@ -4119,10 +4249,10 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
     send(&core, &socket, &wakes, Command::Off);
     report(&core, false);
-    start_tour(&core, false);
+    start_tour(&core);
     report(&core, true);
 
-    assert_eq!(start_tour(&core, true), Vec::new());
+    assert_eq!(start_tour(&core), Vec::new());
     core.handle(Event::TourEnded);
 
     assert_eq!(
