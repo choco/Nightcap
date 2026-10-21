@@ -1,5 +1,5 @@
 ---
-status: superseded in part by ADR-0023
+status: superseded in part by ADR-0023 and ADR-0025
 ---
 
 # Two rule kinds that only force off; domains match on label boundaries

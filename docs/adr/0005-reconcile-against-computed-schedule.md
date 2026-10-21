@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0024
+---
+
 # The core decides by reconciling against a schedule it computes itself
 
 CoreBrightness reports Night Shift status through one callback, and that callback fires for three different things: the echo of Nightcap's own write, a schedule transition, and an external change. Each needs different handling. An echo needs nothing, a schedule transition clears snoozes and the manual state, and an external change is adopted (ADR-0006). The obvious way to separate them, a one-shot "my write" flag armed by every action, misreads them: the next callback is swallowed even when it was a real schedule transition or a Control Center toggle.

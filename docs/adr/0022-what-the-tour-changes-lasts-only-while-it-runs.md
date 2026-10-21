@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0024
+---
+
 # What the tour turns on and adds lasts only while it runs
 
 The tour, offered at the end of onboarding and from Settings, walks through the moon, a rule the user makes and sees act, and the peek, in a floating panel. A rule at work needs an app in front to make one for. The tour opens an app of its own, Tour Sample, even when one of the user's apps with a rule is running: every tour then runs the same way, on the Space the user is on, and the user makes the rule from the menu as they would for any app. Where website checking can, the tour does the same for a site, on the project's own, nightcap.choco.me. And the moon, the rule and the peek show nothing while Night Shift is off, as it is all day: the tour has to warm the screen and give it back as it found it. All of it would otherwise reach the user's own state: ad-hoc rules left in `rules.toml`, a manual state, or an external change the core adopts.

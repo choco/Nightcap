@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0024
+---
+
 # Persist runtime state; release every force on a clean exit
 
 Nightcap restarts at every update and at login, and, under a LaunchAgent, after a crash. Each restart would drop the user's runtime intent: the manual state, snoozes, a timed disable. Separately, a stopping app can't tell a restart from being removed; if it leaves a force in place and never comes back, Night Shift stays off.

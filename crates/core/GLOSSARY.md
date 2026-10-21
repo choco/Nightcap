@@ -1,6 +1,6 @@
 # Control
 
-How Nightcap decides whether Night Shift is forced off or left alone, from rules, the schedule and the user's own toggles.
+How Nightcap decides whether Night Shift is on or off, from rules, the schedule and the user's own changes.
 
 ## Language
 
@@ -20,25 +20,44 @@ _Avoid_: boundary
 How warm Night Shift tints the display. The system owns it; Nightcap changes it only when the user asks.
 _Avoid_: temperature, warmth
 
-### Toggles
+### Changes
 
-**Manual state**:
-The on/off the user set last, through Nightcap or by an adopted external change. It lasts until the next schedule transition. Short of overriding a force, an on/off that a switching schedule gives anyway is none, so turning Night Shift off and back on follows the schedule again.
+**Place**:
+Where a change applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific rule's that covers the tab, else the tab domain.
+
+**Layer**:
+One of what a place holds, from the bottom: its rule, or the schedule for everywhere; a hold; a timer. A place says what its top layer says, and an app or site without one says nothing.
+
+**Deciding place**:
+The most specific place in front that says something: the site, then the app, then everywhere, which always does. What it says is what Night Shift does.
+
+**Length**:
+How long a change lasts: for a time, until a picked time, until the schedule next turns it back, or until the user turns it back.
+_Avoid_: duration
+
+**Timer**:
+A place's on or off until a time, which then gives back what was under it.
+_Avoid_: timed disable, pause
+
+**Hold**:
+A place's on or off until the schedule next turns it back, or, for everywhere, until the user turns it back.
+_Avoid_: manual state
+
+**Switch**:
+Everywhere's on and off: the Night Shift item, the shortcut's tap, `nightcap on`, `off` and `toggle`. It takes off everywhere's layers that say otherwise, and if the schedule still does, holds the new state until the user turns it back.
+_Avoid_: toggle, as a noun
+
+**Reset**:
+Taking off a place's hold and timer, which puts its rule back or, for everywhere, the schedule.
 
 **External change**:
 A Night Shift toggle made outside Nightcap, in Control Center or System Settings.
 
 **Adoption**:
-Taking an external change as the command it amounts to, so it sets the manual state, or overrides, as that command would.
-
-**Override**:
-Turning Night Shift on while a force holds it off, from Nightcap or from outside. It snoozes the forcing rules and cancels the timed disable.
-
-**Resume**:
-Clearing the timed disable, every snooze and the manual state at once.
+Taking an external change as flipping what the user sees: it takes off what the deciding place says, and holds the other state over a rule or the schedule until the schedule next turns it back.
 
 **Tour stand-in**:
-A tour started with Night Shift off has it on for the tour's length, in place of the schedule. The manual state and timed disable wait aside until the tour ends, which puts them back unless the user chose others meanwhile (ADR-0022).
+A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Everywhere's hold and timer wait aside until the tour ends, which puts them back unless the user chose others meanwhile (ADR-0022).
 
 ### Rules
 
@@ -46,10 +65,10 @@ A tour started with Night Shift off has it on for the tour's length, in place of
 The frontmost app and the host: what rules match against.
 
 **App rule**:
-Forces Night Shift off while an app is frontmost.
+Says Night Shift is off, or on, while an app is frontmost.
 
 **Domain rule**:
-Forces Night Shift off on a domain and all its subdomains.
+Says Night Shift is off, or on, on a domain and all its subdomains. Where several cover a host, the longest decides.
 _Avoid_: subdomain rule, exact-host rule
 
 **Host**:
@@ -64,13 +83,13 @@ Whether Nightcap reads the front browser's host, which domain rules need. Off un
 _Avoid_: website monitoring, site tracking
 
 **Watch**:
-Nightcap reading one browser's host while it's in front, which website checking allows unless that browser's own app rule forces it off.
+Nightcap reading one browser's host while it's in front, which website checking allows unless the browser's own place says off and no site in it could say on.
 
 **Browser list**:
 The browsers Nightcap knows how to watch.
 
 **Rule identity**:
-A rule's kind plus its target, e.g. `app:com.figma.Desktop`. Rules with the same identity are the same rule.
+A rule's kind plus its target, e.g. `app:com.figma.Desktop`. Rules with the same identity are the same rule, so an app or domain has one rule at most, whatever it says.
 
 **Config rule**:
 A rule declared in the config file, which the user or their installer writes. Read-only at runtime.
@@ -84,7 +103,7 @@ _Avoid_: runtime rule, dynamic rule
 A rule the user adds while the tour runs, held in memory only until it ends, and never listed, saved or exported.
 
 **Graduation**:
-An ad-hoc rule's identity appearing in the config, at which point Nightcap drops its own copy.
+An ad-hoc rule's identity appearing in the config, whatever either says, at which point Nightcap drops its own copy.
 _Avoid_: promotion, pruning
 
 **Export**:
@@ -93,30 +112,23 @@ The ad-hoc rules not yet in the config, written out ready to paste into it.
 **Reload**:
 Reading the config again, which is the only way a change to it takes effect.
 
-### Forcing
+**Snooze**:
+A timer or hold on a rule's place that says the other way, for a time or until the schedule next turns it back. The rule waits underneath and comes back when it ends.
+_Avoid_: pause, override
+
+### Deciding
 
 **Force**:
-Night Shift held off by a rule or a timed disable.
-
-**Hands off**:
-No force applies, so Night Shift follows the manual state or the scheduled state.
-
-**Snooze**:
-A rule muted until the next schedule transition.
-_Avoid_: pause
-
-**Timed disable**:
-Night Shift forced off until a deadline.
-_Avoid_: pause
+Night Shift held other than macOS would have it, by a rule, a hold or a timer. Nightcap releases every force on a clean exit (ADR-0011).
 
 **Decision**:
-Whether Night Shift is forced off or hands off for the current context, with its reasons.
+What Night Shift should be for the current context, the place that decides it, and the layers it rests on.
 
 **Reason**:
-One thing behind a decision: a rule, a timed disable, a snooze, the manual state or the schedule.
+One layer behind a decision: a rule, a hold, a timer, the schedule or the tour.
 
 **Wanted state**:
-What Night Shift should be right now: off under a force, else the manual state, else the scheduled state.
+What Night Shift should be right now: what the deciding place says.
 _Avoid_: desired state
 
 ### Talking to Nightcap
@@ -126,7 +138,7 @@ The running Nightcap app, as the CLI sees it: the only writer of Night Shift, re
 _Avoid_: server, service
 
 **Command**:
-A request to change something, such as turning Night Shift on, a timed disable or adding a rule. The menu, Settings and the CLI send the same commands.
+A request to change something, such as the switch, a timer on a place or adding a rule. The menu, Settings and the CLI send the same commands.
 
 **Status**:
-The daemon's report of its decision and everything behind it: the context, rules, snoozes, grants and problems.
+The daemon's report of its decision and everything behind it: the context, rules, each place's layers, grants and problems.

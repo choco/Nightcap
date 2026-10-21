@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0024
+---
+
 # `on` during a force snoozes the forcing rules; external changes are adopted the same way
 
 When a rule forces Night Shift off and the user turns it on anyway, Nightcap has to decide what that means and for how long. The answer has to survive Cmd-Tabbing away and back, and must not cost the user their rules. Nightcap can't block Control Center, so an external change always takes effect; the only question is how to interpret it.

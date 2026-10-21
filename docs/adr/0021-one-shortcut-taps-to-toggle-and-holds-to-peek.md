@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0024
+---
+
 # One global shortcut turns Night Shift on or off with a tap, and shows true colour while held
 
 Every action is a CLI command that skhd, Raycast or Karabiner can bind, so built-in global shortcuts were left out. But the two things people reach for most are turning Night Shift on or off and seeing, for a moment, what a warm screen really looks like, and onboarding's tour wants a shortcut to end on. CoreBrightness can drop the tint while Night Shift stays on: `BrightnessSystemClient`'s `BlueLightReductionFactor` set to 0 shows true colour, and 1 brings the warmth back (checked on macOS 27).

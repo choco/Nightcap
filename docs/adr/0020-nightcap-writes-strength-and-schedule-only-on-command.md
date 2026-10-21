@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0024
+---
+
 # Nightcap writes Night Shift's strength and schedule only on the user's command
 
 Night Shift's strength and schedule belong to macOS: System Settings shows them and keeps them, and the core only reads the schedule, to compute schedule transitions (ADR-0005). But many people who hear about Nightcap don't know what Night Shift is, so onboarding sets it up with them, how warm it gets and when it comes on, before it says what Nightcap adds. The menu's strength slider (M4) sets the strength too. `CBBlueLightClient` writes both: `setStrength:commit:`, `setMode:` and `setSchedule:` all work on macOS 27.0.1 (M0 check 4) and on macOS 15, and macOS applies an edited schedule at once.

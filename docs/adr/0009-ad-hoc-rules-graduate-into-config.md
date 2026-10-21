@@ -1,5 +1,5 @@
 ---
-status: superseded in part by ADR-0023
+status: superseded in part by ADR-0023, ADR-0024 and ADR-0025
 ---
 
 # Config rules plus ad-hoc rules that graduate into the config
