@@ -104,14 +104,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Points at the moon once onboarding is done: the only way into Nightcap from then on. It
     /// stays until OK: on macOS 27, a status item's click never arrives while a popover hangs
     /// from it. A popover, since on macOS 27 the system draws the status item, and only AppKit
-    /// knows where it is. `onShown` runs once it's up and focused.
-    func pointOut(onShown: @escaping () -> Void) {
+    /// knows where it is. It offers the tour, which then starts knowing where the moon is.
+    /// `onShown` runs once it's up and focused.
+    func pointOut(takeTour: @escaping () -> Void, onShown: @escaping () -> Void) {
         // A moment for the new status item to take its place in the menu bar.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self, let button = item.button else { return }
             let popover = NSPopover()
             popover.behavior = .applicationDefined
-            let content = PointOut { [weak self] in self?.stopPointing() }
+            let content = PointOut(
+                onOK: { [weak self] in self?.stopPointing() },
+                takeTour: { [weak self] in
+                    self?.stopPointing()
+                    takeTour()
+                })
             popover.contentViewController = content
             popover.contentSize = content.size
             // Focused, as a popover the user opened would be; without it the popover's glass washes
@@ -307,18 +313,21 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 private final class PointOut: NSViewController {
     private static let width: CGFloat = 300
     private let onOK: () -> Void
+    private let takeTour: () -> Void
     private(set) var size = NSSize(width: width, height: 0)
 
-    init(onOK: @escaping () -> Void) {
+    init(onOK: @escaping () -> Void, takeTour: @escaping () -> Void) {
         self.onOK = onOK
+        self.takeTour = takeTour
         super.init(nibName: nil, bundle: nil)
         let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
-            "Open it to turn Night Shift on or off, change its strength, force it off in the app in front, or turn it off for a while. Click OK, then the moon. The shortcut and the tour are in Settings.",
+            "Its menu turns Night Shift on or off, changes its strength, and forces it off in the app in front: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
             size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
-        let buttons = NSStackView(views: [NSView(), ok])
+        let tour = Look.button("Take the Tour", .regular) { [weak self] in self?.takeTour() }
+        let buttons = NSStackView(views: [NSView(), tour, ok])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [title, text, buttons])
         stack.orientation = .vertical

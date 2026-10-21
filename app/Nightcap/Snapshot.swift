@@ -70,7 +70,7 @@ enum Snapshot {
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
                     sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
-                onNotificationsRead: {}, onFinish: { _, _ in })
+                onNotificationsRead: {}, onFinish: { _ in })
         }
         let newUser = steps(setUp)
         var alreadySetUp = setUp

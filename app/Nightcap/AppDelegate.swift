@@ -154,8 +154,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             })
     }
 
-    /// From onboarding's end or Settings, once their window is gone, as the click that started the
-    /// tour ends: the panel then keeps the focus. `onShown` runs once it's up.
+    /// From "Nightcap is up here" or Settings, once the popover or window is gone, as the click
+    /// that started the tour ends: the panel then keeps the focus. `onShown` runs once it's up.
     private func startTour(onShown: () -> Void = {}) {
         if let tour {
             tour.reveal()
@@ -370,19 +370,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onNotificationsRead: { [weak self] in
                 Task { await self?.reportSystemState() }
             },
-            onFinish: { [weak self] websites, tour in
+            onFinish: { [weak self] websites in
                 guard let self else { return }
                 apply(core.handle(event: .onboardingFinished(websites: websites)))
                 self.onboarding = nil
                 showStatusMenu()
-                // The Dock icon goes once the popover or the tour's panel is up, while Nightcap
-                // stays active with it.
-                let hideDockIcon: () -> Void = { [weak self] in self?.dockIcon.hide(for: .onboarding) }
-                guard tour else {
-                    statusMenu?.pointOut(onShown: hideDockIcon)
-                    return
-                }
-                DispatchQueue.main.async { [weak self] in self?.startTour(onShown: hideDockIcon) }
+                // The Dock icon goes once the popover is up, while Nightcap stays active with it.
+                statusMenu?.pointOut(
+                    takeTour: { [weak self] in DispatchQueue.main.async { self?.startTour() } },
+                    onShown: { [weak self] in self?.dockIcon.hide(for: .onboarding) })
             })
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)
