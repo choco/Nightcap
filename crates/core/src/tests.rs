@@ -2635,7 +2635,7 @@ fn domain(name: &str) -> RuleIdentity {
 }
 
 #[test]
-fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one() {
+fn the_menu_adds_a_rule_for_the_tabs_host_without_www_and_removes_the_most_specific_one() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     write_config(&socket, "websites = true\n");
@@ -2646,6 +2646,15 @@ fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one()
     });
     activate_browser(&core, "com.apple.Safari");
     report_host(&core, 1, "docs.figma.com");
+    assert_eq!(
+        site_toggle(&core),
+        nested(toggle_item(
+            "On docs.figma.com",
+            false,
+            Command::AddRule(domain("docs.figma.com"))
+        ))
+    );
+    report_host(&core, 1, "www.figma.com");
 
     assert_eq!(
         site_toggle(&core),
@@ -2655,6 +2664,7 @@ fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one()
             Command::AddRule(domain("figma.com"))
         ))
     );
+    report_host(&core, 1, "docs.figma.com");
     send(
         &core,
         &socket,
@@ -2673,6 +2683,26 @@ fn the_menu_adds_a_rule_for_the_sites_domain_and_removes_the_most_specific_one()
             "On docs.figma.com",
             true,
             Command::RemoveRule(domain("docs.figma.com"))
+        ))
+    );
+}
+
+#[test]
+fn a_rule_from_the_tab_keeps_www_where_nothing_but_a_suffix_would_be_left() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    report(&core, true);
+    activate_browser(&core, "com.apple.Safari");
+    report_host(&core, 1, "www.com");
+
+    assert_eq!(
+        site_toggle(&core),
+        nested(toggle_item(
+            "On www.com",
+            false,
+            Command::AddRule(domain("www.com"))
         ))
     );
 }

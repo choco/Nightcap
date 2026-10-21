@@ -19,8 +19,12 @@ pub(crate) fn covers(domain: &str, host: &str) -> bool {
         .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
 }
 
-/// The domain a new rule for `host` gets: its registrable domain, or the host itself when it
-/// has no public suffix, like `localhost` (ADR-0009).
-pub(crate) fn registrable(host: &str) -> String {
-    psl::domain_str(host).unwrap_or(host).to_owned()
+/// The domain a rule made from the front tab names: its host, short of a leading `www.`, so one
+/// made on docs.google.com covers that service rather than all of google.com (ADR-0023). The
+/// `www.` stays where only a top-level domain would be left, as on www.com.
+pub(crate) fn of_tab(host: &str) -> String {
+    host.strip_prefix("www.")
+        .filter(|rest| rest.contains('.'))
+        .unwrap_or(host)
+        .to_owned()
 }

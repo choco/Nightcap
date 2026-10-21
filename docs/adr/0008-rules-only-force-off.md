@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0023
+---
+
 # Two rule kinds that only force off; domains match on label boundaries
 
 Nightcap's rules say when Night Shift must be off: while a given app is in front, or while the front browser tab is on a given site. That leaves three questions: which kinds of rule exist, what a rule can do, and how a host matches a domain entry.

@@ -1,3 +1,7 @@
+---
+status: superseded in part by ADR-0023
+---
+
 # Config rules plus ad-hoc rules that graduate into the config
 
 Rules are declared in a config that home-manager generates: a read-only Nix store symlink that changes only on activation. New rules come up while working, though, and a rebuild for each one is too much friction. Rules added at runtime need a home that survives reboots, and a path into the config.

@@ -1897,8 +1897,8 @@ impl State {
     }
 
     /// The menu's toggle for the front tab's site, while website checking knows its host: it
-    /// adds a rule for the registrable domain, or acts on the most specific rule covering the
-    /// host (ADR-0009).
+    /// adds a rule for the host, short of a leading `www.` (ADR-0023), or acts on the most
+    /// specific rule covering the host (ADR-0009).
     fn site_toggle(&self) -> Option<MenuItem> {
         let host = self
             .context
@@ -1916,7 +1916,7 @@ impl State {
             })
             .max_by_key(|(length, _)| *length)
             .map(|(_, rule)| rule);
-        let identity = RuleIdentity::Domain(domain::registrable(host));
+        let identity = RuleIdentity::Domain(domain::of_tab(host));
         let toggle = self.rule_toggle(rule, identity, |identity| match identity {
             RuleIdentity::Domain(domain) => format!("On {domain}"),
             RuleIdentity::App(bundle_id) => format!("In {bundle_id}"),

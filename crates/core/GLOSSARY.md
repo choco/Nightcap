@@ -55,8 +55,9 @@ _Avoid_: subdomain rule, exact-host rule
 **Host**:
 The hostname of the front browser tab: the only part of its URL Nightcap ever sees.
 
-**Registrable domain**:
-A host's domain one label below its public suffix, such as `figma.com` for `www.figma.com`: what a domain rule made from the front tab names.
+**Tab domain**:
+What a domain rule made from the front tab names: the tab's host, short of a leading `www.`, such as `figma.com` for `www.figma.com` and `docs.google.com` for itself.
+_Avoid_: registrable domain
 
 **Website checking**:
 Whether Nightcap reads the front browser's host, which domain rules need. Off until the user turns it on, unless the config sets it.
