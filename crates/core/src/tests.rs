@@ -19,8 +19,8 @@ use crate::config::NightShiftConfig;
 use crate::state::{Persisted, Store};
 use crate::{
     Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
-    MenuItem, OnboardingNightShift, OnboardingSteps, ProblemLine, RuleAction, SettingsCheck,
-    SettingsRule, SettingsSwitch, Setup, Waker, normalize_domain,
+    MenuItem, NightShiftItem, OnboardingNightShift, OnboardingSteps, ProblemLine, RuleAction,
+    SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker, normalize_domain,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -2140,14 +2140,19 @@ fn the_rules_query_lists_every_rule_with_its_source() {
     );
 }
 
-/// The menu's status line and the reason under it.
-fn status_line(core: &Core) -> (String, Option<String>) {
-    let menu = core.menu();
-    (menu.status, menu.reason)
-}
-
-fn says(status: &str, reason: &str) -> (String, Option<String>) {
-    (status.to_owned(), Some(reason.to_owned()))
+/// The menu's Night Shift item: checked while it's on, with why and what choosing it does.
+fn night_shift_item(
+    on: bool,
+    reason: &str,
+    detail: Option<&str>,
+    command: Command,
+) -> NightShiftItem {
+    NightShiftItem {
+        on,
+        reason: Some(reason.to_owned()),
+        detail: detail.map(str::to_owned),
+        command: Some(command),
+    }
 }
 
 #[test]
@@ -2163,8 +2168,13 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
 
     assert_eq!(core.menu().icon, MenuIcon::ForcedOff);
     assert_eq!(
-        status_line(&core),
-        says("Night Shift: Forced Off", "While Figma is in front")
+        core.menu().night_shift,
+        night_shift_item(
+            false,
+            "While Figma is in front",
+            Some("Snoozes the Figma rule until 07:00"),
+            Command::On
+        )
     );
     send(
         &core,
@@ -2173,27 +2183,59 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
         Command::Disable(SignedDuration::from_mins(30)),
     );
     assert_eq!(
-        status_line(&core),
-        says(
-            "Night Shift: Forced Off",
-            "While Figma is in front, and until 23:30"
+        core.menu().night_shift,
+        night_shift_item(
+            false,
+            "While Figma is in front, and until 23:30",
+            Some("Snoozes the Figma rule until 07:00 and ends the timed disable"),
+            Command::On
         )
     );
     activate(&core, "com.apple.Terminal");
     assert_eq!(
-        status_line(&core),
-        says("Night Shift: Forced Off", "Until 23:30")
+        core.menu().night_shift,
+        night_shift_item(
+            false,
+            "Until 23:30",
+            Some("Ends the timed disable"),
+            Command::On
+        )
     );
     send(&core, &socket, &wakes, Command::Resume);
     assert_eq!(
-        status_line(&core),
-        says("Night Shift: On", "Following the schedule until 07:00")
+        core.menu().night_shift,
+        night_shift_item(
+            true,
+            "Following the schedule until 07:00",
+            None,
+            Command::Off
+        )
     );
     send(&core, &socket, &wakes, Command::Off);
     assert_eq!(
-        status_line(&core),
-        says("Night Shift: Off", "Turned off by hand until 07:00")
+        core.menu().night_shift,
+        night_shift_item(false, "Turned off by hand until 07:00", None, Command::On)
     );
+}
+
+#[test]
+fn while_night_shift_is_unavailable_the_menu_only_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start(&socket_in(&dir));
+
+    let menu = core.menu();
+
+    assert_eq!(menu.icon, MenuIcon::Unavailable);
+    assert_eq!(
+        menu.night_shift,
+        NightShiftItem {
+            on: false,
+            reason: Some("Unavailable".to_owned()),
+            detail: None,
+            command: None,
+        }
+    );
+    assert_eq!(menu.entries, Vec::new());
 }
 
 fn menu_item(title: &str, checked: bool, command: Command) -> MenuItem {
@@ -2234,7 +2276,10 @@ fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
 
     core.handle(Event::StrengthChanged { value: 60 });
 
-    assert_eq!(core.menu().entries[0], MenuEntry::Strength { value: 60 });
+    assert_eq!(
+        core.menu().entries[..2],
+        [MenuEntry::Strength { value: 60 }, MenuEntry::Separator]
+    );
 }
 
 #[test]
@@ -2249,33 +2294,29 @@ fn the_menu_turns_night_shift_the_other_way_or_off_for_a_while() {
     let menu = core.menu();
 
     assert_eq!(menu.icon, MenuIcon::On);
+    assert_eq!(menu.night_shift.command, Some(Command::Off));
     assert_eq!(
-        menu.entries[..2],
-        [
-            MenuEntry::Item {
-                item: menu_item("Turn Night Shift Off", false, Command::Off)
-            },
-            MenuEntry::Submenu {
-                title: "Turn Off For".to_owned(),
-                items: vec![
-                    menu_item(
-                        "30 Minutes",
-                        false,
-                        Command::Disable(SignedDuration::from_mins(30))
-                    ),
-                    menu_item(
-                        "1 Hour",
-                        false,
-                        Command::Disable(SignedDuration::from_hours(1))
-                    ),
-                    menu_item(
-                        "2 Hours",
-                        false,
-                        Command::Disable(SignedDuration::from_hours(2))
-                    ),
-                ],
-            },
-        ]
+        menu.entries[..1],
+        [MenuEntry::Submenu {
+            title: "Turn Off For".to_owned(),
+            items: vec![
+                menu_item(
+                    "30 Minutes",
+                    false,
+                    Command::Disable(SignedDuration::from_mins(30))
+                ),
+                menu_item(
+                    "1 Hour",
+                    false,
+                    Command::Disable(SignedDuration::from_hours(1))
+                ),
+                menu_item(
+                    "2 Hours",
+                    false,
+                    Command::Disable(SignedDuration::from_hours(2))
+                ),
+            ],
+        },]
     );
 }
 
@@ -2342,7 +2383,7 @@ fn turning_night_shift_on_during_a_force_says_what_it_snoozes_and_ends() {
     });
 
     assert_eq!(
-        subtitle_of(&core, "Turn Night Shift On"),
+        core.menu().night_shift.detail,
         Some("Snoozes the Figma rule until 07:00".to_owned())
     );
     send(
@@ -2352,12 +2393,12 @@ fn turning_night_shift_on_during_a_force_says_what_it_snoozes_and_ends() {
         Command::Disable(SignedDuration::from_mins(30)),
     );
     assert_eq!(
-        subtitle_of(&core, "Turn Night Shift On"),
+        core.menu().night_shift.detail,
         Some("Snoozes the Figma rule until 07:00 and ends the timed disable".to_owned())
     );
     activate(&core, "com.apple.Terminal");
     assert_eq!(
-        subtitle_of(&core, "Turn Night Shift On"),
+        core.menu().night_shift.detail,
         Some("Ends the timed disable".to_owned())
     );
 }

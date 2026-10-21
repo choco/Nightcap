@@ -5,10 +5,10 @@ Every action is a CLI command that skhd, Raycast or Karabiner can bind, so built
 ## Decision
 
 - Nightcap has one global shortcut, ⌃⌥⌘N unless the user records another or clears it in Settings. It's registered through KeyboardShortcuts, on Carbon's hotkey API, which needs no permission.
-- A tap, let go within 0.3 seconds, sends `Toggle`, as the menu's "Turn Night Shift On" or "Off" does, so a tap during a force is an override (ADR-0006).
+- A tap, let go within 0.3 seconds, sends `Toggle`, which turns Night Shift the other way as the menu's Night Shift item does, so a tap during a force is an override (ADR-0006).
 - Holding it is the peek: from the press, the screen shows true colour until the key goes up. The peek sets the factor and nothing else, so Night Shift stays on, the core decides nothing, and no status callback arrives. It belongs to the shell alone.
 - The factor outlives Nightcap, and tints the screen even while Night Shift is off. So Nightcap puts it back to 1 only while Night Shift is on: when the key goes up, when Nightcap quits, and at launch, where a factor of 0 with Night Shift on is a peek that a crash cut short. A tap that turns Night Shift off leaves the factor at 0, and switching Night Shift on sets it back by itself.
-- The menu shows the shortcut beside "Turn Night Shift On" or "Off".
+- The menu shows the shortcut beside its Night Shift item, which turns Night Shift on or off.
 
 ## Consequences
 

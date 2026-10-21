@@ -113,13 +113,25 @@ pub enum Command {
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct Menu {
     pub icon: MenuIcon,
-    /// What Night Shift is doing, e.g. "Night Shift: Forced Off".
-    pub status: String,
-    /// Why, in a few words, e.g. "While Figma is in front".
-    pub reason: Option<String>,
+    /// The menu's first item, after the problem line.
+    pub night_shift: NightShiftItem,
     /// The problem line, while any problem exists.
     pub problem_line: Option<ProblemLine>,
     pub entries: Vec<MenuEntry>,
+}
+
+/// The menu's Night Shift item: what Night Shift is doing and why, which choosing turns the
+/// other way.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct NightShiftItem {
+    /// Checked while Night Shift is on.
+    pub on: bool,
+    /// Why, in a few words, e.g. "While Figma is in front".
+    pub reason: Option<String>,
+    /// What choosing it does besides, e.g. "Snoozes the Figma rule until 07:52".
+    pub detail: Option<String>,
+    /// None while Night Shift is unavailable, which disables the item.
+    pub command: Option<Command>,
 }
 
 /// What the settings window shows, pulled like the menu: the shell only draws it.
@@ -228,7 +240,7 @@ pub struct SettingsSwitch {
     pub command: Command,
 }
 
-/// The menu's line about problems, under the status line. Choosing it opens Settings, and
+/// The menu's line about problems, above the Night Shift item. Choosing it opens Settings, and
 /// while it's set the shell marks the icon too.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct ProblemLine {
@@ -246,7 +258,7 @@ pub enum MenuIcon {
 
 #[derive(Debug, Clone, PartialEq, uniffi::Enum)]
 pub enum MenuEntry {
-    /// The strength's slider, 0 to 100, under the status line. Moving it sends
+    /// The strength's slider, 0 to 100, under the Night Shift item. Moving it sends
     /// `PreviewStrength`, and letting go sends `Strength`.
     Strength {
         value: u8,
@@ -692,8 +704,12 @@ impl Core {
         if state.night_shift == NightShift::Unavailable {
             return Menu {
                 icon: MenuIcon::Unavailable,
-                status: "Night Shift: Unavailable".to_owned(),
-                reason: None,
+                night_shift: NightShiftItem {
+                    on: false,
+                    reason: Some("Unavailable".to_owned()),
+                    detail: None,
+                    command: None,
+                },
                 problem_line: None,
                 entries: Vec::new(),
             };
@@ -707,19 +723,10 @@ impl Core {
             enabled: true,
             command,
         };
-        let mut entries = vec![MenuEntry::Item {
-            item: if on {
-                item("Turn Night Shift Off", Command::Off)
-            } else {
-                MenuItem {
-                    subtitle: state.what_turning_on_does(&decision),
-                    ..item("Turn Night Shift On", Command::On)
-                }
-            },
-        }];
-        if let Some(value) = state.strength {
-            entries.insert(0, MenuEntry::Strength { value });
-        }
+        let mut entries = match state.strength {
+            Some(value) => vec![MenuEntry::Strength { value }, MenuEntry::Separator],
+            None => Vec::new(),
+        };
         // A timed disable matters while Night Shift is on or forced off, or when the schedule
         // turns it on before the longest one would end.
         let longest = SignedDuration::from_mins(DISABLE_CHOICES[DISABLE_CHOICES.len() - 1].0);
@@ -769,13 +776,16 @@ impl Core {
                 (Verdict::HandsOff, true) => MenuIcon::On,
                 (Verdict::HandsOff, false) => MenuIcon::Off,
             },
-            status: match (decision.verdict, on) {
-                (Verdict::ForceOff, _) => "Night Shift: Forced Off",
-                (Verdict::HandsOff, true) => "Night Shift: On",
-                (Verdict::HandsOff, false) => "Night Shift: Off",
-            }
-            .to_owned(),
-            reason: state.menu_reason(&decision),
+            night_shift: NightShiftItem {
+                on,
+                reason: state.menu_reason(&decision),
+                detail: if on {
+                    None
+                } else {
+                    state.what_turning_on_does(&decision)
+                },
+                command: Some(if on { Command::Off } else { Command::On }),
+            },
             problem_line: state.problem_line(),
             entries,
         }
@@ -2136,7 +2146,7 @@ impl State {
         }
     }
 
-    /// The menu's problem line, from the checks. Night Shift's own is left to the status line.
+    /// The menu's problem line, from the checks. Night Shift's own is left to its item.
     fn problem_line(&self) -> Option<ProblemLine> {
         let problems: Vec<_> = self
             .checks()
@@ -2316,7 +2326,7 @@ impl State {
         })
     }
 
-    /// The reason under the menu's status line, naming what's in front rather than rules.
+    /// The reason under the menu's Night Shift item, naming what's in front rather than rules.
     fn menu_reason(&self, decision: &Decision) -> Option<String> {
         let until = |at: &Option<Timestamp>| {
             at.map_or_else(String::new, |at| format!(" until {}", self.clock_time(at)))

@@ -62,6 +62,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     static let dotSize: CGFloat = 5.5
+    /// Where items' titles start, in the slider's view, which puts its small sun there as the
+    /// mockup does; and the widest a subtitle's line gets.
+    private static let titleInset: CGFloat = 46
+    private static let subtitleWidth: CGFloat = 160
     /// From the icon's centre to its top right corner, as in the mockup: clear of the forced
     /// moon's "z", and inside the status item's square.
     static let dotOffset = CGPoint(x: 9.2, y: 7.5)
@@ -161,7 +165,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return image
     }
 
-    /// The mockup's orange triangle, for the checkmark column. Drawn rather than an SF Symbol,
+    /// The mockup's orange triangle, beside the problem line. Drawn rather than an SF Symbol,
     /// which menus draw as a monochrome template whatever its colours. The "!" is cut out, so
     /// it still shows when a highlighted item turns the image white.
     static var warning: NSImage? {
@@ -200,21 +204,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let snapshot = current()
         shown = snapshot
         menu.removeAllItems()
-        let status = NSMenuItem(title: snapshot.status, action: nil, keyEquivalent: "")
-        status.attributedTitle = NSAttributedString(
-            string: snapshot.status,
-            attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
-        status.subtitle = snapshot.reason
-        status.isEnabled = false
-        menu.addItem(status)
         if let problemLine = snapshot.problemLine {
             let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
-            line.subtitle = problemLine.subtitle
-            line.onStateImage = Self.warning
-            line.state = .on
+            line.subtitle = problemLine.subtitle.map(Self.wrapped)
+            line.image = Self.warning
+            Self.showImage(line)
             menu.addItem(line)
+            menu.addItem(.separator())
         }
-        menu.addItem(.separator())
+        menu.addItem(nightShiftItem(snapshot))
         for entry in snapshot.entries {
             switch entry {
             case .strength(let value):
@@ -223,6 +221,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 menu.addItem(menuItem(item))
             case .submenu(let title, let items):
                 let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+                parent.image = Self.symbol("timer")
+                Self.showImage(parent)
                 let submenu = NSMenu(title: title)
                 submenu.autoenablesItems = false
                 items.forEach { submenu.addItem(menuItem($0)) }
@@ -235,12 +235,140 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             }
         }
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ","))
-        menu.addItem(NSMenuItem(title: "Quit Nightcap", action: #selector(quit), keyEquivalent: "q"))
+        let settings = NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ",")
+        settings.image = Self.symbol("gear")
+        Self.showImage(settings)
+        menu.addItem(settings)
+        let quit = NSMenuItem(title: "Quit Nightcap", action: #selector(quit), keyEquivalent: "q")
+        quit.image = Self.symbol("power")
+        Self.showImage(quit)
+        menu.addItem(quit)
         menu.items.filter { $0.action != nil }.forEach { $0.target = self }
     }
 
-    /// The strength's slider, inset like the items' titles and as wide as the menu.
+    /// "Night Shift", checked while it's on, with the menu-bar moon's look: why it's on or off,
+    /// what choosing it does besides, and the shortcut that does the same.
+    private func nightShiftItem(_ menu: Menu) -> NSMenuItem {
+        let state = menu.nightShift
+        let item = NSMenuItem(title: "Night Shift", action: #selector(chose(_:)), keyEquivalent: "")
+        item.image = Self.image(for: menu.icon).map(Self.menuSized)
+        Self.showImage(item)
+        item.state = state.on ? .on : .off
+        item.subtitle = [state.reason, state.detail].compactMap { $0 }.map(Self.wrapped).joined(separator: "\n")
+        if let command = state.command {
+            item.representedObject = Choice(command)
+        } else {
+            item.isEnabled = false
+        }
+        if let shortcut = KeyboardShortcuts.getShortcut(for: .nightShift) {
+            // Shown only: while a menu is open, KeyboardShortcuts takes the keys before the menu.
+            item.keyEquivalent = shortcut.nsMenuItemKeyEquivalent ?? ""
+            item.keyEquivalentModifierMask = shortcut.modifiers
+            item.allowsAutomaticKeyEquivalentLocalization = false
+        }
+        return item
+    }
+
+    /// A subtitle broken into lines at words, at most `subtitleWidth` wide: a menu is as wide as
+    /// its longest line, and NSMenuItem never wraps one itself. Two lines break where they come
+    /// out most even, so neither ends on a lone word.
+    private static func wrapped(_ text: String) -> String {
+        // The size macOS 27 sets subtitles in.
+        let font = NSFont.menuFont(ofSize: 12)
+        let width = { (line: String) in (line as NSString).size(withAttributes: [.font: font]).width }
+        guard width(text) > subtitleWidth else { return text }
+        let words = text.split(separator: " ").map(String.init)
+        let halves = (1..<words.count).map { split in
+            (words[..<split].joined(separator: " "), words[split...].joined(separator: " "))
+        }
+        if let even = halves.filter({ width($0.0) <= subtitleWidth && width($0.1) <= subtitleWidth })
+            .min(by: { max(width($0.0), width($0.1)) < max(width($1.0), width($1.1)) })
+        {
+            return "\(even.0)\n\(even.1)"
+        }
+        var lines: [String] = []
+        var line = ""
+        for word in text.split(separator: " ") {
+            let longer = line.isEmpty ? String(word) : "\(line) \(word)"
+            if !line.isEmpty, width(longer) > subtitleWidth {
+                lines.append(line)
+                line = String(word)
+            } else {
+                line = longer
+            }
+        }
+        lines.append(line)
+        return lines.joined(separator: "\n")
+    }
+
+    /// macOS 27 hides menu items' images unless the system is set to show them, and an item
+    /// whose image is hidden sets its title further left. Every item's shows, so the titles line
+    /// up and the moon and the apps' icons say what the words don't.
+    private static func showImage(_ item: NSMenuItem) {
+        if #available(macOS 27, *) { item.preferredImageVisibility = .visible }
+    }
+
+    /// An SF Symbol at the menu's text size, as macOS's own menus show them.
+    private static func symbol(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: NSFont.menuFont(ofSize: 0).pointSize, weight: .regular))
+    }
+
+    /// The mockup's suns at the slider's ends: a small one with four rays for less warmth, a
+    /// large one with eight for more. Templates, so they take the menu's text colour.
+    private static func sun(large: Bool) -> NSImage {
+        let side: CGFloat = large ? 16 : 11
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
+            let unit = side / 24
+            let point = { (x: CGFloat, y: CGFloat) in NSPoint(x: x * unit, y: y * unit) }
+            let rays: [(CGFloat, CGFloat, CGFloat, CGFloat)] = large
+                ? [(12, 2.5, 12, 5), (12, 19, 12, 21.5), (2.5, 12, 5, 12), (19, 12, 21.5, 12),
+                   (5.3, 5.3, 7.1, 7.1), (16.9, 16.9, 18.7, 18.7), (5.3, 18.7, 7.1, 16.9), (16.9, 7.1, 18.7, 5.3)]
+                : [(12, 3, 12, 5), (12, 19, 12, 21), (3, 12, 5, 12), (19, 12, 21, 12)]
+            let path = NSBezierPath(ovalIn: NSRect(
+                x: (12 - (large ? 4.2 : 4)) * unit, y: (12 - (large ? 4.2 : 4)) * unit,
+                width: (large ? 8.4 : 8) * unit, height: (large ? 8.4 : 8) * unit))
+            for (x0, y0, x1, y1) in rays {
+                path.move(to: point(x0, y0))
+                path.line(to: point(x1, y1))
+            }
+            path.lineWidth = (large ? 2 : 2.4) * unit
+            path.lineCapStyle = .round
+            NSColor.black.setStroke()
+            path.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    /// A copy at an item image's 16 points.
+    private static func menuSized(_ image: NSImage) -> NSImage {
+        let copy = image.copy() as! NSImage
+        copy.size = NSSize(width: 16, height: 16)
+        return copy
+    }
+
+    /// The image beside a rule toggle: the app's own icon, or a globe for a site.
+    private static func image(for command: Command) -> NSImage? {
+        let identity: RuleIdentity
+        switch command {
+        case .addRule(let rule), .removeRule(let rule), .snooze(let rule), .unsnooze(let rule): identity = rule
+        case .resume: return symbol("arrow.uturn.backward")
+        default: return nil
+        }
+        switch identity {
+        case .domain: return symbol("globe")
+        case .app(let bundleId):
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
+            let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+                .map { NSWorkspace.shared.icon(forFile: $0.path) }
+            return (running ?? installed).map(menuSized)
+        }
+    }
+
+    /// The strength's slider, between a small sun where the items' titles start and a large one
+    /// at the menu's edge.
     private func strengthItem(_ value: UInt8) -> NSMenuItem {
         let slider = StrengthSlider(
             value: Double(value), minValue: 0, maxValue: 100, target: self, action: #selector(strengthMoved(_:)))
@@ -254,11 +382,22 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         slider.translatesAutoresizingMaskIntoConstraints = false
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         view.autoresizingMask = [.width]
+        let suns = [Self.sun(large: false), Self.sun(large: true)].map { image in
+            let sun = NSImageView(image: image)
+            sun.contentTintColor = .secondaryLabelColor
+            sun.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(sun)
+            return sun
+        }
         view.addSubview(slider)
         NSLayoutConstraint.activate([
-            slider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            slider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            suns[0].leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.titleInset),
+            suns[0].centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            slider.leadingAnchor.constraint(equalTo: suns[0].trailingAnchor, constant: 6),
+            slider.trailingAnchor.constraint(equalTo: suns[1].leadingAnchor, constant: -6),
             slider.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            suns[1].trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
+            suns[1].centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
         self.slider = slider
         let item = NSMenuItem()
@@ -276,17 +415,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func menuItem(_ item: MenuItem) -> NSMenuItem {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
-        menuItem.subtitle = item.subtitle
+        menuItem.subtitle = item.subtitle.map(Self.wrapped)
         menuItem.indentationLevel = item.indented ? 1 : 0
         menuItem.state = item.checked ? .on : .off
         menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
-        if item.command == .toggle, let shortcut = KeyboardShortcuts.getShortcut(for: .nightShift) {
-            // Shown only: while a menu is open, KeyboardShortcuts takes the keys before the menu.
-            menuItem.keyEquivalent = shortcut.nsMenuItemKeyEquivalent ?? ""
-            menuItem.keyEquivalentModifierMask = shortcut.modifiers
-            menuItem.allowsAutomaticKeyEquivalentLocalization = false
-        }
+        menuItem.image = Self.image(for: item.command)
+        Self.showImage(menuItem)
         return menuItem
     }
 

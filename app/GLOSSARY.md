@@ -62,8 +62,9 @@ Post one notification when a problem appears, unless the user caused it.
 
 ### Menu
 
-**Status line**:
-The menu's first line: whether Night Shift is on, off or forced off, with the main reason under it.
+**Night Shift item**:
+The menu's first item, after any problem line: Night Shift, checked while it's on, in the moon's look, with the main reason under it and what choosing it does besides. Choosing it, or tapping the shortcut, turns Night Shift the other way.
+_Avoid_: status line
 
 **Problem line**:
 The menu's line while any problem exists, counting them; it opens Settings where the problem is.
