@@ -181,8 +181,8 @@ pub enum Length {
     For(SignedDuration),
     /// A timer until this moment.
     Until(Timestamp),
-    /// A hold until the schedule next turns Night Shift the other way: sunrise for an on,
-    /// sunset for an off.
+    /// A hold until the schedule next turns Night Shift the other way: when it ends for an on,
+    /// when it starts for an off.
     UntilScheduleTurns,
     /// A hold with no end, everywhere's alone.
     UntilTurnedBack,
@@ -367,7 +367,7 @@ impl TryFrom<String> for RuleIdentity {
 pub enum RuleSource {
     Config,
     AdHoc,
-    /// The tour's sample window, held only while the tour runs (ADR-0022).
+    /// Added during the tour, and kept only while it runs (ADR-0022).
     Tour,
 }
 

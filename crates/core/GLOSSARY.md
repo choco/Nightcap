@@ -23,10 +23,10 @@ _Avoid_: temperature, warmth
 ### Changes
 
 **Place**:
-Where a change applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific rule's that covers the tab, else the tab domain.
+Where a change applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule, a hold or a timer that covers the tab, else the tab's own domain.
 
 **Layer**:
-One of what a place holds, from the bottom: its rule, or the schedule for everywhere; a hold; a timer. A place says what its top layer says, and an app or site without one says nothing.
+One of what a place holds, from the bottom: its rule, or the schedule for everywhere; a hold; a timer. A place says what its top layer says, and an app or site without one says nothing. In the protocol, `Layer` is a hold's or a timer's state and end, and `PlaceLayers` a place's hold and timer.
 
 **Deciding place**:
 The most specific place in front that says something: the site, then the app, then everywhere, which always does. What it says is what Night Shift does.
@@ -51,7 +51,7 @@ _Avoid_: toggle, as a noun
 Taking off a place's hold and timer, which puts its rule back or, for everywhere, the schedule.
 
 **External change**:
-A Night Shift toggle made outside Nightcap, in Control Center or System Settings.
+Night Shift switched outside Nightcap, in Control Center or System Settings.
 
 **Adoption**:
 Taking an external change as flipping what the user sees: it takes off what the deciding place says, and holds the other state over a rule or the schedule until the schedule next turns it back.
@@ -100,7 +100,7 @@ A rule added at runtime and kept by Nightcap until it graduates.
 _Avoid_: runtime rule, dynamic rule
 
 **Tour rule**:
-A rule the user adds while the tour runs, held in memory only until it ends, and never listed, saved or exported.
+A rule the user adds while the tour runs, held in memory only until it ends: `status` shows it, but Settings, the saved state and exports never do.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, whatever either says, at which point Nightcap drops its own copy.
@@ -113,7 +113,7 @@ The ad-hoc rules not yet in the config, written out ready to paste into it.
 Reading the config again, which is the only way a change to it takes effect.
 
 **Snooze**:
-A timer or hold on a rule's place that says the other way, for a time or until the schedule next turns it back. The rule waits underneath and comes back when it ends.
+A timer or hold on a rule's place that says the other way, for a time or until the schedule next turns it back, or, with no schedule, until the user turns it back. The rule waits underneath and comes back when it ends.
 _Avoid_: pause, override
 
 ### Deciding

@@ -2167,7 +2167,7 @@ impl State {
             ));
         }
         let mut lengths = Vec::new();
-        if self.value_below(&place, true) != Some(state) {
+        if self.value_below(&place) != Some(state) {
             lengths.extend(self.timers(&place, state, now, "Turn {} Everywhere"));
         }
         if self.has_schedule()
@@ -2207,14 +2207,20 @@ impl State {
         let layered = self.layers_at(place).is_some();
         let inherited = self.inherited(place);
         let mut items = Vec::new();
-        let below = rule.map(|rule| rule.says).or(inherited);
+        let below = rule
+            .map(|rule| rule.says)
+            .or(inherited.as_ref().map(|(_, says)| *says));
         if layered && below == Some(state) {
-            let title = if rule.is_some() {
-                "Put the Rule Back"
-            } else {
-                "Like Everywhere Else"
+            // A site follows its browser where the browser has its own say.
+            let title = match (rule, &inherited) {
+                (Some(_), _) => "Put the Rule Back".to_owned(),
+                (None, Some((Place::App(bundle_id), _))) => format!(
+                    "Like the Rest of {}",
+                    self.name_in_front(&RuleIdentity::App(bundle_id.clone()))
+                ),
+                (None, _) => "Like Everywhere Else".to_owned(),
             };
-            items.push(choice(title, Command::Reset(place.clone())));
+            items.push(choice(&title, Command::Reset(place.clone())));
         }
         // Removing a rule is the user's to do whenever they like, even where nothing on screen
         // would change.
@@ -2227,7 +2233,7 @@ impl State {
             ));
         }
         let mut lengths = Vec::new();
-        if self.value_below(place, true) != Some(state) {
+        if self.value_below(place) != Some(state) {
             let title = format!("Turn {{}} {}", self.here(place));
             lengths.extend(self.timers(place, state, now, &title));
         }
@@ -2473,10 +2479,7 @@ impl State {
                 "Ad-hoc".to_owned(),
                 action("Remove", Command::RemoveRule(identity.clone())),
             ),
-            (None, RuleSource::Tour) => (
-                "For the tour".to_owned(),
-                action("Remove", Command::RemoveRule(identity.clone())),
-            ),
+            (None, RuleSource::Tour) => unreachable!("Settings leaves out the tour's rules"),
         };
         SettingsRule {
             identity,
@@ -2864,15 +2867,15 @@ impl State {
     }
 
     /// What a place would give if it said nothing itself.
-    fn inherited(&self, place: &Place) -> Option<OnOff> {
+    fn inherited(&self, place: &Place) -> Option<(Place, OnOff)> {
         self.places_from(place)
-            .iter()
+            .into_iter()
             .skip(1)
-            .find_map(|place| self.says(place))
+            .find_map(|place| self.says(&place).map(|says| (place, says)))
     }
 
-    /// What a place gives under its timer, if `under_timer`, else what it gives.
-    fn value_below(&self, place: &Place, under_timer: bool) -> Option<OnOff> {
+    /// What a place gives under its timer.
+    fn value_below(&self, place: &Place) -> Option<OnOff> {
         let inputs = self.inputs();
         self.places_from(place)
             .iter()
@@ -2880,9 +2883,7 @@ impl State {
             .find_map(|(index, each)| {
                 engine::layers_of(&inputs, each)
                     .iter()
-                    .find(|reason| {
-                        !(index == 0 && under_timer && matches!(reason, Reason::Timer(_)))
-                    })
+                    .find(|reason| !(index == 0 && matches!(reason, Reason::Timer(_))))
                     .map(engine::says)
             })
     }

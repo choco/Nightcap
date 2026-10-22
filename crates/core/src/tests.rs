@@ -2800,7 +2800,10 @@ fn a_config_that_cant_be_is_refused() {
             "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.figma.desktop\"]\n",
             "both rules.off and rules.on",
         ),
-        ("[rules]\napp = [\"com.figma.Desktop\"]\n", "`off`"),
+        (
+            "[rules]\napp = [\"com.figma.Desktop\"]\n",
+            "under [rules.off] and [rules.on]",
+        ),
         ("[menu]\nlengths = [\"45m\", \"forever\"]\n", "menu.lengths"),
         ("[menu]\nlengths = [\"30s\"]\n", "menu.lengths"),
         ("[menu]\nlengths = []\n", "menu.lengths"),
@@ -3327,6 +3330,41 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
     assert_eq!(
         site_title(&site_row(&core).unwrap()),
         ("Turn On at This Site", Some("docs.figma.com"))
+    );
+}
+
+#[test]
+fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
+    );
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.apple.Safari".to_owned()),
+        name: Some("Safari".to_owned()),
+        is_browser: true,
+    });
+    report_host(&core, 1, "example.com");
+    let example = Place::Domain("example.com".to_owned());
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(example.clone(), OnOff::On, minutes(30)),
+    );
+
+    let row = site_row(&core).unwrap();
+    assert_eq!(
+        choice_titled(&row, "Like the Rest of Safari").command,
+        Command::Reset(example)
     );
 }
 
@@ -5047,7 +5085,7 @@ fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
 }
 
 #[test]
-fn rules_added_mid_tour_are_never_listed_or_saved_and_go_with_their_snoozes() {
+fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);

@@ -63,6 +63,9 @@ struct Rules {
     off: RuleLists,
     #[serde(default)]
     on: RuleLists,
+    /// Lists straight under `[rules]`, which name no say; read only to point at the tables.
+    app: Option<serde::de::IgnoredAny>,
+    domain: Option<serde::de::IgnoredAny>,
 }
 
 #[derive(Default, Deserialize)]
@@ -101,6 +104,11 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
     let file: File =
         toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
     let in_file = |error: String| format!("{}: {error}", path.display());
+    if file.rules.app.is_some() || file.rules.domain.is_some() {
+        return Err(in_file(
+            "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned(),
+        ));
+    }
     let mut rules: Vec<Rule> = Vec::new();
     for (says, lists) in [(OnOff::Off, &file.rules.off), (OnOff::On, &file.rules.on)] {
         let domains = lists

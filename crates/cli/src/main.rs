@@ -41,11 +41,11 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Turn Night Shift on everywhere until you turn it off, or for a length, or in one app or
-    /// on one site: in front of its rule, that snoozes the rule.
+    /// Turn Night Shift on. Alone, it's the switch: on everywhere, with the schedule if the
+    /// schedule has it on, else until you turn it off. With a length, a time or --until-schedule,
+    /// it's on that long, everywhere or in one app or on one site, over any rule there.
     On(Change),
-    /// Turn Night Shift off everywhere until you turn it on, or for a length, or in one app or on
-    /// one site.
+    /// Turn Night Shift off, as `on` turns it on.
     Off(Change),
     /// Turn Night Shift the other way everywhere, until you turn it back.
     Toggle,
@@ -90,7 +90,7 @@ struct Change {
     /// Until this time of day, e.g. 23:30: today, or tomorrow once it has passed.
     #[arg(long, value_parser = parse_time_of_day, group = "how_long")]
     until: Option<jiff::civil::Time>,
-    /// Until the schedule next turns it back: sunrise for an on, sunset for an off.
+    /// Until the schedule next turns it back: when it ends for an on, when it starts for an off.
     #[arg(long, group = "how_long")]
     until_schedule: bool,
     #[command(flatten)]
