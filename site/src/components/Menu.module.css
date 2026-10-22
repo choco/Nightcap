@@ -9,7 +9,8 @@
 .image { display: flex; align-items: center; justify-content: center; height: 15px; }
 .image svg { width: 13px; height: 13px; }
 .app { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: var(--tile); color: #ffffff; font: 700 8px/1 var(--font-text); }
-.indented .image, .indented .text { margin-left: 12px; }
+/* A site's row sits one level in, as NSMenu indents an item: the whole row, image and all. */
+.indented { padding-left: 20px; }
 .subtitle { display: block; font-size: 10px; color: var(--starlight-muted); white-space: pre-line; text-wrap: balance; }
 .key { color: var(--starlight-muted); font-size: 11px; }
 .key svg { display: block; width: 0.5em; height: 0.85em; color: var(--starlight); }
@@ -28,6 +29,7 @@
    title columns at 11, 29 and 50, subtitles in 12px, separators inset 17. */
 .mac .item { grid-template-columns: 1em 1.23em 1fr auto; column-gap: 0.38em; padding: 0.31em 1.15em 0.31em 0.85em; }
 .mac .item:has(.subtitle) { padding-block: 0.23em; }
+.mac .indented { padding-left: calc(0.85em + 12px); }
 .mac .check { font-size: 0.92em; line-height: inherit; text-align: center; }
 .mac .image { height: 1.23em; color: var(--scene-ink); }
 .mac .image svg { width: 1.08em; height: 1.08em; }
