@@ -3068,20 +3068,43 @@ fn the_menus_lengths_come_from_the_config() {
 }
 
 #[test]
-fn everywheres_row_says_everywhere_but_the_place_that_decides() {
+fn everywheres_row_names_the_place_that_keeps_the_other_way() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_forced(&socket);
-    core.handle(Event::AppActivated {
-        bundle_id: Some("com.figma.Desktop".to_owned()),
-        name: Some("Figma".to_owned()),
-        is_browser: false,
+    write_config(
+        &socket,
+        "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\n",
+    );
+    let (core, _wakes, clock) = start_at(&socket, "2026-10-16T12:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: custom_hours(),
     });
+    let front = |bundle_id: &str, name: &str| {
+        core.handle(Event::AppActivated {
+            bundle_id: Some(bundle_id.to_owned()),
+            name: Some(name.to_owned()),
+            is_browser: false,
+        });
+        let row = everywhere_row(&core).unwrap();
+        (row.title, row.subtitle)
+    };
+    let row = |title: &str, subtitle: Option<&str>| (title.to_owned(), subtitle.map(str::to_owned));
 
-    let row = everywhere_row(&core).unwrap();
-
-    assert_eq!(row.title, "Turn Off");
-    assert_eq!(row.subtitle.as_deref(), Some("Everywhere but in Figma"));
+    // By day, turning Night Shift on everywhere leaves Figma off, and Books on as it is.
+    assert_eq!(
+        front("com.figma.Desktop", "Figma"),
+        row("Turn On", Some("Everywhere but in Figma"))
+    );
+    assert_eq!(front("com.apple.iBooksX", "Books"), row("Turn On", None));
+    // At night, turning it off everywhere leaves Books on, and Figma off as it is.
+    clock.set("2026-10-16T23:00:00+02:00");
+    core.handle(Event::Woke);
+    assert_eq!(
+        front("com.apple.iBooksX", "Books"),
+        row("Turn Off", Some("Everywhere but in Books"))
+    );
+    assert_eq!(front("com.figma.Desktop", "Figma"), row("Turn Off", None));
 }
 
 #[test]

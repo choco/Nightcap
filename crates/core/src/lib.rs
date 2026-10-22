@@ -2162,7 +2162,8 @@ impl State {
                 "Turn {}",
                 capitalized(&state.to_string()).expect("on or off")
             ),
-            subtitle: (decision.place != Place::Everywhere)
+            // The app or site in front keeps the other way, which the row can't change there.
+            subtitle: (decision.place != Place::Everywhere && decision.state != Some(state))
                 .then(|| format!("Everywhere but {}", self.here(&decision.place))),
             image: RowImage::Everywhere,
             indented: false,

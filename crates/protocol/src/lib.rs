@@ -274,7 +274,7 @@ impl Decision {
                 rule.says, rule.source, rule.identity
             ),
             Reason::Tour => "on for the tour".to_owned(),
-            Reason::Schedule { state, .. } => format!("{state}, following the schedule"),
+            Reason::Schedule { .. } => "following the schedule".to_owned(),
         };
         let snoozed = self.reasons.iter().skip(1).find_map(|reason| match reason {
             Reason::Rule(rule) if Some(rule.says) != self.state => Some(rule),
@@ -840,7 +840,7 @@ mod tests {
                     until: None
                 }]
             ),
-            "on, following the schedule"
+            "following the schedule"
         );
         assert_eq!(
             Decision {
