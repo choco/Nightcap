@@ -257,8 +257,9 @@ enum StageArt {
         return side(by: left, bar)
     }
 
-    /// Nightcap's menu, open under the moon, as the app draws it: the Night Shift item, the
-    /// strength between suns, everywhere's row, then the front app's (ADR-0024).
+    /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift
+    /// item, the strength between the menu's suns, everywhere's row, then the front app's
+    /// (ADR-0024). It stops there: Settings and Quit, under them, don't fit the stage.
     private static func ready() -> NSView {
         Drawn(NSSize(width: 460, height: 164)) { _ in
             let font = NSFont.systemFont(ofSize: 12)
@@ -267,50 +268,59 @@ enum StageArt {
             Paint.text("File", font, .labelColor, at: NSPoint(x: 56, y: 7))
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 88, y: 7))
             let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
-            Paint.rounded(moon, 5, Paint.highlight)
+            Paint.rounded(moon, 10, Paint.highlight)
             Paint.template("MenuBarOn", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
-            let menu = NSRect(x: 178, y: 36, width: 234, height: 112)
-            Paint.lifted { Paint.rounded(menu, 8, Paint.menu) }
+            // A status item's menu opens under it, to the right, unless that would leave the
+            // screen, as it would this close to the edge: then it stays inside.
+            let menu = NSRect(x: 460 - 4 - 212, y: 36, width: 212, height: 122)
+            Paint.lifted { Paint.rounded(menu, 10, Paint.menu) }
             let item = NSFont.systemFont(ofSize: 11)
             // The menu's columns: the checkmark, the item's image, and the title.
-            let check = menu.minX + 8
+            let check = menu.minX + 10
             let image = menu.minX + 25
-            let title = menu.minX + 37
-            let separator = { (y: CGFloat) in
-                NSColor.nightcapSeparator.setFill()
-                NSRect(x: menu.minX + 10, y: y, width: menu.width - 20, height: 0.5).fill()
+            let title = menu.minX + 38
+            // `text` from `x`, its middle `y` down the menu.
+            let line = { (text: String, font: NSFont, colour: NSColor, x: CGFloat, y: CGFloat) in
+                let height = (text as NSString).size(withAttributes: [.font: font]).height
+                Paint.text(text, font, colour, at: NSPoint(x: x, y: menu.minY + y - height / 2))
             }
-            var y = menu.minY + 6
-            Paint.text("✓", item, .labelColor, at: NSPoint(x: check, y: y))
-            Paint.template("MenuBarOn", .labelColor, in: NSRect(x: image - 6, y: y + 1, width: 12, height: 12))
-            Paint.text("Night Shift", item, .labelColor, at: NSPoint(x: title, y: y))
+            let chevron = { (y: CGFloat) in
+                Paint.glyph("chevron.right", 9, .labelColor, centredAt: NSPoint(x: menu.maxX - 20, y: menu.minY + y))
+            }
+            // The Night Shift item: the check, the moon and the shortcut sit across its lines.
+            Paint.glyph("checkmark", 9, .labelColor, centredAt: NSPoint(x: check, y: menu.minY + 25))
+            Paint.template("MenuBarOn", .labelColor, in: NSRect(x: image - 6.5, y: menu.minY + 18.5, width: 13, height: 13))
+            line("Night Shift", item, .labelColor, title, 13.5)
+            let reason = StatusMenu.wrapped("Following the schedule until 07:00").split(separator: "\n")
+            for (index, text) in reason.enumerated() {
+                line(String(text), .systemFont(ofSize: 10), .nightcapSecondary, title, 26 + CGFloat(index) * 12)
+            }
             if let keys = KeyboardShortcuts.getShortcut(for: .nightShift)?.description {
-                let width = (keys as NSString).size(withAttributes: [.font: item]).width
-                Paint.text(keys, item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 12 - width, y: y))
+                line(keys, item, .nightcapSecondary, menu.maxX - 15 - Paint.width(keys, item), 25)
             }
-            Paint.text("Following the schedule until 07:00", .systemFont(ofSize: 10), .nightcapSecondary, at: NSPoint(x: title, y: y + 14))
-            y += 34
-            Paint.glyph("sun.min", 9, .nightcapSecondary, centredAt: NSPoint(x: image, y: y + 5))
-            let track = NSRect(x: title, y: y + 3, width: menu.maxX - 28 - title, height: 4)
-            Paint.rounded(track, 2, .nightcapTile)
-            Paint.rounded(NSRect(x: track.minX, y: track.minY, width: track.width * 0.6, height: 4), 2, .controlAccentColor)
-            Paint.rounded(NSRect(x: track.minX + track.width * 0.6 - 6, y: y - 1, width: 12, height: 12), 6, .white, stroke: .nightcapControlBorder)
-            Paint.glyph("sun.max", 11, .nightcapSecondary, centredAt: NSPoint(x: menu.maxX - 16, y: y + 5))
-            y += 20
-            Paint.glyph("timer", 10, .labelColor, centredAt: NSPoint(x: image, y: y + 7))
-            Paint.text("Turn Off", item, .labelColor, at: NSPoint(x: title, y: y))
-            Paint.text("›", item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 18, y: y))
-            y += 19
-            separator(y)
-            y += 6
+            // The strength, as a slider in a menu draws: grey, with a white knob.
+            let strength: CGFloat = 0.6
+            let y = menu.minY + 58
+            Paint.template(StatusMenu.sun(large: false), .nightcapSecondary, in: NSRect(x: title, y: y - 4.5, width: 9, height: 9))
+            Paint.template(StatusMenu.sun(large: true), .nightcapSecondary, in: NSRect(x: menu.maxX - 26, y: y - 6.5, width: 13, height: 13))
+            let track = NSRect(x: menu.minX + 52, y: y - 1.5, width: menu.width - 83, height: 3)
+            let knob = track.minX + 7.5 + (track.width - 15) * strength
+            Paint.rounded(track, 1.5, NSColor.labelColor.withAlphaComponent(0.15))
+            Paint.rounded(NSRect(x: track.minX, y: track.minY, width: knob - track.minX, height: 3), 1.5, NSColor.labelColor.withAlphaComponent(0.45))
+            Paint.rounded(NSRect(x: knob - 7.5, y: y - 5.5, width: 15, height: 11), 5.5, .white, stroke: .nightcapControlBorder)
+            Paint.glyph("timer", 10, .labelColor, centredAt: NSPoint(x: image, y: menu.minY + 79))
+            line("Turn Off", item, .labelColor, title, 79)
+            chevron(79)
+            NSColor.nightcapSeparator.setFill()
+            NSRect(x: menu.minX + 10, y: menu.minY + 94, width: menu.width - 20, height: 0.5).fill()
             if let mail = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") {
                 NSWorkspace.shared.icon(forFile: mail.path).draw(
-                    in: NSRect(x: image - 7, y: y, width: 14, height: 14), from: .zero, operation: .sourceOver,
+                    in: NSRect(x: image - 7, y: menu.minY + 102, width: 14, height: 14), from: .zero, operation: .sourceOver,
                     fraction: 1, respectFlipped: true, hints: nil)
             }
-            Paint.text("Turn Off in Mail", item, .labelColor, at: NSPoint(x: title, y: y))
-            Paint.text("›", item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 18, y: y))
+            line("Turn Off in Mail", item, .labelColor, title, 109)
+            chevron(109)
         }
     }
 
@@ -655,6 +665,11 @@ enum Paint {
     /// One of the asset catalog's template images, such as the menu-bar moons, in `colour`.
     static func template(_ name: String, _ colour: NSColor, in rect: NSRect) {
         guard let image = NSImage(named: name) else { return }
+        template(image, colour, in: rect)
+    }
+
+    /// A template image, such as the menu's suns, in `colour`.
+    static func template(_ image: NSImage, _ colour: NSColor, in rect: NSRect) {
         let tinted = NSImage(size: rect.size, flipped: false) { bounds in
             image.draw(in: bounds)
             colour.set()

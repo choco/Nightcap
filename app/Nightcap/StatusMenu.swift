@@ -277,7 +277,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// A subtitle broken into lines at words, at most `subtitleWidth` wide: a menu is as wide as
     /// its longest line, and NSMenuItem never wraps one itself. Two lines break where they come
     /// out most even, so neither ends on a lone word.
-    private static func wrapped(_ text: String) -> String {
+    static func wrapped(_ text: String) -> String {
         // The size macOS 27 sets subtitles in.
         let font = NSFont.menuFont(ofSize: 12)
         let width = { (line: String) in (line as NSString).size(withAttributes: [.font: font]).width }
@@ -321,7 +321,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// The mockup's suns at the slider's ends: a small one with four rays for less warmth, a
     /// large one with eight for more. Templates, so they take the menu's text colour.
-    private static func sun(large: Bool) -> NSImage {
+    static func sun(large: Bool) -> NSImage {
         let side: CGFloat = large ? 16 : 11
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
             let unit = side / 24
