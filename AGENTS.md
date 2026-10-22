@@ -22,7 +22,7 @@ Swift files under `app/Nightcap/` join the app target automatically (a folder-sy
 
 ## Design
 
-Brand and UI work start from `design/README.md`, the design system's brand book, with its tokens, fonts and component previews beside it. The system is also a Design System artifact on claude.ai (https://claude.ai/artifact/ACj6WANfTwWJ9LJRZux9uR), which keeps the same files under `project/` and holds the app icon and menu-bar moons as uploads. `design/` is the source: change it there, then publish the changed files to the artifact from a copy staged as `tmp/design/project/`.
+Brand and UI work start from `design/README.md`, the design system's brand book, with its tokens, fonts and component previews beside it.
 
 ## Agent skills
 
