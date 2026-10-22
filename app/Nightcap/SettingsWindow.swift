@@ -237,7 +237,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
         Look.attach(toggle) { [choose] in choose(websites.command) }
-        var websitesDetail = "Also keep Night Shift off, or on, on the websites you choose, in Safari and Chrome. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, and asks the site for its icon."
+        var websitesDetail = "Also keep Night Shift off, or on, on the websites you choose, in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, and asks the site for its icon."
         if websites.locked { websitesDetail += " Set in your config." }
         // Accessibility goes unmentioned while website checking doesn't need it.
         let accessibility = check(.accessibility).flatMap { $0.state == .off ? nil : $0 }

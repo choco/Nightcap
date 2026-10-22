@@ -19,7 +19,7 @@ The shell's browser watcher runs on its own thread with its own run loop:
 - each result is tagged with the generation it was watched under, then hopped to the main thread;
 - the core drops results from older generations, and keeps the previous state while a read is in flight. If a read times out, only app rules apply.
 
-The browser list is data: each entry maps a bundle ID to where its URL lives in the tree. Safari and Chrome are the first entries.
+The browser list holds the browsers that keep the page's URL on the first element under the focused window carrying one, links aside: Safari, Safari Technology Preview, Orion, Chrome, Edge, Brave, Arc, Dia, Firefox and Zen. One search serves them all. Firefox and Zen build their tree only once a client asks for the app's role, so the watcher asks for it whenever it starts watching a browser, and reads again, for up to two seconds, while it finds no page. Opera and Vivaldi aren't on the list: Opera shows Accessibility no page at all, and Vivaldi shows the address only in its address bar. Neither takes `AXManualAccessibility`, the switch some Chromium browsers have for it.
 
 Why this wins:
 
@@ -30,7 +30,8 @@ Why this wins:
 
 ## Consequences
 
-- Browser accessibility trees are undocumented and can change with browser updates. A breakage is a one-entry fix.
+- Browser accessibility trees are undocumented and can change with browser updates. A browser whose URL moves out of the search's reach drops off the list until the search finds it again.
+- Watching Firefox or Zen turns on its accessibility engine, which can cost it some speed until it quits.
 - Reading the grant and telling the prompt from the pane use TCC's private `TCCAccessCheckAuditToken` and `TCCAccessPreflight`, looked up at runtime. Without the first, Nightcap falls back to `AXIsProcessTrusted`; without the second, it opens the pane.
 - After a snooze or a removal of a browser's app rule, domain rules apply once a fresh read reports the host, as they do whenever a browser comes to the front.
 

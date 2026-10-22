@@ -558,7 +558,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         switch page {
         case .ask:
             return [rows([
-                fact(symbol: "globe", "Safari and Chrome.", "It works in the front tab of either."),
+                fact(symbol: "globe", "Safari, Chrome, Firefox and more.", "Also Edge, Arc, Brave, Dia, Zen and Orion, in the front tab."),
                 fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
                 fact(symbol: "lock", "Only the site’s name.", "Like youtube.com; the rest of the address is dropped, and the icon comes from the site."),
             ])]

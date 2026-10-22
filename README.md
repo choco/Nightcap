@@ -9,7 +9,7 @@ Night Shift, made yours. Nightcap brings Night Shift to your menu bar. Set how w
 ## What it does
 
 - **App rules.** Pick the apps that need true colour, such as Figma or Photoshop. While one is in front, Night Shift stays off. A rule can keep it on instead, say in Books, even by day.
-- **Website rules.** The same for sites in Safari and Chrome, such as `figma.com` and its subdomains. Website checking stays off until you turn it on, and needs Accessibility: Nightcap reads the front tab's address and keeps only the site's name.
+- **Website rules.** The same for sites in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion, such as `figma.com` and its subdomains. Website checking stays off until you turn it on, and needs Accessibility: Nightcap reads the front tab's address and keeps only the site's name.
 - **Your schedule stays yours.** A rule applies only while its app or site is in front. Switch away and the schedule decides again.
 - **Where and for how long.** Turn Night Shift on or off everywhere, or just in the app or site in front: for 30 minutes, an hour or two, until a time you pick, or until the schedule next turns it back. Snoozing a rule is turning its app or site the other way for a while.
 - **It goes along with you.** Turn Night Shift on in Control Center while a rule holds it off, and Nightcap snoozes that rule until the schedule next turns it back, instead of fighting you.
@@ -75,7 +75,7 @@ Run `nightcap reload` after changing it. Night Shift's strength and schedule sta
 ## Privacy
 
 - A copy that updates itself checks for a new release once a day. A copy whose updates a package manager handles, such as one in the Nix store, never does.
-- With website checking on, Nightcap reads only the front tab of Safari or Chrome, and keeps only the site's name. macOS's log shows it as `<private>`.
+- With website checking on, Nightcap reads only the front tab of the browser in front, and keeps only the site's name. macOS's log shows it as `<private>`.
 - With website checking on, opening the menu asks the site in front, and the sites your rules name, for their icons, with no cookies. The icons stay in Nightcap's cache, named by site, until macOS or you clear it.
 
 ## How it works

@@ -281,7 +281,7 @@ final class Tour {
         case .site where siteLeft:
             return (
                 "Sites work the same way",
-                "Leave the site’s tab and Night Shift returns. A site’s rule covers all its pages, in Safari and Chrome.")
+                "Leave the site’s tab and Night Shift returns. A site’s rule covers all its pages, in Safari, Chrome, Firefox and more.")
         case .site where siteRuled:
             return ("That’s true colour, on one site", "Night Shift is off while its tab is in front. Now switch to another tab.")
         case .site where front == self.browser?.bundleId:

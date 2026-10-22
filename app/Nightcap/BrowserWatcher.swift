@@ -11,7 +11,13 @@ import os
 nonisolated final class BrowserWatcher: @unchecked Sendable {
     /// Browsers that keep the page's URL on the first element under the focused window carrying
     /// `AXURL`, skipping links: Safari on its `AXWebArea`, Chrome on the window's top `AXGroup`.
-    static let browsers: Set<String> = ["com.apple.Safari", "com.google.Chrome"]
+    /// Opera and Vivaldi keep the page out of Accessibility's reach (ADR-0012).
+    static let browsers: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview", "com.kagi.kagimacOS",
+        "com.google.Chrome", "com.microsoft.edgemac", "com.brave.Browser",
+        "company.thebrowser.Browser", "company.thebrowser.dia",
+        "org.mozilla.firefox", "app.zen-browser.zen",
+    ]
 
     /// Every tab switch comes with a focus change. A page loading in the focused tab, such as a
     /// link opening Safari, changes only the title. `AXValueChanged` is mostly noise (M0).
@@ -33,6 +39,11 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
     /// A browser that's still launching refuses observers until its Accessibility is up.
     private static let observeRetryInterval: TimeInterval = 0.25
     private static let observeRetries = 40
+    /// A page can be missing from the tree for a moment, while Firefox builds its tree or a page
+    /// loads, so a read that finds none is tried again, keeping the last host until the retries
+    /// run out.
+    private static let missingRetryInterval: TimeInterval = 0.25
+    private static let missingRetries = 8
 
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "browser")
     private let onHost: @Sendable (UInt64, String?) -> Void
@@ -46,6 +57,13 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
         var readPending = false
         /// What was last reported, so an unchanged host isn't sent again.
         var reported: String??
+        var missingRetriesLeft = BrowserWatcher.missingRetries
+    }
+
+    /// What a read found: a page, with its host if it's a web page, or none.
+    private enum Read {
+        case page(host: String?)
+        case missing
     }
 
     private var watch: Watch?
@@ -72,6 +90,10 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
     func watch(pid: pid_t, generation: UInt64) {
         perform { [self] in
             stopWatching()
+            // Firefox and its forks build their tree only once a client asks for the app's role.
+            let app = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(app, Self.elementTimeout)
+            _ = Self.attribute(app, kAXRoleAttribute)
             var observer: AXObserver?
             guard AXObserverCreate(pid, Self.observerCallback, &observer) == .success, let observer else {
                 log.error("couldn't observe the browser; Accessibility may not be granted")
@@ -138,7 +160,26 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
         let timer = Timer(timeInterval: Self.mergeDelay, repeats: false) { [self] _ in
             guard let current = watch, current.generation == generation else { return }
             watch?.readPending = false
-            report(generation, Self.host(pid: current.pid), force: current.reported == nil)
+            switch Self.read(pid: current.pid) {
+            case .page(let host):
+                watch?.missingRetriesLeft = Self.missingRetries
+                report(generation, host, force: current.reported == nil)
+            case .missing:
+                if current.reported == nil || current.missingRetriesLeft == 0 {
+                    report(generation, nil, force: current.reported == nil)
+                }
+                retryMissing(generation)
+            }
+        }
+        RunLoop.current.add(timer, forMode: .default)
+    }
+
+    private func retryMissing(_ generation: UInt64) {
+        guard let current = watch, current.generation == generation, current.missingRetriesLeft > 0 else { return }
+        watch?.missingRetriesLeft -= 1
+        let timer = Timer(timeInterval: Self.missingRetryInterval, repeats: false) { [self] _ in
+            guard watch?.generation == generation else { return }
+            scheduleRead()
         }
         RunLoop.current.add(timer, forMode: .default)
     }
@@ -149,12 +190,12 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
         onHost(generation, host)
     }
 
-    /// The focused window's page host, searched breadth-first within the read budget.
-    private static func host(pid: pid_t) -> String? {
+    /// The focused window's page, searched breadth-first within the read budget.
+    private static func read(pid: pid_t) -> Read {
         let deadline = Date().addingTimeInterval(readBudget)
         let app = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(app, elementTimeout)
-        guard let window = element(attribute(app, kAXFocusedWindowAttribute)) else { return nil }
+        guard let window = element(attribute(app, kAXFocusedWindowAttribute)) else { return .missing }
         var queue: [(element: AXUIElement, depth: Int)] = [(window, 0)]
         var visited = 0
         while !queue.isEmpty, visited < maxVisited, Date() < deadline {
@@ -165,14 +206,14 @@ nonisolated final class BrowserWatcher: @unchecked Sendable {
             if depth > 0, role != "AXLink", let value = attribute(element, "AXURL") {
                 // Only web pages have a host a domain rule means; chrome://newtab doesn't.
                 let url = value as? URL ?? (value as? String).flatMap { URL(string: $0) }
-                guard let url, ["http", "https"].contains(url.scheme?.lowercased()) else { return nil }
-                return url.host()
+                guard let url, ["http", "https"].contains(url.scheme?.lowercased()) else { return .page(host: nil) }
+                return .page(host: url.host())
             }
             guard depth < maxDepth, !leafRoles.contains(role) else { continue }
             let children = attribute(element, kAXChildrenAttribute) as? [AnyObject] ?? []
             queue += children.compactMap(Self.element).map { ($0, depth + 1) }
         }
-        return nil
+        return .missing
     }
 
     private static func attribute(_ element: AXUIElement, _ name: String) -> AnyObject? {
