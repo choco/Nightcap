@@ -2171,8 +2171,9 @@ impl State {
         })
     }
 
-    /// The row for an app or site in front (ADR-0024): that place alone, with undoing first,
-    /// where it goes the right way, then its lengths, then for good, which is a rule.
+    /// The row for an app or site in front (ADR-0024): that place alone, with undoing first:
+    /// putting its rule back where that goes the right way, and removing a rule of the user's;
+    /// then its lengths, then for good, which is a rule.
     fn place_row(&self, place: &Place, now: Timestamp) -> PlaceRow {
         let state = self.value_at(place).unwrap_or(OnOff::Off).other();
         let rule = self.rule_at(place);
@@ -2188,11 +2189,10 @@ impl State {
             };
             items.push(choice(title, Command::Reset(place.clone())));
         }
+        // Removing a rule is the user's to do whenever they like, even where nothing on screen
+        // would change.
         if let Some(rule) = rule
             && rule.source != RuleSource::Config
-            && rule.says != state
-            && !layered
-            && inherited == Some(state)
         {
             items.push(choice(
                 "Remove Your Rule",

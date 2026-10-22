@@ -3130,7 +3130,7 @@ fn by_day_the_rows_turn_on_and_by_night_off() {
 }
 
 #[test]
-fn undoing_is_offered_only_where_it_goes_the_right_way() {
+fn undoing_is_offered_where_it_goes_the_right_way_and_a_rule_of_yours_can_always_go() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, clock) = start_forced(&socket);
@@ -3163,10 +3163,13 @@ fn undoing_is_offered_only_where_it_goes_the_right_way() {
         choice_titled(&app_row(&core).unwrap(), "Remove Your Rule").command,
         Command::RemoveRule(mail())
     );
-    // By day, everywhere is off too, so removing the rule wouldn't turn Night Shift on.
+    // By day removing it changes nothing on screen, but the rule is still the user's to remove.
     clock.set("2026-10-17T12:00:00+02:00");
     core.handle(Event::Woke);
-    assert!(!titles(&app_row(&core).unwrap()).contains(&"Remove Your Rule".to_owned()));
+    assert_eq!(
+        choice_titled(&app_row(&core).unwrap(), "Remove Your Rule").command,
+        Command::RemoveRule(mail())
+    );
 }
 
 #[test]
