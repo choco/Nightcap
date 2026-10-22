@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { Celestial } from './Celestial';
 import { DownloadButton, type Release } from './Download';
-import { Doodles, type Doodle } from './Doodles';
+import type { Doodle } from '../lib/doodles';
+import { Doodles } from './Doodles';
 import styles from './Hero.module.css';
 import { Nav } from './Nav';
 import { Scene } from './Scene';

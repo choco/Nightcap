@@ -2,8 +2,6 @@ import { useEffect, useState, type ReactNode, type RefObject } from 'react';
 import { placeDoodles, type Box, type Doodle, type DoodleKind, type DoodleMotion } from '../lib/doodles';
 import { cx } from '../lib/cx';
 
-export type { Doodle };
-
 const PATHS: Record<DoodleKind, ReactNode> = {
   star: <path d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />,
   sparkle: <path d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />,

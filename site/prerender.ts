@@ -8,5 +8,7 @@ const { render } = (await import(new URL('render.js', server).href)) as { render
 const page = new URL('index.html', site);
 const template = await readFile(page, 'utf8');
 if (!template.includes('<!--app-->')) throw new Error('index.html has no <!--app--> outlet');
-await writeFile(page, template.replace('<!--app-->', await render()));
+const markup = await render();
+// A function, so `$&` and the like in the markup are left as they are.
+await writeFile(page, template.replace('<!--app-->', () => markup));
 await rm(server, { recursive: true });

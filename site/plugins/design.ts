@@ -39,7 +39,7 @@ function themed(token: Token<Value>, theme: 'light' | 'dark'): string {
 /** The design system's tokens as CSS: the fonts, the colours as variables, light on :root and
  *  dark for the dark system appearance unless the page was set to light, and for an explicit
  *  dark choice; then Tailwind's theme from them. */
-export function tokensCss(tokens: Tokens): string {
+function tokensCss(tokens: Tokens): string {
   const colours = tokens.color.tokens;
   const dark = colours
     .filter((token) => typeof token.value === 'object')
@@ -97,7 +97,7 @@ export function design(): Plugin {
     },
     generateBundle() {
       if (this.environment.name !== 'client') return;
-      for (const licence of readdirSync(licences)) {
+      for (const licence of readdirSync(licences).filter((name) => name.endsWith('.txt'))) {
         this.emitFile({ type: 'asset', fileName: `fonts/${licence}`, source: readFileSync(licences + licence) });
       }
     },

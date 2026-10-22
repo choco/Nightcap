@@ -15,7 +15,8 @@ function renderInDev(): Plugin {
       async handler(html, { server }) {
         if (!server) throw new Error('rendering the page needs the dev server');
         const { render } = await server.ssrLoadModule('/src/render.tsx');
-        return html.replace('<!--app-->', await render());
+        const markup = await render();
+        return html.replace('<!--app-->', () => markup);
       },
     },
   };

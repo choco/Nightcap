@@ -59,6 +59,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
       });
       at(6800, () => {
         setLit(null);
+        timers.current = [];
         demo();
       });
     };
@@ -164,6 +165,8 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
           onKeyUp={(event) => {
             if (event.key === ' ' || event.key === 'Enter') release();
           }}
+          // A key let go after the focus moved on never reaches the keys.
+          onBlur={release}
           onClick={(event) => event.preventDefault()}
         >
           <span className="inline-flex gap-2.5" aria-hidden="true">

@@ -2,7 +2,7 @@ import { FIGMA_ALWAYS, FIGMA_RULE, FOLLOWING, SUNRISE, type AppName, type Moon }
 
 /** One moment of an evening: what it does to the screen and to the menu's Night Shift item and
  *  front app's row. */
-export interface Moment {
+interface Moment {
   time: string;
   title: string;
   warm: boolean;

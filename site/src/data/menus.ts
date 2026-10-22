@@ -77,5 +77,5 @@ export const MENUS: Record<AppName, MenuEntry[]> = {
   ],
 };
 
-/** The front app's or site's row, alone. */
+/** The front app's row, alone. */
 export const placeRow = (title: string, app: AppName, subtitle?: string[]): MenuEntry => row(title, { app }, subtitle ? { subtitle } : {});

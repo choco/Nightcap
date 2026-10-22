@@ -9,12 +9,14 @@ export interface Release {
 const RELEASES = 'https://github.com/choco/Nightcap/releases/latest';
 
 /** The newest release's DMG, as the Pages deploy writes it into download.json. Until it loads, or
- *  where the site has none, the download buttons lead to the releases page. */
+ *  where the site has none, which is before the first release and in a local preview, the
+ *  download buttons lead to the releases page. */
 export function useRelease(): Release | null {
   const [release, setRelease] = useState<Release | null>(null);
   useEffect(() => {
     fetch('download.json')
       .then((response) => {
+        if (response.status === 404) return null;
         if (!response.ok) throw new Error(`download.json: ${response.status}`);
         return response.json() as Promise<Release>;
       })
