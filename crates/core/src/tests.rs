@@ -1809,6 +1809,21 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
 }
 
 #[test]
+fn with_no_schedule_the_night_shift_item_says_so() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T12:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::Off,
+    });
+
+    assert_eq!(
+        core.menu().night_shift.reason.as_deref(),
+        Some("No schedule")
+    );
+}
+
+#[test]
 fn with_no_schedule_an_external_change_holds_until_turned_back() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);

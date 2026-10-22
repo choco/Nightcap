@@ -2412,9 +2412,12 @@ impl State {
             ),
             Reason::Rule(rule) => format!("{}{at}: {}", rule.says, whose(rule)),
             Reason::Tour => "on for the tour".to_owned(),
-            Reason::Schedule { until, .. } => match until {
-                Some(until) => format!("following the schedule until {}", self.clock_time(*until)),
-                None => "following the schedule".to_owned(),
+            Reason::Schedule { until, .. } => match (until, self.timeline.schedule) {
+                (Some(until), _) => {
+                    format!("following the schedule until {}", self.clock_time(*until))
+                }
+                (None, Some(Schedule::Off)) => "no schedule".to_owned(),
+                (None, _) => "following the schedule".to_owned(),
             },
         };
         capitalized(&text)
