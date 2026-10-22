@@ -7,6 +7,7 @@ import NightcapCore
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let current: () -> Menu
+    private let icons: SiteIcons
     private let choose: (Command) -> Void
     /// Opens Settings: on the problem's tab for the problem line, on the last tab otherwise.
     private let openSettings: (_ onProblem: Bool) -> Void
@@ -20,6 +21,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var pointing: NSPopover?
     /// Custom…'s window, while it shows.
     private var picking: TimePicker?
+    /// The open menu's site row, which takes the site's icon if it arrives while it shows.
+    private var siteRow: (site: String, item: NSMenuItem)?
     /// The mockup's orange dot, over the template moon so the moon still follows the menu
     /// bar's appearance while the dot keeps its colour.
     private let dot = NSView()
@@ -46,12 +49,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     init(
         current: @escaping () -> Menu,
+        icons: SiteIcons,
         choose: @escaping (Command) -> Void,
         openSettings: @escaping (_ onProblem: Bool) -> Void,
         onOpen: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
         self.current = current
+        self.icons = icons
         self.choose = choose
         self.openSettings = openSettings
         self.onOpen = onOpen
@@ -156,6 +161,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         pointing = nil
     }
 
+    /// Puts a site's icon that just arrived in the open menu's site row.
+    func iconArrived(_ site: String) {
+        guard let siteRow, siteRow.site == site, let icon = icons.icon(for: site) else { return }
+        siteRow.item.image = Self.menuSized(icon)
+    }
+
     /// `onOpen` can learn something the menu should show, which then redraws it in place.
     func menuWillOpen(_ menu: NSMenu) {
         stopPointing()
@@ -219,6 +230,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         let snapshot = current()
         shown = snapshot
+        siteRow = nil
         menu.removeAllItems()
         if let problemLine = snapshot.problemLine {
             let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
@@ -375,7 +387,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         // A site's row names the site on the first line under its title, unwrapped.
         let lines = [row.site, row.subtitle.map(Self.wrapped)].compactMap { $0 }
         item.subtitle = lines.isEmpty ? nil : lines.joined(separator: "\n")
-        item.image = Self.image(for: row.image)
+        item.image = row.site.flatMap(icons.icon(for:)).map(Self.menuSized) ?? Self.image(for: row.image)
+        if let site = row.site { siteRow = (site, item) }
         Self.showImage(item)
         item.indentationLevel = row.indented ? 1 : 0
         guard !row.items.isEmpty else {

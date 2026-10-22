@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var browserWatcher: BrowserWatcher?
     private var statusMenu: StatusMenu?
     private var settingsWindow: SettingsWindow?
+    private let siteIcons = SiteIcons()
     /// Re-reads the permissions every second while Settings is open, and every 30 seconds
     /// otherwise: macOS posts nothing when notifications are switched in System Settings.
     private var permissionsPoll: Timer?
@@ -45,6 +46,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Snapshot.runIfAsked()
         #endif
         quitOnTerminationSignal()
+        siteIcons.onArrival = { [weak self] site in
+            self?.statusMenu?.iconArrived(site)
+            self?.settingsWindow?.iconArrived()
+            self?.onboarding?.iconArrived()
+        }
         let waker = MainThreadWaker { [weak self] in self?.tick() }
         let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
         let core: Core
@@ -358,6 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let onboarding = Onboarding(
             steps: core.onboarding(),
             rules: core.settings().rules,
+            icons: siteIcons,
             sun: nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
                 return Sun(sunset: sunset, sunrise: sunrise)
@@ -391,6 +398,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let checkForUpdates: (() -> Void)? = updater == nil ? nil : { [weak self] in self?.checkForUpdates() }
         statusMenu = StatusMenu(
             current: { core.menu() },
+            icons: siteIcons,
             choose: { [weak self] command in
                 self?.apply(core.handle(event: .commandChosen(command: command)))
                 self?.tour?.chose(command)
@@ -400,11 +408,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onOpen: { [weak self] in
                 self?.tour?.menuOpened()
+                self?.askForSiteIcons()
                 Task { await self?.reportSystemState() }
             },
             onClose: { [weak self] in self?.tour?.menuClosed() })
         settingsWindow = SettingsWindow(
             current: { core.settings() },
+            icons: siteIcons,
             choose: { [weak self] command in
                 self?.apply(core.handle(event: .commandChosen(command: command)))
             },
@@ -423,6 +433,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 dockIcon.hide(for: .settings)
                 pollPermissions(every: 30)
             })
+    }
+
+    /// While website checking is on, the icons of the site in front and every site with a rule,
+    /// which the menu and the Rules tab show (ADR-0026).
+    private func askForSiteIcons() {
+        guard let core else { return }
+        let settings = core.settings()
+        guard settings.websiteChecking.on else { return }
+        let front = core.menu().entries.compactMap { entry -> String? in
+            if case .row(let row) = entry { row.site } else { nil }
+        }
+        let ruled = settings.rules.compactMap { rule -> String? in
+            if case .domain(let domain) = rule.identity { domain } else { nil }
+        }
+        siteIcons.ask(front + ruled)
     }
 
     /// On `tab`, or on the tab last shown.

@@ -52,8 +52,10 @@ enum Snapshot {
                     place: .app("com.apple.mail"), label: "Night Shift off until 22:00",
                     action: RuleAction(title: "End", command: .reset(.app("com.apple.mail")))),
             ])
+        // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
+        let icons = SiteIcons(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
-            current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
+            current: { settings }, icons: icons, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
             export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
@@ -71,6 +73,7 @@ enum Snapshot {
                 rules: [SettingsRule(
                     identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
                     action: nil)],
+                icons: icons,
                 sun: Sun(
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
                     sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),

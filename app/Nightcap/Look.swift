@@ -284,19 +284,32 @@ final class Chip: NSView {
 
 /// A 26-point rounded tile with an SF Symbol, for a rule without an app icon of its own.
 final class Tile: NSView {
-    init(symbol: String) {
-        super.init(frame: .zero)
-        let image = NSImageView(
+    convenience init(symbol: String) {
+        self.init(
             image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil)!
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))!)
-        image.contentTintColor = .nightcapSecondary
-        image.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(image)
+                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))!,
+            tinted: true)
+    }
+
+    /// A symbol in the secondary colour, at its own size, or a picture, such as a site's icon,
+    /// at the menu's 16 points.
+    init(image: NSImage, tinted: Bool = false) {
+        super.init(frame: .zero)
+        let view = NSImageView(image: image)
+        if tinted {
+            view.contentTintColor = .nightcapSecondary
+        } else {
+            view.imageScaling = .scaleProportionallyUpOrDown
+            view.widthAnchor.constraint(equalToConstant: 16).isActive = true
+            view.heightAnchor.constraint(equalToConstant: 16).isActive = true
+        }
+        view.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(view)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: 26),
             heightAnchor.constraint(equalToConstant: 26),
-            image.centerXAnchor.constraint(equalTo: centerXAnchor),
-            image.centerYAnchor.constraint(equalTo: centerYAnchor),
+            view.centerXAnchor.constraint(equalTo: centerXAnchor),
+            view.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
 

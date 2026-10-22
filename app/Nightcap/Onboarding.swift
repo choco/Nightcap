@@ -83,8 +83,16 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// ticked and can't be changed.
     private var apps: [GridItem]
     private var tickedApps: Set<String> = []
-    private let sites: [GridItem]
+    private let icons: SiteIcons
+    /// Where each existing rule comes from, such as "From your config".
+    private let ruled: [RuleIdentity: String]
     private var tickedSites: Set<String> = []
+    /// The suggested sites, with their icons as far as they've arrived.
+    private var sites: [GridItem] {
+        Self.suggestedSites.map { site in
+            GridItem(site: site.name, host: site.host, icon: icons.icon(for: site.host), ruled: ruled[.domain(site.host)])
+        }
+    }
     private var index = 0
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
@@ -117,6 +125,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     init(
         steps setup: OnboardingSteps,
         rules: [SettingsRule],
+        icons: SiteIcons,
         sun: Sun?,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
@@ -132,13 +141,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.onNotificationsRead = onNotificationsRead
         self.sun = sun
         opensAtLogin = setup.opensAtLogin
+        self.icons = icons
         let ruled = Dictionary(rules.map { ($0.identity, $0.label) }, uniquingKeysWith: { first, _ in first })
+        self.ruled = ruled
         apps = Self.suggestedApps.compactMap { suggestion in
             GridItem(app: suggestion.bundleId, kind: suggestion.kind, ruled: ruled[.app(suggestion.bundleId)])
         }.prefix(Self.gridSize - 1).map { $0 }
-        sites = Self.suggestedSites.map { site in
-            GridItem(site: site.name, host: site.host, ruled: ruled[.domain(site.host)])
-        }
         strength = setup.nightShift.strength ?? 50
         let current = setup.nightShift.schedule ?? .off
         if case .custom(let from, let to) = current {
@@ -310,6 +318,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
             guard let self else { return }
             go(to: index - 1)
         }
+    }
+
+    /// Redraws the sites page with a site's icon that just arrived.
+    func iconArrived() {
+        guard step == .websites, page == .sites else { return }
+        draw()
     }
 
     // MARK: Drawing
@@ -552,6 +566,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 progress(granted ? .ok : .todo, "That’s all. This step moves on by itself the moment Nightcap is allowed."),
             ])]
         case .sites:
+            // The suggestions are the same for everyone, so asking for their icons tells the
+            // sites nothing about the user's browsing (ADR-0026).
+            icons.ask(Self.suggestedSites.map(\.host))
             return [grid(sites.map { site in
                 GridCell(site, ticked: site.ruled != nil || tickedSites.contains(site.id)) { [weak self] in
                     guard let self else { return }
@@ -1141,16 +1158,22 @@ struct GridItem {
     let id: String
     let name: String
     let detail: String
-    let icon: NSImage?
+    let icon: Icon
     /// Where the rule comes from when it exists already, such as "From your config".
     let ruled: String?
 
+    /// An app's icon, or a site's own once it has arrived (ADR-0026).
+    enum Icon {
+        case app(NSImage)
+        case site(NSImage?)
+    }
+
     /// A website by its name, with its domain under it.
-    init(site name: String, host: String, ruled: String?) {
+    init(site name: String, host: String, icon: NSImage?, ruled: String?) {
         id = host
         self.name = name
         detail = ruled ?? host
-        icon = nil
+        self.icon = .site(icon)
         self.ruled = ruled
     }
 
@@ -1161,7 +1184,7 @@ struct GridItem {
         id = bundleId
         name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
         detail = ruled ?? kind
-        icon = Self.loaded(NSWorkspace.shared.icon(forFile: url.path))
+        icon = .app(Self.loaded(NSWorkspace.shared.icon(forFile: url.path)))
         self.ruled = ruled
     }
 }
@@ -1191,14 +1214,15 @@ final class GridCell: NSView {
         Look.attach(checkbox, toggle)
         self.toggle = item.ruled == nil ? toggle : nil
         let icon: NSView
-        if let image = item.icon {
+        switch item.icon {
+        case .app(let image):
             let view = NSImageView(image: image)
             view.imageScaling = .scaleProportionallyUpOrDown
             view.widthAnchor.constraint(equalToConstant: 24).isActive = true
             view.heightAnchor.constraint(equalToConstant: 24).isActive = true
             icon = view
-        } else {
-            icon = Tile(symbol: "globe")
+        case .site(let image):
+            icon = image.map { Tile(image: $0) } ?? Tile(symbol: "globe")
         }
         let name = NSTextField(labelWithString: item.name)
         name.font = .systemFont(ofSize: 13)

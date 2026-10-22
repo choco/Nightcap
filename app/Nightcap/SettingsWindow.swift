@@ -28,6 +28,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     private let current: () -> Settings
+    private let icons: SiteIcons
     private let choose: (Command) -> Void
     private let perform: (Fix) -> Void
     private let checkForUpdates: (() -> Void)?
@@ -51,6 +52,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     init(
         current: @escaping () -> Settings,
+        icons: SiteIcons,
         choose: @escaping (Command) -> Void,
         perform: @escaping (Fix) -> Void,
         checkForUpdates: (() -> Void)?,
@@ -59,6 +61,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         onClose: @escaping () -> Void
     ) {
         self.current = current
+        self.icons = icons
         self.choose = choose
         self.perform = perform
         self.checkForUpdates = checkForUpdates
@@ -91,6 +94,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let settings = current()
         guard settings != shown else { return }
         draw(settings)
+    }
+
+    /// Redraws with a site's icon that just arrived.
+    func iconArrived() {
+        guard window?.isVisible == true, let shown else { return }
+        draw(shown)
     }
 
     func close() {
@@ -372,7 +381,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         return Look.padded(row, top: 11, bottom: 11)
     }
 
-    /// An app by the name and icon of its bundle, if it's installed, and a website by its domain.
+    /// An app by the name and icon of its bundle, if it's installed, and a website by its domain
+    /// and its own icon, once the menu has fetched it (ADR-0026).
     private func describe(_ identity: RuleIdentity) -> (String, String, NSView) {
         switch identity {
         case .app(let bundleId):
@@ -385,7 +395,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             icon.heightAnchor.constraint(equalToConstant: 26).isActive = true
             return (FileManager.default.displayName(atPath: url.path), bundleId, icon)
         case .domain(let domain):
-            return (domain, "Website, with its subdomains", Tile(symbol: "globe"))
+            let icon = icons.icon(for: domain).map { Tile(image: $0) } ?? Tile(symbol: "globe")
+            return (domain, "Website, with its subdomains", icon)
         }
     }
 
