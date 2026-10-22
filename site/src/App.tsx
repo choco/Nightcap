@@ -37,6 +37,7 @@ export function App() {
     <div ref={page} className="relative min-h-screen overflow-hidden bg-ground" data-shift={shiftOn ? 'on' : 'off'} data-peek={peek ?? undefined}>
       <Doodles doodles={doodles.page} />
       <Hero doodles={doodles.hero} release={release} shiftOn={shiftOn} onShift={toggleShift} />
+      {/* The sections' column: 896px inside 1rem gutters, a step wider than the nav's. */}
       <main className="relative mx-auto max-w-[calc(864px+4rem)] px-4">
         <How shiftOn={shiftOn} />
         <Shortcut shiftOn={shiftOn} onShift={toggleShift} onPeek={setPeek} />

@@ -3,9 +3,9 @@ import { cx } from '../lib/cx';
 
 export function Nav({ shiftOn, onShift }: { shiftOn: boolean; onShift: () => void }) {
   return (
-    // The nav keeps to the sections' column while the hero's is clearly wider, and joins the
-    // hero's once the difference would be too small to look deliberate. Below md its wide link
-    // would push the Night Shift switch onto a second row.
+    // While the hero's column is clearly wider, the nav keeps to 864px, a step inside the
+    // sections' column, and below lg it joins the hero's, the difference being too small to look
+    // deliberate. Below md its wide link would push the Night Shift switch onto a second row.
     <nav
       className="flex flex-wrap items-center gap-x-6 gap-y-3 py-6 max-md:gap-x-4 max-sm:flex-nowrap max-sm:gap-1.5 lg:mx-auto lg:w-full lg:max-w-[864px]"
       aria-label="Main"
