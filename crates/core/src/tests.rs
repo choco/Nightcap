@@ -1920,6 +1920,36 @@ fn the_switch_first_takes_off_everywheres_layers_that_say_otherwise() {
 }
 
 #[test]
+fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    report(&core, true);
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.figma.Desktop".to_owned()),
+        name: Some("Figma".to_owned()),
+        is_browser: false,
+    });
+    let figma = Place::App("com.figma.Desktop".to_owned());
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(figma.clone(), OnOff::On, minutes(30)),
+    );
+    report(&core, true);
+
+    let (effects, response) = send(&core, &socket, &wakes, Command::Off);
+
+    assert_eq!(effects, Vec::new());
+    let Response::Ok(Payload::Decision(decision)) = response else {
+        panic!("{response:?}");
+    };
+    assert_eq!((decision.state, decision.place), (Some(OnOff::On), figma));
+}
+
+#[test]
 fn reset_puts_a_snoozed_rule_back_early() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -4974,6 +5004,34 @@ fn the_tour_sets_aside_everywheres_timer_and_puts_it_back_with_its_end() {
     assert_eq!(
         status_of(&core, &socket, &wakes).decision.reasons[0],
         Reason::Timer(layer(OnOff::Off, Some("2026-10-17T00:00:00+02:00")))
+    );
+}
+
+#[test]
+fn while_the_tour_stands_in_everywheres_row_offers_no_way_back_to_the_schedule() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    start_tour(&core);
+    report(&core, true);
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(Place::Everywhere, OnOff::Off, minutes(30)),
+    );
+
+    // With nothing else to offer, the row is left out.
+    assert!(
+        everywhere_row(&core)
+            .is_none_or(|row| !titles(&row).contains(&"Back to the Schedule".to_owned()))
     );
 }
 

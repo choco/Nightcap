@@ -2146,7 +2146,11 @@ impl State {
         let state = self.says(&place)?.other();
         let mut items = Vec::new();
         let switched = self.after_switch(state);
-        if self.layers_at(&place).is_some()
+        // While the tour stands in, what's under everywhere's layers is the tour's on, which the
+        // switch gives back; the schedule isn't there to go back to.
+        let stands_in = self.tour.as_ref().is_some_and(|tour| tour.stands_in);
+        if !stands_in
+            && self.layers_at(&place).is_some()
             && self.has_schedule()
             && self.base_says() == Some(state)
             && (switched.hold.is_some() || switched.timer.is_some())

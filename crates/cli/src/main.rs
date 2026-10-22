@@ -12,7 +12,7 @@ use jiff::{SignedDuration, Timestamp, Zoned};
 use nightcap_protocol::{
     self as protocol, CheckState, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
     Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Place, PlaceLayers, Query,
-    Request, Response, Rule, RuleIdentity, Schedule, Status, TimeOfDay,
+    Reason, Request, Response, Rule, RuleIdentity, Schedule, Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -246,6 +246,12 @@ impl From<anyhow::Error> for Failure {
 }
 
 fn main() -> ExitCode {
+    // A reader that stops early, as `nightcap status | head -1` does, ends the CLI quietly, as it
+    // would a C tool, rather than with a panic from `println!`.
+    // SAFETY: restoring a signal's default action, before any other thread exists.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
     let cli = Cli::parse();
     let instance = if cli.dev {
         Instance::Dev
@@ -336,12 +342,24 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             return Ok(());
         }
     };
-    let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
+    let Payload::Decision(decision) = request(instance, &Request::Command(command.clone()), None)?
+    else {
         return Err(unexpected_reply());
     };
+    let zone = TimeZone::system();
+    // The decision is the front's, so a change to a place that doesn't decide says what it set.
+    if let protocol::Command::Set {
+        place,
+        state,
+        length,
+    } = &command
+        && *place != decision.place
+    {
+        println!("Set {place} {state} {}.", length_text(length, &zone));
+    }
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
-    println!("Night Shift {}", decision.describe(&TimeZone::system()));
+    println!("Night Shift {}", decision.describe(&zone));
     Ok(())
 }
 
@@ -434,6 +452,16 @@ fn from_config<T: PartialEq + Copy>(
     }
 }
 
+/// How long a change lasts, as `on` and `off` were told.
+fn length_text(length: &Length, zone: &TimeZone) -> String {
+    match length {
+        Length::For(duration) => format!("for {duration:#}"),
+        Length::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+        Length::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
+        Length::UntilTurnedBack => "until you turn it back".to_owned(),
+    }
+}
+
 fn print_status(status: &Status) {
     let install = match status.install {
         Install::Managed => "managed by its installer",
@@ -463,10 +491,23 @@ fn print_status(status: &Status) {
         NotificationPermission::Granted => "granted",
     };
     println!("Nightcap {}, {install}", status.version);
-    println!(
-        "Night Shift: {night_shift}, {}",
-        status.decision.describe(&TimeZone::system())
+    let decided = status.decision.describe(&TimeZone::system());
+    // A decision on a layer or a rule starts with the state it asks for, which needs saying again
+    // only while Night Shift isn't there yet.
+    let says_state = !matches!(
+        status.decision.reasons.first(),
+        None | Some(Reason::Schedule { .. })
     );
+    if says_state
+        && status
+            .decision
+            .state
+            .is_some_and(|state| state.to_string() == night_shift)
+    {
+        println!("Night Shift: {decided}");
+    } else {
+        println!("Night Shift: {night_shift}, {decided}");
+    }
     println!(
         "Schedule: {schedule}{scheduled}{}",
         from_config(status.config_schedule, status.schedule, schedule_text)
