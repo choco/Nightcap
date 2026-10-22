@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp, Zoned};
 use nightcap_protocol::{
     self as protocol, CheckState, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
-    NightShift, NotificationPermission, Payload, Query, Request, Response, Rule, RuleIdentity,
-    Schedule, Status, TimeOfDay,
+    Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Place, PlaceLayers, Query,
+    Request, Response, Rule, RuleIdentity, Schedule, Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -41,20 +41,20 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// Turn Night Shift on until the next schedule transition, snoozing any rule that forces it
-    /// off.
-    On,
-    /// Turn Night Shift off until the next schedule transition.
-    Off,
-    /// Turn Night Shift on if it's off, or off if it's on, until the next schedule transition.
+    /// Turn Night Shift on everywhere until you turn it off, or for a length, or in one app or
+    /// on one site: in front of its rule, that snoozes the rule.
+    On(Change),
+    /// Turn Night Shift off everywhere until you turn it on, or for a length, or in one app or on
+    /// one site.
+    Off(Change),
+    /// Turn Night Shift the other way everywhere, until you turn it back.
     Toggle,
-    /// Force Night Shift off for a while, e.g. 1h, 30m or 1h30m.
-    Disable {
-        #[arg(value_parser = parse_positive_duration)]
-        duration: Duration,
+    /// Take off what you set for a place, everywhere unless you name an app or a site: its rule
+    /// comes back, or for everywhere the schedule.
+    Reset {
+        #[command(flatten)]
+        place: Where,
     },
-    /// Clear the timed disable, every snooze and the manual state.
-    Resume,
     /// Show how warm Night Shift tints the display, or set it, from 0 to 100.
     Strength {
         /// 0 is the least warm, 100 the warmest.
@@ -68,7 +68,7 @@ enum Command {
         #[arg(value_enum)]
         state: Switch,
     },
-    /// List, add, remove or snooze rules, or export the ad-hoc ones for the config.
+    /// List, add or remove rules, or export the ad-hoc ones for the config.
     Rules {
         #[command(subcommand)]
         action: RulesAction,
@@ -81,6 +81,91 @@ enum Command {
     },
 }
 
+/// How long, and where: `on` or `off` alone is the switch, everywhere until turned back.
+#[derive(clap::Args)]
+struct Change {
+    /// For this long, e.g. 30m, 1h or 1h30m.
+    #[arg(long = "for", value_parser = parse_length, group = "how_long")]
+    length: Option<SignedDuration>,
+    /// Until this time of day, e.g. 23:30: today, or tomorrow once it has passed.
+    #[arg(long, value_parser = parse_time_of_day, group = "how_long")]
+    until: Option<jiff::civil::Time>,
+    /// Until the schedule next turns it back: sunrise for an on, sunset for an off.
+    #[arg(long, group = "how_long")]
+    until_schedule: bool,
+    #[command(flatten)]
+    place: Where,
+}
+
+/// An app or a site; everywhere when neither is given.
+#[derive(clap::Args)]
+struct Where {
+    /// An app, by its bundle ID, e.g. com.figma.Desktop.
+    #[arg(long, group = "where")]
+    app: Option<String>,
+    /// A site and its subdomains, e.g. figma.com.
+    #[arg(long, group = "where")]
+    domain: Option<String>,
+}
+
+impl Where {
+    fn place(&self) -> Place {
+        match (&self.app, &self.domain) {
+            (Some(bundle_id), _) => Place::App(bundle_id.clone()),
+            (None, Some(domain)) => Place::Domain(domain.clone()),
+            (None, None) => Place::Everywhere,
+        }
+    }
+}
+
+/// The command `on` or `off` sends, with the time read now in `zone`.
+fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Command, String> {
+    let place = change.place.place();
+    let length = match (change.length, change.until, change.until_schedule) {
+        (Some(length), _, _) => Length::For(length),
+        (None, Some(time), _) => Length::Until(next_occurrence(time, now)?),
+        (None, None, true) => Length::UntilScheduleTurns,
+        (None, None, false) if place == Place::Everywhere => {
+            return Ok(match state {
+                OnOff::On => protocol::Command::On,
+                OnOff::Off => protocol::Command::Off,
+            });
+        }
+        (None, None, false) => {
+            return Err(format!(
+                "an app or a site needs a length: --for, --until or --until-schedule; for good, add a rule with `nightcap rules add {}`",
+                place
+            ));
+        }
+    };
+    Ok(protocol::Command::Set {
+        place,
+        state,
+        length,
+    })
+}
+
+/// The next time the clock reads `time` after `now`: today, or tomorrow once it has passed.
+fn next_occurrence(time: jiff::civil::Time, now: &Zoned) -> Result<Timestamp, String> {
+    let today = now
+        .with()
+        .time(time)
+        .build()
+        .map_err(|error| error.to_string())?;
+    let next = if today > *now {
+        today
+    } else {
+        today
+            .tomorrow()
+            .map_err(|error| error.to_string())?
+            .with()
+            .time(time)
+            .build()
+            .map_err(|error| error.to_string())?
+    };
+    Ok(next.timestamp())
+}
+
 #[derive(Subcommand)]
 enum RulesAction {
     /// Show every rule and where it comes from.
@@ -89,23 +174,17 @@ enum RulesAction {
         #[arg(long)]
         json: bool,
     },
-    /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com.
+    /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com, that turns Night Shift
+    /// off there, or on with --on. It replaces your own rule for the same app or site.
     Add {
         #[arg(value_parser = parse_identity)]
         identity: RuleIdentity,
+        /// Keep Night Shift on there, even by day.
+        #[arg(long)]
+        on: bool,
     },
-    /// Remove an ad-hoc rule; a config rule can only be snoozed.
+    /// Remove an ad-hoc rule; a config rule changes only in the config.
     Remove {
-        #[arg(value_parser = parse_identity)]
-        identity: RuleIdentity,
-    },
-    /// Mute a rule until the next schedule transition.
-    Snooze {
-        #[arg(value_parser = parse_identity)]
-        identity: RuleIdentity,
-    },
-    /// Undo a snooze.
-    Unsnooze {
         #[arg(value_parser = parse_identity)]
         identity: RuleIdentity,
     },
@@ -132,11 +211,19 @@ fn parse_identity(text: &str) -> Result<RuleIdentity, String> {
     RuleIdentity::try_from(text.to_owned())
 }
 
-fn parse_positive_duration(text: &str) -> Result<Duration, String> {
-    match parse_duration(text)? {
-        Duration::ZERO => Err("the duration must be longer than zero".to_owned()),
-        duration => Ok(duration),
+/// A length such as 30m, 1h or 1h30m, longer than zero.
+fn parse_length(text: &str) -> Result<SignedDuration, String> {
+    let length: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
+    if length <= SignedDuration::ZERO {
+        return Err("the length must be longer than zero".to_owned());
     }
+    Ok(length)
+}
+
+/// A time of day such as 23:30.
+fn parse_time_of_day(text: &str) -> Result<jiff::civil::Time, String> {
+    jiff::civil::Time::strptime("%H:%M", text)
+        .map_err(|_| format!("{text:?} isn't a time of day like 23:30"))
 }
 
 fn parse_duration(text: &str) -> Result<Duration, String> {
@@ -232,13 +319,10 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             println!("Checking for updates; Nightcap shows what it finds.");
             return Ok(());
         }
-        Command::On => protocol::Command::On,
-        Command::Off => protocol::Command::Off,
+        Command::On(details) => change(OnOff::On, &details, &Zoned::now()).map_err(rejected)?,
+        Command::Off(details) => change(OnOff::Off, &details, &Zoned::now()).map_err(rejected)?,
         Command::Toggle => protocol::Command::Toggle,
-        Command::Disable { duration } => protocol::Command::Disable(
-            jiff::SignedDuration::try_from(duration).context("that's too long")?,
-        ),
-        Command::Resume => protocol::Command::Resume,
+        Command::Reset { place } => protocol::Command::Reset(place.place()),
         Command::Websites { state } => {
             let state = match state {
                 Switch::On => protocol::OnOff::On,
@@ -259,6 +343,15 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     // rather than Night Shift as last observed.
     println!("Night Shift {}", decision.describe(&TimeZone::system()));
     Ok(())
+}
+
+/// A mistake in what was asked, said before reaching Nightcap: exit 2, as Nightcap's own
+/// refusals do.
+fn rejected(message: String) -> Failure {
+    Failure::Rejected(ErrorReply {
+        code: protocol::ErrorCode::BadRequest,
+        message,
+    })
 }
 
 fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
@@ -295,21 +388,14 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             print!("{text}");
             return Ok(());
         }
-        RulesAction::Add { identity } => {
-            let done = format!("Added {identity}.");
-            (protocol::Command::AddRule(identity), done)
+        RulesAction::Add { identity, on } => {
+            let says = if on { OnOff::On } else { OnOff::Off };
+            let done = format!("Added {identity}, which turns Night Shift {says}.");
+            (protocol::Command::AddRule { identity, says }, done)
         }
         RulesAction::Remove { identity } => {
             let done = format!("Removed {identity}.");
             (protocol::Command::RemoveRule(identity), done)
-        }
-        RulesAction::Snooze { identity } => {
-            let done = format!("Snoozed {identity} until the next schedule transition.");
-            (protocol::Command::Snooze(identity), done)
-        }
-        RulesAction::Unsnooze { identity } => {
-            let done = format!("Unsnoozed {identity}.");
-            (protocol::Command::Unsnooze(identity), done)
         }
     };
     let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
@@ -412,16 +498,8 @@ fn print_status(status: &Status) {
             ""
         }
     );
-    if !status.snoozes.is_empty() {
-        let snoozes: Vec<_> = status.snoozes.iter().map(ToString::to_string).collect();
-        println!(
-            "Snoozed: {}{}",
-            snoozes.join(", "),
-            until(status.next_transition)
-        );
-    }
-    if let Some(end) = status.timed_disable {
-        println!("Timed disable:{}", until(Some(end)));
+    for layers in &status.layers {
+        println!("{}", layered(layers));
     }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
@@ -447,6 +525,24 @@ fn rules(rules: &[Rule]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// A place's timer and hold, top first: "app:com.figma.Desktop: on until 07:00".
+fn layered(layers: &PlaceLayers) -> String {
+    let layer = |layer: &Layer| match layer.until {
+        Some(end) => format!("{}{}", layer.state, until(Some(end))),
+        None => format!("{} until you turn it {}", layer.state, layer.state.other()),
+    };
+    let parts: Vec<_> = [&layers.timer, &layers.hold]
+        .into_iter()
+        .flatten()
+        .map(layer)
+        .collect();
+    let place = match &layers.place {
+        Place::Everywhere => "Everywhere".to_owned(),
+        place => place.to_string(),
+    };
+    format!("{place}: {}", parts.join(", then "))
 }
 
 /// " until 22:00" in local time, or nothing when no schedule transition is coming.
@@ -528,4 +624,100 @@ fn receive<T: serde::de::DeserializeOwned>(reader: &mut impl BufRead) -> anyhow:
         .context("Nightcap didn't answer in time")?;
     anyhow::ensure!(read > 0, "Nightcap closed the connection without answering");
     serde_json::from_str(&line).context("Nightcap sent a message this CLI doesn't understand")
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+
+    /// The command a line of arguments sends, at 21:00 on 16 October in Zurich.
+    fn sends(args: &[&str]) -> Result<protocol::Command, String> {
+        let cli = Cli::try_parse_from(["nightcap"].iter().chain(args))
+            .map_err(|error| error.to_string())?;
+        let now = "2026-10-16T21:00:00+02:00[Europe/Zurich]".parse().unwrap();
+        match cli.command {
+            Command::On(details) => change(OnOff::On, &details, &now),
+            Command::Off(details) => change(OnOff::Off, &details, &now),
+            _ => panic!("expected on or off"),
+        }
+    }
+
+    fn set(place: Place, state: OnOff, length: Length) -> Result<protocol::Command, String> {
+        Ok(protocol::Command::Set {
+            place,
+            state,
+            length,
+        })
+    }
+
+    #[test]
+    fn on_and_off_take_a_length_and_a_place() {
+        assert_eq!(sends(&["on"]), Ok(protocol::Command::On));
+        assert_eq!(sends(&["off"]), Ok(protocol::Command::Off));
+        assert_eq!(
+            sends(&["off", "--for", "45m"]),
+            set(
+                Place::Everywhere,
+                OnOff::Off,
+                Length::For(SignedDuration::from_mins(45))
+            )
+        );
+        assert_eq!(
+            sends(&["on", "--app", "com.figma.Desktop", "--until-schedule"]),
+            set(
+                Place::App("com.figma.Desktop".to_owned()),
+                OnOff::On,
+                Length::UntilScheduleTurns
+            )
+        );
+        assert_eq!(
+            sends(&["on", "--domain", "figma.com", "--for", "1h"]),
+            set(
+                Place::Domain("figma.com".to_owned()),
+                OnOff::On,
+                Length::For(SignedDuration::from_hours(1))
+            )
+        );
+        assert!(sends(&["on", "--app", "com.figma.Desktop"]).is_err());
+        assert!(sends(&["on", "--for", "1h", "--until-schedule"]).is_err());
+        assert!(sends(&["on", "--app", "a", "--domain", "b", "--for", "1h"]).is_err());
+    }
+
+    #[test]
+    fn until_a_time_of_day_means_its_next_occurrence() {
+        let until = |time: &str| {
+            sends(&["off", "--until", time]).map(|command| match command {
+                protocol::Command::Set {
+                    length: Length::Until(end),
+                    ..
+                } => end,
+                other => panic!("expected a time, got {other:?}"),
+            })
+        };
+
+        assert_eq!(
+            until("23:30"),
+            Ok("2026-10-16T23:30:00+02:00".parse().unwrap())
+        );
+        assert_eq!(
+            until("07:00"),
+            Ok("2026-10-17T07:00:00+02:00".parse().unwrap())
+        );
+        assert_eq!(
+            until("21:00"),
+            Ok("2026-10-17T21:00:00+02:00".parse().unwrap())
+        );
+        assert!(until("7am").is_err());
+    }
+
+    #[test]
+    fn lengths_read_as_30m_1h_or_1h30m() {
+        assert_eq!(parse_length("30m"), Ok(SignedDuration::from_mins(30)));
+        assert_eq!(parse_length("1h"), Ok(SignedDuration::from_hours(1)));
+        assert_eq!(parse_length("1h30m"), Ok(SignedDuration::from_mins(90)));
+        assert!(parse_length("0m").is_err());
+        assert!(parse_length("soon").is_err());
+    }
 }

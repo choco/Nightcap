@@ -6,7 +6,7 @@ use std::io;
 use std::path::PathBuf;
 
 use jiff::Timestamp;
-use nightcap_protocol::{CheckKind, OnOff, RuleIdentity};
+use nightcap_protocol::{CheckKind, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::config::NightShiftConfig;
@@ -16,9 +16,8 @@ const VERSION: u32 = 1;
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Persisted {
-    pub(crate) manual_state: Option<OnOff>,
-    pub(crate) snoozes: Vec<RuleIdentity>,
-    pub(crate) timed_disable: Option<Timestamp>,
+    /// Every place's hold and timer, each with its end (ADR-0024).
+    pub(crate) layers: Vec<PlaceLayers>,
     /// Website checking as last chosen in onboarding, Settings or the CLI (ADR-0016).
     pub(crate) websites: bool,
     /// The last onboarding version completed; a later one shows only its new steps.
@@ -34,8 +33,8 @@ pub(crate) struct Persisted {
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
     /// clean exit. The next run finds Night Shift there and knows it wasn't the user.
     pub(crate) night_shift: Option<OnOff>,
-    /// The schedule transition that ends the manual state, the snoozes and `night_shift`, if
-    /// one was coming: macOS applies its own schedule there.
+    /// The schedule transition that ends `night_shift`, if one was coming: macOS applies its own
+    /// schedule there.
     pub(crate) until: Option<Timestamp>,
     /// The strength and schedule last applied from the config: a config value applies again
     /// only once it differs (ADR-0020).
@@ -46,14 +45,21 @@ impl Persisted {
     /// Drops what ended while Nightcap wasn't running.
     pub(crate) fn expire(&mut self, now: Timestamp) {
         if self.until.is_some_and(|until| until <= now) {
-            self.manual_state = None;
-            self.snoozes.clear();
             self.night_shift = None;
             self.until = None;
         }
-        if self.timed_disable.is_some_and(|until| until <= now) {
-            self.timed_disable = None;
+        for layers in &mut self.layers {
+            for layer in [&mut layers.hold, &mut layers.timer] {
+                if layer
+                    .as_ref()
+                    .is_some_and(|layer| layer.until.is_some_and(|until| until <= now))
+                {
+                    *layer = None;
+                }
+            }
         }
+        self.layers
+            .retain(|layers| layers.hold.is_some() || layers.timer.is_some());
     }
 }
 

@@ -12,7 +12,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -112,20 +112,26 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
+    /// The switch: Night Shift on everywhere, until turned back (ADR-0024).
     On,
+    /// The switch: Night Shift off everywhere, until turned back.
     Off,
+    /// The switch, the other way from what everywhere says now.
     Toggle,
-    /// Forces Night Shift off for this long: a timed disable.
-    Disable(SignedDuration),
-    /// Clears the timed disable, every snooze and the manual state.
-    Resume,
-    /// Adds an ad-hoc rule (ADR-0009).
-    AddRule(RuleIdentity),
-    /// Removes an ad-hoc rule; a config rule can only be snoozed.
+    /// Puts Night Shift on or off at a place for a length: a timer for a time or until a
+    /// time, a hold otherwise. For good is everywhere's alone; an app's or site's is a rule.
+    Set {
+        place: Place,
+        state: OnOff,
+        length: Length,
+    },
+    /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the
+    /// schedule.
+    Reset(Place),
+    /// Adds an ad-hoc rule, replacing the user's own rule for the same app or domain (ADR-0025).
+    AddRule { identity: RuleIdentity, says: OnOff },
+    /// Removes an ad-hoc rule; a config rule changes only in the config.
     RemoveRule(RuleIdentity),
-    /// Mutes a rule until the next schedule transition.
-    Snooze(RuleIdentity),
-    Unsnooze(RuleIdentity),
     /// Turns website checking on or off, unless the config sets it (ADR-0016).
     Websites(OnOff),
     /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0015).
@@ -136,6 +142,69 @@ pub enum Command {
     PreviewStrength(u8),
     /// Sets Night Shift's schedule, which macOS applies at once (ADR-0020).
     SetSchedule(Schedule),
+}
+
+/// Where a change applies: everywhere, an app, or a domain and its subdomains (ADR-0024).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Place {
+    Everywhere,
+    App(String),
+    Domain(String),
+}
+
+/// `everywhere`, `app:com.figma.Desktop` or `domain:figma.com`.
+impl fmt::Display for Place {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Everywhere => formatter.write_str("everywhere"),
+            Self::App(bundle_id) => write!(formatter, "app:{bundle_id}"),
+            Self::Domain(domain) => write!(formatter, "domain:{domain}"),
+        }
+    }
+}
+
+impl From<RuleIdentity> for Place {
+    fn from(identity: RuleIdentity) -> Self {
+        match identity {
+            RuleIdentity::App(bundle_id) => Self::App(bundle_id),
+            RuleIdentity::Domain(domain) => Self::Domain(domain),
+        }
+    }
+}
+
+/// How long a change lasts (ADR-0024).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Length {
+    /// A timer for this long.
+    For(SignedDuration),
+    /// A timer until this moment.
+    Until(Timestamp),
+    /// A hold until the schedule next turns Night Shift the other way: sunrise for an on,
+    /// sunset for an off.
+    UntilScheduleTurns,
+    /// A hold with no end, everywhere's alone.
+    UntilTurnedBack,
+}
+
+/// A hold or a timer: on or off at a place until a time, or a hold with no end.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Layer {
+    pub state: OnOff,
+    pub until: Option<Timestamp>,
+    /// The place an external change held the same way at once; turning either back takes off
+    /// both (ADR-0024).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub with: Option<Place>,
+}
+
+/// A place's hold and timer, the timer over the hold.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaceLayers {
+    pub place: Place,
+    pub hold: Option<Layer>,
+    pub timer: Option<Layer>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,109 +241,84 @@ pub enum Payload {
     Export(String),
 }
 
-/// What the core makes of everything it knows: whether Night Shift is forced off or left alone,
-/// and why.
+/// What the core makes of everything it knows: what Night Shift should be, the place that
+/// decides it, and the layers that place rests on, top first (ADR-0024).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
-    pub verdict: Verdict,
+    /// None while everywhere decides and the schedule isn't known yet.
+    pub state: Option<OnOff>,
+    pub place: Place,
     pub reasons: Vec<Reason>,
 }
 
 impl Decision {
     /// What the core decided and why, as it reads after "Night Shift", with times in `zone`.
     pub fn describe(&self, zone: &TimeZone) -> String {
-        let until = |end: Option<Timestamp>| {
-            end.map_or_else(String::new, |end| {
-                format!(" until {}", end.to_zoned(zone.clone()).strftime("%H:%M"))
-            })
+        let until = |end: Option<Timestamp>, state: OnOff| match end {
+            Some(end) => format!(" until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+            None => format!(" until you turn it {}", state.other()),
         };
-        if self.verdict == Verdict::ForceOff {
-            let forces: Vec<_> = self
-                .reasons
-                .iter()
-                .filter_map(|reason| match reason {
-                    Reason::Rule(rule) => Some(rule.to_string()),
-                    Reason::TimedDisable { until: end } => {
-                        Some(format!("a timed disable{}", until(Some(*end))))
-                    }
-                    _ => None,
-                })
-                .collect();
-            return format!("forced off by {}", forces.join(" and "));
-        }
-        let followed = self.reasons.iter().find_map(|reason| match reason {
-            Reason::ManualState { state, until: end } => {
-                Some(format!("turned {state} by hand{}", until(*end)))
+        let Some(top) = self.reasons.first() else {
+            return "left alone".to_owned();
+        };
+        let at = match &self.place {
+            Place::Everywhere => String::new(),
+            place => format!(" at {place}"),
+        };
+        let mut description = match top {
+            Reason::Timer(layer) | Reason::Hold(layer) => {
+                format!("{}{at}{}", layer.state, until(layer.until, layer.state))
             }
-            Reason::Schedule { .. } => Some("following the schedule".to_owned()),
-            Reason::Tour => Some("on for the tour".to_owned()),
+            Reason::Rule(rule) => format!(
+                "{} by the {} rule for {}",
+                rule.says, rule.source, rule.identity
+            ),
+            Reason::Tour => "on for the tour".to_owned(),
+            Reason::Schedule { state, .. } => format!("{state}, following the schedule"),
+        };
+        let snoozed = self.reasons.iter().skip(1).find_map(|reason| match reason {
+            Reason::Rule(rule) if Some(rule.says) != self.state => Some(rule),
             _ => None,
         });
-        let snoozed: Vec<_> = self
-            .reasons
-            .iter()
-            .filter_map(|reason| match reason {
-                Reason::Snooze { identity, .. } => Some(identity.to_string()),
-                _ => None,
-            })
-            .collect();
-        let mut description = followed.unwrap_or_else(|| "left alone".to_owned());
-        if !snoozed.is_empty() {
-            description.push_str(&format!(", with {} snoozed", snoozed.join(", ")));
+        if let Some(rule) = snoozed {
+            description.push_str(&format!(", its {} rule snoozed", rule.source));
         }
         description
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Verdict {
-    ForceOff,
-    HandsOff,
-}
-
+/// One layer a decision rests on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
-    /// A rule matching the context forces Night Shift off.
+    Timer(Layer),
+    Hold(Layer),
     Rule(Rule),
-    /// A timed disable forces Night Shift off.
-    TimedDisable { until: Timestamp },
-    /// A rule matching the context is snoozed until the next schedule transition, if any.
-    Snooze {
-        identity: RuleIdentity,
-        until: Option<Timestamp>,
-    },
-    /// Hands off, following the manual state until the next schedule transition, if any.
-    ManualState {
-        state: OnOff,
-        until: Option<Timestamp>,
-    },
-    /// Hands off, following the schedule until its next transition, if any.
+    /// Night Shift on for the tour, which stands in for the schedule while it runs (ADR-0022).
+    Tour,
+    /// The schedule, until its next transition, if any.
     Schedule {
         state: OnOff,
         until: Option<Timestamp>,
     },
-    /// Hands off, with Night Shift on for the tour, which stands in for the schedule while it
-    /// runs (ADR-0022).
-    Tour,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
     pub identity: RuleIdentity,
     pub source: RuleSource,
+    /// Night Shift off, or on, while the rule matches (ADR-0025).
+    pub says: OnOff,
 }
 
-/// `app:com.figma.Desktop (config rule)`.
+/// `app:com.figma.Desktop (config rule, off)`.
 impl fmt::Display for Rule {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let source = match self.source {
-            RuleSource::Config => "config",
-            RuleSource::AdHoc => "ad-hoc",
-            RuleSource::Tour => "tour",
-        };
-        write!(formatter, "{} ({source} rule)", self.identity)
+        write!(
+            formatter,
+            "{} ({} rule, {})",
+            self.identity, self.source, self.says
+        )
     }
 }
 
@@ -327,6 +371,16 @@ pub enum RuleSource {
     Tour,
 }
 
+impl fmt::Display for RuleSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Config => "config",
+            Self::AdHoc => "ad-hoc",
+            Self::Tour => "tour",
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub version: String,
@@ -337,8 +391,6 @@ pub struct Status {
     /// The strength the config sets, if it sets one (ADR-0020).
     pub config_strength: Option<u8>,
     pub decision: Decision,
-    /// The on or off the user set last; it lasts until the next schedule transition.
-    pub manual_state: Option<OnOff>,
     /// None until the shell first reports Night Shift's status.
     pub schedule: Option<Schedule>,
     /// The schedule the config sets, if it sets one (ADR-0020).
@@ -358,10 +410,8 @@ pub struct Status {
     /// Why `rules.toml` can't be used; ad-hoc rules are then off.
     pub ad_hoc_error: Option<String>,
     pub website_checking: WebsiteChecking,
-    /// Rules snoozed until the next schedule transition.
-    pub snoozes: Vec<RuleIdentity>,
-    /// When the timed disable ends, if one is running.
-    pub timed_disable: Option<Timestamp>,
+    /// Every place with a hold or a timer.
+    pub layers: Vec<PlaceLayers>,
     pub permissions: Permissions,
     pub checks: Vec<Check>,
 }
@@ -412,6 +462,15 @@ pub struct WebsiteChecking {
 pub enum OnOff {
     On,
     Off,
+}
+
+impl OnOff {
+    pub fn other(self) -> Self {
+        match self {
+            Self::On => Self::Off,
+            Self::Off => Self::On,
+        }
+    }
 }
 
 impl fmt::Display for OnOff {
@@ -494,7 +553,7 @@ pub enum ErrorCode {
     NoUpdater,
     /// The identity isn't one a rule can have, such as a domain with a path.
     BadIdentity,
-    /// The rule comes from the config, which only snoozing can override at runtime.
+    /// The rule comes from the config, so only the config can change it.
     ConfigRule,
     NoSuchRule,
     /// `rules.toml` is invalid or from a newer Nightcap, so ad-hoc rules can't change.
@@ -548,10 +607,13 @@ mod tests {
                 strength: Some(60),
                 config_strength: None,
                 decision: Decision {
-                    verdict: Verdict::HandsOff,
-                    reasons: Vec::new(),
+                    state: Some(OnOff::Off),
+                    place: Place::Everywhere,
+                    reasons: vec![Reason::Schedule {
+                        state: OnOff::Off,
+                        until: Some("2026-10-16T20:00:00Z".parse().unwrap()),
+                    }],
                 },
-                manual_state: None,
                 schedule: Some(Schedule::Custom {
                     from: TimeOfDay {
                         hour: 22,
@@ -572,8 +634,15 @@ mod tests {
                     state: OnOff::On,
                     from_config: false,
                 },
-                snoozes: Vec::new(),
-                timed_disable: None,
+                layers: vec![PlaceLayers {
+                    place: Place::App("com.figma.Desktop".to_owned()),
+                    hold: None,
+                    timer: Some(Layer {
+                        state: OnOff::On,
+                        until: Some("2026-10-16T19:30:00Z".parse().unwrap()),
+                        with: None,
+                    }),
+                }],
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
@@ -584,7 +653,7 @@ mod tests {
                     text: "x".to_owned(),
                 }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"verdict":"hands_off","reasons":[]},"manual_state":null,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"snoozes":[],"timed_disable":null,"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[{"place":{"app":"com.figma.Desktop"},"hold":null,"timer":{"state":"on","until":"2026-10-16T19:30:00Z"}}],"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
         );
     }
 
@@ -597,10 +666,26 @@ mod tests {
             r#"{"ok":"update_check_started"}"#
         );
         assert_eq!(
-            json(&Request::Command(Command::Disable(
-                jiff::SignedDuration::from_mins(90)
-            ))),
-            r#"{"command":{"disable":"PT1H30M"}}"#
+            json(&Request::Command(Command::Set {
+                place: Place::Everywhere,
+                state: OnOff::Off,
+                length: Length::For(jiff::SignedDuration::from_mins(90)),
+            })),
+            r#"{"command":{"set":{"place":"everywhere","state":"off","length":{"for":"PT1H30M"}}}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::Set {
+                place: Place::Domain("figma.com".to_owned()),
+                state: OnOff::On,
+                length: Length::UntilScheduleTurns,
+            })),
+            r#"{"command":{"set":{"place":{"domain":"figma.com"},"state":"on","length":"until_schedule_turns"}}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::Reset(Place::App(
+                "com.figma.Desktop".to_owned()
+            )))),
+            r#"{"command":{"reset":{"app":"com.figma.Desktop"}}}"#
         );
         assert_eq!(
             json(&Request::Command(Command::Strength(60))),
@@ -617,40 +702,23 @@ mod tests {
             r#"{"command":{"set_schedule":"sunset_to_sunrise"}}"#
         );
         assert_eq!(
-            json(&Decision {
-                verdict: Verdict::ForceOff,
-                reasons: vec![Reason::TimedDisable {
-                    until: "2026-10-16T05:50:47Z".parse().unwrap(),
-                }],
-            }),
-            r#"{"verdict":"force_off","reasons":[{"timed_disable":{"until":"2026-10-16T05:50:47Z"}}]}"#
-        );
-        assert_eq!(
-            json(&Reason::Snooze {
-                identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
-                until: None,
-            }),
-            r#"{"snooze":{"identity":"app:com.figma.Desktop","until":null}}"#
-        );
-        assert_eq!(
             json(&Payload::Decision(Decision {
-                verdict: Verdict::ForceOff,
-                reasons: vec![Reason::Rule(Rule {
-                    identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
-                    source: RuleSource::Config,
-                })],
+                state: Some(OnOff::On),
+                place: Place::App("com.figma.Desktop".to_owned()),
+                reasons: vec![
+                    Reason::Hold(Layer {
+                        state: OnOff::On,
+                        until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
+                        with: Some(Place::Everywhere),
+                    }),
+                    Reason::Rule(Rule {
+                        identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+                        source: RuleSource::Config,
+                        says: OnOff::Off,
+                    }),
+                ],
             })),
-            r#"{"decision":{"verdict":"force_off","reasons":[{"rule":{"identity":"app:com.figma.Desktop","source":"config"}}]}}"#
-        );
-        assert_eq!(
-            json(&Decision {
-                verdict: Verdict::HandsOff,
-                reasons: vec![Reason::ManualState {
-                    state: OnOff::On,
-                    until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
-                }],
-            }),
-            r#"{"verdict":"hands_off","reasons":[{"manual_state":{"state":"on","until":"2026-10-16T05:50:47Z"}}]}"#
+            r#"{"decision":{"state":"on","place":{"app":"com.figma.Desktop"},"reasons":[{"hold":{"state":"on","until":"2026-10-16T05:50:47Z","with":"everywhere"}},{"rule":{"identity":"app:com.figma.Desktop","source":"config","says":"off"}}]}}"#
         );
     }
 
@@ -658,12 +726,15 @@ mod tests {
     fn rule_messages_match_the_documented_wire_format() {
         let figma = RuleIdentity::Domain("figma.com".to_owned());
         assert_eq!(
-            json(&Request::Command(Command::AddRule(figma.clone()))),
-            r#"{"command":{"add_rule":"domain:figma.com"}}"#
+            json(&Request::Command(Command::AddRule {
+                identity: figma.clone(),
+                says: OnOff::On,
+            })),
+            r#"{"command":{"add_rule":{"identity":"domain:figma.com","says":"on"}}}"#
         );
         assert_eq!(
-            json(&Request::Command(Command::Snooze(figma.clone()))),
-            r#"{"command":{"snooze":"domain:figma.com"}}"#
+            json(&Request::Command(Command::RemoveRule(figma.clone()))),
+            r#"{"command":{"remove_rule":"domain:figma.com"}}"#
         );
         assert_eq!(json(&Request::Query(Query::Rules)), r#"{"query":"rules"}"#);
         assert_eq!(
@@ -678,8 +749,9 @@ mod tests {
             json(&Response::Ok(Payload::Rules(vec![Rule {
                 identity: figma,
                 source: RuleSource::AdHoc,
+                says: OnOff::Off,
             }]))),
-            r#"{"ok":{"rules":[{"identity":"domain:figma.com","source":"ad_hoc"}]}}"#
+            r#"{"ok":{"rules":[{"identity":"domain:figma.com","source":"ad_hoc","says":"off"}]}}"#
         );
         assert_eq!(
             json(&Response::Ok(Payload::Export("{ }".to_owned()))),
@@ -702,51 +774,83 @@ mod tests {
     fn decisions_describe_themselves_after_night_shift() {
         let zone = jiff::tz::TimeZone::get("Europe/Zurich").unwrap();
         let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
+        let figma_app = || Place::App("com.figma.Desktop".to_owned());
         let figma = Rule {
             identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
             source: RuleSource::Config,
+            says: OnOff::Off,
         };
-        let described = |verdict, reasons| Decision { verdict, reasons }.describe(&zone);
+        let layer = |state, until| Layer {
+            state,
+            until,
+            with: None,
+        };
+        let described = |state, place, reasons| {
+            Decision {
+                state: Some(state),
+                place,
+                reasons,
+            }
+            .describe(&zone)
+        };
 
         assert_eq!(
             described(
-                Verdict::ForceOff,
+                OnOff::Off,
+                Place::Everywhere,
                 vec![
-                    Reason::TimedDisable {
-                        until: at("2026-10-16T22:00:00Z")
-                    },
-                    Reason::Rule(figma)
-                ]
-            ),
-            "forced off by a timed disable until 00:00 and app:com.figma.Desktop (config rule)"
-        );
-        assert_eq!(
-            described(
-                Verdict::HandsOff,
-                vec![
-                    Reason::Snooze {
-                        identity: RuleIdentity::Domain("figma.com".to_owned()),
+                    Reason::Timer(layer(OnOff::Off, Some(at("2026-10-16T22:00:00Z")))),
+                    Reason::Schedule {
+                        state: OnOff::On,
                         until: None
                     },
-                    Reason::ManualState {
-                        state: OnOff::On,
-                        until: Some(at("2026-10-17T05:00:00Z"))
-                    }
                 ]
             ),
-            "turned on by hand until 07:00, with domain:figma.com snoozed"
+            "off until 00:00"
         );
         assert_eq!(
             described(
-                Verdict::HandsOff,
+                OnOff::Off,
+                Place::Everywhere,
+                vec![Reason::Hold(layer(OnOff::Off, None))]
+            ),
+            "off until you turn it on"
+        );
+        assert_eq!(
+            described(
+                OnOff::On,
+                figma_app(),
+                vec![
+                    Reason::Hold(layer(OnOff::On, Some(at("2026-10-17T05:00:00Z")))),
+                    Reason::Rule(figma.clone()),
+                ]
+            ),
+            "on at app:com.figma.Desktop until 07:00, its config rule snoozed"
+        );
+        assert_eq!(
+            described(OnOff::Off, figma_app(), vec![Reason::Rule(figma)]),
+            "off by the config rule for app:com.figma.Desktop"
+        );
+        assert_eq!(
+            described(
+                OnOff::On,
+                Place::Everywhere,
                 vec![Reason::Schedule {
                     state: OnOff::On,
                     until: None
                 }]
             ),
-            "following the schedule"
+            "on, following the schedule"
         );
-        assert_eq!(described(Verdict::HandsOff, Vec::new()), "left alone");
+        assert_eq!(
+            Decision {
+                state: None,
+                place: Place::Everywhere,
+                reasons: Vec::new(),
+            }
+            .describe(&zone),
+            "left alone"
+        );
     }
 
     #[test]

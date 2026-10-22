@@ -19,13 +19,13 @@ use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
     Check, CheckKind, CheckState, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install,
-    Instance, NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Reason,
-    Request, Response, Rule, RuleIdentity, RuleSource, Schedule, Status, TimeOfDay, Verdict,
-    WebsiteChecking,
+    Instance, Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Permissions,
+    Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity, RuleSource, Schedule,
+    Status, TimeOfDay, WebsiteChecking,
 };
 
 use config::NightShiftConfig;
-use engine::{Context, Inputs};
+use engine::{Context, Inputs, same_place};
 use schedule::{SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
@@ -53,6 +53,12 @@ uniffi::custom_type!(SignedDuration, i64, {
     remote,
     lower: |duration| duration.as_secs(),
     try_lift: |seconds| Ok(SignedDuration::from_secs(seconds)),
+});
+
+uniffi::custom_type!(Timestamp, SystemTime, {
+    remote,
+    lower: |timestamp| SystemTime::from(timestamp),
+    try_lift: |time| Ok(Timestamp::try_from(time)?),
 });
 
 #[uniffi::remote(Enum)]
@@ -92,16 +98,36 @@ pub enum RuleIdentity {
 }
 
 #[uniffi::remote(Enum)]
+pub enum Place {
+    Everywhere,
+    App(String),
+    Domain(String),
+}
+
+#[uniffi::remote(Enum)]
+pub enum Length {
+    For(SignedDuration),
+    Until(Timestamp),
+    UntilScheduleTurns,
+    UntilTurnedBack,
+}
+
+#[uniffi::remote(Enum)]
 pub enum Command {
     On,
     Off,
     Toggle,
-    Disable(SignedDuration),
-    Resume,
-    AddRule(RuleIdentity),
+    Set {
+        place: Place,
+        state: OnOff,
+        length: Length,
+    },
+    Reset(Place),
+    AddRule {
+        identity: RuleIdentity,
+        says: OnOff,
+    },
     RemoveRule(RuleIdentity),
-    Snooze(RuleIdentity),
-    Unsnooze(RuleIdentity),
     Websites(OnOff),
     OpenAtLogin(OnOff),
     Strength(u8),
@@ -120,15 +146,14 @@ pub struct Menu {
     pub entries: Vec<MenuEntry>,
 }
 
-/// The menu's Night Shift item: what Night Shift is doing and why, which choosing turns the
-/// other way.
+/// The menu's Night Shift item: everywhere's switch, with what decides the screen (ADR-0024).
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct NightShiftItem {
-    /// Checked while Night Shift is on.
+    /// Checked while Night Shift is on everywhere.
     pub on: bool,
-    /// Why, in a few words, e.g. "While Figma is in front".
+    /// What decides the screen, in a few words, e.g. "Off in Figma: your config’s rule".
     pub reason: Option<String>,
-    /// What choosing it does besides, e.g. "Snoozes the Figma rule until 07:52".
+    /// What choosing it does, e.g. "Turning it off holds it off until you turn it on".
     pub detail: Option<String>,
     /// None while Night Shift is unavailable, which disables the item.
     pub command: Option<Command>,
@@ -173,14 +198,16 @@ pub struct OnboardingNightShift {
     pub schedule: Option<Schedule>,
 }
 
-/// A rule as the Rules tab lists it: its label and the one thing to do about it.
+/// A rule as the Rules tab lists it: what it says, its label and what can be done about it.
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct SettingsRule {
     pub identity: RuleIdentity,
+    pub says: OnOff,
     /// "From your config", "Snoozed until 07:00" or "Ad-hoc".
     pub label: String,
     pub snoozed: bool,
-    pub action: RuleAction,
+    /// None for a config rule that isn't snoozed: only the config changes it.
+    pub action: Option<RuleAction>,
 }
 
 /// Choosing it sends `command` back as `Event::CommandChosen`.
@@ -263,16 +290,49 @@ pub enum MenuEntry {
     Strength {
         value: u8,
     },
-    Item {
+    /// A place row: a submenu that turns one place the other way (ADR-0024).
+    Row {
+        row: PlaceRow,
+    },
+    Separator,
+}
+
+/// A place row: everywhere's under the Night Shift item, then the front app's and site's.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct PlaceRow {
+    pub title: String,
+    /// What the place says, or for everywhere's row the place that keeps its own say.
+    pub subtitle: Option<String>,
+    pub image: RowImage,
+    /// Drawn one level in, under the row it belongs to: a site under its browser.
+    pub indented: bool,
+    /// The submenu; empty while there's nothing to offer, which greys the row.
+    pub items: Vec<RowItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum RowImage {
+    /// Everywhere: the timer, as the row under the switch.
+    Everywhere,
+    /// The app's own icon.
+    App {
+        bundle_id: String,
+    },
+    Site,
+}
+
+#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+pub enum RowItem {
+    Choice {
         item: MenuItem,
     },
-    Submenu {
+    /// Custom…: the shell asks for an end time in a window titled `title`, starting at
+    /// `start`, and sends `Set` for `place` and `state` until the time picked.
+    PickTime {
         title: String,
-        items: Vec<MenuItem>,
-    },
-    /// Titles the items under it.
-    Header {
-        title: String,
+        place: Place,
+        state: OnOff,
+        start: Timestamp,
     },
     Separator,
 }
@@ -281,11 +341,8 @@ pub enum MenuEntry {
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct MenuItem {
     pub title: String,
-    /// A line under the title, e.g. where a rule comes from or what choosing it does.
+    /// A line under the title, e.g. when a length ends.
     pub subtitle: Option<String>,
-    /// Drawn one level in, under the item it belongs to.
-    pub indented: bool,
-    pub checked: bool,
     pub enabled: bool,
     pub command: Command,
 }
@@ -441,9 +498,6 @@ pub enum CoreError {
 /// The current onboarding version: welcome, notifications, and website checking.
 const ONBOARDING: u32 = 1;
 
-/// The menu's timed disables, in minutes, shortest first.
-const DISABLE_CHOICES: [(i64, &str); 3] = [(30, "30 Minutes"), (60, "1 Hour"), (120, "2 Hours")];
-
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0005).
 const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
@@ -495,7 +549,6 @@ struct Setup {
 struct State {
     night_shift: NightShift,
     strength: Option<u8>,
-    manual_state: Option<OnOff>,
     timeline: Timeline,
     context: Context,
     /// The config rules and the ad-hoc ones not in the config, as the rule engine sees them.
@@ -504,7 +557,9 @@ struct State {
     config_error: Option<String>,
     /// Whether the config file existed when it was last loaded.
     config_found: bool,
-    ad_hoc: Vec<RuleIdentity>,
+    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
+    lengths: Vec<SignedDuration>,
+    ad_hoc: Vec<(RuleIdentity, OnOff)>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
     ad_hoc_error: Option<String>,
     /// Website checking as the user chose it; `websites` in the config wins (ADR-0016).
@@ -523,15 +578,13 @@ struct State {
     watch: Option<Watch>,
     /// The generation of the last watch started.
     generation: u64,
-    /// Rules muted until the next schedule transition.
-    snoozes: Vec<RuleIdentity>,
-    /// When the timed disable ends, if one is running.
-    timed_disable: Option<Timestamp>,
+    /// Every place with a hold or a timer (ADR-0024).
+    layers: Vec<PlaceLayers>,
     /// The write the shell was last asked for, until a status callback reports the result.
     pending_write: Option<bool>,
     unreported: Option<Unreported>,
-    /// Set on the way out: forces no longer apply.
-    released: bool,
+    /// Set on the way out to the layers that still apply: only everywhere's hold.
+    released: Option<Vec<PlaceLayers>>,
     session: Session,
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
@@ -700,7 +753,6 @@ impl Core {
 
     pub fn menu(&self) -> Menu {
         let state = self.state();
-        let decision = state.decide();
         if state.night_shift == NightShift::Unavailable {
             return Menu {
                 icon: MenuIcon::Unavailable,
@@ -714,77 +766,50 @@ impl Core {
                 entries: Vec::new(),
             };
         }
-        let on = wanted(&decision).unwrap_or(state.night_shift == NightShift::On);
-        let item = |title: &str, command| MenuItem {
-            title: title.to_owned(),
-            subtitle: None,
-            indented: false,
-            checked: false,
-            enabled: true,
-            command,
-        };
-        let mut entries = match state.strength {
-            Some(value) => vec![MenuEntry::Strength { value }, MenuEntry::Separator],
-            None => Vec::new(),
-        };
-        // A timed disable matters while Night Shift is on or forced off, or when the schedule
-        // turns it on before the longest one would end.
-        let longest = SignedDuration::from_mins(DISABLE_CHOICES[DISABLE_CHOICES.len() - 1].0);
-        let comes_on_soon = state
-            .timeline
-            .next_transition(state.applied_until)
-            .is_some_and(|transition| {
-                transition.duration_since(self.clock.now()) <= longest
-                    && state.timeline.scheduled_state(transition) == Some(true)
-            });
-        if on || decision.verdict == Verdict::ForceOff || comes_on_soon {
-            entries.push(MenuEntry::Submenu {
-                title: "Turn Off For".to_owned(),
-                items: DISABLE_CHOICES
-                    .map(|(minutes, title)| {
-                        item(title, Command::Disable(SignedDuration::from_mins(minutes)))
-                    })
-                    .to_vec(),
-            });
+        let now = self.clock.now();
+        let decision = state.decide();
+        let observed = on_off(state.night_shift == NightShift::On);
+        let screen = decision.state.unwrap_or(observed);
+        let everywhere = state.says(&Place::Everywhere).unwrap_or(observed);
+        let mut entries = Vec::new();
+        if let Some(value) = state.strength {
+            entries.push(MenuEntry::Strength { value });
         }
-        if state.timed_disable.is_some()
-            || !state.snoozes.is_empty()
-            || state.manual_state.is_some()
-        {
-            entries.push(MenuEntry::Item {
-                item: MenuItem {
-                    subtitle: state.what_resuming_ends(),
-                    ..item("Resume", Command::Resume)
-                },
-            });
+        if let Some(row) = state.everywhere_row(&decision, now) {
+            entries.push(MenuEntry::Row { row });
         }
-        if let Some(bundle_id) = &state.context.app {
+        let front: Vec<Place> = state
+            .context
+            .app
+            .clone()
+            .map(Place::App)
+            .into_iter()
+            .chain(state.site_in_front())
+            .collect();
+        if !front.is_empty() {
             entries.push(MenuEntry::Separator);
-            entries.push(MenuEntry::Header {
-                title: "Force Off".to_owned(),
+        }
+        for place in &front {
+            entries.push(MenuEntry::Row {
+                row: state.place_row(place, now),
             });
-            entries.push(MenuEntry::Item {
-                item: state.app_toggle(bundle_id),
-            });
-            if let Some(item) = state.site_toggle() {
-                entries.push(MenuEntry::Item { item });
-            }
         }
         Menu {
-            icon: match (decision.verdict, on) {
-                (Verdict::ForceOff, _) => MenuIcon::ForcedOff,
-                (Verdict::HandsOff, true) => MenuIcon::On,
-                (Verdict::HandsOff, false) => MenuIcon::Off,
+            icon: match screen {
+                OnOff::Off if decision.place != Place::Everywhere && everywhere == OnOff::On => {
+                    MenuIcon::ForcedOff
+                }
+                OnOff::On => MenuIcon::On,
+                OnOff::Off => MenuIcon::Off,
             },
             night_shift: NightShiftItem {
-                on,
+                on: everywhere == OnOff::On,
                 reason: state.menu_reason(&decision),
-                detail: if on {
-                    None
-                } else {
-                    state.what_turning_on_does(&decision)
-                },
-                command: Some(if on { Command::Off } else { Command::On }),
+                detail: state.switch_detail(),
+                command: Some(match everywhere {
+                    OnOff::On => Command::Off,
+                    OnOff::Off => Command::On,
+                }),
             },
             problem_line: state.problem_line(),
             entries,
@@ -915,9 +940,9 @@ impl Core {
                     // macOS applies an edited schedule at once, so the edit is a schedule
                     // transition and whatever it switched isn't an external change.
                     tracing::info!("schedule edited");
-                    state.pass_transition();
+                    state.schedule_edited();
                     if keep_on && schedule == Schedule::Off && !enabled {
-                        state.set_manual_state(OnOff::On);
+                        state.switch(OnOff::On);
                     }
                     Vec::new()
                 } else {
@@ -952,16 +977,18 @@ impl Core {
                         ""
                     }
                 );
-                let (manual_state, timed_disable) = if stands_in {
-                    (state.manual_state.take(), state.timed_disable.take())
+                let (hold, timer) = if stands_in {
+                    let set_aside = state.layers_at(&Place::Everywhere).cloned();
+                    state.clear_layers(&Place::Everywhere);
+                    set_aside.map_or((None, None), |layers| (layers.hold, layers.timer))
                 } else {
                     (None, None)
                 };
                 state.tour = Some(Tour {
                     rules: Vec::new(),
                     stands_in,
-                    manual_state,
-                    timed_disable,
+                    hold,
+                    timer,
                 });
                 state.lay_out_rules();
                 Vec::new()
@@ -1054,7 +1081,18 @@ impl Core {
                 let now = self.clock.now();
                 let mut state = self.state();
                 state.end_tour(now);
-                state.released = true;
+                state.released = Some(
+                    state
+                        .layers_at(&Place::Everywhere)
+                        .and_then(|layers| layers.hold.clone())
+                        .map(|hold| PlaceLayers {
+                            place: Place::Everywhere,
+                            hold: Some(hold),
+                            timer: None,
+                        })
+                        .into_iter()
+                        .collect(),
+                );
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
                 }
@@ -1077,6 +1115,7 @@ impl Core {
                     rules: Vec::new(),
                     websites: None,
                     night_shift: NightShiftConfig::default(),
+                    lengths: config::default_lengths(),
                     found: true,
                 };
                 (config, Some(error))
@@ -1102,7 +1141,6 @@ impl Core {
             state: Mutex::new(State {
                 night_shift: NightShift::Unavailable,
                 strength: None,
-                manual_state: persisted.manual_state,
                 timeline: Timeline {
                     schedule: None,
                     sun_times: SunTimes::default(),
@@ -1113,6 +1151,7 @@ impl Core {
                 config_rules: config.rules,
                 config_error,
                 config_found: config.found,
+                lengths: config.lengths,
                 ad_hoc,
                 ad_hoc_error,
                 websites: persisted.websites,
@@ -1125,11 +1164,10 @@ impl Core {
                 is_browser: false,
                 watch: None,
                 generation: 0,
-                snoozes: persisted.snoozes.clone(),
-                timed_disable: persisted.timed_disable,
+                layers: persisted.layers.clone(),
                 pending_write: None,
                 unreported: None,
-                released: false,
+                released: None,
                 session: Session::Active,
                 left_by_last_run: persisted.night_shift,
                 tour: None,
@@ -1210,6 +1248,7 @@ impl Core {
                 state.config_rules = config.rules;
                 state.config_websites = config.websites;
                 state.config_night_shift = config.night_shift;
+                state.lengths = config.lengths;
                 state.apply_config_night_shift(effects);
                 state.config_error = None;
                 state.config_found = config.found;
@@ -1237,8 +1276,8 @@ impl Core {
             Command::On
                 | Command::Off
                 | Command::Toggle
-                | Command::Disable(_)
-                | Command::Resume
+                | Command::Set { .. }
+                | Command::Reset(_)
                 | Command::Strength(_)
                 | Command::PreviewStrength(_)
                 | Command::SetSchedule(_)
@@ -1252,39 +1291,28 @@ impl Core {
         let mut state = self.state();
         let outcome = match command {
             Command::On => {
-                state.set_manual_state(OnOff::On);
+                state.switch(OnOff::On);
                 Ok(())
             }
             Command::Off => {
-                state.set_manual_state(OnOff::Off);
+                state.switch(OnOff::Off);
                 Ok(())
             }
             Command::Toggle => {
-                state.set_manual_state(on_off(night_shift != NightShift::On));
+                let everywhere = state
+                    .says(&Place::Everywhere)
+                    .unwrap_or(on_off(night_shift == NightShift::On));
+                state.switch(everywhere.other());
                 Ok(())
             }
-            Command::Disable(duration) => match self.clock.now().checked_add(*duration) {
-                Ok(until) => {
-                    tracing::info!("timed disable until {until}");
-                    state.timed_disable = Some(until);
-                    Ok(())
-                }
-                Err(_) => Err(refused(
-                    ErrorCode::BadRequest,
-                    format!("{duration:#} is too long"),
-                )),
-            },
-            Command::Resume => {
-                tracing::info!("resumed");
-                state.timed_disable = None;
-                state.snoozes.clear();
-                state.manual_state = None;
-                Ok(())
-            }
-            Command::AddRule(identity) => self.add_rule(&mut state, identity),
+            Command::Set {
+                place,
+                state: on,
+                length,
+            } => state.set(place, *on, *length, self.clock.now()),
+            Command::Reset(place) => state.reset(place),
+            Command::AddRule { identity, says } => self.add_rule(&mut state, identity, *says),
             Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
-            Command::Snooze(identity) => state.snooze(identity, true),
-            Command::Unsnooze(identity) => state.snooze(identity, false),
             Command::OpenAtLogin(chosen) => {
                 if self.updates_itself() {
                     state.open_at_login = *chosen == OnOff::On;
@@ -1391,7 +1419,7 @@ impl Core {
                 "schedule transition at {transition}, reported {:#} early",
                 transition.duration_since(now)
             );
-            state.pass_transition();
+            state.expire(transition);
             state.applied_until = transition;
             return None;
         }
@@ -1399,27 +1427,22 @@ impl Core {
             "Night Shift turned {} outside Nightcap",
             if enabled { "on" } else { "off" }
         );
-        let overridden = state.set_manual_state(on_off(enabled));
-        state.collision_notice(&overridden)
+        state.adopt(on_off(enabled))
     }
 
-    /// Applies every schedule transition that came due since the last event: the manual state
-    /// lasts only until the next one.
+    /// Applies every schedule transition that came due since the last event, and ends the
+    /// timers and holds that ran out.
     fn catch_up(&self) {
         let now = self.clock.now();
         let mut state = self.state();
         if now <= state.applied_until {
             return;
         }
-        if state.timed_disable.is_some_and(|until| until <= now) {
-            tracing::info!("the timed disable ended");
-            state.timed_disable = None;
-        }
+        state.expire(now);
         if let Some(transition) = state.timeline.next_transition(state.applied_until)
             && transition <= now
         {
             tracing::info!("schedule transition at {transition}");
-            state.pass_transition();
             state.unreported = state
                 .timeline
                 .scheduled_state(now)
@@ -1454,13 +1477,14 @@ impl Core {
         }
     }
 
-    /// Watches the frontmost browser while website checking is on, unless its own app rule
-    /// forces it off (ADR-0016).
+    /// Watches the frontmost browser while website checking is on, unless its own place says
+    /// off and no site could say on (ADR-0016, ADR-0024).
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
-        let wanted = state.context.app.clone().filter(|_| {
-            state.is_browser && state.website_checking() && !state.front_app_has_rule()
-        });
+        let wanted =
+            state.context.app.clone().filter(|_| {
+                state.is_browser && state.website_checking() && !state.browser_holds_off()
+            });
         match (&state.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {
@@ -1492,7 +1516,7 @@ impl Core {
         let mut state = self.state();
         let config = state.config_rules.clone();
         let before = state.ad_hoc.len();
-        state.ad_hoc.retain(|identity| {
+        state.ad_hoc.retain(|(identity, _)| {
             !config
                 .iter()
                 .any(|rule| same_rule(&rule.identity, identity))
@@ -1507,55 +1531,83 @@ impl Core {
         state.lay_out_rules();
     }
 
-    fn add_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
+    /// Makes the user's rule for an app or domain say `says`, replacing one of theirs that said
+    /// the other and the place's snoozes; a config rule changes only in the config (ADR-0025).
+    fn add_rule(
+        &self,
+        state: &mut State,
+        identity: &RuleIdentity,
+        says: OnOff,
+    ) -> Result<(), ErrorReply> {
         let identity = normalize_identity(identity)?;
-        if state
+        if let Some(rule) = state
             .rules
             .iter()
-            .any(|rule| same_rule(&rule.identity, &identity))
+            .find(|rule| same_rule(&rule.identity, &identity))
         {
-            return Ok(());
+            if rule.says == says {
+                return Ok(());
+            }
+            if rule.source == RuleSource::Config {
+                return Err(refused(
+                    ErrorCode::ConfigRule,
+                    format!(
+                        "{identity} comes from the config, which says {}; change it there",
+                        rule.says
+                    ),
+                ));
+            }
         }
+        let kept = state
+            .ad_hoc
+            .iter()
+            .position(|(kept, _)| same_rule(kept, &identity));
         // A rule added during the tour is the tour's, which nothing keeps past it (ADR-0022).
-        if let Some(tour) = &mut state.tour {
-            tracing::info!("added a tour rule: {}", loggable(&identity));
-            tour.rules.push(identity);
-            state.lay_out_rules();
-            return Ok(());
+        if kept.is_none()
+            && let Some(tour) = &mut state.tour
+        {
+            tracing::info!("tour rule {}: {says}", loggable(&identity));
+            tour.rules.retain(|(rule, _)| !same_rule(rule, &identity));
+            tour.rules.push((identity.clone(), says));
+        } else {
+            state.check_ad_hoc_rules_on()?;
+            let before = state.ad_hoc.clone();
+            match kept {
+                Some(index) => state.ad_hoc[index].1 = says,
+                None => state.ad_hoc.push((identity.clone(), says)),
+            }
+            if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+                state.ad_hoc = before;
+                return Err(refused(
+                    ErrorCode::AdHocRulesOff,
+                    format!("couldn't save rules.toml: {error}"),
+                ));
+            }
+            tracing::info!("ad-hoc rule {}: {says}", loggable(&identity));
         }
-        state.check_ad_hoc_rules_on()?;
-        state.ad_hoc.push(identity.clone());
-        if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
-            state.ad_hoc.pop();
-            return Err(refused(
-                ErrorCode::AdHocRulesOff,
-                format!("couldn't save rules.toml: {error}"),
-            ));
-        }
-        tracing::info!("added an ad-hoc rule: {}", loggable(&identity));
+        state.clear_layers(&Place::from(identity));
         state.lay_out_rules();
         Ok(())
     }
 
     fn remove_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
         let identity = normalize_identity(identity)?;
+        let place = Place::from(identity.clone());
         if let Some(tour) = &mut state.tour
             && let Some(index) = tour
                 .rules
                 .iter()
-                .position(|rule| same_rule(rule, &identity))
+                .position(|(rule, _)| same_rule(rule, &identity))
         {
             tour.rules.remove(index);
-            state
-                .snoozes
-                .retain(|snoozed| !same_rule(snoozed, &identity));
+            state.clear_layers(&place);
             state.lay_out_rules();
             return Ok(());
         }
         let Some(index) = state
             .ad_hoc
             .iter()
-            .position(|kept| same_rule(kept, &identity))
+            .position(|(kept, _)| same_rule(kept, &identity))
         else {
             if state
                 .config_rules
@@ -1564,9 +1616,7 @@ impl Core {
             {
                 return Err(refused(
                     ErrorCode::ConfigRule,
-                    format!(
-                        "{identity} comes from the config; snooze it instead with `nightcap rules snooze {identity}`"
-                    ),
+                    format!("{identity} comes from the config; change it there"),
                 ));
             }
             return Err(refused(
@@ -1584,9 +1634,7 @@ impl Core {
             ));
         }
         tracing::info!("removed an ad-hoc rule: {}", loggable(&identity));
-        state
-            .snoozes
-            .retain(|snoozed| !same_rule(snoozed, &identity));
+        state.clear_layers(&place);
         state.lay_out_rules();
         Ok(())
     }
@@ -1604,15 +1652,21 @@ impl Core {
         }
     }
 
-    /// Keeps the shell's one wakeup at the next schedule transition or the end of the timed
-    /// disable, whichever comes first.
+    /// Keeps the shell's one wakeup at the next schedule transition or the end of a timer or
+    /// hold, whichever comes first.
     fn reschedule(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
+        let ends = state
+            .layers
+            .iter()
+            .flat_map(|layers| [&layers.hold, &layers.timer])
+            .flatten()
+            .filter_map(|layer| layer.until);
         let next = state
             .timeline
             .next_transition(state.applied_until)
             .into_iter()
-            .chain(state.timed_disable)
+            .chain(ends)
             .min();
         if next != state.wakeup {
             state.wakeup = next;
@@ -1630,14 +1684,11 @@ impl Core {
         if state.night_shift == NightShift::Unavailable || state.session != Session::Active {
             return;
         }
-        let decision = state.decide();
-        // A new watch keeps Night Shift as it is until its first read (ADR-0016), unless it's
-        // forced off whatever the host turns out to be.
-        let reading = state.watch.as_ref().is_some_and(|watch| !watch.reported);
-        if reading && decision.verdict == Verdict::HandsOff {
+        // A new watch keeps Night Shift as it is until its first read (ADR-0016).
+        if state.watch.as_ref().is_some_and(|watch| !watch.reported) {
             return;
         }
-        let Some(wanted) = wanted(&decision) else {
+        let Some(wanted) = wanted(&state.decide()) else {
             return;
         };
         if wanted != (state.night_shift == NightShift::On) && state.pending_write != Some(wanted) {
@@ -1655,7 +1706,6 @@ impl Core {
             strength: state.strength,
             config_strength: state.config_night_shift.strength,
             decision: state.decide(),
-            manual_state: state.manual_state,
             schedule: state.timeline.schedule,
             config_schedule: state.config_night_shift.schedule,
             scheduled_state: state
@@ -1673,8 +1723,7 @@ impl Core {
                 state: on_off(state.website_checking()),
                 from_config: state.config_websites.is_some(),
             },
-            snoozes: state.snoozes.clone(),
-            timed_disable: state.timed_disable,
+            layers: state.layers.clone(),
             permissions: Permissions {
                 accessibility: state.accessibility == Some(true),
                 notifications: state.notifications,
@@ -1715,142 +1764,310 @@ struct Watch {
 /// A tour in progress, and what it set aside (ADR-0022).
 struct Tour {
     /// The rules the user added during the tour, which it holds instead of ad-hoc ones.
-    rules: Vec<RuleIdentity>,
+    rules: Vec<(RuleIdentity, OnOff)>,
     /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
     /// as the tour started.
     stands_in: bool,
-    /// The manual state and timed disable from before the tour stood in, which its end puts
-    /// back.
-    manual_state: Option<OnOff>,
-    timed_disable: Option<Timestamp>,
-}
-
-/// What turning Night Shift on overrode.
-#[derive(Default)]
-struct Overridden {
-    snoozed: Vec<RuleIdentity>,
-    timed_disable: bool,
+    /// Everywhere's hold and timer from before the tour stood in, which its end puts back.
+    hold: Option<Layer>,
+    timer: Option<Layer>,
 }
 
 impl State {
-    /// Sets the manual state the way `on`, `off` and external changes do (ADR-0006): turning
-    /// Night Shift on while it's forced off snoozes the forcing rules and cancels a timed
-    /// disable. Short of a force, a state that a switching schedule gives anyway is no manual
-    /// state, so turning Night Shift off and back on follows the schedule again.
-    fn set_manual_state(&mut self, state: OnOff) -> Overridden {
-        let mut overridden = Overridden::default();
-        let decision = self.decide();
-        if state == OnOff::On && decision.verdict == Verdict::ForceOff {
-            for reason in decision.reasons {
-                match reason {
-                    Reason::Rule(rule) => overridden.snoozed.push(rule.identity),
-                    Reason::TimedDisable { .. } => overridden.timed_disable = true,
-                    _ => {}
-                }
-            }
-            for identity in &overridden.snoozed {
-                tracing::info!(
-                    "snoozed {} until the next schedule transition",
-                    loggable(identity)
-                );
-            }
-            self.snoozes.extend(overridden.snoozed.iter().cloned());
-            if overridden.timed_disable {
-                tracing::info!("cancelled the timed disable");
-                self.timed_disable = None;
-            }
+    /// The switch (ADR-0024): takes off everywhere's layers that say otherwise, top first, and
+    /// if the schedule still says otherwise, holds `state` until the user turns it back.
+    fn switch(&mut self, state: OnOff) {
+        while self.says(&Place::Everywhere) != Some(state) && self.peel(&Place::Everywhere, state) {
         }
-        let overrides = !overridden.snoozed.is_empty() || overridden.timed_disable;
-        self.manual_state = (overrides || !self.given_anyway(state)).then_some(state);
-        overridden
-    }
-
-    /// Whether Night Shift is at `state` with no manual state: a tour standing in gives on, and
-    /// otherwise a schedule that switches gives its own.
-    fn given_anyway(&self, state: OnOff) -> bool {
-        if self.tour.as_ref().is_some_and(|tour| tour.stands_in) {
-            return state == OnOff::On;
+        if self.says(&Place::Everywhere) != Some(state) {
+            tracing::info!("switched {state} everywhere until turned back");
+            let layers = self.layers_mut(&Place::Everywhere);
+            layers.timer = None;
+            layers.hold = Some(Layer {
+                state,
+                until: None,
+                with: None,
+            });
         }
-        self.scheduled_anyway(state)
     }
 
-    fn scheduled_anyway(&self, state: OnOff) -> bool {
-        self.timeline.next_transition(self.applied_until).is_some()
-            && self
-                .timeline
-                .scheduled_state(self.applied_until)
-                .map(on_off)
-                == Some(state)
-    }
-
-    /// The manual state and timed disable once the tour, if one runs, has ended: what the user
-    /// chose while the tour stood in, or else what it set aside.
-    fn after_tour(&self) -> (Option<OnOff>, Option<Timestamp>) {
-        let Some(tour) = self.tour.as_ref().filter(|tour| tour.stands_in) else {
-            return (self.manual_state, self.timed_disable);
+    /// Takes off a place's top layer if it says other than `state`, with the hold an external
+    /// change put beside it, and says whether it did.
+    fn peel(&mut self, place: &Place, state: OnOff) -> bool {
+        let Some(layers) = self.layers_at_mut(place) else {
+            return false;
         };
-        let manual_state = self
-            .manual_state
-            .or(tour.manual_state)
-            .filter(|state| !self.scheduled_anyway(*state));
-        (manual_state, self.timed_disable.or(tour.timed_disable))
+        let taken = match &layers.timer {
+            Some(timer) if timer.state == state => return false,
+            Some(_) => layers.timer.take(),
+            None => layers.hold.take_if(|hold| hold.state != state),
+        };
+        let Some(taken) = taken else {
+            return false;
+        };
+        if let Some(with) = &taken.with {
+            self.drop_hold_with(with, place);
+        }
+        self.tidy();
+        true
     }
 
-    /// Puts back what the tour set aside, short of a timed disable that ran out meanwhile, and
-    /// drops the rules added during it with their snoozes.
-    fn end_tour(&mut self, now: Timestamp) {
-        let (manual_state, timed_disable) = self.after_tour();
-        let Some(tour) = self.tour.take() else {
+    /// Takes off `place`'s hold if an external change put it there beside `partner`'s.
+    fn drop_hold_with(&mut self, place: &Place, partner: &Place) {
+        if let Some(layers) = self.layers_at_mut(place)
+            && layers.hold.as_ref().is_some_and(|hold| {
+                hold.with
+                    .as_ref()
+                    .is_some_and(|with| same_place(with, partner))
+            })
+        {
+            layers.hold = None;
+        }
+    }
+
+    /// Puts Night Shift on or off at a place for a length (ADR-0024): a timer for a time or
+    /// until a time, which gives back what's under it, and a hold otherwise, replacing the
+    /// place's hold and ending its timer.
+    fn set(
+        &mut self,
+        place: &Place,
+        state: OnOff,
+        length: Length,
+        now: Timestamp,
+    ) -> Result<(), ErrorReply> {
+        let place = normalize_place(place)?;
+        let layer = |until| Layer {
+            state,
+            until,
+            with: None,
+        };
+        match length {
+            Length::For(duration) => {
+                if duration <= SignedDuration::ZERO {
+                    return Err(refused(
+                        ErrorCode::BadRequest,
+                        "a length is longer than zero",
+                    ));
+                }
+                let until = now.checked_add(duration).map_err(|_| {
+                    refused(ErrorCode::BadRequest, format!("{duration:#} is too long"))
+                })?;
+                self.layers_mut(&place).timer = Some(layer(Some(until)));
+            }
+            Length::Until(until) => {
+                if until <= now {
+                    return Err(refused(ErrorCode::BadRequest, "that time has passed"));
+                }
+                self.layers_mut(&place).timer = Some(layer(Some(until)));
+            }
+            Length::UntilScheduleTurns => {
+                let until = self.next_turn(state).ok_or_else(|| {
+                    refused(ErrorCode::BadRequest, "there's no schedule to wait for")
+                })?;
+                let layers = self.layers_mut(&place);
+                layers.timer = None;
+                layers.hold = Some(layer(Some(until)));
+            }
+            Length::UntilTurnedBack => {
+                if place != Place::Everywhere {
+                    return Err(refused(
+                        ErrorCode::BadRequest,
+                        "only everywhere holds until turned back: for good in an app or on a site is a rule",
+                    ));
+                }
+                let layers = self.layers_mut(&place);
+                layers.timer = None;
+                layers.hold = Some(layer(None));
+            }
+        }
+        tracing::info!("{} {state} {length:?}", loggable_place(&place));
+        Ok(())
+    }
+
+    /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the
+    /// schedule.
+    fn reset(&mut self, place: &Place) -> Result<(), ErrorReply> {
+        let place = normalize_place(place)?;
+        self.clear_layers(&place);
+        tracing::info!("reset {}", loggable_place(&place));
+        Ok(())
+    }
+
+    fn clear_layers(&mut self, place: &Place) {
+        let Some(index) = self
+            .layers
+            .iter()
+            .position(|layers| same_place(&layers.place, place))
+        else {
             return;
         };
-        tracing::info!("tour ended");
-        self.manual_state = manual_state;
-        self.timed_disable = timed_disable.filter(|until| *until > now);
-        self.snoozes
-            .retain(|snoozed| !tour.rules.iter().any(|rule| same_rule(snoozed, rule)));
-        self.lay_out_rules();
+        let removed = self.layers.remove(index);
+        if let Some(with) = removed.hold.and_then(|hold| hold.with) {
+            self.drop_hold_with(&with, place);
+            self.tidy();
+        }
     }
 
-    /// Tells the user what an external change overrode, if it collided with a force (ADR-0006).
-    fn collision_notice(&self, overridden: &Overridden) -> Option<Effect> {
-        if overridden.snoozed.is_empty() && !overridden.timed_disable {
+    /// When the schedule next turns Night Shift away from `state`: sunrise ends an on, sunset
+    /// an off. None without a schedule.
+    fn next_turn(&self, state: OnOff) -> Option<Timestamp> {
+        let first = self.timeline.next_transition(self.applied_until)?;
+        if self.timeline.scheduled_state(first).map(on_off) != Some(state) {
+            return Some(first);
+        }
+        self.timeline.next_transition(first)
+    }
+
+    /// Takes an external change as flipping what the user sees (ADR-0024): takes off what the
+    /// deciding place says, and holds `state` over a rule or the schedule until the schedule
+    /// next turns it back, everywhere too where a rule decides and everywhere says otherwise.
+    /// Tells the user when that snoozes a rule.
+    fn adopt(&mut self, state: OnOff) -> Option<Effect> {
+        loop {
+            let decision = self.decide();
+            if decision.state == Some(state) || !self.peel(&decision.place, state) {
+                break;
+            }
+        }
+        let decision = self.decide();
+        if decision.state == Some(state) {
             return None;
         }
-        let until = match self.timeline.next_transition(self.applied_until) {
-            Some(transition) => format!(
-                "until {}",
-                self.timeline.zone.to_datetime(transition).strftime("%H:%M")
-            ),
-            None => "until you resume".to_owned(),
-        };
-        let mut sentences = Vec::new();
-        if !overridden.snoozed.is_empty() {
-            let snoozed: Vec<_> = overridden.snoozed.iter().map(ToString::to_string).collect();
-            sentences.push(format!("Snoozed {} {until}.", snoozed.join(", ")));
+        let until = self.next_turn(state);
+        let deciding = decision.place;
+        let mut places = vec![deciding.clone()];
+        if deciding != Place::Everywhere {
+            while self.says(&Place::Everywhere) != Some(state)
+                && self.peel(&Place::Everywhere, state)
+            {}
+            if self.says(&Place::Everywhere) != Some(state) {
+                places.push(Place::Everywhere);
+            }
         }
-        if overridden.timed_disable {
-            sentences.push("Cancelled the timed disable.".to_owned());
+        for (index, place) in places.iter().enumerate() {
+            let with = (places.len() > 1).then(|| places[1 - index].clone());
+            let layers = self.layers_mut(place);
+            layers.timer = None;
+            layers.hold = Some(Layer { state, until, with });
         }
+        let rule = decision.reasons.iter().find_map(|reason| match reason {
+            Reason::Rule(rule) => Some(rule),
+            _ => None,
+        })?;
+        tracing::info!(
+            "snoozed {} after an external change",
+            loggable(&rule.identity)
+        );
         Some(Effect::Notify {
-            title: "Night Shift turned on outside Nightcap".to_owned(),
-            body: sentences.join(" "),
+            title: format!("Night Shift turned {state} outside Nightcap"),
+            body: format!(
+                "Snoozed the {} rule {}.",
+                self.name_in_front(&rule.identity),
+                self.until_text(until, state)
+            ),
         })
+    }
+
+    /// Drops every timer and hold that ended by `at`, and what the tour set aside likewise.
+    fn expire(&mut self, at: Timestamp) {
+        let ended = |layer: &Option<Layer>| {
+            layer
+                .as_ref()
+                .is_some_and(|layer| layer.until.is_some_and(|until| until <= at))
+        };
+        for layers in &mut self.layers {
+            if ended(&layers.timer) {
+                tracing::info!("the timer {} ended", loggable_place(&layers.place));
+                layers.timer = None;
+            }
+            if ended(&layers.hold) {
+                layers.hold = None;
+            }
+        }
+        if let Some(tour) = &mut self.tour {
+            if ended(&tour.timer) {
+                tour.timer = None;
+            }
+            if ended(&tour.hold) {
+                tour.hold = None;
+            }
+        }
+        self.tidy();
+    }
+
+    /// An edited schedule ends every hold waiting on it (ADR-0024).
+    fn schedule_edited(&mut self) {
+        let waiting = |hold: &Option<Layer>| hold.as_ref().is_some_and(|hold| hold.until.is_some());
+        for layers in &mut self.layers {
+            if waiting(&layers.hold) {
+                layers.hold = None;
+            }
+        }
+        if let Some(tour) = &mut self.tour
+            && waiting(&tour.hold)
+        {
+            tour.hold = None;
+        }
+        self.tidy();
+    }
+
+    /// Every place's layers once the tour, if one runs, has ended: the tour rules' go, and
+    /// everywhere has what the user chose while the tour stood in, or else what it set aside.
+    fn after_tour(&self) -> Vec<PlaceLayers> {
+        let Some(tour) = &self.tour else {
+            return self.layers.clone();
+        };
+        let mut layers: Vec<_> = self
+            .layers
+            .iter()
+            .filter(|layers| {
+                !tour
+                    .rules
+                    .iter()
+                    .any(|(rule, _)| same_place(&Place::from(rule.clone()), &layers.place))
+            })
+            .cloned()
+            .collect();
+        if tour.stands_in && (tour.hold.is_some() || tour.timer.is_some()) {
+            let index = match layers
+                .iter()
+                .position(|layers| layers.place == Place::Everywhere)
+            {
+                Some(index) => index,
+                None => {
+                    layers.push(PlaceLayers {
+                        place: Place::Everywhere,
+                        hold: None,
+                        timer: None,
+                    });
+                    layers.len() - 1
+                }
+            };
+            let everywhere = &mut layers[index];
+            everywhere.hold = everywhere.hold.take().or_else(|| tour.hold.clone());
+            everywhere.timer = everywhere.timer.take().or_else(|| tour.timer.clone());
+        }
+        layers
+    }
+
+    /// Puts back what the tour set aside, short of what ran out meanwhile, and drops the rules
+    /// added during it with their layers.
+    fn end_tour(&mut self, now: Timestamp) {
+        let layers = self.after_tour();
+        if self.tour.take().is_none() {
+            return;
+        }
+        tracing::info!("tour ended");
+        self.layers = layers;
+        self.expire(now);
+        self.lay_out_rules();
     }
 
     /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
     /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0022).
     fn snapshot(&self) -> state::Persisted {
-        let (manual_state, timed_disable) = self.after_tour();
-        let tour_rules = self.tour.as_ref().map_or(&[][..], |tour| &tour.rules);
         state::Persisted {
-            manual_state,
-            snoozes: self
-                .snoozes
-                .iter()
-                .filter(|snoozed| !tour_rules.iter().any(|rule| same_rule(snoozed, rule)))
-                .cloned()
-                .collect(),
-            timed_disable,
+            layers: self.after_tour(),
             websites: self.websites,
             onboarding: self.onboarding,
             notifications_wanted: self.notifications_wanted,
@@ -1905,196 +2122,353 @@ impl State {
         }
     }
 
-    /// The menu's toggle for the frontmost app (ADR-0009).
-    fn app_toggle(&self, bundle_id: &str) -> MenuItem {
-        let name = self.app_name.as_deref().unwrap_or(bundle_id).to_owned();
-        let identity = RuleIdentity::App(bundle_id.to_owned());
-        let rule = self
-            .rules
-            .iter()
-            .find(|rule| same_rule(&rule.identity, &identity));
-        self.rule_toggle(rule, identity, |_| format!("In {name}"))
-    }
-
-    /// The menu's toggle for the front tab's site, while website checking knows its host: it
-    /// adds a rule for the host, short of a leading `www.` (ADR-0023), or acts on the most
-    /// specific rule covering the host (ADR-0009).
-    fn site_toggle(&self) -> Option<MenuItem> {
-        let host = self
-            .context
-            .host
-            .as_deref()
-            .filter(|_| self.website_checking())?;
-        let rule = self
-            .rules
-            .iter()
-            .filter_map(|rule| match &rule.identity {
-                RuleIdentity::Domain(domain) if domain::covers(domain, host) => {
-                    Some((domain.len(), rule))
-                }
-                _ => None,
-            })
-            .max_by_key(|(length, _)| *length)
-            .map(|(_, rule)| rule);
-        let identity = RuleIdentity::Domain(domain::of_tab(host));
-        let toggle = self.rule_toggle(rule, identity, |identity| match identity {
-            RuleIdentity::Domain(domain) => format!("On {domain}"),
-            RuleIdentity::App(bundle_id) => format!("In {bundle_id}"),
-        });
-        // The site sits under its browser's own toggle.
-        Some(MenuItem {
-            indented: true,
-            ..toggle
+    /// The row under the Night Shift item (ADR-0024): everywhere, whatever is in front, with
+    /// everywhere's lengths but the switch's own, and none that would come to the same as
+    /// clicking the switch. None when it would offer nothing.
+    fn everywhere_row(&self, decision: &Decision, now: Timestamp) -> Option<PlaceRow> {
+        let place = Place::Everywhere;
+        let state = self.says(&place)?.other();
+        let mut items = Vec::new();
+        let switched = self.after_switch(state);
+        if self.layers_at(&place).is_some()
+            && self.has_schedule()
+            && self.base_says() == Some(state)
+            && (switched.hold.is_some() || switched.timer.is_some())
+        {
+            items.push(choice(
+                "Back to the Schedule",
+                Command::Reset(place.clone()),
+            ));
+        }
+        let mut lengths = Vec::new();
+        if self.value_below(&place, true) != Some(state) {
+            lengths.extend(self.timers(&place, state, now, "Turn {} Everywhere"));
+        }
+        if self.has_schedule()
+            && self.base_says() != Some(state)
+            && let Some(until) = self.next_turn(state)
+        {
+            lengths.push(self.until_turn(&place, state, until));
+        }
+        if !items.is_empty() && !lengths.is_empty() {
+            items.push(RowItem::Separator);
+        }
+        items.extend(lengths);
+        if items.is_empty() {
+            return None;
+        }
+        Some(PlaceRow {
+            title: format!(
+                "Turn {}",
+                capitalized(&state.to_string()).expect("on or off")
+            ),
+            subtitle: (decision.place != Place::Everywhere)
+                .then(|| format!("Everywhere but {}", self.here(&decision.place))),
+            image: RowImage::Everywhere,
+            indented: false,
+            items,
         })
     }
 
-    /// A rule toggle (ADR-0009): with no `rule` it adds `new`; otherwise it removes an ad-hoc
-    /// rule, snoozes a config rule, or undoes a snooze. `title` names the identity it acts on.
-    fn rule_toggle(
-        &self,
-        rule: Option<&Rule>,
-        new: RuleIdentity,
-        title: impl Fn(&RuleIdentity) -> String,
-    ) -> MenuItem {
-        let toggle = |title: String, subtitle: Option<String>, checked, command| MenuItem {
-            title,
-            subtitle,
-            indented: false,
-            checked,
-            enabled: true,
-            command,
-        };
-        let Some(rule) = rule else {
-            return toggle(title(&new), None, false, Command::AddRule(new));
-        };
-        let identity = rule.identity.clone();
-        let name = title(&identity);
-        if self
-            .snoozes
-            .iter()
-            .any(|snoozed| same_rule(snoozed, &identity))
+    /// The row for an app or site in front (ADR-0024): that place alone, with undoing first,
+    /// where it goes the right way, then its lengths, then for good, which is a rule.
+    fn place_row(&self, place: &Place, now: Timestamp) -> PlaceRow {
+        let state = self.value_at(place).unwrap_or(OnOff::Off).other();
+        let rule = self.rule_at(place);
+        let layered = self.layers_at(place).is_some();
+        let inherited = self.inherited(place);
+        let mut items = Vec::new();
+        let below = rule.map(|rule| rule.says).or(inherited);
+        if layered && below == Some(state) {
+            let title = if rule.is_some() {
+                "Put the Rule Back"
+            } else {
+                "Like Everywhere Else"
+            };
+            items.push(choice(title, Command::Reset(place.clone())));
+        }
+        if let Some(rule) = rule
+            && rule.source != RuleSource::Config
+            && rule.says != state
+            && !layered
+            && inherited == Some(state)
         {
-            toggle(
-                name,
-                Some(format!("Snoozed{}", self.until_snoozes_end())),
-                false,
-                Command::Unsnooze(identity),
-            )
-        } else if rule.source == RuleSource::Config {
-            toggle(
-                name,
-                Some("From your config".to_owned()),
-                true,
-                Command::Snooze(identity),
-            )
-        } else if rule.source == RuleSource::Tour {
-            toggle(
-                name,
-                Some("For the tour".to_owned()),
-                true,
-                Command::RemoveRule(identity),
-            )
-        } else {
-            toggle(name, None, true, Command::RemoveRule(identity))
+            items.push(choice(
+                "Remove Your Rule",
+                Command::RemoveRule(rule.identity.clone()),
+            ));
+        }
+        let mut lengths = Vec::new();
+        if self.value_below(place, true) != Some(state) {
+            let title = format!("Turn {{}} {}", self.here(place));
+            lengths.extend(self.timers(place, state, now, &title));
+        }
+        if below != Some(state)
+            && let Some(until) = self.next_turn(state)
+        {
+            lengths.push(self.until_turn(place, state, until));
+        }
+        let always = match rule {
+            Some(rule) if rule.says == state => None,
+            Some(rule) if rule.source == RuleSource::Config => Some(MenuItem {
+                title: "Always".to_owned(),
+                subtitle: Some("Your config decides".to_owned()),
+                enabled: false,
+                command: Command::AddRule {
+                    identity: rule.identity.clone(),
+                    says: state,
+                },
+            }),
+            _ => place_identity(place).map(|identity| MenuItem {
+                title: "Always".to_owned(),
+                subtitle: None,
+                enabled: true,
+                command: Command::AddRule {
+                    identity,
+                    says: state,
+                },
+            }),
+        };
+        if !items.is_empty() && !lengths.is_empty() {
+            items.push(RowItem::Separator);
+        }
+        items.extend(lengths);
+        if let Some(item) = always {
+            if !items.is_empty() {
+                items.push(RowItem::Separator);
+            }
+            items.push(RowItem::Choice { item });
+        }
+        let offers = items.iter().any(|item| match item {
+            RowItem::Choice { item } => item.enabled,
+            RowItem::PickTime { .. } => true,
+            RowItem::Separator => false,
+        });
+        let here = self.here(place);
+        PlaceRow {
+            title: if offers {
+                format!(
+                    "Turn {} {here}",
+                    capitalized(&state.to_string()).expect("on or off")
+                )
+            } else {
+                capitalized(&here).expect("a place has a name")
+            },
+            subtitle: self.stack(place),
+            image: match place {
+                Place::App(bundle_id) => RowImage::App {
+                    bundle_id: bundle_id.clone(),
+                },
+                Place::Domain(_) | Place::Everywhere => RowImage::Site,
+            },
+            indented: matches!(place, Place::Domain(_)),
+            items: if offers { items } else { Vec::new() },
         }
     }
 
-    /// A rule's row in the Rules tab, acted on as the menu's toggles are (ADR-0009): a config
-    /// rule is snoozed and unsnoozed, an ad-hoc one removed.
+    /// The menu's lengths for a place, then Custom…, whose window `title` names, with `{}` for
+    /// on or off.
+    fn timers(&self, place: &Place, state: OnOff, now: Timestamp, title: &str) -> Vec<RowItem> {
+        let mut items: Vec<_> = self
+            .lengths
+            .iter()
+            .map(|duration| {
+                choice(
+                    &format!("For {}", length_title(*duration)),
+                    Command::Set {
+                        place: place.clone(),
+                        state,
+                        length: Length::For(*duration),
+                    },
+                )
+            })
+            .collect();
+        let start = (now + SignedDuration::from_hours(1))
+            .round(
+                jiff::TimestampRound::new()
+                    .smallest(jiff::Unit::Minute)
+                    .increment(15)
+                    .mode(jiff::RoundMode::Ceil),
+            )
+            .expect("a quarter hour rounds any time");
+        items.push(RowItem::PickTime {
+            title: title.replace("{}", &capitalized(&state.to_string()).expect("on or off")),
+            place: place.clone(),
+            state,
+            start,
+        });
+        items
+    }
+
+    fn until_turn(&self, place: &Place, state: OnOff, until: Timestamp) -> RowItem {
+        choice(
+            &format!("Until {}", self.clock_time(until)),
+            Command::Set {
+                place: place.clone(),
+                state,
+                length: Length::UntilScheduleTurns,
+            },
+        )
+    }
+
+    /// What a place holds, top down, for its row: "On until 07:00, then your config’s rule".
+    fn stack(&self, place: &Place) -> Option<String> {
+        let rule = self.rule_at(place);
+        let mut parts: Vec<String> = self
+            .layers_at(place)
+            .into_iter()
+            .flat_map(|layers| [&layers.timer, &layers.hold])
+            .flatten()
+            .map(|layer| {
+                format!(
+                    "{} {}",
+                    layer.state,
+                    self.until_text(layer.until, layer.state)
+                )
+            })
+            .collect();
+        match rule {
+            Some(rule) if parts.is_empty() => {
+                parts.push(format!("always {}: {}", rule.says, whose(rule)))
+            }
+            Some(rule) => parts.push(whose(rule).to_owned()),
+            None => {}
+        }
+        capitalized(&parts.join(", then "))
+    }
+
+    /// The reason under the menu's Night Shift item: what decides the screen.
+    fn menu_reason(&self, decision: &Decision) -> Option<String> {
+        let top = decision.reasons.first()?;
+        let at = match &decision.place {
+            Place::Everywhere => String::new(),
+            place => format!(" {}", self.here(place)),
+        };
+        let text = match top {
+            Reason::Timer(layer) | Reason::Hold(layer) => format!(
+                "{}{at} {}",
+                layer.state,
+                self.until_text(layer.until, layer.state)
+            ),
+            Reason::Rule(rule) => format!("{}{at}: {}", rule.says, whose(rule)),
+            Reason::Tour => "on for the tour".to_owned(),
+            Reason::Schedule { until, .. } => match until {
+                Some(until) => format!("following the schedule until {}", self.clock_time(*until)),
+                None => "following the schedule".to_owned(),
+            },
+        };
+        capitalized(&text)
+    }
+
+    /// What clicking the Night Shift item does to everywhere: "Turning it off holds it off
+    /// until you turn it on".
+    fn switch_detail(&self) -> Option<String> {
+        let state = self.says(&Place::Everywhere)?.other();
+        let (hold, timer) = self
+            .layers_at(&Place::Everywhere)
+            .map_or((None, None), |layers| {
+                (layers.hold.clone(), layers.timer.clone())
+            });
+        let switched = self.after_switch(state);
+        let mut parts = Vec::new();
+        if timer.is_some() && switched.timer.is_none() {
+            parts.push("ends the timer".to_owned());
+        }
+        if hold.is_some() && switched.hold.is_none() {
+            if self.tour.as_ref().is_some_and(|tour| tour.stands_in) {
+                parts.push("goes back to the tour’s on".to_owned());
+            } else if self.has_schedule() {
+                parts.push("goes back to the schedule".to_owned());
+            }
+        }
+        if switched.hold.is_some() && switched.hold != hold {
+            parts.push(format!(
+                "holds it {state} until you turn it {}",
+                state.other()
+            ));
+        }
+        (!parts.is_empty()).then(|| format!("Turning it {state} {}", listed(&parts)))
+    }
+
+    /// Everywhere's hold and timer after the switch to `state`, as `switch` would leave them.
+    fn after_switch(&self, state: OnOff) -> PlaceLayers {
+        let mut layers = self
+            .layers_at(&Place::Everywhere)
+            .cloned()
+            .unwrap_or(PlaceLayers {
+                place: Place::Everywhere,
+                hold: None,
+                timer: None,
+            });
+        loop {
+            match (&layers.timer, &layers.hold) {
+                (Some(timer), _) if timer.state != state => layers.timer = None,
+                (None, Some(hold)) if hold.state != state => layers.hold = None,
+                _ => break,
+            }
+        }
+        let says = layers
+            .timer
+            .as_ref()
+            .or(layers.hold.as_ref())
+            .map(|layer| layer.state)
+            .or(self.base_says());
+        if says != Some(state) {
+            layers.timer = None;
+            layers.hold = Some(Layer {
+                state,
+                until: None,
+                with: None,
+            });
+        }
+        layers
+    }
+
+    /// A rule's row in the Rules tab: a snooze can be put back, an ad-hoc rule removed, and a
+    /// config rule changed only in the config (ADR-0025).
     fn settings_rule(&self, rule: &Rule) -> SettingsRule {
         let identity = rule.identity.clone();
-        let snoozed = self
-            .snoozes
-            .iter()
-            .any(|snoozed| same_rule(snoozed, &identity));
-        let (label, title, command) = if snoozed {
-            (
-                format!("Snoozed{}", self.until_snoozes_end()),
-                "Unsnooze",
-                Command::Unsnooze(identity.clone()),
-            )
-        } else if rule.source == RuleSource::Config {
-            (
-                "From your config".to_owned(),
-                "Snooze",
-                Command::Snooze(identity.clone()),
-            )
-        } else {
-            (
+        let place = Place::from(identity.clone());
+        let snooze = self
+            .layers_at(&place)
+            .and_then(|layers| layers.timer.as_ref().or(layers.hold.as_ref()))
+            .filter(|layer| layer.state != rule.says);
+        let action = |title: &str, command| {
+            Some(RuleAction {
+                title: title.to_owned(),
+                command,
+            })
+        };
+        let (label, action) = match (snooze, rule.source) {
+            (Some(layer), _) => (
+                format!("Snoozed {}", self.until_text(layer.until, layer.state)),
+                action("Put Back", Command::Reset(place)),
+            ),
+            (None, RuleSource::Config) => ("From your config".to_owned(), None),
+            (None, RuleSource::AdHoc) => (
                 "Ad-hoc".to_owned(),
-                "Remove",
-                Command::RemoveRule(identity.clone()),
-            )
+                action("Remove", Command::RemoveRule(identity.clone())),
+            ),
+            (None, RuleSource::Tour) => (
+                "For the tour".to_owned(),
+                action("Remove", Command::RemoveRule(identity.clone())),
+            ),
         };
         SettingsRule {
             identity,
+            says: rule.says,
             label,
-            snoozed,
-            action: RuleAction {
-                title: title.to_owned(),
-                command,
-            },
+            snoozed: snooze.is_some(),
+            action,
         }
     }
 
-    /// " until 07:00" for snoozes made now, which last until the next schedule transition.
-    fn until_snoozes_end(&self) -> String {
-        self.timeline
-            .next_transition(self.applied_until)
-            .map_or_else(String::new, |at| format!(" until {}", self.clock_time(at)))
-    }
-
-    /// What "Turn Night Shift On" does during a force (ADR-0006); nothing to say otherwise.
-    fn what_turning_on_does(&self, decision: &Decision) -> Option<String> {
-        if decision.verdict != Verdict::ForceOff {
-            return None;
+    /// "until 07:00", or "until you turn it on" for an off with no end.
+    fn until_text(&self, until: Option<Timestamp>, state: OnOff) -> String {
+        match until {
+            Some(until) => format!("until {}", self.clock_time(until)),
+            None => format!("until you turn it {}", state.other()),
         }
-        let rules: Vec<_> = decision
-            .reasons
-            .iter()
-            .filter_map(|reason| match reason {
-                Reason::Rule(rule) => Some(self.name_in_front(&rule.identity)),
-                _ => None,
-            })
-            .collect();
-        let mut parts = Vec::new();
-        if !rules.is_empty() {
-            let noun = if rules.len() == 1 { "rule" } else { "rules" };
-            parts.push(format!(
-                "snoozes the {} {noun}{}",
-                rules.join(" and "),
-                self.until_snoozes_end()
-            ));
-        }
-        if decision
-            .reasons
-            .iter()
-            .any(|reason| matches!(reason, Reason::TimedDisable { .. }))
-        {
-            parts.push("ends the timed disable".to_owned());
-        }
-        capitalized(&listed(&parts))
-    }
-
-    /// What "Resume" clears: the timed disable, the snoozes and the manual state.
-    fn what_resuming_ends(&self) -> Option<String> {
-        let mut parts = Vec::new();
-        if self.timed_disable.is_some() {
-            parts.push("ends the timed disable".to_owned());
-        }
-        if !self.snoozes.is_empty() {
-            let names: Vec<_> = self
-                .snoozes
-                .iter()
-                .map(|identity| self.name_in_front(identity))
-                .collect();
-            let noun = if names.len() == 1 { "rule" } else { "rules" };
-            parts.push(format!("unsnoozes the {} {noun}", names.join(" and ")));
-        }
-        if self.manual_state.is_some() {
-            parts.push("goes back to the schedule".to_owned());
-        }
-        capitalized(&listed(&parts))
     }
 
     /// A time of day in the user's time zone, as the menu shows it.
@@ -2311,58 +2685,6 @@ impl State {
         checks
     }
 
-    /// Whether an unsnoozed app rule covers the frontmost app, which forces Night Shift off
-    /// whatever a browser's tab shows, so its host doesn't matter.
-    fn front_app_has_rule(&self) -> bool {
-        self.context.app.as_ref().is_some_and(|bundle_id| {
-            let identity = RuleIdentity::App(bundle_id.clone());
-            self.rules
-                .iter()
-                .any(|rule| same_rule(&rule.identity, &identity))
-                && !self
-                    .snoozes
-                    .iter()
-                    .any(|snoozed| same_rule(snoozed, &identity))
-        })
-    }
-
-    /// The reason under the menu's Night Shift item, naming what's in front rather than rules.
-    fn menu_reason(&self, decision: &Decision) -> Option<String> {
-        let until = |at: &Option<Timestamp>| {
-            at.map_or_else(String::new, |at| format!(" until {}", self.clock_time(at)))
-        };
-        if decision.verdict == Verdict::HandsOff {
-            return decision.reasons.iter().find_map(|reason| match reason {
-                Reason::ManualState { state, until: end } => {
-                    Some(format!("Turned {state} by hand{}", until(end)))
-                }
-                Reason::Schedule { until: end, .. } => {
-                    Some(format!("Following the schedule{}", until(end)))
-                }
-                Reason::Tour => Some("On for the tour".to_owned()),
-                _ => None,
-            });
-        }
-        let in_front: Vec<_> = decision
-            .reasons
-            .iter()
-            .filter_map(|reason| match reason {
-                Reason::Rule(rule) => Some(self.name_in_front(&rule.identity)),
-                _ => None,
-            })
-            .collect();
-        let mut parts = Vec::new();
-        if !in_front.is_empty() {
-            let verb = if in_front.len() == 1 { "is" } else { "are" };
-            parts.push(format!("while {} {verb} in front", in_front.join(" and ")));
-        }
-        parts.extend(decision.reasons.iter().filter_map(|reason| match reason {
-            Reason::TimedDisable { until: end } => Some(format!("until {}", self.clock_time(*end))),
-            _ => None,
-        }));
-        capitalized(&parts.join(", and "))
-    }
-
     /// An app rule's app by its name when it's the frontmost one, and a domain rule's domain.
     fn name_in_front(&self, identity: &RuleIdentity) -> String {
         match identity {
@@ -2422,21 +2744,21 @@ impl State {
         Ok(())
     }
 
-    /// The config rules, then the ad-hoc rules the config doesn't have.
+    /// The config rules, then the ad-hoc rules the config doesn't have, then the tour's.
     fn lay_out_rules(&mut self) {
-        let ad_hoc = self.ad_hoc.iter().cloned().map(|identity| Rule {
-            identity,
-            source: RuleSource::AdHoc,
-        });
+        let rule = |source| {
+            move |(identity, says): &(RuleIdentity, OnOff)| Rule {
+                identity: identity.clone(),
+                source,
+                says: *says,
+            }
+        };
+        let ad_hoc = self.ad_hoc.iter().map(rule(RuleSource::AdHoc));
         let tour = self
             .tour
             .iter()
             .flat_map(|tour| &tour.rules)
-            .cloned()
-            .map(|identity| Rule {
-                identity,
-                source: RuleSource::Tour,
-            });
+            .map(rule(RuleSource::Tour));
         self.rules = self
             .config_rules
             .iter()
@@ -2456,53 +2778,21 @@ impl State {
         }
     }
 
-    /// Snoozes or unsnoozes an existing rule, config or ad-hoc, until the next schedule
-    /// transition.
-    fn snooze(&mut self, identity: &RuleIdentity, snoozed: bool) -> Result<(), ErrorReply> {
-        let identity = normalize_identity(identity)?;
-        let Some(rule) = self
-            .rules
-            .iter()
-            .find(|rule| same_rule(&rule.identity, &identity))
-        else {
-            return Err(refused(
-                ErrorCode::NoSuchRule,
-                format!("{identity} isn't a rule"),
-            ));
-        };
-        let rule = rule.identity.clone();
-        self.snoozes.retain(|kept| !same_rule(kept, &rule));
-        if snoozed {
-            tracing::info!(
-                "snoozed {} until the next schedule transition",
-                loggable(&rule)
-            );
-            self.snoozes.push(rule);
-        }
-        Ok(())
-    }
-
-    /// Snoozes and the manual state last only until the next schedule transition (ADR-0006).
-    fn pass_transition(&mut self) {
-        self.manual_state = None;
-        self.snoozes.clear();
-        if let Some(tour) = &mut self.tour {
-            tour.manual_state = None;
-        }
-    }
-
     fn decide(&self) -> Decision {
         engine::decide(&self.inputs())
     }
 
+    /// What the rule engine sees. On the way out, only everywhere's hold still applies: macOS
+    /// keeps Night Shift where the user put it until its next transition, but nothing else of
+    /// Nightcap's may outlive it (ADR-0011).
     fn inputs(&self) -> Inputs<'_> {
+        let released = self.released.as_ref();
         Inputs {
             context: &self.context,
-            rules: if self.released { &[] } else { &self.rules },
-            snoozes: &self.snoozes,
-            timed_disable: self.timed_disable.filter(|_| !self.released),
-            manual_state: self.manual_state,
-            tour_stands_in: self.tour.as_ref().is_some_and(|tour| tour.stands_in),
+            rules: if released.is_some() { &[] } else { &self.rules },
+            layers: released.map_or(&self.layers, |kept| kept),
+            tour_stands_in: released.is_none()
+                && self.tour.as_ref().is_some_and(|tour| tour.stands_in),
             scheduled_state: self
                 .timeline
                 .scheduled_state(self.applied_until)
@@ -2510,19 +2800,218 @@ impl State {
             next_transition: self.timeline.next_transition(self.applied_until),
         }
     }
+
+    /// What a place itself says, or None when it has no layer.
+    fn says(&self, place: &Place) -> Option<OnOff> {
+        engine::layers_of(&self.inputs(), place)
+            .first()
+            .map(engine::says)
+    }
+
+    /// What everywhere says under its hold and timer: the tour standing in, or the schedule.
+    fn base_says(&self) -> Option<OnOff> {
+        if self.tour.as_ref().is_some_and(|tour| tour.stands_in) {
+            return Some(OnOff::On);
+        }
+        self.timeline
+            .scheduled_state(self.applied_until)
+            .map(on_off)
+    }
+
+    fn has_schedule(&self) -> bool {
+        self.timeline.next_transition(self.applied_until).is_some()
+    }
+
+    /// The places from `place` on, as the engine reads them: the less specific ones in front
+    /// after it, or, for a place that isn't in front, everywhere.
+    fn places_from(&self, place: &Place) -> Vec<Place> {
+        let in_front = engine::in_front(&self.inputs());
+        match in_front.iter().position(|front| same_place(front, place)) {
+            Some(index) => in_front[index..].to_vec(),
+            None => vec![place.clone(), Place::Everywhere],
+        }
+    }
+
+    /// What a place gives: its own say, or the one it inherits.
+    fn value_at(&self, place: &Place) -> Option<OnOff> {
+        self.places_from(place)
+            .iter()
+            .find_map(|place| self.says(place))
+    }
+
+    /// What a place would give if it said nothing itself.
+    fn inherited(&self, place: &Place) -> Option<OnOff> {
+        self.places_from(place)
+            .iter()
+            .skip(1)
+            .find_map(|place| self.says(place))
+    }
+
+    /// What a place gives under its timer, if `under_timer`, else what it gives.
+    fn value_below(&self, place: &Place, under_timer: bool) -> Option<OnOff> {
+        let inputs = self.inputs();
+        self.places_from(place)
+            .iter()
+            .enumerate()
+            .find_map(|(index, each)| {
+                engine::layers_of(&inputs, each)
+                    .iter()
+                    .find(|reason| {
+                        !(index == 0 && under_timer && matches!(reason, Reason::Timer(_)))
+                    })
+                    .map(engine::says)
+            })
+    }
+
+    /// The rule for a place, if one says something there.
+    fn rule_at(&self, place: &Place) -> Option<&Rule> {
+        self.rules
+            .iter()
+            .find(|rule| same_place(&Place::from(rule.identity.clone()), place))
+    }
+
+    fn layers_at(&self, place: &Place) -> Option<&PlaceLayers> {
+        self.layers
+            .iter()
+            .find(|layers| same_place(&layers.place, place))
+    }
+
+    fn layers_at_mut(&mut self, place: &Place) -> Option<&mut PlaceLayers> {
+        self.layers
+            .iter_mut()
+            .find(|layers| same_place(&layers.place, place))
+    }
+
+    /// A place's layers, made empty if it had none; `tidy` drops it again if it stays empty.
+    fn layers_mut(&mut self, place: &Place) -> &mut PlaceLayers {
+        match self
+            .layers
+            .iter()
+            .position(|layers| same_place(&layers.place, place))
+        {
+            Some(index) => &mut self.layers[index],
+            None => {
+                self.layers.push(PlaceLayers {
+                    place: place.clone(),
+                    hold: None,
+                    timer: None,
+                });
+                self.layers.last_mut().expect("just pushed")
+            }
+        }
+    }
+
+    fn tidy(&mut self) {
+        self.layers
+            .retain(|layers| layers.hold.is_some() || layers.timer.is_some());
+    }
+
+    /// The site in front, while website checking knows the host: the most specific domain with
+    /// a rule or layers covering it, else the tab domain (ADR-0023).
+    fn site_in_front(&self) -> Option<Place> {
+        let host = self
+            .context
+            .host
+            .as_deref()
+            .filter(|_| self.website_checking())?;
+        Some(
+            engine::in_front(&self.inputs())
+                .into_iter()
+                .find(|place| matches!(place, Place::Domain(_)))
+                .unwrap_or_else(|| Place::Domain(domain::of_tab(host))),
+        )
+    }
+
+    /// Whether the front browser's own place says off and no site could say on, so its host
+    /// doesn't matter.
+    fn browser_holds_off(&self) -> bool {
+        let Some(app) = &self.context.app else {
+            return false;
+        };
+        let site_could_say_on =
+            self.rules.iter().any(|rule| {
+                matches!(rule.identity, RuleIdentity::Domain(_)) && rule.says == OnOff::On
+            }) || self.layers.iter().any(|layers| {
+                matches!(layers.place, Place::Domain(_))
+                    && [&layers.hold, &layers.timer]
+                        .into_iter()
+                        .flatten()
+                        .any(|layer| layer.state == OnOff::On)
+            });
+        self.says(&Place::App(app.clone())) == Some(OnOff::Off) && !site_could_say_on
+    }
+
+    /// "in Figma" for the front app, by its name, "at figma.com" for a site, or "everywhere".
+    fn here(&self, place: &Place) -> String {
+        match place {
+            Place::Everywhere => "everywhere".to_owned(),
+            Place::App(bundle_id) => format!(
+                "in {}",
+                self.name_in_front(&RuleIdentity::App(bundle_id.clone()))
+            ),
+            Place::Domain(domain) => format!("at {domain}"),
+        }
+    }
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.
 fn wanted(decision: &Decision) -> Option<bool> {
-    match decision.verdict {
-        Verdict::ForceOff => Some(false),
-        Verdict::HandsOff => decision.reasons.iter().find_map(|reason| match reason {
-            Reason::ManualState { state, .. } | Reason::Schedule { state, .. } => {
-                Some(*state == OnOff::On)
-            }
-            Reason::Tour => Some(true),
-            Reason::Rule(_) | Reason::TimedDisable { .. } | Reason::Snooze { .. } => None,
-        }),
+    decision.state.map(|state| state == OnOff::On)
+}
+
+fn choice(title: &str, command: Command) -> RowItem {
+    RowItem::Choice {
+        item: MenuItem {
+            title: title.to_owned(),
+            subtitle: None,
+            enabled: true,
+            command,
+        },
+    }
+}
+
+/// "30 Minutes", "1 Hour", "1 Hour 30 Minutes".
+fn length_title(duration: SignedDuration) -> String {
+    let minutes = duration.as_mins();
+    let unit =
+        |count: i64, name: &str| format!("{count} {name}{}", if count == 1 { "" } else { "s" });
+    match (minutes / 60, minutes % 60) {
+        (0, minutes) => unit(minutes, "Minute"),
+        (hours, 0) => unit(hours, "Hour"),
+        (hours, minutes) => format!("{} {}", unit(hours, "Hour"), unit(minutes, "Minute")),
+    }
+}
+
+fn whose(rule: &Rule) -> &'static str {
+    match rule.source {
+        RuleSource::Config => "your config’s rule",
+        RuleSource::AdHoc => "your rule",
+        RuleSource::Tour => "the tour’s rule",
+    }
+}
+
+/// The identity a rule for this place would have; everywhere has none.
+fn place_identity(place: &Place) -> Option<RuleIdentity> {
+    match place {
+        Place::Everywhere => None,
+        Place::App(bundle_id) => Some(RuleIdentity::App(bundle_id.clone())),
+        Place::Domain(domain) => Some(RuleIdentity::Domain(domain.clone())),
+    }
+}
+
+/// `place` as layers keep it, checked as a rule identity is.
+fn normalize_place(place: &Place) -> Result<Place, ErrorReply> {
+    match place_identity(place) {
+        None => Ok(Place::Everywhere),
+        Some(identity) => normalize_identity(&identity).map(Place::from),
+    }
+}
+
+/// A place as the log may show it: a domain is named by its kind only (ADR-0012).
+fn loggable_place(place: &Place) -> String {
+    match place_identity(place) {
+        None => "everywhere".to_owned(),
+        Some(identity) => loggable(&identity),
     }
 }
 

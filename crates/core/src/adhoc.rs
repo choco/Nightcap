@@ -1,17 +1,18 @@
 //! `rules.toml`: the ad-hoc rules, kept by the core until they graduate into the config
-//! (ADR-0009). Only the core writes it. It has the config's schema plus a version, and readers
-//! tolerate unknown keys, so only a breaking change bumps the version.
+//! (ADR-0009). Only the core writes it. It has the config's rule tables plus a version, and
+//! readers tolerate unknown keys, so only a breaking change bumps the version.
 
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use nightcap_protocol::{ExportFormat, RuleIdentity};
+use nightcap_protocol::{ExportFormat, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
 use crate::domain;
 
-const VERSION: u32 = 1;
+/// Version 2 lists rules by what they say (ADR-0025).
+const VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct File {
@@ -22,10 +23,29 @@ struct File {
 
 #[derive(Default, Serialize, Deserialize)]
 struct Rules {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "RuleLists::is_empty")]
+    off: RuleLists,
+    #[serde(default, skip_serializing_if = "RuleLists::is_empty")]
+    on: RuleLists,
+    /// Version 1's lists, from before rules said off or on, when every rule was off.
+    #[serde(default, skip_serializing)]
     app: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     domain: Vec<String>,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct RuleLists {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    app: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    domain: Vec<String>,
+}
+
+impl RuleLists {
+    fn is_empty(&self) -> bool {
+        self.app.is_empty() && self.domain.is_empty()
+    }
 }
 
 pub(crate) struct Store {
@@ -37,9 +57,10 @@ impl Store {
         Self { path }
     }
 
-    /// The ad-hoc rules, or why there are none to use: an invalid file, or one from a newer
-    /// Nightcap, which must never be overwritten. A missing file means no rules.
-    pub(crate) fn load(&self) -> Result<Vec<RuleIdentity>, String> {
+    /// The ad-hoc rules and what each says, or why there are none to use: an invalid file, or
+    /// one from a newer Nightcap, which must never be overwritten. A missing file means no
+    /// rules.
+    pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, String> {
         let text = match fs::read_to_string(&self.path) {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -54,26 +75,29 @@ impl Store {
                 file.version
             ));
         }
-        let domains = file
-            .rules
-            .domain
-            .iter()
-            .map(|entry| {
-                domain::normalize(entry)
-                    .ok_or_else(|| format!("{}: {entry:?} isn't a domain", self.path.display()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(file
-            .rules
-            .app
-            .into_iter()
-            .map(RuleIdentity::App)
-            .chain(domains.into_iter().map(RuleIdentity::Domain))
-            .collect())
+        let Rules {
+            off,
+            on,
+            app,
+            domain,
+        } = file.rules;
+        let earlier = RuleLists { app, domain };
+        let mut rules = Vec::new();
+        for (says, lists) in [(OnOff::Off, earlier), (OnOff::Off, off), (OnOff::On, on)] {
+            for bundle_id in lists.app {
+                rules.push((RuleIdentity::App(bundle_id), says));
+            }
+            for entry in lists.domain {
+                let domain = domain::normalize(&entry)
+                    .ok_or_else(|| format!("{}: {entry:?} isn't a domain", self.path.display()))?;
+                rules.push((RuleIdentity::Domain(domain), says));
+            }
+        }
+        Ok(rules)
     }
 
     /// Writes beside the file and renames over it, so a crash never leaves half a file.
-    pub(crate) fn save(&self, rules: &[RuleIdentity]) -> io::Result<()> {
+    pub(crate) fn save(&self, rules: &[(RuleIdentity, OnOff)]) -> io::Result<()> {
         let file = File {
             version: VERSION,
             rules: Rules::from(rules),
@@ -92,7 +116,7 @@ impl Store {
 
 /// The ad-hoc rules, ready to paste into the config of the given format. Bundle IDs and
 /// domains never hold quotes or backslashes, so they need no escaping.
-pub(crate) fn export(rules: &[RuleIdentity], format: ExportFormat) -> String {
+pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> String {
     let rules = Rules::from(rules);
     match format {
         ExportFormat::Nix => {
@@ -100,10 +124,17 @@ pub(crate) fn export(rules: &[RuleIdentity], format: ExportFormat) -> String {
                 let quoted: Vec<_> = items.iter().map(|item| format!("\"{item}\" ")).collect();
                 format!("[ {}]", quoted.concat())
             };
+            let lists = |lists: &RuleLists| {
+                format!(
+                    "{{ app = {}; domain = {}; }}",
+                    list(&lists.app),
+                    list(&lists.domain)
+                )
+            };
             format!(
-                "{{ app = {}; domain = {}; }}\n",
-                list(&rules.app),
-                list(&rules.domain)
+                "{{ off = {}; on = {}; }}\n",
+                lists(&rules.off),
+                lists(&rules.on)
             )
         }
         ExportFormat::Toml => {
@@ -116,15 +147,19 @@ pub(crate) fn export(rules: &[RuleIdentity], format: ExportFormat) -> String {
     }
 }
 
-impl From<&[RuleIdentity]> for Rules {
-    fn from(identities: &[RuleIdentity]) -> Self {
-        let mut rules = Self::default();
-        for identity in identities {
+impl From<&[(RuleIdentity, OnOff)]> for Rules {
+    fn from(rules: &[(RuleIdentity, OnOff)]) -> Self {
+        let mut lists = Self::default();
+        for (identity, says) in rules {
+            let list = match says {
+                OnOff::Off => &mut lists.off,
+                OnOff::On => &mut lists.on,
+            };
             match identity {
-                RuleIdentity::App(bundle_id) => rules.app.push(bundle_id.clone()),
-                RuleIdentity::Domain(domain) => rules.domain.push(domain.clone()),
+                RuleIdentity::App(bundle_id) => list.app.push(bundle_id.clone()),
+                RuleIdentity::Domain(domain) => list.domain.push(domain.clone()),
             }
         }
-        rules
+        lists
     }
 }
