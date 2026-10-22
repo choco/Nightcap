@@ -289,6 +289,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                             Look.button("Check for Updates…", .regular, update)
                         }),
                     nil),
+                cell(
+                    row(
+                        title: "Support Nightcap",
+                        detail: "It’s free and open source. If it helps you, you can sponsor it on GitHub.",
+                        accessory: Look.button("Sponsor…", .regular) {
+                            NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/choco")!)
+                        }),
+                    nil),
             ]),
         ])
     }

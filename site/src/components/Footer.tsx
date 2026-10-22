@@ -104,6 +104,7 @@ export function Footer() {
       </span>
       <span className="flex flex-wrap gap-x-5 gap-y-2 max-sm:justify-center">
         <a className="text-ink-muted" href="https://github.com/choco/Nightcap">GitHub</a>
+        <a className="text-ink-muted" href="https://github.com/sponsors/choco">Sponsor</a>
         <a className="text-ink-muted" href="https://github.com/choco/Nightcap/releases">Releases</a>
         <a className="text-ink-muted" href="https://github.com/choco/Nightcap/blob/main/LICENSE">MIT licence</a>
         <span>© 2026</span>

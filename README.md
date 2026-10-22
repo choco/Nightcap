@@ -96,6 +96,10 @@ run-tests
 
 The dev build has its own bundle ID, so it runs beside an installed copy without sharing its permissions or state. [`AGENTS.md`](AGENTS.md) covers the rest of the workflow.
 
+## Support
+
+Nightcap is free. If it's useful to you, you can [sponsor its work on GitHub](https://github.com/sponsors/choco).
+
 ## Licence
 
 [MIT](LICENSE). The site's fonts are under the SIL Open Font License, with their licences in [`design/licenses/`](design/licenses/).
