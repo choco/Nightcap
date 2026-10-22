@@ -237,11 +237,11 @@ enum StageArt {
             Paint.lifted { Paint.rounded(bounds, 12, NSColor(white: 0.97, alpha: 0.97)) }
             NSApp.applicationIconImage.draw(in: NSRect(x: 6, y: 9, width: 28, height: 28))
             Paint.text("Night Shift turned on outside Nightcap", .systemFont(ofSize: 9, weight: .semibold), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 9))
-            Paint.text("Snoozed \(app) until 07:00.", .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 23))
+            Paint.text("Snoozed the \(app) rule until 07:00.", .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 23))
         }
         screen.add(banner, at: NSPoint(x: 66, y: 22))
         Loop.fades(banner, values: [0, 0, 1, 1, 0, 0], times: [0, 0.12, 0.22, 0.8, 0.92, 1], duration: 5)
-        let left = captioned(screen, "Overrule a rule, and Nightcap says so.", nil)
+        let left = captioned(screen, "Overrule a rule in Control Center, and Nightcap says so.", nil)
         let moon = NSRect(x: 214, y: 4, width: 26, height: 22)
         let bar = Drawn(NSSize(width: 300, height: 56)) { _ in
             Paint.lifted { Paint.rounded(NSRect(x: 0, y: 0, width: 300, height: 30), 8, Paint.bar) }
@@ -258,7 +258,7 @@ enum StageArt {
     }
 
     /// Nightcap's menu, open under the moon, as the app draws it: the Night Shift item, the
-    /// strength between suns, then Turn Off For and the front app's toggle.
+    /// strength between suns, everywhere's row, then the front app's (ADR-0024).
     private static func ready() -> NSView {
         Drawn(NSSize(width: 460, height: 164)) { _ in
             let font = NSFont.systemFont(ofSize: 12)
@@ -270,7 +270,7 @@ enum StageArt {
             Paint.rounded(moon, 5, Paint.highlight)
             Paint.template("MenuBarOn", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
-            let menu = NSRect(x: 178, y: 36, width: 234, height: 126)
+            let menu = NSRect(x: 178, y: 36, width: 234, height: 112)
             Paint.lifted { Paint.rounded(menu, 8, Paint.menu) }
             let item = NSFont.systemFont(ofSize: 11)
             // The menu's columns: the checkmark, the item's image, and the title.
@@ -289,7 +289,7 @@ enum StageArt {
                 let width = (keys as NSString).size(withAttributes: [.font: item]).width
                 Paint.text(keys, item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 12 - width, y: y))
             }
-            Paint.text("Following the schedule", .systemFont(ofSize: 10), .nightcapSecondary, at: NSPoint(x: title, y: y + 14))
+            Paint.text("Following the schedule until 07:00", .systemFont(ofSize: 10), .nightcapSecondary, at: NSPoint(x: title, y: y + 14))
             y += 34
             Paint.glyph("sun.min", 9, .nightcapSecondary, centredAt: NSPoint(x: image, y: y + 5))
             let track = NSRect(x: title, y: y + 3, width: menu.maxX - 28 - title, height: 4)
@@ -297,23 +297,20 @@ enum StageArt {
             Paint.rounded(NSRect(x: track.minX, y: track.minY, width: track.width * 0.6, height: 4), 2, .controlAccentColor)
             Paint.rounded(NSRect(x: track.minX + track.width * 0.6 - 6, y: y - 1, width: 12, height: 12), 6, .white, stroke: .nightcapControlBorder)
             Paint.glyph("sun.max", 11, .nightcapSecondary, centredAt: NSPoint(x: menu.maxX - 16, y: y + 5))
-            y += 16
-            separator(y)
-            y += 6
+            y += 20
             Paint.glyph("timer", 10, .labelColor, centredAt: NSPoint(x: image, y: y + 7))
-            Paint.text("Turn Off For", item, .labelColor, at: NSPoint(x: title, y: y))
+            Paint.text("Turn Off", item, .labelColor, at: NSPoint(x: title, y: y))
             Paint.text("›", item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 18, y: y))
             y += 19
             separator(y)
             y += 6
-            Paint.text("Force Off", .systemFont(ofSize: 10, weight: .semibold), .nightcapSecondary, at: NSPoint(x: title, y: y))
-            y += 15
             if let mail = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") {
                 NSWorkspace.shared.icon(forFile: mail.path).draw(
                     in: NSRect(x: image - 7, y: y, width: 14, height: 14), from: .zero, operation: .sourceOver,
                     fraction: 1, respectFlipped: true, hints: nil)
             }
-            Paint.text("In Mail", item, .labelColor, at: NSPoint(x: title, y: y))
+            Paint.text("Turn Off in Mail", item, .labelColor, at: NSPoint(x: title, y: y))
+            Paint.text("›", item, .nightcapSecondary, at: NSPoint(x: menu.maxX - 18, y: y))
         }
     }
 

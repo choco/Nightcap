@@ -211,7 +211,7 @@ final class Tour {
         case .rule where returned:
             return (
                 "And it comes back",
-                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way, and the same menu removes it.")
+                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way, and the same menu snoozes it for a while, or removes it.")
         case .rule where ruled && front == Self.sampleApp:
             return (
                 "That’s true colour",
@@ -239,7 +239,7 @@ final class Tour {
         case .end:
             return (
                 "That’s the tour",
-                "The rules you added go with it. Everything else is in the moon’s menu: turning Night Shift off for a while, and Settings, where you’ll find the tour again.")
+                "The rules you added go with it. Everything else is in the moon’s menu: turning Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and Settings, where you’ll find the tour again.")
         }
     }
 

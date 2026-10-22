@@ -877,7 +877,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .ready:
             return (
                 eyebrow, "Nightcap is ready",
-                "It lives in the menu bar, under the moon. You can change any of this later in Settings, along with the shortcut.")
+                "It lives in the menu bar, under the moon. Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose. You can change any of this later in Settings, along with the shortcut.")
         }
     }
 
