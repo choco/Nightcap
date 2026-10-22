@@ -22,7 +22,7 @@ The window that takes a new user through each choice and grant, once per onboard
 _Avoid_: setup wizard, first run
 
 **Tour**:
-An optional walk-through in a floating panel: the moon, a rule the user makes and sees act, for an app and where it can for a site, and the peek. Offered by “Nightcap is up here” at the end of onboarding, once the moon is pointed out, and in Settings; every step can be skipped.
+An optional walk-through in a floating panel: the moon, a rule the user makes and sees act, then snoozes and puts back, for an app and where it can for a site, and the peek. Offered by “Nightcap is up here” at the end of onboarding, once the moon is pointed out, and in Settings; every step can be skipped.
 _Avoid_: tutorial, walkthrough
 
 **Tour sample**:

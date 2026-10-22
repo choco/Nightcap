@@ -4,12 +4,12 @@ import NightcapCore
 import os
 
 /// The tour (ADR-0022): a floating panel at the top of the screen that walks through the moon, a
-/// rule the user makes for Tour Sample and sees act, the same for a site where website checking
-/// can, and the peek. Every step can be skipped, and the tour ended. While it runs, the core has
+/// rule the user makes for Tour Sample and sees act, snoozing that rule, the same rule for a site
+/// where website checking can, and the peek. Every step can be skipped, and the tour ended. While it runs, the core has
 /// Night Shift on for it if it was off, and holds the rules added during it in memory.
 final class Tour {
     enum Step {
-        case moon, rule, site, peek, end
+        case moon, rule, snooze, site, peek, end
     }
 
     /// The browser the site step opens the project's site in: the default one, while website
@@ -43,8 +43,11 @@ final class Tour {
     /// The core hears of the tour once the user continues from its first step.
     private var begun = false
     private var front: String?
-    private var ruled = false
+    /// What the sample's rule says, once it has one.
+    private var rule: OnOff?
     private var returned = false
+    private var snoozed = false
+    private var ruleBack = false
     private var siteRuled = false
     private var siteLeft = false
     /// Whether a force holds Night Shift off, as the moon shows.
@@ -83,10 +86,16 @@ final class Tour {
         self.begin = begin
         self.onEnd = onEnd
         // Without a shortcut there's nothing to peek with.
-        steps = [.moon, .rule] + (browser == nil ? [] : [.site]) + (shortcut == nil ? [] : [.peek]) + [.end]
+        steps = [.moon, .rule, .snooze] + (browser == nil ? [] : [.site]) + (shortcut == nil ? [] : [.peek]) + [.end]
     }
 
     private var step: Step { steps[index] }
+
+    /// The rule the rule step asks for, which the snooze step snoozes.
+    private var ruled: Bool { rule == .off }
+
+    /// Tour Sample stays open through the steps that use it.
+    private var usesSample: Bool { step == .rule || step == .snooze }
 
     /// At the top right, under the menu bar, where the moon is: on macOS 27 an app isn't told
     /// where its status item is, so nothing points at it.
@@ -120,27 +129,41 @@ final class Tour {
         guard left else { return }
         switch step {
         case .rule where was == Self.sampleApp && ruled: returned = true
-        case .rule, .site: break
+        case .rule, .snooze, .site: break
         default: return
         }
         draw()
     }
 
     /// The core's decision after each change. The site's force lifting means the user left its
-    /// tab, which only the core sees.
+    /// tab, which only the core sees. The sample's force coming back ends its snooze, whether the
+    /// user put the rule back or the snooze ran out.
     func forcedChanged(_ forced: Bool) {
         let lifted = self.forced && !forced
+        let back = !self.forced && forced
         self.forced = forced
+        if back, step == .snooze, snoozed, front == Self.sampleApp {
+            snoozed = false
+            ruleBack = true
+            draw()
+        }
         guard lifted, step == .site, siteRuled, !siteLeft else { return }
         siteLeft = true
         draw()
     }
 
-    /// A command chosen in the menu, which may add or remove the rule a step asks for.
+    /// A command chosen in the menu, which may add or remove the rule a step asks for, or snooze
+    /// it. A rule added or removed takes the snooze with it.
     func chose(_ command: Command) {
         switch command {
-        case .addRule(.app(let bundleId), _) where bundleId == Self.sampleApp: ruled = true
-        case .removeRule(.app(let bundleId)) where bundleId == Self.sampleApp: ruled = false
+        case .addRule(.app(let bundleId), let says) where bundleId == Self.sampleApp:
+            rule = says
+            snoozed = false
+        case .removeRule(.app(let bundleId)) where bundleId == Self.sampleApp:
+            rule = nil
+            snoozed = false
+        case .set(.app(let bundleId), .on, _) where bundleId == Self.sampleApp && step == .snooze && ruled:
+            snoozed = true
         case .addRule(.domain, _) where step == .site: siteRuled = true
         case .removeRule(.domain) where step == .site: siteRuled = false
         default: return
@@ -189,8 +212,11 @@ final class Tour {
             begun = true
             begin()
         }
-        if step == .rule { closeSample() }
+        let hadSample = usesSample
         index += 1
+        // Snoozing needs the rule the step before asks for.
+        if step == .snooze, !ruled { index += 1 }
+        if hadSample, !usesSample { closeSample() }
         log.info("tour at step \(String(describing: self.step), privacy: .public)")
         if step == .rule { openSample() }
         if step == .site { NSWorkspace.shared.open(Self.site) }
@@ -211,7 +237,7 @@ final class Tour {
         case .rule where returned:
             return (
                 "And it comes back",
-                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way, and the same menu snoozes it for a while, or removes it.")
+                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way.")
         case .rule where ruled && front == Self.sampleApp:
             return (
                 "That’s true colour",
@@ -220,6 +246,32 @@ final class Tour {
             return ("Give it a rule", "Click the moon to open the menu, then choose “Turn Off in Tour Sample” › “Always”.")
         case .rule:
             return ("Try a rule", "Bring Tour Sample to the front: click its window, or its icon in the Dock.")
+        case .snooze where ruleBack:
+            return (
+                "And the rule’s back",
+                "True colour again in the sample. Rules work the other way too: while Night Shift is off, “Turn On in Mail” › “Always” keeps it on in Mail.")
+        case .snooze where snoozed && front == Self.sampleApp:
+            return (
+                "That’s a snooze",
+                "Night Shift is back in the sample until the time you chose, then the rule returns by itself. To end it sooner, choose “Turn Off in Tour Sample” › “Put the Rule Back”.")
+        case .snooze where snoozed:
+            return (
+                "Put the rule back",
+                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Put the Rule Back”.")
+        case .snooze where !ruled && front == Self.sampleApp:
+            return ("Snoozing needs a rule", "Choose “Turn Off in Tour Sample” › “Always” to give the sample its rule again.")
+        case .snooze where !ruled:
+            return (
+                "Snoozing needs a rule",
+                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Always”.")
+        case .snooze where front == Self.sampleApp:
+            return (
+                "Snooze it",
+                "The rule keeps Night Shift off here. To give it a break, click the moon, then choose “Turn On in Tour Sample” and how long for.")
+        case .snooze:
+            return (
+                "Snooze a rule",
+                "A rule can take a break. Bring Tour Sample back to the front: click its window, or its icon in the Dock.")
         case .site where siteLeft:
             return (
                 "Sites work the same way",
@@ -260,6 +312,7 @@ final class Tour {
         switch step {
         case .moon: done = true
         case .rule: done = returned
+        case .snooze: done = ruleBack
         case .site: done = siteLeft
         case .peek: done = tried
         case .end:
@@ -439,7 +492,7 @@ final class Tour {
         ) { [weak self] notification in
             let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated {
-                guard let self, app?.bundleIdentifier == Self.sampleApp, self.step == .rule else { return }
+                guard let self, app?.bundleIdentifier == Self.sampleApp, self.usesSample else { return }
                 self.openSample()
             }
         }
@@ -456,13 +509,15 @@ final class Tour {
     #if DEBUG
     /// The panel at `step` as a PNG, on the menu's colour, for comparing against the prototype.
     func snapshot(
-        _ step: Step, front: String? = nil, ruled: Bool = false, returned: Bool = false, siteRuled: Bool = false,
-        siteLeft: Bool = false
+        _ step: Step, front: String? = nil, ruled: Bool = false, returned: Bool = false, snoozed: Bool = false,
+        ruleBack: Bool = false, siteRuled: Bool = false, siteLeft: Bool = false
     ) -> Data? {
         index = steps.firstIndex(of: step)!
         self.front = front
-        self.ruled = ruled
+        rule = ruled ? .off : nil
         self.returned = returned
+        self.snoozed = snoozed
+        self.ruleBack = ruleBack
         self.siteRuled = siteRuled
         self.siteLeft = siteLeft
         let content = self.content()

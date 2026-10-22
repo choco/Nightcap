@@ -109,26 +109,44 @@ enum Snapshot {
             browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
             press: {}, release: {}, begin: {}, onEnd: { _ in })
         let sample = Tour.sampleApp
-        let tourStates: [(String, Tour.Step, front: String?, ruled: Bool, returned: Bool, siteRuled: Bool, siteLeft: Bool)] = [
-            ("moon", .moon, nil, false, false, false, false),
-            ("rule", .rule, nil, false, false, false, false),
-            ("rule-in-front", .rule, sample, false, false, false, false),
-            ("rule-ruled", .rule, sample, true, false, false, false),
-            ("rule-returned", .rule, nil, true, true, false, false),
-            ("site", .site, "com.apple.Safari", false, false, false, false),
-            ("site-ruled", .site, "com.apple.Safari", false, false, true, false),
-            ("site-left", .site, nil, false, false, true, true),
-            ("peek", .peek, nil, false, false, false, false),
-            ("end", .end, nil, false, false, false, false),
+        struct TourState {
+            let name: String
+            let step: Tour.Step
+            var front: String? = nil
+            var ruled = false
+            var returned = false
+            var snoozed = false
+            var ruleBack = false
+            var siteRuled = false
+            var siteLeft = false
+        }
+        let tourStates = [
+            TourState(name: "moon", step: .moon),
+            TourState(name: "rule", step: .rule),
+            TourState(name: "rule-in-front", step: .rule, front: sample),
+            TourState(name: "rule-ruled", step: .rule, front: sample, ruled: true),
+            TourState(name: "rule-returned", step: .rule, ruled: true, returned: true),
+            TourState(name: "snooze", step: .snooze, ruled: true),
+            TourState(name: "snooze-in-front", step: .snooze, front: sample, ruled: true),
+            TourState(name: "snooze-snoozed", step: .snooze, front: sample, ruled: true, snoozed: true),
+            TourState(name: "snooze-back", step: .snooze, front: sample, ruled: true, ruleBack: true),
+            TourState(name: "snooze-no-rule", step: .snooze, front: sample),
+            TourState(name: "site", step: .site, front: "com.apple.Safari"),
+            TourState(name: "site-ruled", step: .site, front: "com.apple.Safari", siteRuled: true),
+            TourState(name: "site-left", step: .site, siteRuled: true, siteLeft: true),
+            TourState(name: "peek", step: .peek),
+            TourState(name: "end", step: .end),
         ]
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
-            for (state, step, front, ruled, returned, siteRuled, siteLeft) in tourStates {
-                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-tour-\(state)-\(name).png")
+            for state in tourStates {
+                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-tour-\(state.name)-\(name).png")
                 guard let png = tour.snapshot(
-                    step, front: front, ruled: ruled, returned: returned, siteRuled: siteRuled, siteLeft: siteLeft)
+                    state.step, front: state.front, ruled: state.ruled, returned: state.returned,
+                    snoozed: state.snoozed, ruleBack: state.ruleBack, siteRuled: state.siteRuled,
+                    siteLeft: state.siteLeft)
                 else {
-                    fatalError("couldn't render the tour at \(state)")
+                    fatalError("couldn't render the tour at \(state.name)")
                 }
                 try! png.write(to: url)
             }
