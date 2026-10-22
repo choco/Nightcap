@@ -172,19 +172,17 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .button-version { font-family: var(--font-mono); font-size: 12px; font-weight: 500; opacity: 0.75; }
 
 /* The hero's scene: a live mock of the menu bar with Nightcap's menu open over Figma, in macOS's
-   own light or dark look. It's laid out at 440px wide in em of the 13-point menu text, and
-   scales as one piece to the width it gets, like a screenshot. */
+   own light or dark look. It's laid out in em of the 13-point menu text, at the real menu's size,
+   and scales down as one piece where it gets less than 440px. */
 .scene { position: relative; margin: 0; width: 100%; aspect-ratio: 1.18; container-type: inline-size; border-radius: 14px; overflow: hidden; background: var(--scene-wall); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--line); color: var(--scene-ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
-.scene > * { font-size: calc(100cqi * 13 / 440); }
+.scene > * { font-size: min(13px, calc(100cqi * 13 / 440)); }
 .scene-bar { display: flex; align-items: center; gap: 1.23em; height: 2em; padding: 0 0.77em; background: var(--scene-bar); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); font-weight: 500; white-space: nowrap; }
 .scene-apple { width: 1.08em; height: 1.23em; flex: none; }
 .scene-app { font-weight: 700; }
 /* Menus that don't fit wrap onto a hidden second line, so none shows cut. */
 .scene-menus { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; column-gap: 1.23em; height: 1.3em; overflow: hidden; }
 .scene-status { flex: none; display: flex; align-items: center; gap: 0.31em; }
-.scene-icon { display: inline-flex; align-items: center; justify-content: center; height: 1.54em; min-width: 2em; border-radius: 0.46em; }
-.scene-icon svg { width: 1.23em; height: 1.23em; }
-.scene-icon .scene-battery { width: 1.85em; }
+.scene-icon { display: inline-flex; align-items: center; justify-content: center; height: 1.54em; min-width: 2em; border-radius: 999px; }
 .scene-moon { background: var(--scene-pressed); }
 .scene-moon svg { width: 1.31em; height: 1.31em; }
 .scene-clock { padding-left: 0.31em; font-variant-numeric: tabular-nums; }
@@ -195,18 +193,27 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .scene-lights i + i { background: #febc2e; }
 .scene-lights i + i + i { background: #28c840; }
 .scene-canvas { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0.92em; }
-.scene-menu { position: absolute; right: 0.62em; top: 2.38em; width: 20.9em; padding: 0.38em; border-radius: 0.92em; background: var(--scene-menu); -webkit-backdrop-filter: blur(26px) saturate(1.6); backdrop-filter: blur(26px) saturate(1.6); box-shadow: 0 0 0 0.5px var(--scene-edge), 0 1.08em 2.77em rgba(0, 0, 0, 0.3); line-height: 1.23; }
-.scene-menu .menu-item { grid-template-columns: 1.1em 1.4em 1fr auto; column-gap: 0.35em; padding: 0.23em 0.69em; }
-.scene-menu .menu-check { font-size: 0.92em; line-height: inherit; }
+.scene-menu { position: absolute; right: 0.62em; top: 2.38em; width: 19.54em; padding: 0.38em 0; border-radius: 0.92em; background: var(--scene-menu); -webkit-backdrop-filter: blur(26px) saturate(1.6); backdrop-filter: blur(26px) saturate(1.6); box-shadow: 0 0 0 0.5px var(--scene-edge), 0 1.08em 2.77em rgba(0, 0, 0, 0.3); line-height: 1.23; }
+/* macOS 27's measures, from a real NSMenu's layout: 254 wide, rows 24 tall, the check, image and
+   title columns at 11, 29 and 50, subtitles in 12px, separators inset 17. */
+.scene-menu .menu-item { grid-template-columns: 1em 1.23em 1fr auto; column-gap: 0.38em; padding: 0.31em 1.15em 0.31em 0.85em; }
+.scene-menu .menu-item:has(.menu-subtitle) { padding-block: 0.23em; }
+.scene-menu .menu-check { font-size: 0.92em; line-height: inherit; text-align: center; }
 .scene-menu .menu-image { height: 1.23em; color: var(--scene-ink); }
 .scene-menu .menu-image svg { width: 1.08em; height: 1.08em; }
-.scene-menu .menu-app { width: 1.15em; height: 1.15em; border-radius: 0.28em; font-size: 0.7em; }
-.scene-menu .menu-subtitle { font-size: 0.846em; line-height: 1.27; color: var(--scene-muted); }
+.scene-menu .menu-app { width: 1.76em; height: 1.76em; border-radius: 0.4em; font-size: 0.7em; }
+.scene-menu .menu-subtitle { font-size: 0.923em; line-height: 1.167; color: var(--scene-muted); }
 .scene-menu .menu-key { font-size: 1em; color: var(--scene-muted); }
-.scene-menu .menu-sep { margin: 0.38em 0.77em; background: var(--scene-sep); }
-.scene-menu .menu-slider { padding: 0.15em 0.69em 0.15em 3.54em; color: var(--scene-muted); }
-.scene-menu .menu-track::before { background: var(--scene-muted); }
-.scene-menu .menu-track-fill { background: #0a84ff; }
+.scene-menu .menu-key svg { color: var(--scene-ink); }
+.scene-menu .menu-sep { margin: 0.38em 1.31em; background: var(--scene-sep); }
+/* The slider between the suns, grey with a white knob as a slider in a menu draws. */
+.scene-menu .menu-slider { height: 2em; gap: 0.46em; padding: 0 1.08em 0 3.54em; color: var(--scene-muted); }
+.scene-menu .menu-sun-less svg { width: 0.85em; height: 0.85em; }
+.scene-menu .menu-sun-more svg { width: 1.23em; height: 1.23em; }
+.scene-menu .menu-track { height: 1.08em; }
+.scene-menu .menu-track::before { top: 0.42em; height: 0.23em; background: var(--scene-ink); opacity: 0.15; }
+.scene-menu .menu-track-fill { top: 0.42em; width: calc(var(--value) * (100% - 1.15em) + 0.58em); height: 0.23em; background: var(--scene-ink); opacity: 0.45; }
+.scene-menu .menu-track-knob { top: 0.12em; left: calc(var(--value) * (100% - 1.15em)); width: 1.15em; height: 0.85em; border-radius: 999px; }
 
 .poster-circle { position: absolute; left: 8%; top: 8%; width: 54%; aspect-ratio: 1; border-radius: 50%; background: #e5372c; }
 .poster-square { position: absolute; right: 8%; top: 30%; width: 34%; aspect-ratio: 1; background: #0a72e8; }
@@ -261,8 +268,9 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .menu-app { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: var(--tile); color: #ffffff; font: 700 8px/1 var(--font-text); }
 .menu-indented .menu-image, .menu-indented .menu-text { margin-left: 12px; }
 /* Lines break evenly, as the app wraps its subtitles. */
-.menu-subtitle { display: block; font-size: 10px; color: var(--starlight-muted); text-wrap: balance; }
+.menu-subtitle { display: block; font-size: 10px; color: var(--starlight-muted); white-space: pre-line; text-wrap: balance; }
 .menu-key { color: var(--starlight-muted); font-size: 11px; }
+.menu-key svg { display: block; width: 0.5em; height: 0.85em; color: var(--starlight); }
 .menu-sep { height: 1px; margin: 4px 8px; background: var(--menu-line); }
 /* The strength: a small sun where the titles start, the track, a large sun at the edge. */
 .menu-slider { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 41px; color: var(--starlight-muted); }
@@ -426,7 +434,6 @@ kbd { font-family: var(--font-mono); font-size: 0.86em; padding: 0.05em 0.4em; b
   .scene > * { font-size: 12px; }
   .scene-bar { gap: 0.83em; padding: 0 0.67em; }
   .scene-window { left: 5%; top: 40%; width: 62%; height: 54%; }
-  .scene-menu { width: 19.7em; }
   .celestial { width: 240px; right: -96px; top: calc(var(--runway, 0px) - 150px); }
   .desk-menu-inline, .sky-strip { display: none; }
   .desk-menu-below { display: block; }

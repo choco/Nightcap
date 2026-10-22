@@ -125,6 +125,8 @@ const ICONS = {
   gear: glyph('<circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.2"/>'),
   power: glyph('<path d="M12 3v8M6.3 6.8a8 8 0 1 0 11.4 0"/>'),
 };
+// A submenu's chevron, at the menu's text size.
+const CHEVRON = '<svg viewBox="0 0 8 14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l4.5 5L2 12"/></svg>';
 // The slider's ends, as the app draws them: a small four-rayed sun, a large eight-rayed one.
 const SUN_LESS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/></svg>';
 const SUN_MORE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></svg>';
@@ -134,7 +136,7 @@ const KEYS = '⌃⌥⌘N';
 const item = (title, extra = {}) => ({ title, ...extra });
 // A row that opens a submenu of lengths: everywhere's, under the switch, or the front app's or
 // site's.
-const row = (title, extra = {}) => item(title, { key: '›', ...extra });
+const row = (title, extra = {}) => item(title, { submenu: true, ...extra });
 // The Night Shift item, everywhere's switch: checked while it's on everywhere, which a forced-off
 // moon still means, and what decides the screen.
 const nightShift = (moon, reason) => ({ nightShift: true, moon, reason });
@@ -160,6 +162,23 @@ const MENUS = {
   ],
 };
 const APP_NAMES = { mail: 'Mail', figma: 'Figma', safari: 'Safari' };
+
+// A subtitle broken into lines as the app breaks it (StatusMenu.wrapped): as it is up to 160px
+// of the 12px menu font, otherwise at the word that evens out two lines.
+const measure = document.createElement('canvas').getContext('2d');
+measure.font = '12px -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif';
+function wrapped(text) {
+  const width = (line) => measure.measureText(line).width;
+  if (width(text) <= 160) return text;
+  const words = text.split(' ');
+  let best = null;
+  for (let split = 1; split < words.length; split++) {
+    const lines = [words.slice(0, split).join(' '), words.slice(split).join(' ')];
+    const widest = Math.max(...lines.map(width));
+    if (widest <= 160 && (!best || widest < best.widest)) best = { lines, widest };
+  }
+  return best ? best.lines.join('\n') : text;
+}
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -196,10 +215,25 @@ function menuEntry(entry) {
   const text = el('span', 'menu-text');
   text.append(el('span', 'menu-title', entry.nightShift ? 'Night Shift' : entry.title));
   const subtitle = entry.nightShift ? entry.reason : entry.subtitle;
-  if (subtitle) text.append(el('span', 'menu-subtitle', subtitle));
-  line.append(image, text, el('span', 'menu-key', entry.nightShift ? KEYS : entry.key || ''));
+  if (subtitle) text.append(el('span', 'menu-subtitle', wrapped(subtitle)));
+  const key = el('span', 'menu-key', entry.nightShift ? KEYS : entry.key);
+  if (entry.submenu) key.innerHTML = CHEVRON;
+  line.append(image, text, key);
   return line;
 }
+
+// The menu bars' clocks show the visitor's own time, in their locale's format.
+const clockDay = new Intl.DateTimeFormat(undefined, { weekday: 'short' });
+const clockTime = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+function showClocks() {
+  const now = new Date();
+  const time = clockTime.format(now);
+  document.querySelectorAll('[data-clock]').forEach((clock) => {
+    clock.textContent = clock.dataset.clock === 'day' ? `${clockDay.format(now)} ${time}` : time;
+  });
+  setTimeout(showClocks, 60000 - (now.getTime() % 60000));
+}
+showClocks();
 
 // The hero's scene: the menu while Figma is in front.
 document.querySelector('[data-scene-menu]').replaceChildren(...MENUS.figma.map(menuEntry));
