@@ -17,8 +17,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var shown: Menu?
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
-    /// "Nightcap is up here", while it shows.
+    /// "Nightcap is up here", or the panel saying the moon is hidden, while it shows.
     private var pointing: NSPopover?
+    private var hiddenPanel: (panel: FloatingPanel, content: PointOut)?
     /// Custom…'s window, while it shows.
     private var picking: TimePicker?
     /// The open menu's site row, which takes the site's icon if it arrives while it shows.
@@ -126,39 +127,88 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
+    /// Where macOS has the moon. A new status item's button waits at the screen's origin, with no
+    /// height, until macOS places it, a quarter of a second to over two seconds in testing. It
+    /// passes below the screen for a moment, then slides into the menu bar; when the menu bar has
+    /// no room for it, it stays below the screen.
+    private enum Placement { case pending, inMenuBar, belowScreen }
+
+    private static let placementWait: TimeInterval = 5
+    private static let belowScreenSettle: TimeInterval = 0.5
+
+    private var placement: Placement {
+        guard let window = item.button?.window, window.frame.height > 0 else { return .pending }
+        guard let screen = window.screen else { return .belowScreen }
+        return window.frame.maxY >= screen.frame.maxY - 1 ? .inMenuBar : .pending
+    }
+
     /// Points at the moon once onboarding is done: the only way into Nightcap from then on. It
     /// stays until OK: on macOS 27, a status item's click never arrives while a popover hangs
     /// from it. A popover, since on macOS 27 the system draws the status item, and only AppKit
-    /// knows where it is. It offers the tour, which then starts knowing where the moon is.
-    /// `onShown` runs once it's up and focused.
+    /// knows where it is. It offers the tour, which then starts knowing where the moon is. A moon
+    /// macOS hides, or never places, gets a panel saying so instead, under the menu bar at the
+    /// right. `onShown` runs once either is up and focused.
     func pointOut(takeTour: @escaping () -> Void, onShown: @escaping () -> Void) {
-        // A moment for the new status item to take its place in the menu bar.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+        afterPlacement(deadline: Date().addingTimeInterval(Self.placementWait)) { [weak self] inMenuBar in
             guard let self, let button = item.button else { return }
-            let popover = NSPopover()
-            popover.behavior = .applicationDefined
             let content = PointOut(
+                hidden: !inMenuBar,
                 onOK: { [weak self] in self?.stopPointing() },
                 takeTour: { [weak self] in
                     self?.stopPointing()
                     takeTour()
                 })
-            popover.contentViewController = content
-            popover.contentSize = content.size
             // Focused, as a popover the user opened would be; without it the popover's glass washes
             // out. Nightcap is still the active app from the click on Done, so nothing else loses
             // the focus to it.
             NSApp.activate()
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-            pointing = popover
+            if inMenuBar {
+                let popover = NSPopover()
+                popover.behavior = .applicationDefined
+                popover.contentViewController = content
+                popover.contentSize = content.size
+                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                popover.contentViewController?.view.window?.makeKey()
+                pointing = popover
+            } else {
+                let panel = FloatingPanel()
+                content.view.translatesAutoresizingMaskIntoConstraints = false
+                panel.glass.addSubview(content.view)
+                NSLayoutConstraint.activate([
+                    content.view.leadingAnchor.constraint(equalTo: panel.glass.leadingAnchor),
+                    content.view.topAnchor.constraint(equalTo: panel.glass.topAnchor),
+                ])
+                panel.setContentSize(content.size)
+                if let screen = NSScreen.main?.visibleFrame {
+                    panel.setFrameOrigin(NSPoint(
+                        x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
+                }
+                panel.makeKeyAndOrderFront(nil)
+                hiddenPanel = (panel, content)
+            }
             onShown()
+        }
+    }
+
+    /// Calls `then` once the moon is in the menu bar, or once it has stayed below the screen, or
+    /// at `deadline`, with whether it's in the menu bar.
+    private func afterPlacement(deadline: Date, belowSince: Date? = nil, then: @escaping (_ inMenuBar: Bool) -> Void) {
+        let now = Date()
+        let placement = self.placement
+        let belowSince = placement == .belowScreen ? belowSince ?? now : nil
+        if placement == .inMenuBar { return then(true) }
+        if let belowSince, now.timeIntervalSince(belowSince) >= Self.belowScreenSettle { return then(false) }
+        if now >= deadline { return then(false) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.afterPlacement(deadline: deadline, belowSince: belowSince, then: then)
         }
     }
 
     private func stopPointing() {
         pointing?.close()
         pointing = nil
+        hiddenPanel?.panel.close()
+        hiddenPanel = nil
     }
 
     /// Puts a site's icon that just arrived in the open menu's site row.
@@ -498,25 +548,30 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 }
 
 /// "Nightcap is up here", under the moon once onboarding is done, at a fixed width with the
-/// height its words need.
-private final class PointOut: NSViewController {
+/// height its words need. With the moon hidden, it says so instead, without the tour, which
+/// works through the moon.
+final class PointOut: NSViewController {
     private static let width: CGFloat = 300
     private let onOK: () -> Void
     private let takeTour: () -> Void
     private(set) var size = NSSize(width: width, height: 0)
 
-    init(onOK: @escaping () -> Void, takeTour: @escaping () -> Void) {
+    init(hidden: Bool, onOK: @escaping () -> Void, takeTour: @escaping () -> Void) {
         self.onOK = onOK
         self.takeTour = takeTour
         super.init(nibName: nil, bundle: nil)
-        let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
+        let title = Look.label(
+            hidden ? "No room for Nightcap’s moon" : "Nightcap is up here",
+            size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
-            "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
+            hidden
+                ? "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu. Quit an app with an icon up there and the moon appears. Until then, open Nightcap again for its Settings."
+                : "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
             size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
         let tour = Look.button("Take the Tour", .regular) { [weak self] in self?.takeTour() }
-        let buttons = NSStackView(views: [NSView(), tour, ok])
+        let buttons = NSStackView(views: hidden ? [NSView(), ok] : [NSView(), tour, ok])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [title, text, buttons])
         stack.orientation = .vertical

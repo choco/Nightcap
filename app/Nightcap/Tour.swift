@@ -636,7 +636,7 @@ private final class KeyCaps: NSView {
 
 #if DEBUG
 /// The menu's colour behind a snapshot of the panel, which the panel's glass would show.
-private final class SnapshotBackdrop: NSView {
+final class SnapshotBackdrop: NSView {
     override func draw(_ dirtyRect: NSRect) {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             NSColor.appearance(light: 0xf0f0f2, dark: 0x2a2a2d).setFill()

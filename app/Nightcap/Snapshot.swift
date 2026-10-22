@@ -4,8 +4,8 @@ import KeyboardShortcuts
 import NightcapCore
 
 /// Dev builds only: with `NIGHTCAP_SNAPSHOT` set to a folder, Nightcap renders the settings
-/// window's tabs, onboarding's steps and the tour's panel, light and dark, from the mockups'
-/// scenarios into that folder, then quits.
+/// window's tabs, onboarding's steps, the tour's panel and the pointer to the moon, light and
+/// dark, from the mockups' scenarios into that folder, then quits.
 enum Snapshot {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
@@ -152,6 +152,23 @@ enum Snapshot {
                     fatalError("couldn't render the tour at \(state.name)")
                 }
                 try! png.write(to: url)
+            }
+        }
+        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            NSApp.appearance = NSAppearance(named: appearance)
+            for (state, hidden) in [("shown", false), ("hidden", true)] {
+                let content = PointOut(hidden: hidden, onOK: {}, takeTour: {})
+                let backdrop = SnapshotBackdrop(frame: NSRect(origin: .zero, size: content.size))
+                content.view.frame = backdrop.bounds
+                backdrop.addSubview(content.view)
+                backdrop.appearance = NSApp.appearance
+                backdrop.layoutSubtreeIfNeeded()
+                guard let bitmap = backdrop.bitmapImageRepForCachingDisplay(in: backdrop.bounds) else {
+                    fatalError("couldn't render the pointer")
+                }
+                backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
+                try! bitmap.representation(using: .png, properties: [:])!
+                    .write(to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
             }
         }
         for icon in [MenuIcon.on, .off, .forcedOff] {
