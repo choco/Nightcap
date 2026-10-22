@@ -26,8 +26,6 @@ final class Tour {
     /// The sample app's ID, which its rule names.
     static let sampleApp = Bundle.main.bundleIdentifier! + ".tour-sample"
     private static let site = URL(string: "https://nightcap.choco.me")!
-    /// What the menu's row for the site names: its host (ADR-0023).
-    private static let siteRule = "nightcap.choco.me"
     private static let width: CGFloat = 330
     private static let padding: CGFloat = 16
     /// How far the panel moves aside while the menu is open, about the menu's width.
@@ -281,7 +279,7 @@ final class Tour {
         case .site where front == self.browser?.bundleId:
             return (
                 "Now a site",
-                "\(browser) has Nightcap’s site open. Click the moon, then choose “Turn Off at \(Self.siteRule)” › “Always”.")
+                "\(browser) has Nightcap’s site open. Click the moon, then choose “Turn Off at This Site” › “Always”.")
         case .site:
             return ("Now a site", "Bring \(browser) back to the front, on Nightcap’s site.")
         case .peek:

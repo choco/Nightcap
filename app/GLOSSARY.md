@@ -70,7 +70,7 @@ _Avoid_: status line
 The menu's line while any problem exists, counting them; it opens Settings where the problem is.
 
 **Place row**:
-A menu item with a submenu for one place: everywhere's under the Night Shift item, then the front app's and the front site's. Each turns its place the other way for a length or until a time picked with Custom…, and, as they apply, offers Always, Remove Your Rule, Put the Rule Back or Back to the Schedule. With nothing to offer, it's greyed with what its place says.
+A menu item with a submenu for one place: everywhere's under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. Each turns its place the other way for a length or until a time picked with Custom…, and, as they apply, offers Always, Remove Your Rule, Put the Rule Back or Back to the Schedule. With nothing to offer, it's greyed with what its place says.
 _Avoid_: rule toggle
 
 ### Shortcut

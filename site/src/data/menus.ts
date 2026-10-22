@@ -1,6 +1,6 @@
 // Nightcap's menu as the app builds it, for whatever is in front. A subtitle comes in the lines
 // the app breaks it into (StatusMenu.wrapped): whole up to 160pt of 12pt text, otherwise at the
-// word that evens out two lines.
+// word that evens out two lines. A site's row names the site on the first.
 
 export type Moon = 'on' | 'forced' | 'off';
 export type AppName = 'mail' | 'figma' | 'safari';
@@ -71,7 +71,7 @@ export const MENUS: Record<AppName, MenuEntry[]> = {
     turnOff,
     separator,
     row('Turn Off in Safari', { app: 'safari' }),
-    row('Turn On at youtube.com', { glyph: 'globe' }, { indented: true, subtitle: ['Always off: your rule'] }),
+    row('Turn On at This Site', { glyph: 'globe' }, { indented: true, subtitle: ['youtube.com', 'Always off: your rule'] }),
     separator,
     ...tail,
   ],

@@ -311,6 +311,9 @@ pub enum MenuEntry {
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct PlaceRow {
     pub title: String,
+    /// A site's domain, on a line of its own under the title, which says "This Site" so that a
+    /// long domain doesn't widen the menu.
+    pub site: Option<String>,
     /// What the place says, or for everywhere's row the place that keeps its own say.
     pub subtitle: Option<String>,
     pub image: RowImage,
@@ -2185,6 +2188,7 @@ impl State {
                 "Turn {}",
                 capitalized(&state.to_string()).expect("on or off")
             ),
+            site: None,
             // The app or site in front keeps the other way, which the row can't change there.
             subtitle: (decision.place != Place::Everywhere && decision.state != Some(state))
                 .then(|| format!("Everywhere but {}", self.here(&decision.place))),
@@ -2268,7 +2272,10 @@ impl State {
             RowItem::PickTime { .. } => true,
             RowItem::Separator => false,
         });
-        let here = self.here(place);
+        let here = match place {
+            Place::Domain(_) => "at This Site".to_owned(),
+            _ => self.here(place),
+        };
         PlaceRow {
             title: if offers {
                 format!(
@@ -2277,6 +2284,10 @@ impl State {
                 )
             } else {
                 capitalized(&here).expect("a place has a name")
+            },
+            site: match place {
+                Place::Domain(domain) => Some(domain.clone()),
+                _ => None,
             },
             subtitle: self.stack(place),
             image: match place {

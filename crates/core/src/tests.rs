@@ -2918,6 +2918,11 @@ fn site_row(core: &Core) -> Option<PlaceRow> {
         .find(|row| row.image == RowImage::Site)
 }
 
+/// A site row's title, and the site it names under it.
+fn site_title(row: &PlaceRow) -> (&str, Option<&str>) {
+    (&row.title, row.site.as_deref())
+}
+
 /// A row's items as they read: their titles, "Custom…" for picking a time, and "—" between
 /// groups.
 fn titles(row: &PlaceRow) -> Vec<String> {
@@ -2995,6 +3000,7 @@ fn everywheres_row_has_every_length_but_the_switchs() {
         everywhere_row(&core),
         Some(PlaceRow {
             title: "Turn Off".to_owned(),
+            site: None,
             subtitle: None,
             image: RowImage::Everywhere,
             indented: false,
@@ -3228,19 +3234,31 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
     activate_browser(&core, "com.apple.Safari");
     report_host(&core, 1, "docs.figma.com");
     let row = site_row(&core).unwrap();
-    assert_eq!(row.title, "Turn Off at docs.figma.com");
+    assert_eq!(
+        site_title(&row),
+        ("Turn Off at This Site", Some("docs.figma.com"))
+    );
     assert_eq!(
         choice_titled(&row, "Always").command,
         add_rule(domain("docs.figma.com"))
     );
     report_host(&core, 1, "www.figma.com");
-    assert_eq!(site_row(&core).unwrap().title, "Turn Off at figma.com");
+    assert_eq!(
+        site_title(&site_row(&core).unwrap()),
+        ("Turn Off at This Site", Some("figma.com"))
+    );
 
     report_host(&core, 1, "docs.figma.com");
     send(&core, &socket, &wakes, add_rule(domain("figma.com")));
-    assert_eq!(site_row(&core).unwrap().title, "Turn On at figma.com");
+    assert_eq!(
+        site_title(&site_row(&core).unwrap()),
+        ("Turn On at This Site", Some("figma.com"))
+    );
     send(&core, &socket, &wakes, add_rule(domain("docs.figma.com")));
-    assert_eq!(site_row(&core).unwrap().title, "Turn On at docs.figma.com");
+    assert_eq!(
+        site_title(&site_row(&core).unwrap()),
+        ("Turn On at This Site", Some("docs.figma.com"))
+    );
 }
 
 #[test]
@@ -3251,7 +3269,10 @@ fn the_site_row_snoozes_a_config_rule() {
     let figma_site = Place::Domain("figma.com".to_owned());
 
     let row = site_row(&core).unwrap();
-    assert_eq!(row.title, "Turn On at figma.com");
+    assert_eq!(
+        site_title(&row),
+        ("Turn On at This Site", Some("figma.com"))
+    );
     assert_eq!(
         row.subtitle.as_deref(),
         Some("Always off: your config’s rule")
@@ -3263,7 +3284,10 @@ fn the_site_row_snoozes_a_config_rule() {
     );
     send(&core, &socket, &wakes, until_morning);
     let row = site_row(&core).unwrap();
-    assert_eq!(row.title, "Turn Off at figma.com");
+    assert_eq!(
+        site_title(&row),
+        ("Turn Off at This Site", Some("figma.com"))
+    );
     assert_eq!(
         row.subtitle.as_deref(),
         Some("On until 07:00, then your config’s rule")
@@ -3489,7 +3513,7 @@ fn a_rule_from_the_tab_keeps_www_where_nothing_but_a_suffix_would_be_left() {
     report_host(&core, 1, "www.com");
 
     let row = site_row(&core).unwrap();
-    assert_eq!(row.title, "Turn Off at www.com");
+    assert_eq!(site_title(&row), ("Turn Off at This Site", Some("www.com")));
     assert_eq!(
         choice_titled(&row, "Always").command,
         add_rule(domain("www.com"))

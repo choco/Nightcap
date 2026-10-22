@@ -372,7 +372,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// its place says, while it has nothing to offer (ADR-0024).
     private func rowItem(_ row: PlaceRow) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
-        item.subtitle = row.subtitle.map(Self.wrapped)
+        // A site's row names the site on the first line under its title, unwrapped.
+        let lines = [row.site, row.subtitle.map(Self.wrapped)].compactMap { $0 }
+        item.subtitle = lines.isEmpty ? nil : lines.joined(separator: "\n")
         item.image = Self.image(for: row.image)
         Self.showImage(item)
         item.indentationLevel = row.indented ? 1 : 0
