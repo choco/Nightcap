@@ -309,13 +309,44 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             settings.rules.isEmpty
             ? [Look.padded(Look.secondary("No rules yet.", width: Self.width - 28), top: 11, bottom: 11)]
             : settings.rules.map(ruleRow)
-        return pane([
+        var blocks = [
             group(files),
             note("Each keeps Night Shift off, or on, while its app or site is in front."),
             group(rules),
             rulesToolbar(),
             note("Ad-hoc rules stay in Nightcap until you copy them into your config."),
+        ]
+        // What the menu set for an app or site with no rule, which ends by itself.
+        if !settings.forNow.isEmpty {
+            blocks.append(block("For now", settings.forNow.map(forNowRow)))
+        }
+        return pane(blocks)
+    }
+
+    /// An app's or site's temporary on or off: its icon and name, until when, and ending it.
+    private func forNowRow(_ layers: SettingsLayers) -> NSView {
+        let identity: RuleIdentity
+        switch layers.place {
+        case .app(let bundleId): identity = .app(bundleId)
+        case .domain(let domain): identity = .domain(domain)
+        case .everywhere: return NSView()
+        }
+        let (name, _, icon) = describe(identity)
+        let texts = NSStackView(views: [
+            Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
+            Look.secondary(layers.label, width: 300),
         ])
+        texts.orientation = .vertical
+        texts.alignment = .leading
+        texts.spacing = 2
+        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let end = Look.button(layers.action.title, .small) { [choose] in choose(layers.action.command) }
+        let row = NSStackView(views: [icon, texts, end])
+        row.orientation = .horizontal
+        row.distribution = .fill
+        row.alignment = .centerY
+        row.spacing = 14
+        return Look.padded(row, top: 11, bottom: 11)
     }
 
     /// A rule's icon, name, what it says and what it is, its label and what can be done about

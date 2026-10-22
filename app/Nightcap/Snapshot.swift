@@ -46,6 +46,11 @@ enum Snapshot {
                 SettingsRule(
                     identity: .app("com.apple.iBooksX"), says: .on, label: "Ad-hoc", snoozed: false,
                     action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.iBooksX")))),
+            ],
+            forNow: [
+                SettingsLayers(
+                    place: .app("com.apple.mail"), label: "Night Shift off until 22:00",
+                    action: RuleAction(title: "End", command: .reset(.app("com.apple.mail")))),
             ])
         let window = SettingsWindow(
             current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {},

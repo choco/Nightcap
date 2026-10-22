@@ -172,6 +172,18 @@ pub struct Settings {
     pub config_path: String,
     /// Every rule: the config's, then the ad-hoc ones.
     pub rules: Vec<SettingsRule>,
+    /// The apps and sites Night Shift is on or off in for now, with no rule of their own: a
+    /// snoozed rule shows on its own row, and everywhere's on the menu's Night Shift item.
+    pub for_now: Vec<SettingsLayers>,
+}
+
+/// An app's or site's temporary on or off as the Rules tab lists it, with ending it.
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct SettingsLayers {
+    pub place: Place,
+    /// "Night Shift off until 20:00".
+    pub label: String,
+    pub action: RuleAction,
 }
 
 /// What onboarding asks, pulled like the menu: the shell only draws it.
@@ -722,6 +734,21 @@ impl Core {
                 .iter()
                 .filter(|rule| rule.source != RuleSource::Tour)
                 .map(|rule| state.settings_rule(rule))
+                .collect(),
+            for_now: state
+                .layers
+                .iter()
+                .filter(|layers| {
+                    layers.place != Place::Everywhere && state.rule_at(&layers.place).is_none()
+                })
+                .map(|layers| SettingsLayers {
+                    place: layers.place.clone(),
+                    label: format!("Night Shift {}", state.layer_text(layers)),
+                    action: RuleAction {
+                        title: "End".to_owned(),
+                        command: Command::Reset(layers.place.clone()),
+                    },
+                })
                 .collect(),
             open_at_login: state
                 .login_item
@@ -2312,13 +2339,10 @@ impl State {
         )
     }
 
-    /// What a place holds, top down, for its row: "On until 07:00, then your config’s rule".
-    fn stack(&self, place: &Place) -> Option<String> {
-        let rule = self.rule_at(place);
-        let mut parts: Vec<String> = self
-            .layers_at(place)
+    /// A place's timer and hold, top down: "on until 23:30, then off until 07:00".
+    fn layer_text(&self, layers: &PlaceLayers) -> String {
+        [&layers.timer, &layers.hold]
             .into_iter()
-            .flat_map(|layers| [&layers.timer, &layers.hold])
             .flatten()
             .map(|layer| {
                 format!(
@@ -2327,6 +2351,17 @@ impl State {
                     self.until_text(layer.until, layer.state)
                 )
             })
+            .collect::<Vec<_>>()
+            .join(", then ")
+    }
+
+    /// What a place holds, top down, for its row: "On until 07:00, then your config’s rule".
+    fn stack(&self, place: &Place) -> Option<String> {
+        let rule = self.rule_at(place);
+        let mut parts: Vec<String> = self
+            .layers_at(place)
+            .map(|layers| self.layer_text(layers))
+            .into_iter()
             .collect();
         match rule {
             Some(rule) if parts.is_empty() => {

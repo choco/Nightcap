@@ -20,8 +20,8 @@ use crate::state::{Persisted, Store};
 use crate::{
     Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
     MenuItem, NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine,
-    RowImage, RowItem, RuleAction, SettingsCheck, SettingsRule, SettingsSwitch, Setup, Waker,
-    normalize_domain,
+    RowImage, RowItem, RuleAction, SettingsCheck, SettingsLayers, SettingsRule, SettingsSwitch,
+    Setup, Waker, normalize_domain,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -4621,6 +4621,51 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
                 action("Remove", Command::RemoveRule(domain("youtube.com")))
             ),
         ]
+    );
+}
+
+#[test]
+fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+    });
+    let mail_app = Place::from(mail());
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(mail_app.clone(), OnOff::Off, Length::UntilScheduleTurns),
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(mail_app.clone(), OnOff::On, minutes(30)),
+    );
+    // A snooze shows on its rule, and everywhere's own on the Night Shift item.
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(figma_app(), OnOff::On, minutes(30)),
+    );
+    send(&core, &socket, &wakes, Command::Off);
+
+    assert_eq!(
+        core.settings().for_now,
+        vec![SettingsLayers {
+            place: mail_app.clone(),
+            label: "Night Shift on until 23:30, then off until 22:00".to_owned(),
+            action: RuleAction {
+                title: "End".to_owned(),
+                command: Command::Reset(mail_app),
+            },
+        }]
     );
 }
 
