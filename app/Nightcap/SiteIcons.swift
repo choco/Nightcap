@@ -1,9 +1,9 @@
 import AppKit
 import os
 
-/// Sites' own icons, for the menu's site row and the Rules tab (ADR-0026). The menu asks for
-/// them as it opens; each comes from its site and is kept on disk, so a site is asked again
-/// only once its icon is a month old, or a day after it had none.
+/// Sites' own icons, for the menu's site row, the Rules tab and onboarding's suggestions
+/// (ADR-0026). The menu and onboarding ask for them; each comes from its site and is kept on
+/// disk, so a site is asked again only once its icon is a month old, or a day after it had none.
 final class SiteIcons {
     /// Called with each site whose icon has just arrived.
     var onArrival: ((String) -> Void)?
@@ -30,7 +30,7 @@ final class SiteIcons {
     /// The site's kept icon, if it has one.
     func icon(for site: String) -> NSImage? {
         if let image = loaded[site] { return image }
-        guard Self.isDomain(site), let image = NSImage(contentsOf: file(site, "png")) else { return nil }
+        guard Self.isPublic(site), let image = NSImage(contentsOf: file(site, "png")) else { return nil }
         loaded[site] = image
         return image
     }
@@ -38,7 +38,7 @@ final class SiteIcons {
     /// Asks each site for its icon, unless one is kept or it's too soon to ask again.
     func ask(_ sites: [String]) {
         guard online else { return }
-        for site in Set(sites) where Self.isDomain(site) && !asking.contains(site) && due(site) {
+        for site in Set(sites) where Self.isPublic(site) && !asking.contains(site) && due(site) {
             asking.insert(site)
             Task {
                 let png = await Self.fetch(site)
@@ -46,7 +46,9 @@ final class SiteIcons {
                 do {
                     try keep(png, for: site)
                 } catch {
-                    log.error("couldn't keep a site's icon: \(error)")
+                    // The error's own description holds the file's path, which names the site.
+                    let error = error as NSError
+                    log.error("couldn't keep a site's icon: \(error.domain, privacy: .public) \(error.code)")
                 }
                 if png != nil { onArrival?(site) }
             }
@@ -80,9 +82,14 @@ final class SiteIcons {
         directory.appending(path: "\(site).\(kind)")
     }
 
-    /// A host as the core reports one, which is also safe as a file name.
-    private static func isDomain(_ site: String) -> Bool {
-        site.wholeMatch(of: /[a-z0-9-]+(\.[a-z0-9-]+)+/) != nil
+    /// A site on the internet, by a name as the core reports one, which is also safe as a file
+    /// name: not an address, nor a name only the local network knows, which macOS asks the user
+    /// about before an app may reach it.
+    nonisolated private static func isPublic(_ host: String) -> Bool {
+        guard host.wholeMatch(of: /[a-z0-9-]+(\.[a-z0-9-]+)+/) != nil, host.wholeMatch(of: /[0-9.]+/) == nil,
+              let last = host.split(separator: ".").last
+        else { return false }
+        return !["local", "lan", "home", "internal", "intranet", "corp", "localhost", "arpa"].contains(String(last))
     }
 
     /// Ephemeral, so no cookies go with a request or stay after it, and nothing's cached but
@@ -94,8 +101,19 @@ final class SiteIcons {
         configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 10
         configuration.timeoutIntervalForResource = 20
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: PublicRedirects(), delegateQueue: nil)
     }()
+
+    /// Follows a redirect only to another site on the internet.
+    nonisolated private final class PublicRedirects: NSObject, URLSessionTaskDelegate, Sendable {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+        ) {
+            let host = request.url?.host()?.lowercased()
+            completionHandler(host.map(SiteIcons.isPublic) == true ? request : nil)
+        }
+    }
 
     /// The site's icon as a PNG: the best its home page declares, then /favicon.ico.
     @concurrent nonisolated private static func fetch(_ site: String) async -> Data? {
@@ -128,7 +146,8 @@ final class SiteIcons {
             guard let link = node as? XMLElement,
                   let rel = link.attribute(forName: "rel")?.stringValue?.lowercased().split(separator: " "),
                   let href = link.attribute(forName: "href")?.stringValue,
-                  let target = URL(string: href, relativeTo: base)?.absoluteURL, target.scheme == "https"
+                  let target = URL(string: href, relativeTo: base)?.absoluteURL, target.scheme == "https",
+                  let host = target.host()?.lowercased(), isPublic(host)
             else { return nil }
             let touch = rel.contains("apple-touch-icon") || rel.contains("apple-touch-icon-precomposed")
             guard touch || rel.contains("icon") else { return nil }

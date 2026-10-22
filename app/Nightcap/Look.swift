@@ -282,7 +282,8 @@ final class Chip: NSView {
     }
 }
 
-/// A 26-point rounded tile with an SF Symbol, for a rule without an app icon of its own.
+/// A 26-point rounded tile for what has no app icon of its own: a site, by its own icon or the
+/// globe, or an app that isn't installed.
 final class Tile: NSView {
     convenience init(symbol: String) {
         self.init(
@@ -292,7 +293,7 @@ final class Tile: NSView {
     }
 
     /// A symbol in the secondary colour, at its own size, or a picture, such as a site's icon,
-    /// at the menu's 16 points.
+    /// at 16 points.
     init(image: NSImage, tinted: Bool = false) {
         super.init(frame: .zero)
         let view = NSImageView(image: image)

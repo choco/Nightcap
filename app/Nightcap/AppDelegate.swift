@@ -275,9 +275,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let core else { return }
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
+        // The tour learns the front app first, so the force the new app brings is read as its.
+        tour?.frontmostChanged(bundleId)
         apply(core.handle(event: .appActivated(
             bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
-        tour?.frontmostChanged(bundleId)
     }
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0012).
@@ -585,7 +586,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Whatever changed the core's state changed the icon too, CLI commands included.
         statusMenu?.refresh()
         settingsWindow?.refresh()
-        if let tour, let core { tour.forcedChanged(core.menu().icon == .forcedOff) }
+        if let tour, let core {
+            let menu = core.menu()
+            tour.forcedChanged(menu.icon == .forcedOff)
+            tour.switchChanged(on: menu.nightShift.on)
+        }
     }
 
     private func checkForUpdates() {

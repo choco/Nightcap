@@ -5,8 +5,9 @@ import os
 
 /// The tour (ADR-0022): a floating panel at the top of the screen that walks through the moon, a
 /// rule the user makes for Tour Sample and sees act, snoozing that rule, the same rule for a site
-/// where website checking can, and the peek. Every step can be skipped, and the tour ended. While it runs, the core has
-/// Night Shift on for it if it was off, and holds the rules added during it in memory.
+/// where website checking can, and the peek. Every step can be skipped, and the tour ended.
+/// While it runs, the core has Night Shift on for it if it was off, and holds the rules added
+/// during it in memory.
 final class Tour {
     enum Step {
         case moon, rule, snooze, site, peek, end
@@ -51,7 +52,8 @@ final class Tour {
     /// Whether a force holds Night Shift off, as the moon shows.
     private var forced = false
     private var keysDown = false
-    private var tappedOff = false
+    /// Whether Night Shift is on everywhere, which a tap of the shortcut switches.
+    private var switchedOn = true
     private var lastTry: Try?
     private var tried = false
     private let panel = FloatingPanel()
@@ -178,6 +180,13 @@ final class Tour {
         panel.animator().setFrameOrigin(NSPoint(x: panel.frame.minX + Self.menuWidth, y: panel.frame.minY))
     }
 
+    /// Night Shift on or off everywhere, after each change, however it was made.
+    func switchChanged(on: Bool) {
+        guard switchedOn != on else { return }
+        switchedOn = on
+        if step == .peek { update() }
+    }
+
     func shortcutPressed() {
         keysDown = true
         update()
@@ -185,7 +194,6 @@ final class Tour {
 
     func shortcutTapped() {
         keysDown = false
-        tappedOff.toggle()
         tried(.tap)
     }
 
@@ -295,7 +303,7 @@ final class Tour {
 
     private var hintText: String {
         if keysDown { return "True colour while you hold. Let go and the warmth comes back." }
-        if tappedOff { return "Night Shift is off. Tap the shortcut again to turn it back on." }
+        if !switchedOn { return "Night Shift is off. Tap the shortcut to turn it back on." }
         switch lastTry {
         case .hold: return "That was a peek. Tap it instead to turn Night Shift off."
         case .tap: return "Night Shift is back on. Now try holding it."

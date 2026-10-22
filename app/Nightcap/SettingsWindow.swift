@@ -96,9 +96,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         draw(settings)
     }
 
-    /// Redraws with a site's icon that just arrived.
+    /// Redraws the Rules tab, the only one with sites, with a site's icon that just arrived.
     func iconArrived() {
-        guard window?.isVisible == true, let shown else { return }
+        guard window?.isVisible == true, tab == .rules, let shown else { return }
         draw(shown)
     }
 
@@ -237,7 +237,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
         Look.attach(toggle) { [choose] in choose(websites.command) }
-        var websitesDetail = "Also force Night Shift off on the websites you choose, in Safari and Chrome. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name."
+        var websitesDetail = "Also keep Night Shift off, or on, on the websites you choose, in Safari and Chrome. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, and asks the site for its icon."
         if websites.locked { websitesDetail += " Set in your config." }
         // Accessibility goes unmentioned while website checking doesn't need it.
         let accessibility = check(.accessibility).flatMap { $0.state == .off ? nil : $0 }
@@ -338,7 +338,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         switch layers.place {
         case .app(let bundleId): identity = .app(bundleId)
         case .domain(let domain): identity = .domain(domain)
-        case .everywhere: return NSView()
+        case .everywhere: preconditionFailure("For now lists only apps and sites")
         }
         let (name, _, icon) = describe(identity)
         let texts = NSStackView(views: [

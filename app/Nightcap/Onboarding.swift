@@ -87,6 +87,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// Where each existing rule comes from, such as "From your config".
     private let ruled: [RuleIdentity: String]
     private var tickedSites: Set<String> = []
+    /// A redraw for arriving icons is on its way.
+    private var redrawing = false
     /// The suggested sites, with their icons as far as they've arrived.
     private var sites: [GridItem] {
         Self.suggestedSites.map { site in
@@ -320,10 +322,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
     }
 
-    /// Redraws the sites page with a site's icon that just arrived.
+    /// Redraws the sites page with the icons that just arrived, which come close together, once.
     func iconArrived() {
-        guard step == .websites, page == .sites else { return }
-        draw()
+        guard step == .websites, page == .sites, !redrawing else { return }
+        redrawing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            guard let self else { return }
+            redrawing = false
+            if step == .websites, page == .sites { draw() }
+        }
     }
 
     // MARK: Drawing
@@ -553,7 +560,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             return [rows([
                 fact(symbol: "globe", "Safari and Chrome.", "It works in the front tab of either."),
                 fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
-                fact(symbol: "lock", "Only the site’s name.", "Like youtube.com; the rest of the address is dropped."),
+                fact(symbol: "lock", "Only the site’s name.", "Like youtube.com; the rest of the address is dropped, and the icon comes from the site."),
             ])]
         case .accessibility:
             let granted = accessibilityGranted()

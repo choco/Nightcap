@@ -35,22 +35,22 @@ private final class Poster: NSView {
     override var isFlipped: Bool { true }
 
     override func draw(_ dirtyRect: NSRect) {
-        Self.paint(in: bounds, scale: 1)
+        Self.paint(in: bounds)
     }
 
-    static func paint(in rect: NSRect, scale: CGFloat) {
+    static func paint(in rect: NSRect) {
         let hex = { (rgb: UInt32) in
             NSColor(
                 srgbRed: CGFloat(rgb >> 16 & 0xff) / 255, green: CGFloat(rgb >> 8 & 0xff) / 255,
                 blue: CGFloat(rgb & 0xff) / 255, alpha: 1)
         }
         let at = { (x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) in
-            NSRect(x: rect.minX + x * scale, y: rect.minY + y * scale, width: width * scale, height: height * scale)
+            NSRect(x: rect.minX + x, y: rect.minY + y, width: width, height: height)
         }
         hex(0xf7f3e8).setFill()
         rect.fill()
         NSGradient(starting: hex(0x5aa9e6), ending: hex(0xbfe3f5))!
-            .draw(in: at(0, 0, rect.width / scale, 130), angle: 90)
+            .draw(in: at(0, 0, rect.width, 130), angle: 90)
         hex(0x2f6fe4).setFill()
         NSBezierPath(ovalIn: at(40, 50, 120, 120)).fill()
         NSGraphicsContext.current?.saveGraphicsState()
@@ -60,8 +60,7 @@ private final class Poster: NSView {
         NSGraphicsContext.current?.restoreGraphicsState()
         for (index, rgb) in [UInt32(0xffffff), 0x2f6fe4, 0xe84f8a, 0x22b33a].enumerated() {
             let swatch = NSBezierPath(
-                roundedRect: at(rect.width / scale - 64, 30 + CGFloat(index) * 42, 34, 34),
-                xRadius: 7 * scale, yRadius: 7 * scale)
+                roundedRect: at(rect.width - 64, 30 + CGFloat(index) * 42, 34, 34), xRadius: 7, yRadius: 7)
             hex(rgb).setFill()
             swatch.fill()
             NSColor.black.withAlphaComponent(0.15).setStroke()
