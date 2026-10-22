@@ -204,7 +204,6 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .scene-menu .menu-subtitle { font-size: 0.846em; line-height: 1.27; color: var(--scene-muted); }
 .scene-menu .menu-key { font-size: 1em; color: var(--scene-muted); }
 .scene-menu .menu-sep { margin: 0.38em 0.77em; background: var(--scene-sep); }
-.scene-menu .menu-header { padding: 0.55em 0.91em 0.18em 1.9em; font-size: 0.846em; color: var(--scene-muted); }
 .scene-menu .menu-slider { padding: 0.15em 0.69em 0.15em 3.54em; color: var(--scene-muted); }
 .scene-menu .menu-track::before { background: var(--scene-muted); }
 .scene-menu .menu-track-fill { background: #0a84ff; }
@@ -253,8 +252,9 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .menu { padding: 5px; border-radius: 10px; background: var(--night); border: 1px solid var(--menu-line); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3); font-size: 12px; line-height: 1.25; color: var(--starlight); }
 .desk-menu-inline { position: absolute; right: 3%; top: 32px; width: 240px; }
 .desk-menu-below { display: none; align-self: flex-end; width: min(260px, 100%); }
-/* The app's menu: a checkmark, an image and the title, with the shortcut or a chevron at the end. */
-.menu-item { display: grid; grid-template-columns: 12px 16px 1fr auto; column-gap: 5px; align-items: start; padding: 3px 8px; }
+/* The app's menu: a checkmark, an image and the title, with the shortcut or a chevron at the end,
+   all centred on an item's lines. */
+.menu-item { display: grid; grid-template-columns: 12px 16px 1fr auto; column-gap: 5px; align-items: center; padding: 3px 8px; }
 .menu-check { font-size: 11px; line-height: 15px; }
 .menu-image { display: flex; align-items: center; justify-content: center; height: 15px; }
 .menu-image svg { width: 13px; height: 13px; }
@@ -264,7 +264,6 @@ code { font-family: var(--font-mono); font-size: 15px; color: var(--ink); }
 .menu-subtitle { display: block; font-size: 10px; color: var(--starlight-muted); text-wrap: balance; }
 .menu-key { color: var(--starlight-muted); font-size: 11px; }
 .menu-sep { height: 1px; margin: 4px 8px; background: var(--menu-line); }
-.menu-header { padding: 5px 8px 1px 20px; font-size: 10px; font-weight: 700; color: var(--starlight-muted); }
 /* The strength: a small sun where the titles start, the track, a large sun at the edge. */
 .menu-slider { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 41px; color: var(--starlight-muted); }
 .menu-sun { display: inline-flex; flex: none; }
@@ -345,11 +344,13 @@ kbd { font-family: var(--font-mono); font-size: 0.86em; padding: 0.05em 0.4em; b
 .cli-text { flex: 1 1 300px; display: flex; flex-direction: column; gap: 14px; }
 .note { font-size: 15px; line-height: 1.55; color: var(--ink-muted); }
 .terminal { flex: 999 1 440px; min-width: 0; background: var(--night-deep); color: var(--starlight); border: 1px solid var(--menu-line); border-radius: 12px; padding: 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.6; overflow-x: auto; box-shadow: 0 24px 70px -18px rgba(246, 213, 138, 0.32); }
-.term-line { white-space: pre; }
+/* Long output wraps, as a terminal window would. */
+.term-line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .t-prompt { color: var(--moon); }
 .t-out { color: var(--starlight-muted); }
 .t-cmd { color: var(--starlight); font-weight: 600; }
-.t-arg { color: var(--moon); }
+/* An argument stays whole: a line breaks between them, never at a flag's hyphens. */
+.t-arg { color: var(--moon); white-space: nowrap; }
 .t-warm { color: #ffaa6b; }
 .t-ok { color: #30d158; }
 
@@ -434,7 +435,6 @@ kbd { font-family: var(--font-mono); font-size: 0.86em; padding: 0.05em 0.4em; b
   .dock-app { width: 34px; height: 34px; border-radius: 9px; }
   .terminal { font-size: 11px; padding: 18px; font-variation-settings: "wdth" 87.5; }
   .key { min-width: 38px; height: 38px; font-size: 17px; }
-  .term-line { white-space: pre-wrap; overflow-wrap: anywhere; }
   .dusk-title { font-size: 34px; }
   .dusk .dusk-sun { right: 10%; width: 96px; height: 96px; bottom: -50px; }
   .doodle:not(.keep) { display: none; }

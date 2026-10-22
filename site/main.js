@@ -132,26 +132,31 @@ const APPS = { mail: ['M', '#3d6fd6'], figma: ['F', '#a259ff'], safari: ['S', '#
 const SUNRISE = '07:52';
 const KEYS = '⌃⌥⌘N';
 const item = (title, extra = {}) => ({ title, ...extra });
-// The Night Shift item, which opens the menu: checked while on, why, and what choosing it does.
-const nightShift = (moon, reason, detail) => ({ nightShift: true, moon, reason, detail });
+// A row that opens a submenu of lengths: everywhere's, under the switch, or the front app's or
+// site's.
+const row = (title, extra = {}) => item(title, { key: '›', ...extra });
+// The Night Shift item, everywhere's switch: checked while it's on everywhere, which a forced-off
+// moon still means, and what decides the screen.
+const nightShift = (moon, reason) => ({ nightShift: true, moon, reason });
 const STRENGTH = { slider: 0.62 };
-const turnOffFor = item('Turn Off For', { key: '›', icon: 'timer' });
+const turnOff = row('Turn Off', { icon: 'timer' });
 const tail = [item('Settings…', { key: '⌘,', icon: 'gear' }), item('Quit Nightcap', { key: '⌘Q', icon: 'power' })];
 const MENUS = {
   mail: [
-    nightShift('on', `Following the schedule until ${SUNRISE}`), STRENGTH, 'sep',
-    turnOffFor, 'sep', { header: 'Force Off' },
-    item('In Mail', { app: 'mail' }), 'sep', ...tail,
+    nightShift('on', `Following the schedule until ${SUNRISE}`), STRENGTH,
+    turnOff, 'sep',
+    row('Turn Off in Mail', { app: 'mail' }), 'sep', ...tail,
   ],
   figma: [
-    nightShift('forced', 'While Figma is in front', `Snoozes the Figma rule until ${SUNRISE}`), STRENGTH, 'sep',
-    turnOffFor, 'sep', { header: 'Force Off' },
-    item('In Figma', { check: true, subtitle: 'From your config', app: 'figma' }), 'sep', ...tail,
+    nightShift('forced', 'Off in Figma: your config’s rule'), STRENGTH,
+    turnOff, 'sep',
+    row('Turn On in Figma', { app: 'figma', subtitle: 'Always off: your config’s rule' }), 'sep', ...tail,
   ],
   safari: [
-    nightShift('forced', 'While youtube.com is in front', `Snoozes the youtube.com rule until ${SUNRISE}`), STRENGTH, 'sep',
-    turnOffFor, 'sep', { header: 'Force Off' },
-    item('In Safari', { app: 'safari' }), item('On youtube.com', { check: true, indented: true, icon: 'globe' }), 'sep', ...tail,
+    nightShift('forced', 'Off at youtube.com: your rule'), STRENGTH,
+    turnOff, 'sep',
+    row('Turn Off in Safari', { app: 'safari' }),
+    row('Turn On at youtube.com', { indented: true, icon: 'globe', subtitle: 'Always off: your rule' }), 'sep', ...tail,
   ],
 };
 const APP_NAMES = { mail: 'Mail', figma: 'Figma', safari: 'Safari' };
@@ -165,7 +170,6 @@ function el(tag, className, text) {
 
 function menuEntry(entry) {
   if (entry === 'sep') return el('div', 'menu-sep');
-  if (entry.header) return el('div', 'menu-header', entry.header);
   if (entry.slider !== undefined) {
     const slider = el('div', 'menu-slider');
     const less = el('span', 'menu-sun menu-sun-less');
@@ -178,8 +182,8 @@ function menuEntry(entry) {
     slider.append(less, track, more);
     return slider;
   }
-  const row = el('div', 'menu-item' + (entry.indented ? ' menu-indented' : ''));
-  row.append(el('span', 'menu-check', entry.check || entry.moon === 'on' ? '✓' : ''));
+  const line = el('div', 'menu-item' + (entry.indented ? ' menu-indented' : ''));
+  line.append(el('span', 'menu-check', entry.nightShift && entry.moon !== 'off' ? '✓' : ''));
   const image = el('span', 'menu-image');
   if (entry.app) {
     const [letter, tile] = APPS[entry.app];
@@ -191,10 +195,10 @@ function menuEntry(entry) {
   }
   const text = el('span', 'menu-text');
   text.append(el('span', 'menu-title', entry.nightShift ? 'Night Shift' : entry.title));
-  [entry.nightShift ? entry.reason : entry.subtitle, entry.detail].filter(Boolean)
-    .forEach((line) => text.append(el('span', 'menu-subtitle', line)));
-  row.append(image, text, el('span', 'menu-key', entry.nightShift ? KEYS : entry.key || ''));
-  return row;
+  const subtitle = entry.nightShift ? entry.reason : entry.subtitle;
+  if (subtitle) text.append(el('span', 'menu-subtitle', subtitle));
+  line.append(image, text, el('span', 'menu-key', entry.nightShift ? KEYS : entry.key || ''));
+  return line;
 }
 
 // The hero's scene: the menu while Figma is in front.
@@ -231,11 +235,11 @@ setInterval(() => {
 
 // One evening: what each moment does to the screen and the menu.
 const MOMENTS = [
-  { time: '18:36', title: 'Sunset', warm: true, body: 'The schedule starts Night Shift, and Nightcap leaves it alone while Mail is in front.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'In Mail' },
-  { time: '21:15', title: 'You open Figma', warm: false, body: 'Figma has a rule, so Nightcap switches Night Shift off. The colours on screen are the colours in the file.', moon: 'forced', reason: 'While Figma is in front', detail: `Snoozes the Figma rule until ${SUNRISE}`, app: 'figma', item: 'In Figma', check: true, note: 'From your config' },
-  { time: '22:40', title: 'Back to Mail', warm: true, body: 'Mail has no rule. Night Shift comes straight back, warm as before.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'In Mail' },
-  { time: '23:30', title: 'You want it warm', warm: true, body: 'You turn Night Shift on from the menu while Figma is in front. Nightcap takes it as meant: the Figma rule snoozes until sunrise.', moon: 'on', reason: `Turned on by hand until ${SUNRISE}`, app: 'figma', item: 'In Figma', note: `Snoozed until ${SUNRISE}` },
-  { time: SUNRISE, title: 'Sunrise', warm: false, body: 'The schedule ends Night Shift, and the snooze ends with it. Tonight, Figma is true colour again.', moon: 'forced', reason: 'While Figma is in front', detail: `Snoozes the Figma rule until ${SUNRISE}`, app: 'figma', item: 'In Figma', check: true, note: 'From your config' },
+  { time: '18:36', title: 'Sunset', warm: true, body: 'The schedule starts Night Shift, and Nightcap leaves it alone while Mail is in front.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'Turn Off in Mail' },
+  { time: '21:15', title: 'You open Figma', warm: false, body: 'Figma has a rule, so Nightcap switches Night Shift off. The colours on screen are the colours in the file.', moon: 'forced', reason: 'Off in Figma: your config’s rule', app: 'figma', item: 'Turn On in Figma', note: 'Always off: your config’s rule' },
+  { time: '22:40', title: 'Back to Mail', warm: true, body: 'Mail has no rule. Night Shift comes straight back, warm as before.', moon: 'on', reason: `Following the schedule until ${SUNRISE}`, app: 'mail', item: 'Turn Off in Mail' },
+  { time: '23:30', title: 'You want it warm', warm: true, body: `You choose “Turn On in Figma” › “Until ${SUNRISE}”, or turn Night Shift on in Control Center. Either way, the Figma rule snoozes until sunrise.`, moon: 'on', reason: `On in Figma until ${SUNRISE}`, app: 'figma', item: 'Turn Off in Figma', note: `On until ${SUNRISE}, then your config’s rule` },
+  { time: SUNRISE, title: 'Sunrise', warm: false, body: 'The schedule ends Night Shift, and the snooze ends with it. Tonight, Figma is true colour again.', moon: 'off', reason: 'Off in Figma: your config’s rule', app: 'figma', item: 'Turn On in Figma', note: 'Always off: your config’s rule' },
 ];
 const momentsBox = document.querySelector('[data-moments]');
 const sky = document.querySelector('[data-sky]');
@@ -269,12 +273,11 @@ function showMoment(index) {
   void momentBody.offsetWidth;
   momentBody.classList.add('swap');
   momentMenu.replaceChildren(...[
-    nightShift(moment.moon, moment.reason, moment.detail), 'sep', { header: 'Force Off' },
-    item(moment.item, { app: moment.app, check: moment.check, subtitle: moment.note }),
+    nightShift(moment.moon, moment.reason), 'sep',
+    row(moment.item, { app: moment.app, subtitle: moment.note }),
   ].map(menuEntry));
-  const state = { on: 'on', forced: 'forced off', off: 'off' }[moment.moon];
   momentMenu.setAttribute('role', 'img');
-  momentMenu.setAttribute('aria-label', `Nightcap's menu: Night Shift ${state}, ${moment.reason}`);
+  momentMenu.setAttribute('aria-label', `Nightcap's menu. Night Shift: ${moment.reason}. ${moment.item}${moment.note ? `: ${moment.note}` : ''}.`);
 }
 showMoment(3);
 
