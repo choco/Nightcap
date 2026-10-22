@@ -1,6 +1,6 @@
 # Nightcap
 
-A macOS app that switches Night Shift off for chosen apps and websites: a Swift shell (`app/`) that owns every Apple API, around a platform-free Rust core (ADR-0001).
+A macOS app that switches Night Shift off, or on, for chosen apps and websites: a Swift shell (`app/`) that owns every Apple API, around a platform-free Rust core (ADR-0001).
 
 ## Development
 
@@ -14,7 +14,7 @@ Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo a
 - `render-dmg-background`: renders `release/dmg-assets/background.html` into the DMG's background PNGs, with Google Chrome. `release/dmg` builds the DMG from a signed app.
 - `render-icons`: renders `app/icons/AppIcon.svg` into the app's icon set, and `TourSample.svg` into the tour sample's. The menu-bar moons are SVGs in `app/Nightcap/Assets.xcassets`, used as they are.
 
-To compare the UI against a mockup, a dev build renders the settings window's tabs, light and dark, from a fixed scenario into a folder and quits: `NIGHTCAP_SNAPSHOT="$PWD/tmp/snap" "build/xcode/Debug/Nightcap Dev.app/Contents/MacOS/Nightcap Dev"`. It needs no core and no screen-recording permission (`app/Nightcap/Snapshot.swift`).
+To compare the UI against a mockup, a dev build renders the settings window's tabs, onboarding's steps and the tour's panels, light and dark, from a fixed scenario into a folder and quits: `NIGHTCAP_SNAPSHOT="$PWD/tmp/snap" "build/xcode/Debug/Nightcap Dev.app/Contents/MacOS/Nightcap Dev"`. It needs no core and no screen-recording permission (`app/Nightcap/Snapshot.swift`).
 
 The site (`site/`) is React and TypeScript, built with Vite and pnpm, and prerendered at build time (`prerender.ts`), so the page arrives whole and React hydrates it. `pnpm --dir site dev` serves it, rendered the same way, with hot reload. Tailwind styles its layout and type, themed from the design system's tokens; the drawn mocks (the macOS scene, menus, desk) keep their measures in CSS modules beside their components. `site/plugins/design.ts` writes `src/styles/tokens.css` from `design/tokens.json` and copies the app icon to `public/icon.svg`; both are build outputs.
 

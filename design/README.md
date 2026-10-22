@@ -5,11 +5,11 @@ Nightcap is a small Mac app that switches Night Shift off while chosen apps and 
 Write the way the app talks: plain, specific, and about what the user sees.
 
 - Address the reader as "you". Nightcap is "Nightcap", never "we".
-- Name real things: apps by their names, times as times. "While Figma is in front", "Following the schedule until 07:12", "Snoozed until 07:00".
+- Name real things: apps by their names, times as times. "Off in Figma: your config’s rule", "Following the schedule until 07:12", "Snoozed until 07:00".
 - Say what happens, in the active voice. "Turn On", "Not Now", "Open at Login". A button never says "Enable" or "Activate".
-- Menu items and buttons use macOS title case ("Turn Night Shift On", "Check for Updates…"). Headlines and running text use sentence case.
+- Menu items and buttons use macOS title case ("Turn On in Figma", "Put the Rule Back", "Check for Updates…"). Headlines and running text use sentence case.
 - An ellipsis means the action opens something more: "Settings…", "Add Website…", "1 Thing Needs Attention…".
-- Use the product's own terms: force off, snooze, timed disable, website checking, check. A problem is a problem, never an "issue".
+- Use the product's own terms: rule, snooze, forced off, website checking, check. A problem is a problem, never an "issue".
 - Be dry, not cute. The wit is in the name and the moon, so the words can stay straight: "Nightcap switches Night Shift off while the apps and websites you choose are in front, and gives it back when you leave them."
 - Say what Nightcap doesn't do when it matters: "It reads the front tab's address with Accessibility and keeps only the site's name."
 - No emoji, no exclamation marks.
@@ -49,7 +49,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 ## Imagery
 
-- Show the real thing: the Mac menu bar with the moon in it, the Nightcap menu, a screen with and without the tint. Build these as live mocks with the `Menu` component and `tint`, not screenshots, so they follow the theme. The hero's mock is the one in macOS's own light or dark look, scaling as one piece like a screenshot, so the first thing a visitor sees is the app on a Mac.
+- Show the real thing: the Mac menu bar with the moon in it, the Nightcap menu, a screen with and without the tint. Build these as live mocks with the `Menu` component and `tint`, not screenshots, so they follow the theme. The hero's mock is the one in macOS's own light or dark look, at the real menu's size, scaling down as one piece where it has less room, so the first thing a visitor sees is the app on a Mac.
 - Illustrations stay geometric: moons, discs, crescents cut from `night` and `moon`, a sun at the edge of a hero or a dusk panel. No mascots, no faces.
 - Doodles are line art in the iconography's style (24 grid, 1.5px strokes): moons, suns, stars, sparkles and small dots, scattered evenly through a page's margins, sparsely across its middle and more densely through the hero's open space, never over text or a mock. Most are drawn in a faint `ink-muted`, a fifth or so in a faint gold; on phones keep about one in four.
 

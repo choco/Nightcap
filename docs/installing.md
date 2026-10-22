@@ -36,7 +36,7 @@ Each must be an absolute path; anything else falls back to the default. The CLI 
 
 ## The config
 
-`config.toml` holds the rules and, optionally, `websites`, which settles website checking: set, it wins over the user's choice in onboarding, the menu and Settings. An unknown key is an error, so a typo can't hide a rule:
+`config.toml` holds the rules and, optionally, `websites`, which settles website checking: set, it wins over the user's choice in onboarding, Settings and `nightcap websites`. An unknown key is an error, so a typo can't hide a rule:
 
 ```toml
 websites = true
@@ -76,4 +76,4 @@ nightcap reload --wait 5s
 
 ## Uninstalling
 
-Quit Nightcap (`launchctl bootout` the LaunchAgent, or quit it from Activity Monitor), then remove the app and the CLI link. Remove the three XDG folders above and `~/Library/Application Support/Nightcap` to forget everything.
+Quit Nightcap (`launchctl bootout` the LaunchAgent, or quit it from Activity Monitor), then remove the app and the CLI link. Remove the three XDG folders above, `~/Library/Application Support/Nightcap` and `~/Library/Caches/io.github.choco.nightcap`, where the sites' icons are kept, to forget everything.

@@ -18,7 +18,7 @@ The choice that macOS starts Nightcap at login, which a self-managed install car
 _Avoid_: launch at login
 
 **Onboarding**:
-The window that takes a new user through each choice and grant, once per onboarding version.
+The window that sets up Night Shift with the user, then takes them through each choice, grant and suggestion, once per onboarding version.
 _Avoid_: setup wizard, first run
 
 **Tour**:
@@ -62,6 +62,9 @@ Post one notification when a problem appears, unless the user caused it.
 
 ### Menu
 
+**Moon**:
+Nightcap's menu-bar icon: filled while Night Shift is on, an outline while it's off, and an outline with a “z”, forced off, while an app or site keeps it off with everywhere on. Dimmed while Night Shift is unavailable.
+
 **Night Shift item**:
 The menu's first item, after any problem line: Night Shift, checked while it's on everywhere, in the moon's look, with what decides the screen under it. Choosing it, or tapping the shortcut, is the switch.
 _Avoid_: status line
@@ -70,7 +73,7 @@ _Avoid_: status line
 The menu's line while any problem exists, counting them; it opens Settings where the problem is.
 
 **Place row**:
-A menu item with a submenu for one place: everywhere's under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. Each turns its place the other way for a length or until a time picked with Custom…, and, as they apply, offers Always, Remove Your Rule, Put the Rule Back or Back to the Schedule. With nothing to offer, it's greyed with what its place says.
+A menu item with a submenu for one place: everywhere's under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. Each turns its place the other way for a length or until a time picked with Custom…, and, as they apply, offers Always, Remove Your Rule, Put the Rule Back, Like Everywhere Else (Like the Rest of Safari, say, for a site whose browser has a say of its own) or Back to the Schedule. Its time until the schedule next turns it back names that moment under it: sunrise or sunset, or when the schedule ends or starts. An app's or site's row with nothing to offer is greyed with what its place says; everywhere's is left out.
 _Avoid_: rule toggle
 
 **Site icon**:
