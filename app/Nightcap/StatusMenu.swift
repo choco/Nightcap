@@ -381,7 +381,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// A place row: a submenu that turns its place the other way, or a greyed item with only what
-    /// its place says, while it has nothing to offer (ADR-0024).
+    /// its place says, while it has nothing to offer (ADR-0018).
     private func rowItem(_ row: PlaceRow) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
         // A site's row names the site on the first line under its title, unwrapped.

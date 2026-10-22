@@ -1,5 +1,5 @@
-//! `config.toml`: the config rules, declared by the user or their installer (ADR-0009,
-//! ADR-0025). It is strict, so a typo is an error rather than a rule that silently never matches.
+//! `config.toml`: the config rules, declared by the user or their installer (ADR-0007,
+//! ADR-0006). It is strict, so a typo is an error rather than a rule that silently never matches.
 
 use std::io::ErrorKind;
 use std::path::Path;
@@ -13,7 +13,7 @@ use crate::domain;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
-    /// Website checking, which Settings and the CLI then can't change (ADR-0016).
+    /// Website checking, which Settings and the CLI then can't change (ADR-0012).
     websites: Option<bool>,
     #[serde(default)]
     night_shift: NightShiftFile,
@@ -26,7 +26,7 @@ struct File {
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MenuFile {
-    /// The menu's preset lengths, such as "30m", "1h" or "1h30m" (ADR-0024).
+    /// The menu's preset lengths, such as "30m", "1h" or "1h30m" (ADR-0018).
     lengths: Option<Vec<String>>,
 }
 
@@ -39,7 +39,7 @@ struct NightShiftFile {
 }
 
 /// Night Shift's strength and schedule as the config sets them, each optional. Nightcap
-/// applies a value when it changes, and leaves alone a change made since (ADR-0020).
+/// applies a value when it changes, and leaves alone a change made since (ADR-0014).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct NightShiftConfig {
     pub strength: Option<u8>,
@@ -55,7 +55,7 @@ pub(crate) struct Config {
     pub found: bool,
 }
 
-/// Rules by what they say: `[rules.off]` and `[rules.on]` (ADR-0025).
+/// Rules by what they say: `[rules.off]` and `[rules.on]` (ADR-0006).
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Rules {

@@ -83,7 +83,7 @@ jobs:
             --title "Nightcap ${GITHUB_REF_NAME#v}" \
             --generate-notes
 
-  # Installs read the feed from the site, which serves the newest release's appcast (ADR-0015).
+  # Installs read the feed from the site, which serves the newest release's appcast (ADR-0011).
   pages:
     needs: publish
     permissions:

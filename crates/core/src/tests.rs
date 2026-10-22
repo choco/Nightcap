@@ -4816,7 +4816,7 @@ fn a_typed_domain_is_normalized_or_turned_down() {
     assert_eq!(normalize_domain("*.figma.com".to_owned()), None);
 }
 
-// The tour (ADR-0022).
+// The tour (ADR-0016).
 
 const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
 

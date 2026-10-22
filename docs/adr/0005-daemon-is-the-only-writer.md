@@ -4,9 +4,9 @@ The CLI is Nightcap's scripting surface: skhd, Raycast or Karabiner bind its com
 
 ## Decision
 
-Every CLI command goes through the daemon over the socket (ADR-0013). If the daemon is down, the CLI exits 1, saying Nightcap isn't running.
+Every CLI command goes through the daemon over the socket (ADR-0010). If the daemon is down, the CLI exits 1, saying Nightcap isn't running.
 
-The core reconciles every status change against what it wants (ADR-0005). A second writer's changes would reach it as external changes, which it would have to adopt anyway.
+The core reconciles every status change against what it wants (ADR-0004). A second writer's changes would reach it as external changes, which it would have to adopt anyway.
 
 ## Rejected alternatives
 

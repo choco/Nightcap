@@ -1,5 +1,5 @@
 //! `rules.toml`: the ad-hoc rules, kept by the core until they graduate into the config
-//! (ADR-0009). Only the core writes it. It has the config's rule tables plus a version, and
+//! (ADR-0007). Only the core writes it. It has the config's rule tables plus a version, and
 //! readers tolerate unknown keys, so only a breaking change bumps the version.
 
 use std::fs;
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::domain;
 
-/// Version 2 lists rules by what they say (ADR-0025).
+/// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]

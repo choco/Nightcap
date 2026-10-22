@@ -117,7 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// launchd stops the app with SIGTERM, whose default action would skip
-    /// applicationWillTerminate and leave any force in place (ADR-0011).
+    /// applicationWillTerminate and leave any force in place (ADR-0008).
     private func quitOnTerminationSignal() {
         signal(SIGTERM, SIG_IGN)
         let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The press peeks at once, so a tap that turns Night Shift off shows no flash of warmth. A
     /// tap that leaves it on, as when CoreBrightness refuses the switch, ends the peek after
-    /// (ADR-0021).
+    /// (ADR-0015).
     private func listenForShortcut() {
         shortcut = Shortcut(
             press: { [weak self] in
@@ -281,7 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
     }
 
-    /// The host is logged, as private, only when it changed Night Shift (ADR-0012).
+    /// The host is logged, as private, only when it changed Night Shift (ADR-0009).
     private func reportHost(generation: UInt64, host: String?) {
         guard let core else { return }
         let effects = core.handle(event: .hostChanged(generation: generation, host: host))
@@ -437,7 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// While website checking is on, the icons of the site in front and every site with a rule,
-    /// which the menu and the Rules tab show (ADR-0026).
+    /// which the menu and the Rules tab show (ADR-0019).
     private func askForSiteIcons() {
         guard let core else { return }
         let settings = core.settings()
@@ -603,7 +603,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updater.checkForUpdates(nil)
     }
 
-    /// Registers or unregisters the login item, as the user chose (ADR-0015), then reports
+    /// Registers or unregisters the login item, as the user chose (ADR-0011), then reports
     /// where that left it.
     private func changeLoginItem(_ change: (SMAppService) throws -> Void) {
         do {

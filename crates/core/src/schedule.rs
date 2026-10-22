@@ -1,4 +1,4 @@
-//! The schedule math behind reconciliation (ADR-0005): what the schedule says at a moment, and
+//! The schedule math behind reconciliation (ADR-0004): what the schedule says at a moment, and
 //! when it next changes.
 
 use jiff::tz::TimeZone;

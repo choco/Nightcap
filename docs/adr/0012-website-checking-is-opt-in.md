@@ -8,7 +8,7 @@ Domain rules need the host of the front browser tab whenever the frontmost app o
 
 - **Off:** nothing is watched, Accessibility is never requested, and domain rules do nothing.
 - **On:** the frontmost browser is watched whenever one is in front, so the menu can offer a rule for the current site and `status` shows its host. Observers exist only while a browser is in front. Nightcap asks for Accessibility when website checking is turned on. If the grant goes missing while it's on, the Accessibility check is a problem: the user either grants it again or stops checking websites.
-- **A browser its own app rule forces off** isn't watched while that rule isn't snoozed: Night Shift is off whatever the tab shows, so the host can't change the decision, and a site rule offered then would do nothing. The menu offers no rule for the site, and `status` shows no host. Snoozing or removing the rule starts watching again.
+- **A browser its own app rule keeps off** isn't watched while no site in it could say on: Night Shift is then off whatever the tab shows, so the host can't change the decision, and a site's row would offer nothing that changes the screen. The menu shows no row for the site, and `status` shows no host. A site's rule or snooze saying on, a snooze of the browser's rule, or its removal starts watching again (ADR-0018).
 
 Nightcap tracks the grant through the Darwin notification `com.apple.tcc.access.changed`, which `tccd` posts right after each write to its database, and reads it with TCC's private `TCCAccessCheckAuditToken`, which asks `tccd` and is already correct when the notification arrives. To ask, it shows the macOS prompt while Nightcap has no entry in the Accessibility list, and opens the pane in System Settings once it has one, switched on or off, since the prompt then never appears.
 
@@ -37,7 +37,7 @@ Why this wins:
 ## Rejected alternatives
 
 - **Watching only while a domain rule could change the decision, and asking for Accessibility once one exists**: the menu couldn't offer a first site rule, and the permission request arrived as a surprise when a rule was added.
-- **Watching a browser its own app rule forces off, so the site's rule stays in the menu**: it offers a rule that can't change anything, and reads every tab for nothing.
+- **Watching a browser its own app rule keeps off, whatever its sites could say**: it offers a site's row that can't change anything, and reads every tab for nothing.
 - **A one-off read of the host when the menu opens**: a second way to read the host, and `status` and the menu would disagree about it.
 - **`AXIsProcessTrusted` and the distributed `com.apple.accessibility.api` notification for the grant**: `AXIsProcessTrusted` answers from an in-process cache refreshed by that notification, which System Settings posts before `tccd` writes the change, so the old value can stick.
 - **A public Accessibility call to read the grant**: the system-wide element's focused application fails with "cannot complete", not "API disabled", while the grant is off, so it can't tell a missing grant from a busy app. A call into another app does fail with "API disabled", but may answer from the same in-process cache as `AXIsProcessTrusted`.

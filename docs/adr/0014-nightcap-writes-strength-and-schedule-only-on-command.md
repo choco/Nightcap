@@ -1,10 +1,6 @@
----
-status: superseded in part by ADR-0024
----
-
 # Nightcap writes Night Shift's strength and schedule only on the user's command
 
-Night Shift's strength and schedule belong to macOS: System Settings shows them and keeps them, and the core only reads the schedule, to compute schedule transitions (ADR-0005). But many people who hear about Nightcap don't know what Night Shift is, so onboarding sets it up with them, how warm it gets and when it comes on, before it says what Nightcap adds. The menu's strength slider (M4) sets the strength too. `CBBlueLightClient` writes both: `setStrength:commit:`, `setMode:` and `setSchedule:` all work on macOS 27.0.1 (M0 check 4) and on macOS 15, and macOS applies an edited schedule at once.
+Night Shift's strength and schedule belong to macOS: System Settings shows them and keeps them, and the core only reads the schedule, to compute schedule transitions (ADR-0004). But many people who hear about Nightcap don't know what Night Shift is, so onboarding sets it up with them, how warm it gets and when it comes on, before it says what Nightcap adds. The menu's strength slider sets the strength too. `CBBlueLightClient` writes both: `setStrength:commit:`, `setMode:` and `setSchedule:` all work on macOS 27.0.1 and on macOS 15, and macOS applies an edited schedule at once.
 
 ## Decision
 
@@ -12,18 +8,18 @@ Night Shift's strength and schedule belong to macOS: System Settings shows them 
 - Nightcap writes them only when the user asks it to: onboarding's Night Shift steps, the menu's strength slider, a command such as `nightcap strength`, or the config. Nothing writes them on its own: no rule, schedule transition or check, and Nightcap never puts back a value the user changed elsewhere.
 - The config can set either, under `[night_shift]`. A value from the config takes effect when it changes: at launch and on reload, Nightcap compares each with the value it last applied from the config, kept in `state.json`, and writes only those that differ. A change made since, in System Settings or Nightcap's menu, stands until the config's value changes again. A value the config leaves out stays whatever macOS has.
 - Nightcap keeps no copy of what macOS has, only of what it last applied from the config. It reads both values back from macOS: the schedule from the status callback, and the strength by asking, since a strength change triggers no callback.
-- A schedule Nightcap writes arrives as an edited schedule, which the core already treats as a schedule transition. It ends the manual state and the snoozes, as an edit in System Settings does.
+- A schedule Nightcap writes arrives as an edited schedule, which ends every hold waiting on the schedule (ADR-0018), as an edit in System Settings does.
 - The core sends the writes as effects, `SetSchedule { schedule }` and `SetStrength { value }`, answering the commands `SetSchedule(schedule)` and `Strength(value)`.
 
 ## Consequences
 
-- Three more private methods, which every macOS version Nightcap claims has to be checked for (ADR-0018). The adapter checks their signatures like the others. Where they're missing, onboarding's Night Shift steps open Night Shift's settings in System Settings instead, and the slider doesn't show.
+- Three more private methods, which every macOS version Nightcap claims has to be checked for (ADR-0013). The adapter checks their signatures like the others. Where they're missing, onboarding's Night Shift steps open Night Shift's settings in System Settings instead, and the slider doesn't show.
 - Choosing a schedule in onboarding can switch Night Shift on or off at once, since macOS applies the new schedule straight away.
 
 ## Rejected alternatives
 
 - **Sending the user to System Settings to set Night Shift up**: the people onboarding is for don't know where it is or what its slider does, and the step would end in another app's window.
-- **Nightcap owning the schedule and strength, with its own copy of each**: two schedules would disagree, Control Center would still follow macOS's, and the core relies on macOS performing schedule transitions (ADR-0005).
-- **Putting back what onboarding or the config set when it changes**: Nightcap would fight the user's own changes in System Settings, as reverting external changes would (ADR-0006).
+- **Nightcap owning the schedule and strength, with its own copy of each**: two schedules would disagree, Control Center would still follow macOS's, and the core relies on macOS performing schedule transitions (ADR-0004).
+- **Putting back what onboarding or the config set when it changes**: Nightcap would fight the user's own changes in System Settings, as reverting external changes would (ADR-0018).
 - **Applying the config's values at every launch or reload**: every login, and every installer run of `nightcap reload`, would undo a change the user made in System Settings.
 - **Locking them while the config sets them, as the config locks `websites`**: Nightcap can't lock System Settings, so the lock would cover only Nightcap's own controls, and the two would disagree.

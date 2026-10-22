@@ -1,5 +1,5 @@
 //! Runtime state that survives restarts, in `$XDG_STATE_HOME/<instance>/state.json`
-//! (ADR-0011). Readers tolerate unknown keys, so only a breaking change bumps the version.
+//! (ADR-0008). Readers tolerate unknown keys, so only a breaking change bumps the version.
 
 use std::fs;
 use std::io;
@@ -16,9 +16,9 @@ const VERSION: u32 = 1;
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Persisted {
-    /// Every place's hold and timer, each with its end (ADR-0024).
+    /// Every place's hold and timer, each with its end (ADR-0018).
     pub(crate) layers: Vec<PlaceLayers>,
-    /// Website checking as last chosen in onboarding, Settings or the CLI (ADR-0016).
+    /// Website checking as last chosen in onboarding, Settings or the CLI (ADR-0012).
     pub(crate) websites: bool,
     /// The last onboarding version completed; a later one shows only its new steps.
     pub(crate) onboarding: u32,
@@ -26,7 +26,7 @@ pub(crate) struct Persisted {
     /// only when the user accepts them off. The notifications check compares against it.
     pub(crate) notifications_wanted: bool,
     /// Whether the user wants Nightcap to open at login: set when they choose it or the login
-    /// item turns up enabled, cleared only when they choose otherwise (ADR-0015).
+    /// item turns up enabled, cleared only when they choose otherwise (ADR-0011).
     pub(crate) open_at_login: bool,
     /// The problems already announced with a notification, so a restart doesn't repeat them.
     pub(crate) announced: Vec<CheckKind>,
@@ -37,7 +37,7 @@ pub(crate) struct Persisted {
     /// schedule there.
     pub(crate) until: Option<Timestamp>,
     /// The strength and schedule last applied from the config: a config value applies again
-    /// only once it differs (ADR-0020).
+    /// only once it differs (ADR-0014).
     pub(crate) applied_from_config: NightShiftConfig,
 }
 

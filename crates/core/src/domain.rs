@@ -1,5 +1,5 @@
 //! Domains and hosts in the one form rules compare: lowercase ASCII, IDNs as punycode, no
-//! trailing dot (ADR-0008).
+//! trailing dot (ADR-0006).
 
 use idna::AsciiDenyList;
 
@@ -13,14 +13,14 @@ pub(crate) fn normalize(input: &str) -> Option<String> {
 }
 
 /// Whether a rule for `domain` covers `host`: the domain itself and every subdomain, on label
-/// boundaries, so figma.com covers www.figma.com but not notfigma.com (ADR-0008).
+/// boundaries, so figma.com covers www.figma.com but not notfigma.com (ADR-0006).
 pub(crate) fn covers(domain: &str, host: &str) -> bool {
     host.strip_suffix(domain)
         .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
 }
 
 /// The domain a rule made from the front tab names: its host, short of a leading `www.`, so one
-/// made on docs.google.com covers that service rather than all of google.com (ADR-0023). The
+/// made on docs.google.com covers that service rather than all of google.com (ADR-0017). The
 /// `www.` stays where only a top-level domain would be left, as on www.com.
 pub(crate) fn of_tab(host: &str) -> String {
     host.strip_prefix("www.")

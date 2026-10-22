@@ -1,4 +1,4 @@
-//! The IPC server thread (ADR-0013). It never touches the core's state: each request is
+//! The IPC server thread (ADR-0010). It never touches the core's state: each request is
 //! queued, the shell is asked for a tick, and the answer comes back from the main thread.
 
 use std::fs::{self, DirBuilder, Permissions};

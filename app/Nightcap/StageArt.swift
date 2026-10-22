@@ -259,7 +259,7 @@ enum StageArt {
 
     /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift
     /// item, the strength between the menu's suns, everywhere's row, then the front app's
-    /// (ADR-0024). It stops there: Settings and Quit, under them, don't fit the stage.
+    /// (ADR-0018). It stops there: Settings and Quit, under them, don't fit the stage.
     private static func ready() -> NSView {
         Drawn(NSSize(width: 460, height: 164)) { _ in
             let font = NSFont.systemFont(ofSize: 12)

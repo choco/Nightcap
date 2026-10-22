@@ -146,7 +146,7 @@ pub struct Menu {
     pub entries: Vec<MenuEntry>,
 }
 
-/// The menu's Night Shift item: everywhere's switch, with what decides the screen (ADR-0024).
+/// The menu's Night Shift item: everywhere's switch, with what decides the screen (ADR-0018).
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct NightShiftItem {
     /// Checked while Night Shift is on everywhere.
@@ -194,7 +194,7 @@ pub struct OnboardingSteps {
     pub opens_at_login: Option<bool>,
 }
 
-/// Onboarding's Night Shift steps, which set the strength and the schedule (ADR-0020).
+/// Onboarding's Night Shift steps, which set the strength and the schedule (ADR-0014).
 #[derive(Debug, Clone, PartialEq, uniffi::Record)]
 pub struct OnboardingNightShift {
     /// How warm, unless the config sets it or the strength can't be read.
@@ -300,7 +300,7 @@ pub enum MenuEntry {
     Strength {
         value: u8,
     },
-    /// A place row: a submenu that turns one place the other way (ADR-0024).
+    /// A place row: a submenu that turns one place the other way (ADR-0018).
     Row {
         row: PlaceRow,
     },
@@ -416,7 +416,7 @@ pub enum Event {
     OnboardingFinished {
         websites: bool,
     },
-    /// The tour started (ADR-0022).
+    /// The tour started (ADR-0016).
     TourStarted,
     /// The tour ended, or the user ended it.
     TourEnded,
@@ -451,10 +451,10 @@ pub enum LoginItem {
 
 #[derive(Debug, PartialEq, uniffi::Enum)]
 pub enum Effect {
-    /// Registers Nightcap to open at login, as the user chose (ADR-0015).
+    /// Registers Nightcap to open at login, as the user chose (ADR-0011).
     RegisterLoginItem,
     UnregisterLoginItem,
-    /// Starts Sparkle's daily checks, in self-managed releases only (ADR-0015).
+    /// Starts Sparkle's daily checks, in self-managed releases only (ADR-0011).
     StartUpdater,
     /// Starts Sparkle's own check, as if the user had asked for one.
     CheckForUpdates,
@@ -463,7 +463,7 @@ pub enum Effect {
         completed: u32,
     },
     /// Asks for Accessibility, which website checking needs: the macOS prompt, or the pane in
-    /// System Settings once Nightcap has an entry there (ADR-0016).
+    /// System Settings once Nightcap has an entry there (ADR-0012).
     AskForAccessibility,
     /// Watches this browser's host, replacing any earlier watch; reports carry `generation`.
     WatchBrowser {
@@ -512,7 +512,7 @@ pub enum CoreError {
 const ONBOARDING: u32 = 1;
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
-/// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0005).
+/// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
 const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
 
 /// How long after waking macOS may take to perform a schedule transition it missed during sleep.
@@ -575,7 +575,7 @@ struct State {
     ad_hoc: Vec<(RuleIdentity, OnOff)>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
     ad_hoc_error: Option<String>,
-    /// Website checking as the user chose it; `websites` in the config wins (ADR-0016).
+    /// Website checking as the user chose it; `websites` in the config wins (ADR-0012).
     websites: bool,
     onboarding: u32,
     config_websites: Option<bool>,
@@ -591,7 +591,7 @@ struct State {
     watch: Option<Watch>,
     /// The generation of the last watch started.
     generation: u64,
-    /// Every place with a hold or a timer (ADR-0024).
+    /// Every place with a hold or a timer (ADR-0018).
     layers: Vec<PlaceLayers>,
     /// The write the shell was last asked for, until a status callback reports the result.
     pending_write: Option<bool>,
@@ -617,7 +617,7 @@ struct State {
     login_item: Option<LoginItem>,
     /// See `state::Persisted::open_at_login`.
     open_at_login: bool,
-    /// A self-managed release, which opens itself at login if the user wants (ADR-0015).
+    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
     opens_itself_at_login: bool,
     /// What was last written to `state.json`.
     saved: state::Persisted,
@@ -702,7 +702,7 @@ impl Core {
         effects
     }
 
-    /// The ad-hoc rules, written for the config (ADR-0009).
+    /// The ad-hoc rules, written for the config (ADR-0007).
     pub fn export(&self, format: ExportFormat) -> String {
         adhoc::export(self.state().kept_ad_hoc(), format)
     }
@@ -904,7 +904,7 @@ impl Core {
                 state.is_browser = is_browser;
                 Vec::new()
             }
-            // The host itself is never logged (ADR-0012).
+            // The host itself is never logged (ADR-0009).
             Event::HostChanged { generation, host } => {
                 let mut state = self.state();
                 match &mut state.watch {
@@ -1049,7 +1049,7 @@ impl Core {
             Event::CommandChosen { command } => {
                 let mut effects = Vec::new();
                 if let Err(error) = self.run_command(&command, &mut effects) {
-                    // The message can name a domain, so only the code is logged (ADR-0012).
+                    // The message can name a domain, so only the code is logged (ADR-0009).
                     tracing::warn!("a menu command was refused: {:?}", error.code);
                 }
                 effects
@@ -1099,7 +1099,7 @@ impl Core {
             }
             Event::Terminating => {
                 // Nightcap can't tell a restart from being removed, so it never leaves a force
-                // behind (ADR-0011), nor Night Shift on for a tour (ADR-0022).
+                // behind (ADR-0008), nor Night Shift on for a tour (ADR-0016).
                 let now = self.clock.now();
                 let mut state = self.state();
                 state.end_tour(now);
@@ -1131,7 +1131,7 @@ impl Core {
         let (config, config_error) = match config::load(&setup.config_file) {
             Ok(config) => (config, None),
             Err(error) => {
-                // The error can quote a domain, so it goes to status, not the log (ADR-0012).
+                // The error can quote a domain, so it goes to status, not the log (ADR-0009).
                 tracing::warn!("running without config rules: the config is invalid; see status");
                 let config = config::Config {
                     rules: Vec::new(),
@@ -1211,7 +1211,7 @@ impl Core {
     }
 
     /// Only a self-managed release opens at login and updates through Sparkle: an installer
-    /// owns a managed one, and a dev build would shadow the installed app (ADR-0015).
+    /// owns a managed one, and a dev build would shadow the installed app (ADR-0011).
     fn updates_itself(&self) -> bool {
         self.install == Install::SelfManaged && self.instance == Instance::Release
     }
@@ -1407,10 +1407,10 @@ impl Core {
         outcome.map(|()| state.decide())
     }
 
-    /// Reconciles a status callback with what the core wants (ADR-0005). macOS catching up on a
+    /// Reconciles a status callback with what the core wants (ADR-0004). macOS catching up on a
     /// transition the core already applied, or running just ahead of the next one, is that
     /// transition; a match needs nothing; anything else is an external change, handled like the
-    /// equivalent command (ADR-0006).
+    /// equivalent command (ADR-0018).
     fn reconcile(&self, state: &mut State, enabled: bool) -> Option<Effect> {
         if state.left_by_last_run.take() == Some(on_off(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
@@ -1500,7 +1500,7 @@ impl Core {
     }
 
     /// Watches the frontmost browser while website checking is on, unless its own place says
-    /// off and no site could say on (ADR-0016, ADR-0024).
+    /// off and no site could say on (ADR-0012, ADR-0018).
     fn rewatch(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         let wanted =
@@ -1532,7 +1532,7 @@ impl Core {
         }
     }
 
-    /// Drops the ad-hoc rules the config now has, which have graduated (ADR-0009), and lays out
+    /// Drops the ad-hoc rules the config now has, which have graduated (ADR-0007), and lays out
     /// the rules the engine sees.
     fn graduate(&self) {
         let mut state = self.state();
@@ -1563,7 +1563,7 @@ impl Core {
     }
 
     /// Makes the user's rule for an app or domain say `says`, replacing one of theirs that said
-    /// the other and the place's snoozes; a config rule changes only in the config (ADR-0025).
+    /// the other and the place's snoozes; a config rule changes only in the config (ADR-0006).
     fn add_rule(
         &self,
         state: &mut State,
@@ -1594,7 +1594,7 @@ impl Core {
             .iter()
             .position(|(kept, _)| same_rule(kept, &identity));
         // A rule added during the tour is the tour's, which nothing keeps past it, and a change to
-        // one of the user's own lasts only while it runs (ADR-0022).
+        // one of the user's own lasts only while it runs (ADR-0016).
         if kept.is_none()
             && let Some(tour) = &mut state.tour
         {
@@ -1675,7 +1675,7 @@ impl Core {
         Ok(())
     }
 
-    /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0011).
+    /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).
     fn save(&self) {
         let mut state = self.state();
         let snapshot = state.snapshot();
@@ -1714,13 +1714,13 @@ impl Core {
     }
 
     /// Writes Night Shift when what the core wants differs from what was last observed
-    /// (ADR-0005), once until a status callback reports the result.
+    /// (ADR-0004), once until a status callback reports the result.
     fn enforce(&self, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         if state.night_shift == NightShift::Unavailable || state.session != Session::Active {
             return;
         }
-        // A new watch keeps Night Shift as it is until its first read (ADR-0016).
+        // A new watch keeps Night Shift as it is until its first read (ADR-0012).
         if state.watch.as_ref().is_some_and(|watch| !watch.reported) {
             return;
         }
@@ -1798,7 +1798,7 @@ struct Watch {
 }
 
 /// A tour in progress, and the user's rules and changes as it found them, which its end puts
-/// back (ADR-0022).
+/// back (ADR-0016).
 struct Tour {
     /// The rules the user added during the tour, which it holds instead of ad-hoc ones.
     rules: Vec<(RuleIdentity, OnOff)>,
@@ -1813,7 +1813,7 @@ struct Tour {
 }
 
 impl State {
-    /// The switch (ADR-0024): takes off everywhere's layers that say otherwise, top first, and
+    /// The switch (ADR-0018): takes off everywhere's layers that say otherwise, top first, and
     /// if the schedule still says otherwise, holds `state` until the user turns it back.
     fn switch(&mut self, state: OnOff) {
         while self.says(&Place::Everywhere) != Some(state) && self.peel(&Place::Everywhere, state) {
@@ -1864,7 +1864,7 @@ impl State {
         }
     }
 
-    /// Puts Night Shift on or off at a place for a length (ADR-0024): a timer for a time or
+    /// Puts Night Shift on or off at a place for a length (ADR-0018): a timer for a time or
     /// until a time, which gives back what's under it, and a hold otherwise, replacing the
     /// place's hold and ending its timer.
     fn set(
@@ -1957,7 +1957,7 @@ impl State {
         self.timeline.next_transition(first)
     }
 
-    /// Takes an external change as flipping what the user sees (ADR-0024): takes off what the
+    /// Takes an external change as flipping what the user sees (ADR-0018): takes off what the
     /// deciding place says, and holds `state` over a rule or the schedule until the schedule
     /// next turns it back, everywhere too where a rule decides and everywhere says otherwise.
     /// Tells the user when that snoozes a rule.
@@ -2035,7 +2035,7 @@ impl State {
         self.tidy();
     }
 
-    /// An edited schedule ends every hold waiting on it (ADR-0024).
+    /// An edited schedule ends every hold waiting on it (ADR-0018).
     fn schedule_edited(&mut self) {
         let waiting = |hold: &Option<Layer>| hold.as_ref().is_some_and(|hold| hold.until.is_some());
         for layers in self
@@ -2080,7 +2080,7 @@ impl State {
     }
 
     /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
-    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0022).
+    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn snapshot(&self) -> state::Persisted {
         state::Persisted {
             layers: self.after_tour(),
@@ -2113,7 +2113,7 @@ impl State {
     }
 
     /// Writes the config's strength and schedule where they changed since last applied, once
-    /// Night Shift, and for the strength its value, is known (ADR-0020).
+    /// Night Shift, and for the strength its value, is known (ADR-0014).
     fn apply_config_night_shift(&mut self, effects: &mut Vec<Effect>) {
         if self.night_shift == NightShift::Unavailable {
             return;
@@ -2138,7 +2138,7 @@ impl State {
         }
     }
 
-    /// The row under the Night Shift item (ADR-0024): everywhere, whatever is in front, with
+    /// The row under the Night Shift item (ADR-0018): everywhere, whatever is in front, with
     /// everywhere's lengths but the switch's own, and none that would come to the same as
     /// clicking the switch. None when it would offer nothing.
     fn everywhere_row(&self, decision: &Decision, now: Timestamp) -> Option<PlaceRow> {
@@ -2188,7 +2188,7 @@ impl State {
         })
     }
 
-    /// The row for an app or site in front (ADR-0024): that place alone, with undoing first:
+    /// The row for an app or site in front (ADR-0018): that place alone, with undoing first:
     /// putting its rule back where that goes the right way, and removing a rule of the user's;
     /// then its lengths, then for good, which is a rule.
     fn place_row(&self, place: &Place, now: Timestamp) -> PlaceRow {
@@ -2448,7 +2448,7 @@ impl State {
     }
 
     /// A rule's row in the Rules tab: a snooze can be put back, an ad-hoc rule removed, and a
-    /// config rule changed only in the config (ADR-0025).
+    /// config rule changed only in the config (ADR-0006).
     fn settings_rule(&self, rule: &Rule) -> SettingsRule {
         let identity = rule.identity.clone();
         let place = Place::from(identity.clone());
@@ -2804,7 +2804,7 @@ impl State {
 
     /// What the rule engine sees. On the way out, only everywhere's hold still applies: macOS
     /// keeps Night Shift where the user put it until its next transition, but nothing else of
-    /// Nightcap's may outlive it (ADR-0011).
+    /// Nightcap's may outlive it (ADR-0008).
     fn inputs(&self) -> Inputs<'_> {
         let released = self.released.as_ref();
         Inputs {
@@ -2925,7 +2925,7 @@ impl State {
     }
 
     /// The site in front, while website checking knows the host: the most specific domain with
-    /// a rule or layers covering it, else the tab domain (ADR-0023).
+    /// a rule or layers covering it, else the tab domain (ADR-0017).
     fn site_in_front(&self) -> Option<Place> {
         let host = self
             .context
@@ -3025,7 +3025,7 @@ fn normalize_place(place: &Place) -> Result<Place, ErrorReply> {
     }
 }
 
-/// A place as the log may show it: a domain is named by its kind only (ADR-0012).
+/// A place as the log may show it: a domain is named by its kind only (ADR-0009).
 fn loggable_place(place: &Place) -> String {
     match place_identity(place) {
         None => "everywhere".to_owned(),
@@ -3058,7 +3058,7 @@ fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
 }
 
 /// `identity` as rules keep it: a bundle ID is letters, digits, hyphens and periods, and a
-/// domain is bare and normalized (ADR-0008).
+/// domain is bare and normalized (ADR-0006).
 fn normalize_identity(identity: &RuleIdentity) -> Result<RuleIdentity, ErrorReply> {
     let normalized = match identity {
         RuleIdentity::App(bundle_id) => (!bundle_id.is_empty()
@@ -3088,7 +3088,7 @@ fn same_rule(a: &RuleIdentity, b: &RuleIdentity) -> bool {
 }
 
 /// A rule identity as the log may show it: `tracing-oslog` logs everything as public, so a
-/// domain rule is named by its kind only (ADR-0012).
+/// domain rule is named by its kind only (ADR-0009).
 fn loggable(identity: &RuleIdentity) -> String {
     match identity {
         RuleIdentity::App(_) => identity.to_string(),

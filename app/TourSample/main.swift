@@ -1,6 +1,6 @@
 import AppKit
 
-/// The tour's sample (ADR-0022): an app of its own with a window of colours that Night Shift
+/// The tour's sample (ADR-0016): an app of its own with a window of colours that Night Shift
 /// visibly warms, which the user gives a rule from Nightcap's menu. Nightcap opens it for the
 /// tour's rule step and quits it after.
 final class Sample: NSObject, NSApplicationDelegate {

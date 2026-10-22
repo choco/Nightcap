@@ -2,7 +2,7 @@ import AppKit
 import NightcapCore
 
 /// Custom…: asks when a change should end, in a small floating window under the moon, and sends
-/// `Set` until then (ADR-0024). A time typed into a menu fights the menu's own keys. An earlier
+/// `Set` until then (ADR-0018). A time typed into a menu fights the menu's own keys. An earlier
 /// time than now means tomorrow.
 final class TimePicker: NSObject, NSWindowDelegate {
     private static let padding: CGFloat = 16

@@ -4,7 +4,7 @@ Nightcap depends on several macOS-only facilities: NSWorkspace notifications, wh
 
 ## Decision
 
-`Nightcap.app` is one menu-bar process (`LSUIElement`), started at login by its installer's LaunchAgent or by its own login item (ADR-0015). It shows in the Dock only while one of its windows, such as onboarding or Settings, is open. It is built in two layers:
+`Nightcap.app` is one menu-bar process (`LSUIElement`), started at login by its installer's LaunchAgent or by its own login item (ADR-0011). It shows in the Dock only while one of its windows, such as onboarding or Settings, is open. It is built in two layers:
 
 - **The Swift shell** owns every Apple API: the app lifecycle, the menu bar and the windows, notifications, NSWorkspace, Accessibility and the browser watcher, and CoreBrightness.
 - **The Rust core** is a static library linked into the same process. It owns the rules, the decisions, the schedule math, config and persistence, and the IPC server. It never calls a macOS API.
@@ -16,7 +16,7 @@ This follows Ghostty: the core never owns the app lifecycle or system services. 
 ## Consequences
 
 - Two languages and an FFI layer (ADR-0002).
-- The main thread must never block, which is why browser reads run on their own thread (ADR-0016).
+- The main thread must never block, which is why browser reads run on their own thread (ADR-0012).
 - The shell needs Apple's toolchain, so the app is built in CI rather than in Nix (ADR-0003).
 
 ## Rejected alternatives

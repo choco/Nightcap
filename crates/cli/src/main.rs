@@ -422,7 +422,7 @@ fn schedule_text(schedule: Schedule) -> String {
     }
 }
 
-/// The config's value, when it sets one that differs from the Mac's (ADR-0020).
+/// The config's value, when it sets one that differs from the Mac's (ADR-0014).
 fn from_config<T: PartialEq + Copy>(
     config: Option<T>,
     mac: Option<T>,

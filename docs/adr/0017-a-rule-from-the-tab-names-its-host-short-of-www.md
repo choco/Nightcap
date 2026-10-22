@@ -1,14 +1,12 @@
 # A rule made from the front tab names its host, short of `www.`
 
-The menu's toggle for the front tab adds a domain rule, which covers the domain it names and every subdomain (ADR-0008). It named the tab's registrable domain, the label below the public suffix (ADR-0009). That is right for `www.figma.com`, and too broad wherever one domain holds separate services: a rule made on `docs.google.com` forced Night Shift off on all of `google.com`, and one made on `tv.apple.com` on all of `apple.com`, with nothing on screen to say so. The tour's site step, on `nightcap.choco.me`, offered all of `choco.me`.
+A rule made from the front tab's row is a domain rule, covering the domain it names and every subdomain (ADR-0006). Naming the tab's registrable domain, the label below the public suffix, is right for `www.figma.com`, and too broad wherever one domain holds separate services: a rule made on `docs.google.com` would cover all of `google.com`, and one made on `tv.apple.com` all of `apple.com`, with nothing on screen to say so, and the tour's site step, on `nightcap.choco.me`, all of `choco.me`.
 
 ## Decision
 
 - A rule made from the front tab names the tab's host, short of a leading `www.`: `figma.com` from `www.figma.com`, `docs.google.com` from itself. It still covers that host's subdomains.
 - The `www.` stays where removing it would leave only a top-level domain, as on `www.com`.
-- The Public Suffix List, which only this choice used, goes, and with it the `psl` crate.
-
-This supersedes in part ADR-0008, for its use of the Public Suffix List, and ADR-0009, for the domain the toggle adds.
+- No Public Suffix List is needed, so Nightcap carries none.
 
 ## Consequences
 

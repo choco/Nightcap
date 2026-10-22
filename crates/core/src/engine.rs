@@ -1,5 +1,5 @@
 //! The rule engine: what Night Shift should be, from the most specific place in front that
-//! says something, and why (ADR-0024, ADR-0025).
+//! says something, and why (ADR-0018, ADR-0006).
 
 use jiff::Timestamp;
 use nightcap_protocol::{Decision, OnOff, Place, PlaceLayers, Reason, Rule, RuleIdentity};
@@ -20,7 +20,7 @@ pub(crate) struct Inputs<'a> {
     pub rules: &'a [Rule],
     /// Every place with a hold or a timer.
     pub layers: &'a [PlaceLayers],
-    /// A tour has Night Shift on for itself, in place of the schedule (ADR-0022).
+    /// A tour has Night Shift on for itself, in place of the schedule (ADR-0016).
     pub tour_stands_in: bool,
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,

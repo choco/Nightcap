@@ -2,7 +2,7 @@ import AppKit
 import os
 
 /// Sites' own icons, for the menu's site row, the Rules tab and onboarding's suggestions
-/// (ADR-0026). The menu and onboarding ask for them; each comes from its site and is kept on
+/// (ADR-0019). The menu and onboarding ask for them; each comes from its site and is kept on
 /// disk, so a site is asked again only once its icon is a month old, or a day after it had none.
 final class SiteIcons {
     /// Called with each site whose icon has just arrived.

@@ -5,7 +5,7 @@ import os
 
 /// Drives Night Shift through the private CoreBrightness framework. Everything is looked up at
 /// runtime and checked against the method signatures seen on macOS 15 and 27, so an OS update
-/// that changes them leaves Night Shift unavailable instead of crashing (ADR-0005).
+/// that changes them leaves Night Shift unavailable instead of crashing (ADR-0004).
 final class NightShiftAdapter {
     struct Status {
         var enabled: Bool
@@ -43,20 +43,20 @@ final class NightShiftAdapter {
         ],
     ]
     /// Checked apart from the rest: without them Night Shift still works, with no strength to
-    /// show or set (ADR-0020).
+    /// show or set (ADR-0014).
     private static let strengthEncodings = [
         "getStrength:": "B24@0:8^f16",
         "setStrength:commit:": "B24@0:8f16B20",
     ]
     /// Checked apart from the rest too: without them, onboarding sends the user to System
-    /// Settings to choose the schedule (ADR-0020). The custom hours are
+    /// Settings to choose the schedule (ADR-0014). The custom hours are
     /// {{int hour, int minute} from, {int hour, int minute} to}.
     private static let scheduleEncodings = [
         "setMode:": "B20@0:8i16",
         "setSchedule:": "B24@0:8r^{?={?=ii}{?=ii}}16",
     ]
     /// The peek's setter, checked apart from the rest too: without it the shortcut only turns
-    /// Night Shift on or off (ADR-0021).
+    /// Night Shift on or off (ADR-0015).
     private static let peekEncodings = ["setProperty:forKey:": "B32@0:8@16@24"]
     private static let statusSize = 40
     private static let enabledOffset = 1
@@ -221,7 +221,7 @@ final class NightShiftAdapter {
     }
 
     /// Shows true colour with Night Shift still on: `BlueLightReductionFactor`, the tint macOS
-    /// fades at each switch, set to 0 (ADR-0021). Nothing to show while Night Shift is off.
+    /// fades at each switch, set to 0 (ADR-0015). Nothing to show while Night Shift is off.
     func peek() {
         guard !peeking, status?.enabled == true, setFactor(0, fade: 0) else { return }
         peeking = true

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Signs the packaged zip for Sparkle and writes the appcast beside it: one item, the release
-# being published, which is all Sparkle reads (ADR-0015). The EdDSA key comes from
+# being published, which is all Sparkle reads (ADR-0011). The EdDSA key comes from
 # $SPARKLE_PRIVATE_KEY, or else from the login keychain.
 # Usage: release/appcast <Nightcap.app> <out-dir>
 set -euo pipefail

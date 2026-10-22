@@ -1,6 +1,6 @@
 //! What the CLI and the daemon share: the IPC messages and where an instance's socket lives.
 //!
-//! Every message is one JSON object per line (ADR-0013). A connection opens with a
+//! Every message is one JSON object per line (ADR-0010). A connection opens with a
 //! [`HelloMessage`] from the client, answered by a [`HelloReply`]; then the client sends one
 //! [`Request`] and receives one [`Response`].
 
@@ -104,7 +104,7 @@ pub enum Request {
     Query(Query),
     /// Reads the config again; answers with the status.
     Reload,
-    /// Starts Sparkle's own check, whose window offers to install (ADR-0015).
+    /// Starts Sparkle's own check, whose window offers to install (ADR-0011).
     Update,
 }
 
@@ -112,7 +112,7 @@ pub enum Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
-    /// The switch: Night Shift on everywhere, until turned back (ADR-0024).
+    /// The switch: Night Shift on everywhere, until turned back (ADR-0018).
     On,
     /// The switch: Night Shift off everywhere, until turned back.
     Off,
@@ -128,23 +128,23 @@ pub enum Command {
     /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the
     /// schedule.
     Reset(Place),
-    /// Adds an ad-hoc rule, replacing the user's own rule for the same app or domain (ADR-0025).
+    /// Adds an ad-hoc rule, replacing the user's own rule for the same app or domain (ADR-0006).
     AddRule { identity: RuleIdentity, says: OnOff },
     /// Removes an ad-hoc rule; a config rule changes only in the config.
     RemoveRule(RuleIdentity),
-    /// Turns website checking on or off, unless the config sets it (ADR-0016).
+    /// Turns website checking on or off, unless the config sets it (ADR-0012).
     Websites(OnOff),
-    /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0015).
+    /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0011).
     OpenAtLogin(OnOff),
-    /// Sets Night Shift's strength, 0 to 100, and saves it (ADR-0020).
+    /// Sets Night Shift's strength, 0 to 100, and saves it (ADR-0014).
     Strength(u8),
     /// Shows a strength, 0 to 100, without saving it, while a slider moves; `Strength` ends it.
     PreviewStrength(u8),
-    /// Sets Night Shift's schedule, which macOS applies at once (ADR-0020).
+    /// Sets Night Shift's schedule, which macOS applies at once (ADR-0014).
     SetSchedule(Schedule),
 }
 
-/// Where a change applies: everywhere, an app, or a domain and its subdomains (ADR-0024).
+/// Where a change applies: everywhere, an app, or a domain and its subdomains (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Place {
@@ -173,7 +173,7 @@ impl From<RuleIdentity> for Place {
     }
 }
 
-/// How long a change lasts (ADR-0024).
+/// How long a change lasts (ADR-0018).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Length {
@@ -194,7 +194,7 @@ pub struct Layer {
     pub state: OnOff,
     pub until: Option<Timestamp>,
     /// The place an external change held the same way at once; turning either back takes off
-    /// both (ADR-0024).
+    /// both (ADR-0018).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub with: Option<Place>,
 }
@@ -242,7 +242,7 @@ pub enum Payload {
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
-/// decides it, and the layers that place rests on, top first (ADR-0024).
+/// decides it, and the layers that place rests on, top first (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     /// None while everywhere decides and the schedule isn't known yet.
@@ -294,7 +294,7 @@ pub enum Reason {
     Timer(Layer),
     Hold(Layer),
     Rule(Rule),
-    /// Night Shift on for the tour, which stands in for the schedule while it runs (ADR-0022).
+    /// Night Shift on for the tour, which stands in for the schedule while it runs (ADR-0016).
     Tour,
     /// The schedule, until its next transition, if any.
     Schedule {
@@ -307,7 +307,7 @@ pub enum Reason {
 pub struct Rule {
     pub identity: RuleIdentity,
     pub source: RuleSource,
-    /// Night Shift off, or on, while the rule matches (ADR-0025).
+    /// Night Shift off, or on, while the rule matches (ADR-0006).
     pub says: OnOff,
 }
 
@@ -367,7 +367,7 @@ impl TryFrom<String> for RuleIdentity {
 pub enum RuleSource {
     Config,
     AdHoc,
-    /// Added during the tour, and kept only while it runs (ADR-0022).
+    /// Added during the tour, and kept only while it runs (ADR-0016).
     Tour,
 }
 
@@ -388,19 +388,19 @@ pub struct Status {
     pub night_shift: NightShift,
     /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
     pub strength: Option<u8>,
-    /// The strength the config sets, if it sets one (ADR-0020).
+    /// The strength the config sets, if it sets one (ADR-0014).
     pub config_strength: Option<u8>,
     pub decision: Decision,
     /// None until the shell first reports Night Shift's status.
     pub schedule: Option<Schedule>,
-    /// The schedule the config sets, if it sets one (ADR-0020).
+    /// The schedule the config sets, if it sets one (ADR-0014).
     pub config_schedule: Option<Schedule>,
     /// None while the schedule, or the sun times it needs, aren't known.
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
     /// The frontmost app's bundle ID, when it has one.
     pub frontmost_app: Option<String>,
-    /// Whether the frontmost browser's host is being watched (ADR-0016).
+    /// Whether the frontmost browser's host is being watched (ADR-0012).
     pub watching: bool,
     /// The watched browser's host, once known.
     pub host: Option<String>,
@@ -449,7 +449,7 @@ pub enum CheckState {
     Broken,
 }
 
-/// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0016).
+/// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0012).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebsiteChecking {
     pub state: OnOff,
@@ -511,7 +511,7 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
-/// Who owns updates and starting at login (ADR-0015).
+/// Who owns updates and starting at login (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Install {

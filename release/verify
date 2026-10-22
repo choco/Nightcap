@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The release gate: fails unless the app satisfies the committed signing requirement,
 # its designated requirement matches it exactly, it carries a notarization ticket that
-# Gatekeeper accepts (ADR-0017), and its executables link only system libraries and the
-# embedded Sparkle (ADR-0015). Usage: release/verify <Nightcap.app>
+# Gatekeeper accepts (ADR-0003), and its executables link only system libraries and the
+# embedded Sparkle (ADR-0011). Usage: release/verify <Nightcap.app>
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"

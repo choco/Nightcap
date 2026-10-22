@@ -1,4 +1,4 @@
-//! The core logs to the system log under the app's subsystem, beside the shell (ADR-0012).
+//! The core logs to the system log under the app's subsystem, beside the shell (ADR-0009).
 //! `tracing-oslog` writes every message as public, so nothing logged here names a host.
 
 #[cfg(target_os = "macos")]

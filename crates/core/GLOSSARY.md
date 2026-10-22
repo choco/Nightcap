@@ -57,7 +57,7 @@ Night Shift switched outside Nightcap, in Control Center or System Settings.
 Taking an external change as flipping what the user sees: it takes off what the deciding place says, and holds the other state over a rule or the schedule until the schedule next turns it back.
 
 **Tour stand-in**:
-A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules and every place's hold and timer as the tour found them (ADR-0022).
+A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules and every place's hold and timer as the tour found them (ADR-0016).
 
 ### Rules
 
@@ -119,7 +119,7 @@ _Avoid_: pause, override
 ### Deciding
 
 **Force**:
-Night Shift held other than macOS would have it, by a rule, a hold or a timer. Nightcap releases every force on a clean exit (ADR-0011).
+Night Shift held other than macOS would have it, by a rule, a hold or a timer. Nightcap releases every force on a clean exit (ADR-0008).
 
 **Decision**:
 What Night Shift should be for the current context, the place that decides it, and the layers it rests on.

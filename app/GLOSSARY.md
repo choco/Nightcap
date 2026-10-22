@@ -77,7 +77,7 @@ A menu item with a submenu for one place: everywhere's under the Night Shift ite
 _Avoid_: rule toggle
 
 **Site icon**:
-A site's own icon, which its row in the menu, its rule in Settings and its suggestion in onboarding show once Nightcap has asked the site for it (ADR-0026), and the globe until then.
+A site's own icon, which its row in the menu, its rule in Settings and its suggestion in onboarding show once Nightcap has asked the site for it (ADR-0019), and the globe until then.
 _Avoid_: favicon
 
 ### Shortcut

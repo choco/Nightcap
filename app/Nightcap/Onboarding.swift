@@ -3,7 +3,7 @@ import NightcapCore
 import UserNotifications
 import os
 
-/// Onboarding (ADR-0015, ADR-0016, ADR-0020): one step at a time under a stage that illustrates
+/// Onboarding (ADR-0011, ADR-0012, ADR-0014): one step at a time under a stage that illustrates
 /// it. Night Shift comes first, set up or kept as it is, then Nightcap's own steps. Closing the
 /// window finishes onboarding with what was chosen so far. Quitting Nightcap leaves it
 /// unfinished.
@@ -574,7 +574,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             ])]
         case .sites:
             // The suggestions are the same for everyone, so asking for their icons tells the
-            // sites nothing about the user's browsing (ADR-0026).
+            // sites nothing about the user's browsing (ADR-0019).
             icons.ask(Self.suggestedSites.map(\.host))
             return [grid(sites.map { site in
                 GridCell(site, ticked: site.ruled != nil || tickedSites.contains(site.id)) { [weak self] in
@@ -1169,7 +1169,7 @@ struct GridItem {
     /// Where the rule comes from when it exists already, such as "From your config".
     let ruled: String?
 
-    /// An app's icon, or a site's own once it has arrived (ADR-0026).
+    /// An app's icon, or a site's own once it has arrived (ADR-0019).
     enum Icon {
         case app(NSImage)
         case site(NSImage?)

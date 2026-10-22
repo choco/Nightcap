@@ -1,17 +1,16 @@
 # Sites' icons come from the sites, asked for as the menu opens, and are kept
 
-The menu's site row and the Rules tab show a globe for every site, while apps show their own icons. A site's icon would tell sites apart at a glance, but only the site has it within reach: the browsers keep theirs where Nightcap can't read them, and an icon service would learn every site the user opens. ADR-0012 left the appcast check as Nightcap's only network access.
+The menu's site row and the Rules tab show a globe for every site, while apps show their own icons. A site's icon would tell sites apart at a glance, but only the site has it within reach: the browsers keep theirs where Nightcap can't read them, and an icon service would learn every site the user opens. Nightcap otherwise reaches the network only to check for updates (ADR-0011).
 
 ## Decision
 
 - While website checking is on, opening the menu asks for the icons of the site in front and of every site with a rule, skipping a site whose icon is kept and under a month old, or whose last ask, under a day ago, found none.
 - Onboarding's sites page, which follows the choice to check websites, asks likewise for the sites it suggests. They're the same for everyone, so the asks say nothing about the user's browsing.
 - Nightcap asks the site itself, over HTTPS: its home page, read for `<link rel="icon">` and `apple-touch-icon` without running anything, then the one nearest 32 pixels and at least that, an SVG next, then `/favicon.ico`. Requests are ephemeral: no cookies sent or kept, and no URL cache.
+- Only sites on the internet are asked: never an address, nor a name only the local network knows, such as one ending in `.local`, for the site, an icon its page names or a redirect, so macOS never asks the user about the local network.
 - Icons are kept in `~/Library/Caches/<bundle ID>/Site Icons/`, one 64-pixel PNG per site, named by its domain; a site that had none gets an empty marker.
 - The menu, the Rules tab and onboarding's suggestions show a kept icon, and the globe otherwise. An icon that arrives while one of them shows appears in it.
-- Nothing about icons is logged (ADR-0012).
-
-This supersedes in part ADR-0012, for the appcast check being Nightcap's only network access.
+- Nothing about icons is logged (ADR-0009).
 
 ## Consequences
 

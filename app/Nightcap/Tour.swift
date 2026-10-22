@@ -3,7 +3,7 @@ import KeyboardShortcuts
 import NightcapCore
 import os
 
-/// The tour (ADR-0022): a floating panel at the top of the screen that walks through the moon, a
+/// The tour (ADR-0016): a floating panel at the top of the screen that walks through the moon, a
 /// rule the user makes for Tour Sample and sees act, snoozing that rule, the same rule for a site
 /// where website checking can, and the peek. Every step can be skipped, and the tour ended.
 /// While it runs, the core has Night Shift on for it if it was off, and holds the rules added

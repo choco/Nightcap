@@ -359,7 +359,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// A rule's icon, name, what it says and what it is, its label and what can be done about
-    /// it: a config rule changes only in the config (ADR-0025).
+    /// it: a config rule changes only in the config (ADR-0006).
     private func ruleRow(_ rule: SettingsRule) -> NSView {
         let (name, detail, icon) = describe(rule.identity)
         let texts = NSStackView(views: [
@@ -382,7 +382,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// An app by the name and icon of its bundle, if it's installed, and a website by its domain
-    /// and its own icon, once the menu has fetched it (ADR-0026).
+    /// and its own icon, once the menu has fetched it (ADR-0019).
     private func describe(_ identity: RuleIdentity) -> (String, String, NSView) {
         switch identity {
         case .app(let bundleId):

@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 import notify
 
-/// The Accessibility grant, kept current without a relaunch (ADR-0016).
+/// The Accessibility grant, kept current without a relaunch (ADR-0012).
 ///
 /// `tccd` posts the Darwin notification `com.apple.tcc.access.changed` right after each write to
 /// its database, for any app, in either direction. TCC's private `TCCAccessCheckAuditToken` reads
