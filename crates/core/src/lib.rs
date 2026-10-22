@@ -2336,14 +2336,25 @@ impl State {
     }
 
     fn until_turn(&self, place: &Place, state: OnOff, until: Timestamp) -> RowItem {
-        choice(
-            &format!("Until {}", self.clock_time(until)),
-            Command::Set {
-                place: place.clone(),
-                state,
-                length: Length::UntilScheduleTurns,
+        // The time alone could be any clock's; the line under it says it's the schedule's.
+        let moment = match (&self.timeline.schedule, state) {
+            (Some(Schedule::SunsetToSunrise), OnOff::On) => "At sunrise",
+            (Some(Schedule::SunsetToSunrise), OnOff::Off) => "At sunset",
+            (_, OnOff::On) => "When the schedule ends",
+            (_, OnOff::Off) => "When the schedule starts",
+        };
+        RowItem::Choice {
+            item: MenuItem {
+                title: format!("Until {}", self.clock_time(until)),
+                subtitle: Some(moment.to_owned()),
+                enabled: true,
+                command: Command::Set {
+                    place: place.clone(),
+                    state,
+                    length: Length::UntilScheduleTurns,
+                },
             },
-        )
+        }
     }
 
     /// A place's timer and hold, top down: "on until 23:30, then off until 07:00".

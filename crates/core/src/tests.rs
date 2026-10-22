@@ -1422,13 +1422,8 @@ fn a_time_zone_change_moves_the_custom_hours() {
     );
 }
 
-#[test]
-fn sunset_to_sunrise_follows_the_reported_sun_times() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
-
-    // As CoreBrightness reported them in Zurich that night.
+/// The sun times CoreBrightness reported in Zurich around the night of 15 October 2026.
+fn report_zurich_sun(core: &Core) {
     core.handle(Event::SunTimesChanged {
         sunrises: [
             "2026-10-15T05:49:20Z",
@@ -1445,6 +1440,15 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
         .map(|sunset| at(sunset).into())
         .to_vec(),
     });
+}
+
+#[test]
+fn sunset_to_sunrise_follows_the_reported_sun_times() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+
+    report_zurich_sun(&core);
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
@@ -3014,9 +3018,74 @@ fn everywheres_row_has_every_length_but_the_switchs() {
                     state: OnOff::Off,
                     start: at("2026-10-17T00:00:00+02:00"),
                 },
-                choice("Until 22:00", off(Length::UntilScheduleTurns)),
+                RowItem::Choice {
+                    item: MenuItem {
+                        title: "Until 22:00".to_owned(),
+                        subtitle: Some("When the schedule starts".to_owned()),
+                        enabled: true,
+                        command: off(Length::UntilScheduleTurns),
+                    },
+                },
             ],
         })
+    );
+}
+
+/// The line under everywhere's "Until" item at `time`, with Night Shift `enabled` as the
+/// schedule has it then.
+fn until_note(time: &str, enabled: bool, schedule: Schedule, title: &str) -> Option<String> {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), time);
+    report_zurich_sun(&core);
+    core.handle(Event::StatusChanged { enabled, schedule });
+    choice_titled(&everywhere_row(&core).unwrap(), title).subtitle
+}
+
+#[test]
+fn until_the_schedule_turns_names_sunrise_or_sunset() {
+    assert_eq!(
+        until_note(
+            "2026-10-16T01:40:00+02:00",
+            true,
+            Schedule::SunsetToSunrise,
+            "Until 18:31"
+        )
+        .as_deref(),
+        Some("At sunset")
+    );
+    assert_eq!(
+        until_note(
+            "2026-10-16T12:00:00+02:00",
+            false,
+            Schedule::SunsetToSunrise,
+            "Until 07:52"
+        )
+        .as_deref(),
+        Some("At sunrise")
+    );
+}
+
+#[test]
+fn until_the_schedule_turns_names_custom_hours_start_or_end() {
+    assert_eq!(
+        until_note(
+            "2026-10-16T23:00:00+02:00",
+            true,
+            custom_hours(),
+            "Until 22:00"
+        )
+        .as_deref(),
+        Some("When the schedule starts")
+    );
+    assert_eq!(
+        until_note(
+            "2026-10-16T12:00:00+02:00",
+            false,
+            custom_hours(),
+            "Until 07:00"
+        )
+        .as_deref(),
+        Some("When the schedule ends")
     );
 }
 
