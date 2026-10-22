@@ -26,7 +26,7 @@ final class Tour {
     /// The sample app's ID, which its rule names.
     static let sampleApp = Bundle.main.bundleIdentifier! + ".tour-sample"
     private static let site = URL(string: "https://nightcap.choco.me")!
-    /// What the menu's toggle for the site names: its host (ADR-0023).
+    /// What the menu's row for the site names: its host (ADR-0023).
     private static let siteRule = "nightcap.choco.me"
     private static let width: CGFloat = 330
     private static let padding: CGFloat = 16
@@ -53,7 +53,7 @@ final class Tour {
     private var tappedOff = false
     private var lastTry: Try?
     private var tried = false
-    private let panel = TourPanel()
+    private let panel = FloatingPanel()
     private weak var keyCaps: KeyCaps?
     private weak var hint: NSTextField?
     /// Reopens the sample if the user quits it during the rule step.
@@ -139,9 +139,9 @@ final class Tour {
     /// A command chosen in the menu, which may add or remove the rule a step asks for.
     func chose(_ command: Command) {
         switch command {
-        case .addRule(.app(let bundleId)) where bundleId == Self.sampleApp: ruled = true
+        case .addRule(.app(let bundleId), _) where bundleId == Self.sampleApp: ruled = true
         case .removeRule(.app(let bundleId)) where bundleId == Self.sampleApp: ruled = false
-        case .addRule(.domain) where step == .site: siteRuled = true
+        case .addRule(.domain, _) where step == .site: siteRuled = true
         case .removeRule(.domain) where step == .site: siteRuled = false
         default: return
         }
@@ -217,7 +217,7 @@ final class Tour {
                 "That’s true colour",
                 "Night Shift is off while the sample is in front, and the moon shows a “z”. Now click another window, or the desktop.")
         case .rule where front == Self.sampleApp:
-            return ("Give it a rule", "Click the moon to open the menu, and choose “In Tour Sample”, under Force Off.")
+            return ("Give it a rule", "Click the moon to open the menu, then choose “Turn Off in Tour Sample” › “Always”.")
         case .rule:
             return ("Try a rule", "Bring Tour Sample to the front: click its window, or its icon in the Dock.")
         case .site where siteLeft:
@@ -229,7 +229,7 @@ final class Tour {
         case .site where front == self.browser?.bundleId:
             return (
                 "Now a site",
-                "\(browser) has Nightcap’s site open. Click the moon, and choose “On \(Self.siteRule)”, under Force Off.")
+                "\(browser) has Nightcap’s site open. Click the moon, then choose “Turn Off at \(Self.siteRule)” › “Always”.")
         case .site:
             return ("Now a site", "Bring \(browser) back to the front, on Nightcap’s site.")
         case .peek:
@@ -477,48 +477,6 @@ final class Tour {
         return bitmap.representation(using: .png, properties: [:])
     }
     #endif
-}
-
-/// The tour's panel: floating on every Space, never taking the focus from the app in front, with
-/// its glass active throughout.
-private final class TourPanel: NSPanel {
-    let glass = NSVisualEffectView()
-
-    init() {
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 330, height: 100),
-            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        isFloatingPanel = true
-        level = .floating
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        hidesOnDeactivate = false
-        isMovableByWindowBackground = true
-        isReleasedWhenClosed = false
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        glass.material = .popover
-        glass.blendingMode = .behindWindow
-        glass.state = .active
-        glass.maskImage = Self.rounded(radius: 14)
-        contentView = glass
-    }
-
-    /// Borderless, it would otherwise never be key, and its buttons couldn't take Return.
-    override var canBecomeKey: Bool { true }
-
-    /// A stretchable rounded rectangle, which clips the glass and shapes the shadow.
-    private static func rounded(radius: CGFloat) -> NSImage {
-        let edge = radius * 2 + 1
-        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
-            NSColor.black.setFill()
-            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
-            return true
-        }
-        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
-        image.resizingMode = .stretch
-        return image
-    }
 }
 
 /// A plain button that acts on a click into the panel when it isn't key.

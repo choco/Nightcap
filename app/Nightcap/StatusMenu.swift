@@ -18,6 +18,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private weak var slider: NSSlider?
     /// "Nightcap is up here", while it shows.
     private var pointing: NSPopover?
+    /// Custom…'s window, while it shows.
+    private var picking: TimePicker?
     /// The mockup's orange dot, over the template moon so the moon still follows the menu
     /// bar's appearance while the dot keeps its colour.
     private let dot = NSView()
@@ -26,6 +28,20 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private final class Choice: NSObject {
         let command: Command
         init(_ command: Command) { self.command = command }
+    }
+
+    /// Boxes what Custom… asks for, likewise.
+    private final class Pick: NSObject {
+        let title: String
+        let place: Place
+        let state: OnOff
+        let start: Date
+        init(title: String, place: Place, state: OnOff, start: Date) {
+            self.title = title
+            self.place = place
+            self.state = state
+            self.start = start
+        }
     }
 
     init(
@@ -217,19 +233,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             switch entry {
             case .strength(let value):
                 menu.addItem(strengthItem(value))
-            case .item(let item):
-                menu.addItem(menuItem(item))
-            case .submenu(let title, let items):
-                let parent = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-                parent.image = Self.symbol("timer")
-                Self.showImage(parent)
-                let submenu = NSMenu(title: title)
-                submenu.autoenablesItems = false
-                items.forEach { submenu.addItem(menuItem($0)) }
-                parent.submenu = submenu
-                menu.addItem(parent)
-            case .header(let title):
-                menu.addItem(.sectionHeader(title: title))
+            case .row(let row):
+                menu.addItem(rowItem(row))
             case .separator:
                 menu.addItem(.separator())
             }
@@ -349,22 +354,60 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return copy
     }
 
-    /// The image beside a rule toggle: the app's own icon, or a globe for a site.
-    private static func image(for command: Command) -> NSImage? {
-        let identity: RuleIdentity
-        switch command {
-        case .addRule(let rule), .removeRule(let rule), .snooze(let rule), .unsnooze(let rule): identity = rule
-        case .resume: return symbol("arrow.uturn.backward")
-        default: return nil
-        }
-        switch identity {
-        case .domain: return symbol("globe")
+    /// The image beside a place row: the timer for everywhere, under the switch, the app's own
+    /// icon, or a globe for a site.
+    private static func image(for image: RowImage) -> NSImage? {
+        switch image {
+        case .everywhere: return symbol("timer")
+        case .site: return symbol("globe")
         case .app(let bundleId):
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
             let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
                 .map { NSWorkspace.shared.icon(forFile: $0.path) }
             return (running ?? installed).map(menuSized)
         }
+    }
+
+    /// A place row: a submenu that turns its place the other way, or a greyed item with only what
+    /// its place says, while it has nothing to offer (ADR-0024).
+    private func rowItem(_ row: PlaceRow) -> NSMenuItem {
+        let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
+        item.subtitle = row.subtitle.map(Self.wrapped)
+        item.image = Self.image(for: row.image)
+        Self.showImage(item)
+        item.indentationLevel = row.indented ? 1 : 0
+        guard !row.items.isEmpty else {
+            item.isEnabled = false
+            return item
+        }
+        let submenu = NSMenu(title: row.title)
+        submenu.autoenablesItems = false
+        for entry in row.items {
+            switch entry {
+            case .choice(let choice):
+                submenu.addItem(menuItem(choice))
+            case .pickTime(let title, let place, let state, let start):
+                let custom = NSMenuItem(title: "Custom…", action: #selector(pickTime(_:)), keyEquivalent: "")
+                custom.target = self
+                custom.representedObject = Pick(title: title, place: place, state: state, start: start)
+                submenu.addItem(custom)
+            case .separator:
+                submenu.addItem(.separator())
+            }
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func pickTime(_ sender: NSMenuItem) {
+        guard let pick = sender.representedObject as? Pick else { return }
+        let picker = TimePicker(
+            title: pick.title, place: pick.place, state: pick.state, start: pick.start,
+            choose: choose,
+            onClose: { [weak self] in self?.picking = nil })
+        picking = picker
+        // After the menu has closed, which would otherwise take the focus back.
+        DispatchQueue.main.async { picker.show() }
     }
 
     /// The strength's slider, between a small sun where the items' titles start and a large one
@@ -416,12 +459,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
         menuItem.subtitle = item.subtitle.map(Self.wrapped)
-        menuItem.indentationLevel = item.indented ? 1 : 0
-        menuItem.state = item.checked ? .on : .off
         menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
-        menuItem.image = Self.image(for: item.command)
-        Self.showImage(menuItem)
         return menuItem
     }
 
@@ -458,7 +497,7 @@ private final class PointOut: NSViewController {
         let title = Look.label("Nightcap is up here", size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
-            "Its menu turns Night Shift on or off, changes its strength, and forces it off in the app in front: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
+            "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
             size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
         let tour = Look.button("Take the Tour", .regular) { [weak self] in self?.takeTour() }

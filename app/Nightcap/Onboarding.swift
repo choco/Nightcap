@@ -979,7 +979,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 Choice(title: "Not Now", run: next),
                 Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
                     guard let self else { return }
-                    for app in adding { choose(.addRule(.app(app.id))) }
+                    for app in adding { choose(.addRule(identity: .app(app.id), says: .off)) }
                     addedApps += adding.count
                     firstApp = firstApp ?? adding.first?.name
                     advance()
@@ -1021,7 +1021,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     Choice(title: "Not Now", run: next),
                     Choice(title: Self.addRules(adding.count), enabled: !adding.isEmpty) { [weak self] in
                         guard let self else { return }
-                        for site in adding { choose(.addRule(.domain(site.id))) }
+                        for site in adding { choose(.addRule(identity: .domain(site.id), says: .off)) }
                         addedSites += adding.count
                         advance()
                     }

@@ -311,26 +311,29 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             : settings.rules.map(ruleRow)
         return pane([
             group(files),
-            note("Night Shift is forced off while one of these is in front."),
+            note("Each keeps Night Shift off, or on, while its app or site is in front."),
             group(rules),
             rulesToolbar(),
             note("Ad-hoc rules stay in Nightcap until you copy them into your config."),
         ])
     }
 
-    /// A rule's icon, name and what it is, its label and its one action.
+    /// A rule's icon, name, what it says and what it is, its label and what can be done about
+    /// it: a config rule changes only in the config (ADR-0025).
     private func ruleRow(_ rule: SettingsRule) -> NSView {
         let (name, detail, icon) = describe(rule.identity)
         let texts = NSStackView(views: [
             Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
-            Look.secondary(detail, width: 260),
+            Look.secondary("Night Shift \(rule.says == .on ? "on" : "off") · \(detail)", width: 260),
         ])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let action = Look.button(rule.action.title, .small) { [choose] in choose(rule.action.command) }
-        let row = NSStackView(views: [icon, texts, Chip(rule.label, tinted: rule.snoozed), action])
+        let action = rule.action.map { action in
+            Look.button(action.title, .small) { [choose] in choose(action.command) }
+        }
+        let row = NSStackView(views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [action].compactMap { $0 })
         row.orientation = .horizontal
         row.distribution = .fill
         row.alignment = .centerY
@@ -395,11 +398,25 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         panel.allowedContentTypes = [.application]
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.prompt = "Add"
-        panel.message = "Choose an app to force Night Shift off in."
+        panel.message = "Choose an app for a rule."
+        let says = Self.saysPopup()
+        panel.accessoryView = Look.padded(says, top: 8, bottom: 8)
+        panel.isAccessoryViewDisclosed = true
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier else { return }
-            self?.choose(.addRule(.app(bundleId)))
+            self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
         }
+    }
+
+    /// What a new rule says: Night Shift off, as most rules do, or on.
+    private static func saysPopup() -> NSPopUpButton {
+        let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+        popup.addItems(withTitles: ["Keep Night Shift off", "Keep Night Shift on"])
+        return popup
+    }
+
+    private static func says(_ popup: NSPopUpButton) -> OnOff {
+        popup.indexOfSelectedItem == 1 ? .on : .off
     }
 
     /// A sheet asking for a domain, which says what it will add as the user types and adds
@@ -408,11 +425,18 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = "Add a Website"
-        let hint = "Night Shift is forced off on it and on its subdomains."
+        let hint = "The rule covers it and its subdomains."
         alert.informativeText = hint
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.placeholderString = "figma.com"
-        alert.accessoryView = field
+        let says = Self.saysPopup()
+        let accessory = NSStackView(views: [field, says])
+        accessory.orientation = .vertical
+        accessory.alignment = .leading
+        accessory.spacing = 8
+        accessory.frame = NSRect(x: 0, y: 0, width: 280, height: 58)
+        field.widthAnchor.constraint(equalToConstant: 280).isActive = true
+        alert.accessoryView = accessory
         let add = alert.addButton(withTitle: "Add")
         alert.addButton(withTitle: "Cancel")
         add.isEnabled = false
@@ -431,7 +455,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             guard response == .alertFirstButtonReturn,
                   let domain = normalizeDomain(text: field.stringValue)
             else { return }
-            self?.choose(.addRule(.domain(domain)))
+            self?.choose(.addRule(identity: .domain(domain), says: Self.says(says)))
         }
     }
 

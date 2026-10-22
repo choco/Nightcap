@@ -35,17 +35,17 @@ enum Snapshot {
             configPath: "\(NSHomeDirectory())/.config/nightcap/config.toml",
             rules: [
                 SettingsRule(
-                    identity: .app("com.figma.Desktop"), label: "From your config", snoozed: false,
-                    action: RuleAction(title: "Snooze", command: .snooze(.app("com.figma.Desktop")))),
+                    identity: .app("com.figma.Desktop"), says: .off, label: "From your config", snoozed: false,
+                    action: nil),
                 SettingsRule(
-                    identity: .domain("figma.com"), label: "Snoozed until 07:12", snoozed: true,
-                    action: RuleAction(title: "Unsnooze", command: .unsnooze(.domain("figma.com")))),
+                    identity: .domain("figma.com"), says: .off, label: "Snoozed until 07:12", snoozed: true,
+                    action: RuleAction(title: "Put Back", command: .reset(.domain("figma.com")))),
                 SettingsRule(
-                    identity: .app("com.apple.Photos"), label: "Ad-hoc", snoozed: false,
+                    identity: .app("com.apple.Photos"), says: .off, label: "Ad-hoc", snoozed: false,
                     action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.Photos")))),
                 SettingsRule(
-                    identity: .domain("youtube.com"), label: "Ad-hoc", snoozed: false,
-                    action: RuleAction(title: "Remove", command: .removeRule(.domain("youtube.com")))),
+                    identity: .app("com.apple.iBooksX"), says: .on, label: "Ad-hoc", snoozed: false,
+                    action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.iBooksX")))),
             ])
         let window = SettingsWindow(
             current: { settings }, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
@@ -64,8 +64,8 @@ enum Snapshot {
             Onboarding(
                 steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
                 rules: [SettingsRule(
-                    identity: .app("com.apple.Photos"), label: "From your config", snoozed: false,
-                    action: RuleAction(title: "Snooze", command: .snooze(.app("com.apple.Photos"))))],
+                    identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
+                    action: nil)],
                 sun: Sun(
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
                     sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),
