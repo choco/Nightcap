@@ -7,7 +7,6 @@ final class Sample: NSObject, NSApplicationDelegate {
     private var window: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.applicationIconImage = Self.icon
         let size = NSSize(width: 440, height: 300)
         let window = NSWindow(
             contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .miniaturizable],
@@ -28,17 +27,10 @@ final class Sample: NSObject, NSApplicationDelegate {
         window?.makeKeyAndOrderFront(nil)
         return false
     }
-
-    /// The poster on a rounded square, for the Dock.
-    private static let icon = NSImage(size: NSSize(width: 512, height: 512), flipped: true) { rect in
-        let square = NSBezierPath(roundedRect: rect.insetBy(dx: 50, dy: 50), xRadius: 90, yRadius: 90)
-        square.addClip()
-        Poster.paint(in: rect.insetBy(dx: 50, dy: 50), scale: 412 / 440)
-        return true
-    }
 }
 
-/// A sky, two overlapping discs and a column of swatches: colours a warm tint visibly shifts.
+/// A sky, two overlapping discs and a column of swatches: colours a warm tint visibly shifts. The
+/// app's icon, `app/icons/TourSample.svg`, draws the same poster.
 private final class Poster: NSView {
     override var isFlipped: Bool { true }
 

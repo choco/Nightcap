@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Renders app/icons/AppIcon.svg into every size of the app's icon set. The menu-bar icons are
-# vector images in the asset catalog, used as they are.
+# Renders app/icons/AppIcon.svg into every size of the app's icon set, and TourSample.svg into the
+# tour sample's. The menu-bar icons are vector images in the asset catalog, used as they are.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
-set_dir=app/Nightcap/Assets.xcassets/AppIcon.appiconset
-for size in 16 32 128 256 512; do
-  rsvg-convert -w "$size" -h "$size" app/icons/AppIcon.svg -o "$set_dir/icon_${size}x${size}.png"
-  rsvg-convert -w $((size * 2)) -h $((size * 2)) app/icons/AppIcon.svg -o "$set_dir/icon_${size}x${size}@2x.png"
-done
+render() {
+  local svg="$1" set_dir="$2"
+  for size in 16 32 128 256 512; do
+    rsvg-convert -w "$size" -h "$size" "$svg" -o "$set_dir/icon_${size}x${size}.png"
+    rsvg-convert -w $((size * 2)) -h $((size * 2)) "$svg" -o "$set_dir/icon_${size}x${size}@2x.png"
+  done
+}
+
+render app/icons/AppIcon.svg app/Nightcap/Assets.xcassets/AppIcon.appiconset
+render app/icons/TourSample.svg app/TourSample/Assets.xcassets/AppIcon.appiconset
