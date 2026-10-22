@@ -8,12 +8,12 @@ Night Shift, made yours. Nightcap brings Night Shift to your menu bar. Set how w
 
 ## What it does
 
-- **App rules.** Pick the apps that need true colour, such as Figma or Photoshop. While one is in front, Night Shift stays off.
+- **App rules.** Pick the apps that need true colour, such as Figma or Photoshop. While one is in front, Night Shift stays off. A rule can keep it on instead, say in Books, even by day.
 - **Website rules.** The same for sites in Safari and Chrome, such as `figma.com` and its subdomains. Website checking stays off until you turn it on, and needs Accessibility: Nightcap reads the front tab's address and keeps only the site's name.
-- **Your schedule stays yours.** Rules only ever turn Night Shift off. Switch away and it comes straight back, warm as before.
-- **It goes along with you.** Turn Night Shift on from the menu, Control Center or a script while a rule holds it off, and Nightcap snoozes that rule until the schedule's next change instead of fighting you.
-- **Off for a while.** Turn Night Shift off for 30 minutes, an hour or two from the menu, or for any length with `nightcap disable`, whatever is in front.
-- **One shortcut, two moves.** Tap ⌃⌥⌘N in any app to turn Night Shift on or off. Hold it to see true colour for as long as you hold, with Night Shift still on. Record another shortcut in Settings.
+- **Your schedule stays yours.** A rule applies only while its app or site is in front. Switch away and the schedule decides again.
+- **Where and for how long.** Turn Night Shift on or off everywhere, or just in the app or site in front: for 30 minutes, an hour or two, until a time you pick, or until the schedule next turns it back. Snoozing a rule is turning Night Shift on in its app for a while.
+- **It goes along with you.** Turn Night Shift on in Control Center while a rule holds it off, and Nightcap snoozes that rule until the schedule's next change instead of fighting you.
+- **One shortcut, two moves.** Tap ⌃⌥⌘N in any app to turn Night Shift on or off everywhere, until you turn it back. Hold it to see true colour for as long as you hold, with Night Shift still on. Record another shortcut in Settings.
 - **How warm.** A slider in the menu sets Night Shift's strength, and `nightcap strength` does the same from a script.
 - **Made to be scripted.** Everything in the menu is also a `nightcap` command, and rules can live in a config file next to the rest of your setup.
 
@@ -35,12 +35,15 @@ Packaging Nightcap for Nix, Homebrew or a script? [`docs/installing.md`](docs/in
 
 ```sh
 nightcap status                          # what Nightcap is doing, and why
+nightcap off                             # off everywhere, until you turn it on
+nightcap off --for 1h30m                 # off everywhere for a while
+nightcap on --app com.figma.Desktop --until-schedule   # snooze Figma's rule until sunrise
+nightcap reset                           # back to the schedule
 nightcap rules add app:com.figma.Desktop
 nightcap rules add domain:figma.com
-nightcap disable 1h30m                   # Night Shift off for a while, whatever is in front
+nightcap rules add app:com.apple.iBooksX --on          # keep Night Shift on in Books
 nightcap strength 40                     # how warm Night Shift gets, 0 to 100
-nightcap resume                          # back to the schedule
-nightcap status --json | jq -r .decision.verdict
+nightcap status --json | jq -r .decision.state
 ```
 
 `nightcap --help` lists the rest.
@@ -52,13 +55,19 @@ Rules can also live in `~/.config/nightcap/config.toml`:
 ```toml
 websites = true
 
-[rules]
+[rules.off]
 app = ["com.figma.Desktop", "com.adobe.Photoshop"]
 domain = ["figma.com"]
+
+[rules.on]
+app = ["com.apple.iBooksX"]
 
 [night_shift]
 strength = 60
 schedule = "sunset-to-sunrise"   # or "off", or custom hours such as "22:00-07:00"
+
+[menu]
+lengths = ["30m", "1h", "2h"]    # the menu's lengths
 ```
 
 Run `nightcap reload` after changing it. Night Shift's strength and schedule stay the system's: Nightcap applies a `[night_shift]` value when it changes, so a change you make later in System Settings stands. Rules you add from the menu or with `nightcap rules add` are kept by Nightcap itself, and `nightcap rules export --format toml` (or `nix`) prints them ready to paste into the config. [`docs/installing.md`](docs/installing.md) has the details.
