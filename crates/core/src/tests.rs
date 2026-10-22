@@ -5173,7 +5173,7 @@ fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
 }
 
 #[test]
-fn removing_an_ad_hoc_rule_mid_tour_removes_it_for_good() {
+fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
@@ -5181,10 +5181,62 @@ fn removing_an_ad_hoc_rule_mid_tour_removes_it_for_good() {
     send(&core, &socket, &wakes, add_rule(mail.clone()));
     start_tour(&core);
 
-    send(&core, &socket, &wakes, Command::RemoveRule(mail));
+    send(&core, &socket, &wakes, Command::RemoveRule(mail.clone()));
+    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
+    let kept = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
+    assert_eq!(kept.load(), Ok(vec![(mail.clone(), OnOff::Off)]));
     core.handle(Event::TourEnded);
 
-    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
+    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![ad_hoc(mail)]);
+}
+
+#[test]
+fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let mail = RuleIdentity::App("com.apple.mail".to_owned());
+    send(&core, &socket, &wakes, add_rule(mail.clone()));
+    start_tour(&core);
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        Command::AddRule {
+            identity: mail.clone(),
+            says: OnOff::On,
+        },
+    );
+    assert_eq!(
+        status_of(&core, &socket, &wakes).rules,
+        vec![Rule {
+            says: OnOff::On,
+            ..ad_hoc(mail.clone())
+        }]
+    );
+    assert!(core.export(ExportFormat::Toml).contains("[rules.off]"));
+    core.handle(Event::TourEnded);
+
+    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![ad_hoc(mail)]);
+}
+
+#[test]
+fn snoozes_and_the_switch_mid_tour_last_only_while_it_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    report(&core, true);
+    start_tour(&core);
+
+    let figma = Place::App("com.figma.Desktop".to_owned());
+    send(&core, &socket, &wakes, set(figma, OnOff::On, minutes(30)));
+    send(&core, &socket, &wakes, Command::Off);
+    assert_eq!(status_of(&core, &socket, &wakes).layers.len(), 2);
+    core.handle(Event::TourEnded);
+
+    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
 }
 
 #[test]

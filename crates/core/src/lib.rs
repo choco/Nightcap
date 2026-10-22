@@ -704,7 +704,7 @@ impl Core {
 
     /// The ad-hoc rules, written for the config (ADR-0009).
     pub fn export(&self, format: ExportFormat) -> String {
-        adhoc::export(&self.state().ad_hoc, format)
+        adhoc::export(self.state().kept_ad_hoc(), format)
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {
@@ -1003,19 +1003,15 @@ impl Core {
                         ""
                     }
                 );
-                let (hold, timer) = if stands_in {
-                    let set_aside = state.layers_at(&Place::Everywhere).cloned();
-                    state.clear_layers(&Place::Everywhere);
-                    set_aside.map_or((None, None), |layers| (layers.hold, layers.timer))
-                } else {
-                    (None, None)
-                };
                 state.tour = Some(Tour {
                     rules: Vec::new(),
                     stands_in,
-                    hold,
-                    timer,
+                    ad_hoc: state.ad_hoc.clone(),
+                    layers: state.layers.clone(),
                 });
+                if stands_in {
+                    state.clear_layers(&Place::Everywhere);
+                }
                 state.lay_out_rules();
                 Vec::new()
             }
@@ -1235,7 +1231,7 @@ impl Core {
                 Response::Ok(Payload::Rules(self.state().rules.clone()))
             }
             Request::Query(Query::Export(format)) => Response::Ok(Payload::Export(adhoc::export(
-                &self.state().ad_hoc,
+                self.state().kept_ad_hoc(),
                 *format,
             ))),
             Request::Update => {
@@ -1541,16 +1537,25 @@ impl Core {
     fn graduate(&self) {
         let mut state = self.state();
         let config = state.config_rules.clone();
-        let before = state.ad_hoc.len();
-        state.ad_hoc.retain(|(identity, _)| {
+        let outside_config = |(identity, _): &(RuleIdentity, OnOff)| {
             !config
                 .iter()
                 .any(|rule| same_rule(&rule.identity, identity))
-        });
-        let graduated = before - state.ad_hoc.len();
+        };
+        let before = state.ad_hoc.len();
+        state.ad_hoc.retain(outside_config);
+        // Mid-tour, rules.toml keeps the rules the tour's end puts back.
+        let graduated = match &mut state.tour {
+            Some(tour) => {
+                let before = tour.ad_hoc.len();
+                tour.ad_hoc.retain(outside_config);
+                before - tour.ad_hoc.len()
+            }
+            None => before - state.ad_hoc.len(),
+        };
         if graduated > 0 {
             tracing::info!("{graduated} ad-hoc rules graduated into the config");
-            if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+            if let Err(error) = self.ad_hoc_store.save(state.kept_ad_hoc()) {
                 tracing::warn!("couldn't save rules.toml: {error}");
             }
         }
@@ -1588,7 +1593,8 @@ impl Core {
             .ad_hoc
             .iter()
             .position(|(kept, _)| same_rule(kept, &identity));
-        // A rule added during the tour is the tour's, which nothing keeps past it (ADR-0022).
+        // A rule added during the tour is the tour's, which nothing keeps past it, and a change to
+        // one of the user's own lasts only while it runs (ADR-0022).
         if kept.is_none()
             && let Some(tour) = &mut state.tour
         {
@@ -1602,7 +1608,9 @@ impl Core {
                 Some(index) => state.ad_hoc[index].1 = says,
                 None => state.ad_hoc.push((identity.clone(), says)),
             }
-            if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+            if state.tour.is_none()
+                && let Err(error) = self.ad_hoc_store.save(&state.ad_hoc)
+            {
                 state.ad_hoc = before;
                 return Err(refused(
                     ErrorCode::AdHocRulesOff,
@@ -1652,7 +1660,9 @@ impl Core {
         };
         state.check_ad_hoc_rules_on()?;
         let removed = state.ad_hoc.remove(index);
-        if let Err(error) = self.ad_hoc_store.save(&state.ad_hoc) {
+        if state.tour.is_none()
+            && let Err(error) = self.ad_hoc_store.save(&state.ad_hoc)
+        {
             state.ad_hoc.insert(index, removed);
             return Err(refused(
                 ErrorCode::AdHocRulesOff,
@@ -1787,16 +1797,19 @@ struct Watch {
     reported: bool,
 }
 
-/// A tour in progress, and what it set aside (ADR-0022).
+/// A tour in progress, and the user's rules and changes as it found them, which its end puts
+/// back (ADR-0022).
 struct Tour {
     /// The rules the user added during the tour, which it holds instead of ad-hoc ones.
     rules: Vec<(RuleIdentity, OnOff)>,
     /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
     /// as the tour started.
     stands_in: bool,
-    /// Everywhere's hold and timer from before the tour stood in, which its end puts back.
-    hold: Option<Layer>,
-    timer: Option<Layer>,
+    /// The ad-hoc rules as the tour found them, which `rules.toml` keeps meanwhile: changes to
+    /// the user's own rules during the tour stay in memory.
+    ad_hoc: Vec<(RuleIdentity, OnOff)>,
+    /// Every place's hold and timer as the tour found them.
+    layers: Vec<PlaceLayers>,
 }
 
 impl State {
@@ -1994,7 +2007,8 @@ impl State {
         })
     }
 
-    /// Drops every timer and hold that ended by `at`, and what the tour set aside likewise.
+    /// Drops every timer and hold that ended by `at`, and those the tour's end would put back
+    /// likewise.
     fn expire(&mut self, at: Timestamp) {
         let ended = |layer: &Option<Layer>| {
             layer
@@ -2010,12 +2024,12 @@ impl State {
                 layers.hold = None;
             }
         }
-        if let Some(tour) = &mut self.tour {
-            if ended(&tour.timer) {
-                tour.timer = None;
+        for layers in self.tour.iter_mut().flat_map(|tour| &mut tour.layers) {
+            if ended(&layers.timer) {
+                layers.timer = None;
             }
-            if ended(&tour.hold) {
-                tour.hold = None;
+            if ended(&layers.hold) {
+                layers.hold = None;
             }
         }
         self.tidy();
@@ -2024,67 +2038,43 @@ impl State {
     /// An edited schedule ends every hold waiting on it (ADR-0024).
     fn schedule_edited(&mut self) {
         let waiting = |hold: &Option<Layer>| hold.as_ref().is_some_and(|hold| hold.until.is_some());
-        for layers in &mut self.layers {
+        for layers in self
+            .layers
+            .iter_mut()
+            .chain(self.tour.iter_mut().flat_map(|tour| &mut tour.layers))
+        {
             if waiting(&layers.hold) {
                 layers.hold = None;
             }
         }
-        if let Some(tour) = &mut self.tour
-            && waiting(&tour.hold)
-        {
-            tour.hold = None;
-        }
         self.tidy();
     }
 
-    /// Every place's layers once the tour, if one runs, has ended: the tour rules' go, and
-    /// everywhere has what the user chose while the tour stood in, or else what it set aside.
+    /// Every place's layers once the tour, if one runs, has ended: as the tour found them.
     fn after_tour(&self) -> Vec<PlaceLayers> {
-        let Some(tour) = &self.tour else {
-            return self.layers.clone();
-        };
-        let mut layers: Vec<_> = self
-            .layers
-            .iter()
-            .filter(|layers| {
-                !tour
-                    .rules
-                    .iter()
-                    .any(|(rule, _)| same_place(&Place::from(rule.clone()), &layers.place))
-            })
-            .cloned()
-            .collect();
-        if tour.stands_in && (tour.hold.is_some() || tour.timer.is_some()) {
-            let index = match layers
-                .iter()
-                .position(|layers| layers.place == Place::Everywhere)
-            {
-                Some(index) => index,
-                None => {
-                    layers.push(PlaceLayers {
-                        place: Place::Everywhere,
-                        hold: None,
-                        timer: None,
-                    });
-                    layers.len() - 1
-                }
-            };
-            let everywhere = &mut layers[index];
-            everywhere.hold = everywhere.hold.take().or_else(|| tour.hold.clone());
-            everywhere.timer = everywhere.timer.take().or_else(|| tour.timer.clone());
+        match &self.tour {
+            Some(tour) => tour.layers.clone(),
+            None => self.layers.clone(),
         }
-        layers
     }
 
-    /// Puts back what the tour set aside, short of what ran out meanwhile, and drops the rules
-    /// added during it with their layers.
-    fn end_tour(&mut self, now: Timestamp) {
-        let layers = self.after_tour();
-        if self.tour.take().is_none() {
-            return;
+    /// The ad-hoc rules as `rules.toml` keeps them: mid-tour, as the tour found them.
+    fn kept_ad_hoc(&self) -> &[(RuleIdentity, OnOff)] {
+        match &self.tour {
+            Some(tour) => &tour.ad_hoc,
+            None => &self.ad_hoc,
         }
+    }
+
+    /// Puts back the user's rules and every place's hold and timer as the tour found them, short
+    /// of what ran out meanwhile, and drops the rules added during it.
+    fn end_tour(&mut self, now: Timestamp) {
+        let Some(tour) = self.tour.take() else {
+            return;
+        };
         tracing::info!("tour ended");
-        self.layers = layers;
+        self.ad_hoc = tour.ad_hoc;
+        self.layers = tour.layers;
         self.expire(now);
         self.lay_out_rules();
     }

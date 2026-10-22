@@ -297,7 +297,7 @@ final class Tour {
         case .end:
             return (
                 "That’s the tour",
-                "The rules you added go with it. Everything else is in the moon’s menu: turning Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and Settings, where you’ll find the tour again.")
+                "What you changed during it goes with it, and your own rules are as they were. Everything else is in the moon’s menu: turning Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and Settings, where you’ll find the tour again.")
         }
     }
 
