@@ -63,7 +63,7 @@ Post one notification when a problem appears, unless the user caused it.
 ### Menu
 
 **Night Shift item**:
-The menu's first item, after any problem line: Night Shift, checked while it's on everywhere, in the moon's look, with what decides the screen under it and what choosing it does besides. Choosing it, or tapping the shortcut, is the switch.
+The menu's first item, after any problem line: Night Shift, checked while it's on everywhere, in the moon's look, with what decides the screen under it. Choosing it, or tapping the shortcut, is the switch.
 _Avoid_: status line
 
 **Problem line**:

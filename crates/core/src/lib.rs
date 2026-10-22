@@ -153,8 +153,6 @@ pub struct NightShiftItem {
     pub on: bool,
     /// What decides the screen, in a few words, e.g. "Off in Figma: your config’s rule".
     pub reason: Option<String>,
-    /// What choosing it does, e.g. "Turning it off holds it off until you turn it on".
-    pub detail: Option<String>,
     /// None while Night Shift is unavailable, which disables the item.
     pub command: Option<Command>,
 }
@@ -786,7 +784,6 @@ impl Core {
                 night_shift: NightShiftItem {
                     on: false,
                     reason: Some("Unavailable".to_owned()),
-                    detail: None,
                     command: None,
                 },
                 problem_line: None,
@@ -832,7 +829,6 @@ impl Core {
             night_shift: NightShiftItem {
                 on: everywhere == OnOff::On,
                 reason: state.menu_reason(&decision),
-                detail: state.switch_detail(),
                 command: Some(match everywhere {
                     OnOff::On => Command::Off,
                     OnOff::Off => Command::On,
@@ -2394,36 +2390,6 @@ impl State {
             },
         };
         capitalized(&text)
-    }
-
-    /// What clicking the Night Shift item does to everywhere: "Turning it off holds it off
-    /// until you turn it on".
-    fn switch_detail(&self) -> Option<String> {
-        let state = self.says(&Place::Everywhere)?.other();
-        let (hold, timer) = self
-            .layers_at(&Place::Everywhere)
-            .map_or((None, None), |layers| {
-                (layers.hold.clone(), layers.timer.clone())
-            });
-        let switched = self.after_switch(state);
-        let mut parts = Vec::new();
-        if timer.is_some() && switched.timer.is_none() {
-            parts.push("ends the timer".to_owned());
-        }
-        if hold.is_some() && switched.hold.is_none() {
-            if self.tour.as_ref().is_some_and(|tour| tour.stands_in) {
-                parts.push("goes back to the tour’s on".to_owned());
-            } else if self.has_schedule() {
-                parts.push("goes back to the schedule".to_owned());
-            }
-        }
-        if switched.hold.is_some() && switched.hold != hold {
-            parts.push(format!(
-                "holds it {state} until you turn it {}",
-                state.other()
-            ));
-        }
-        (!parts.is_empty()).then(|| format!("Turning it {state} {}", listed(&parts)))
     }
 
     /// Everywhere's hold and timer after the switch to `state`, as `switch` would leave them.

@@ -251,15 +251,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.items.filter { $0.action != nil }.forEach { $0.target = self }
     }
 
-    /// "Night Shift", checked while it's on, with the menu-bar moon's look: why it's on or off,
-    /// what choosing it does besides, and the shortcut that does the same.
+    /// "Night Shift", checked while it's on everywhere, with the menu-bar moon's look: what
+    /// decides the screen, and the shortcut that does the same.
     private func nightShiftItem(_ menu: Menu) -> NSMenuItem {
         let state = menu.nightShift
         let item = NSMenuItem(title: "Night Shift", action: #selector(chose(_:)), keyEquivalent: "")
         item.image = Self.image(for: menu.icon).map(Self.menuSized)
         Self.showImage(item)
         item.state = state.on ? .on : .off
-        item.subtitle = [state.reason, state.detail].compactMap { $0 }.map(Self.wrapped).joined(separator: "\n")
+        item.subtitle = state.reason.map(Self.wrapped)
         if let command = state.command {
             item.representedObject = Choice(command)
         } else {

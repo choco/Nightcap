@@ -2815,17 +2815,12 @@ fn a_config_that_cant_be_is_refused() {
     }
 }
 
-/// The menu's Night Shift item: checked while it's on, with why and what choosing it does.
-fn night_shift_item(
-    on: bool,
-    reason: &str,
-    detail: Option<&str>,
-    command: Command,
-) -> NightShiftItem {
+/// The menu's Night Shift item: checked while it's on everywhere, with what decides the
+/// screen.
+fn night_shift_item(on: bool, reason: &str, command: Command) -> NightShiftItem {
     NightShiftItem {
         on,
         reason: Some(reason.to_owned()),
-        detail: detail.map(str::to_owned),
         command: Some(command),
     }
 }
@@ -2844,12 +2839,7 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
     assert_eq!(core.menu().icon, MenuIcon::ForcedOff);
     assert_eq!(
         core.menu().night_shift,
-        night_shift_item(
-            true,
-            "Off in Figma: your config’s rule",
-            Some("Turning it off holds it off until you turn it on"),
-            Command::Off
-        )
+        night_shift_item(true, "Off in Figma: your config’s rule", Command::Off)
     );
     send(
         &core,
@@ -2859,43 +2849,23 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
     );
     assert_eq!(
         core.menu().night_shift,
-        night_shift_item(
-            false,
-            "Off in Figma: your config’s rule",
-            Some("Turning it on ends the timer"),
-            Command::On
-        )
+        night_shift_item(false, "Off in Figma: your config’s rule", Command::On)
     );
     activate(&core, "com.apple.Terminal");
     assert_eq!(core.menu().icon, MenuIcon::Off);
     assert_eq!(
         core.menu().night_shift,
-        night_shift_item(
-            false,
-            "Off until 23:30",
-            Some("Turning it on ends the timer"),
-            Command::On
-        )
+        night_shift_item(false, "Off until 23:30", Command::On)
     );
     send(&core, &socket, &wakes, Command::On);
     assert_eq!(
         core.menu().night_shift,
-        night_shift_item(
-            true,
-            "Following the schedule until 07:00",
-            Some("Turning it off holds it off until you turn it on"),
-            Command::Off
-        )
+        night_shift_item(true, "Following the schedule until 07:00", Command::Off)
     );
     send(&core, &socket, &wakes, Command::Off);
     assert_eq!(
         core.menu().night_shift,
-        night_shift_item(
-            false,
-            "Off until you turn it on",
-            Some("Turning it on goes back to the schedule"),
-            Command::On
-        )
+        night_shift_item(false, "Off until you turn it on", Command::On)
     );
 }
 
@@ -2912,7 +2882,6 @@ fn while_night_shift_is_unavailable_the_menu_only_says_so() {
         NightShiftItem {
             on: false,
             reason: Some("Unavailable".to_owned()),
-            detail: None,
             command: None,
         }
     );
