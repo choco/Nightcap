@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "design/**", "scripts/build-site", ".github/workflows/pages.yml"]
+    paths: ["site/**", "design/**", "app/icons/AppIcon.svg", "scripts/build-site", ".github/workflows/pages.yml"]
   workflow_call:
   workflow_dispatch:
 
@@ -37,6 +37,16 @@ jobs:
             echo "::notice::v$(scripts/version) isn't released yet, so its release deploys the site"
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.pending.outputs.release != 'true'
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.pending.outputs.release != 'true'
+        with:
+          package_json_file: site/package.json
+          cache: true
+          cache_dependency_path: site/pnpm-lock.yaml
       - name: Assemble the site and the newest release's appcast
         if: steps.pending.outputs.release != 'true'
         env:

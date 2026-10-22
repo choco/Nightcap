@@ -1,0 +1,46 @@
+/* Nightcap's menu in two looks: the night look of the site's own illustrations, and macOS 27's,
+   in the hero's scene. An item is a checkmark, an image and the title, with the shortcut or a
+   chevron at the end, all centred on its lines. */
+.night { padding: 5px; border-radius: 10px; background: var(--night); border: 1px solid var(--menu-line); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3); font-size: 12px; line-height: 1.25; color: var(--starlight); }
+.mac { width: 19.54em; padding: 0.38em 0; border-radius: 0.92em; background: var(--scene-menu); -webkit-backdrop-filter: blur(26px) saturate(1.6); backdrop-filter: blur(26px) saturate(1.6); box-shadow: 0 0 0 0.5px var(--scene-edge), 0 1.08em 2.77em rgba(0, 0, 0, 0.3); line-height: 1.23; }
+
+.item { display: grid; grid-template-columns: 12px 16px 1fr auto; column-gap: 5px; align-items: center; padding: 3px 8px; }
+.check { font-size: 11px; line-height: 15px; }
+.image { display: flex; align-items: center; justify-content: center; height: 15px; }
+.image svg { width: 13px; height: 13px; }
+.app { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 4px; background: var(--tile); color: #ffffff; font: 700 8px/1 var(--font-text); }
+.indented .image, .indented .text { margin-left: 12px; }
+.subtitle { display: block; font-size: 10px; color: var(--starlight-muted); white-space: pre-line; text-wrap: balance; }
+.key { color: var(--starlight-muted); font-size: 11px; }
+.key svg { display: block; width: 0.5em; height: 0.85em; color: var(--starlight); }
+.separator { height: 1px; margin: 4px 8px; background: var(--menu-line); }
+/* The strength: a small sun where the titles start, the track, a large sun at the edge. */
+.slider { display: flex; align-items: center; gap: 6px; padding: 2px 8px 2px 41px; color: var(--starlight-muted); }
+.sun { display: inline-flex; flex: none; }
+.less svg { width: 9px; height: 9px; }
+.more svg { width: 13px; height: 13px; }
+.track { --value: 0.5; position: relative; flex: 1 1 auto; height: 14px; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 5px; height: 4px; border-radius: 999px; background: var(--starlight-muted); opacity: 0.35; }
+.fill { position: absolute; left: 0; top: 5px; width: calc(var(--value) * 100%); height: 4px; border-radius: 999px; background: var(--starlight); }
+.knob { position: absolute; top: 2px; left: calc(var(--value) * 100% - 9px); width: 18px; height: 11px; border-radius: 6px; background: #ffffff; box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.4); }
+
+/* macOS 27's measures, from a real NSMenu's layout: 254 wide, rows 24 tall, the check, image and
+   title columns at 11, 29 and 50, subtitles in 12px, separators inset 17. */
+.mac .item { grid-template-columns: 1em 1.23em 1fr auto; column-gap: 0.38em; padding: 0.31em 1.15em 0.31em 0.85em; }
+.mac .item:has(.subtitle) { padding-block: 0.23em; }
+.mac .check { font-size: 0.92em; line-height: inherit; text-align: center; }
+.mac .image { height: 1.23em; color: var(--scene-ink); }
+.mac .image svg { width: 1.08em; height: 1.08em; }
+.mac .app { width: 1.76em; height: 1.76em; border-radius: 0.4em; font-size: 0.7em; }
+.mac .subtitle { font-size: 0.923em; line-height: 1.167; color: var(--scene-muted); }
+.mac .key { font-size: 1em; color: var(--scene-muted); }
+.mac .key svg { color: var(--scene-ink); }
+.mac .separator { margin: 0.38em 1.31em; background: var(--scene-sep); }
+/* The slider between the suns, grey with a white knob as a slider in a menu draws. */
+.mac .slider { height: 2em; gap: 0.46em; padding: 0 1.08em 0 3.54em; color: var(--scene-muted); }
+.mac .less svg { width: 0.85em; height: 0.85em; }
+.mac .more svg { width: 1.23em; height: 1.23em; }
+.mac .track { height: 1.08em; }
+.mac .track::before { top: 0.42em; height: 0.23em; background: var(--scene-ink); opacity: 0.15; }
+.mac .fill { top: 0.42em; width: calc(var(--value) * (100% - 1.15em) + 0.58em); height: 0.23em; background: var(--scene-ink); opacity: 0.45; }
+.mac .knob { top: 0.12em; left: calc(var(--value) * (100% - 1.15em)); width: 1.15em; height: 0.85em; border-radius: 999px; }

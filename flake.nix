@@ -37,6 +37,8 @@
             pkgs.gh
             pkgs.librsvg
             pkgs.jq
+            pkgs.nodejs_24
+            pkgs.pnpm
             pkgs.python3Packages.dmgbuild
           ];
           # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo

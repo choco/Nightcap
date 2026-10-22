@@ -1,0 +1,16 @@
+/* A small Mac with Figma in front, under Night Shift or in true colour. */
+.mini { position: relative; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: var(--scene-wall); box-shadow: 0 0 0 1px var(--line); color: var(--scene-ink); }
+.bar { position: absolute; inset: 0 0 auto 0; height: 20px; display: flex; align-items: center; gap: 8px; padding: 0 10px; background: var(--scene-bar); font-size: 10px; }
+.app { font-weight: 700; }
+.spacer { flex-grow: 1; }
+.moon { display: inline-flex; width: 13px; height: 13px; }
+.moon svg { width: 13px; height: 13px; }
+.win { position: absolute; left: 14%; right: 14%; top: 28%; bottom: 10%; display: flex; justify-content: center; padding: 6px; border-radius: 6px; background: var(--surface-raised); box-shadow: 0 0 0 0.5px var(--scene-edge), 0 6px 18px rgba(0, 0, 0, 0.18); }
+.tint { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 200ms ease-in-out; }
+.tint.on { opacity: 1; }
+.tint span { position: absolute; inset: 0; }
+.tint span:first-child { background: rgba(255, 138, 46, 0.22); mix-blend-mode: multiply; }
+.tint span:last-child { background: rgba(255, 154, 77, 0.1); }
+@media (prefers-reduced-motion: reduce) {
+  .tint { transition: none; }
+}
