@@ -42,6 +42,9 @@ pub(crate) struct Persisted {
     /// The user accepted the schedule off while macOS has sunset to sunrise set aside, which
     /// the Night Shift check compares against. Cleared once it isn't set aside.
     pub(crate) schedule_off_accepted: bool,
+    /// The version that last ran: the first launch of another is an update, which a
+    /// notification announces.
+    pub(crate) last_version: Option<String>,
 }
 
 impl Persisted {

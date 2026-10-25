@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Snapshot.runIfAsked()
         #endif
         quitOnTerminationSignal()
+        UNUserNotificationCenter.current().delegate = self
         siteIcons.onArrival = { [weak self] site in
             self?.statusMenu?.iconArrived(site)
             self?.settingsWindow?.iconArrived()
@@ -305,10 +306,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
     /// dropped while the prompt waits for an answer.
-    private func notify(title: String, body: String) {
+    private func notify(title: String, body: String, opens: String?) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
+        if let opens { content.userInfo = [pageKey: opens] }
         let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         Task {
             let center = UNUserNotificationCenter.current()
@@ -575,8 +577,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .cancelWakeup:
                 wakeup?.cancel()
                 wakeup = nil
-            case .notify(let title, let body):
-                notify(title: title, body: body)
+            case .notify(let title, let body, let opens):
+                notify(title: title, body: body, opens: opens)
             // Version 1 is the only onboarding so far, so `completed` is always 0.
             case .showOnboarding:
                 showOnboarding()
@@ -631,5 +633,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard item != reportedLoginItem else { return }
         reportedLoginItem = item
         apply(core.handle(event: .loginItemChanged(item: item)))
+    }
+}
+
+/// Where a notification keeps the page it opens when clicked.
+nonisolated private let pageKey = "opens"
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
+    ) async {
+        guard let page = response.notification.request.content.userInfo[pageKey] as? String,
+              let url = URL(string: page)
+        else { return }
+        await MainActor.run { _ = NSWorkspace.shared.open(url) }
     }
 }

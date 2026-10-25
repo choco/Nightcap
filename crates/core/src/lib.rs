@@ -499,6 +499,8 @@ pub enum Effect {
     Notify {
         title: String,
         body: String,
+        /// A page to open when the notification is clicked.
+        opens: Option<String>,
     },
 }
 
@@ -636,6 +638,8 @@ struct State {
     open_at_login: bool,
     /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
     opens_itself_at_login: bool,
+    /// See `state::Persisted::last_version`.
+    last_version: Option<String>,
     /// What was last written to `state.json`.
     saved: state::Persisted,
 }
@@ -886,6 +890,23 @@ impl Core {
             Event::Launched => {
                 let mut state = self.state();
                 let mut effects = Vec::new();
+                // Updates install silently, so the first launch of a new version says what's new.
+                // A first run has nothing to compare; one from before versions were kept has
+                // finished onboarding.
+                let version = env!("CARGO_PKG_VERSION");
+                let updated = match &state.last_version {
+                    Some(last) => last != version,
+                    None => state.onboarding > 0,
+                };
+                if updated {
+                    tracing::info!("updated to {version}");
+                    effects.push(Effect::Notify {
+                        title: format!("Nightcap updated to {version}"),
+                        body: "Click to see what’s new.".to_owned(),
+                        opens: Some(format!("https://nightcap.choco.me/changelog/#v{version}")),
+                    });
+                }
+                state.last_version = Some(version.to_owned());
                 if state.onboarding < ONBOARDING {
                     // The config can answer website checking and Night Shift; opening at login
                     // it can't.
@@ -1232,6 +1253,7 @@ impl Core {
                 open_at_login: persisted.open_at_login,
                 opens_itself_at_login: setup.install == Install::SelfManaged
                     && setup.instance == Instance::Release,
+                last_version: persisted.last_version.clone(),
                 saved: persisted,
             }),
         };
@@ -1523,7 +1545,11 @@ impl Core {
             }
             state.announced.push(kind);
             if let Some((title, body)) = state.notice(kind).filter(|_| aloud) {
-                effects.push(Effect::Notify { title, body });
+                effects.push(Effect::Notify {
+                    title,
+                    body,
+                    opens: None,
+                });
             }
         }
     }
@@ -2045,6 +2071,7 @@ impl State {
                 self.name_in_front(&rule.identity),
                 self.until_text(until, state)
             ),
+            opens: None,
         })
     }
 
@@ -2134,6 +2161,7 @@ impl State {
             until: self.timeline.next_transition(self.applied_until),
             applied_from_config: self.applied_from_config,
             schedule_off_accepted: self.schedule_off_accepted,
+            last_version: self.last_version.clone(),
         }
     }
 

@@ -1899,6 +1899,7 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
         vec![Effect::Notify {
             title: "Night Shift turned on outside Nightcap".to_owned(),
             body: "Snoozed the com.figma.Desktop rule until 07:00.".to_owned(),
+            opens: None,
         }]
     );
     assert_eq!(
@@ -1978,6 +1979,7 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
         vec![Effect::Notify {
             title: "Night Shift turned on outside Nightcap".to_owned(),
             body: "Snoozed the com.figma.Desktop rule until 07:00.".to_owned(),
+            opens: None,
         }]
     );
     let morning = Some(at("2026-10-17T07:00:00+02:00"));
@@ -3895,6 +3897,7 @@ fn accessibility_notice() -> Effect {
     Effect::Notify {
         title: "Website checking needs Accessibility".to_owned(),
         body: "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
+        opens: None,
     }
 }
 
@@ -3956,9 +3959,60 @@ fn a_config_broken_at_launch_is_announced() {
 
     assert!(launch(&core).iter().any(|effect| matches!(
         effect,
-        Effect::Notify { title, body }
+        Effect::Notify { title, body, .. }
             if title == "Nightcap’s config is invalid" && body.contains("domian")
     )));
+}
+
+fn update_notice() -> Effect {
+    let version = env!("CARGO_PKG_VERSION");
+    Effect::Notify {
+        title: format!("Nightcap updated to {version}"),
+        body: "Click to see what’s new.".to_owned(),
+        opens: Some(format!("https://nightcap.choco.me/changelog/#v{version}")),
+    }
+}
+
+/// Leaves the state an earlier run saved after onboarding, by a version that kept its own, or
+/// by one from before versions were kept.
+fn saved_by(socket: &Path, last_version: Option<&str>) {
+    Store::new(socket.with_file_name("state.json"))
+        .save(&Persisted {
+            onboarding: 1,
+            last_version: last_version.map(str::to_owned),
+            ..Persisted::default()
+        })
+        .unwrap();
+}
+
+#[test]
+fn the_first_launch_of_a_new_version_says_whats_new_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    saved_by(&socket, Some("1.0.0"));
+    let (core, _wakes) = start(&socket);
+
+    assert!(launch(&core).contains(&update_notice()));
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    assert!(!launch(&core).contains(&update_notice()));
+}
+
+#[test]
+fn a_run_from_before_versions_were_kept_counts_as_an_update() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    saved_by(&socket, None);
+    let (core, _wakes) = start(&socket);
+
+    assert!(launch(&core).contains(&update_notice()));
+}
+
+#[test]
+fn a_first_run_has_nothing_new_to_tell() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes) = start(&socket_in(&dir));
+
+    assert!(!notifies(&launch(&core)));
 }
 
 #[test]
@@ -4370,6 +4424,7 @@ fn saved_state_loads_back() {
             schedule: Some(custom_hours()),
         },
         schedule_off_accepted: true,
+        last_version: Some("1.0.0".to_owned()),
     };
 
     store.save(&state).unwrap();
@@ -4721,6 +4776,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
     assert!(effects.contains(&Effect::Notify {
         title: "Sunset to sunrise needs Location Services".to_owned(),
         body: "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off.".to_owned(),
+        opens: None,
     }));
     assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
     assert_eq!(
@@ -4808,6 +4864,7 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
     assert!(core.handle(Event::TimerFired).contains(&Effect::Notify {
         title: "Nightcap can’t follow sunset to sunrise".to_owned(),
         body: "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them.".to_owned(),
+        opens: None,
     }));
     assert_eq!(
         settings_check(&core, CheckKind::NightShift),
@@ -5038,6 +5095,7 @@ fn opening_at_login_removed_in_system_settings_is_announced() {
             .contains(&Effect::Notify {
                 title: "Nightcap no longer opens at login".to_owned(),
                 body: "Open Nightcap’s settings to turn it back on, or to keep it off.".to_owned(),
+                opens: None,
             })
     );
 }
