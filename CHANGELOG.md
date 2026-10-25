@@ -2,6 +2,15 @@
 
 What changed in each version of Nightcap.
 
+## 1.2.0 · 26 October 2026
+
+After an update, Nightcap tells you what’s new.
+
+### New
+
+- The first time Nightcap opens after an update, a notification says so; click it to see what changed.
+- The update window shows what a new version changes, and every version’s notes are at nightcap.choco.me/changelog.
+
 ## 1.1.0 · 25 October 2026
 
 Nightcap picks up sunset to sunrise right after login, and tells you when Location Services keeps it from running.
