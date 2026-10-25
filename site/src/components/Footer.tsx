@@ -185,11 +185,8 @@ export function Footer() {
 				<a className="text-ink-muted" href="https://github.com/sponsors/choco">
 					Sponsor
 				</a>
-				<a
-					className="text-ink-muted"
-					href="https://github.com/choco/Nightcap/releases"
-				>
-					Releases
+				<a className="text-ink-muted" href="/changelog/">
+					Changelog
 				</a>
 				<a className="text-ink-muted" href="/privacy/">
 					Privacy

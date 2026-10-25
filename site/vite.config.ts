@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { changelog } from "./plugins/changelog.ts";
 import { design } from "./plugins/design.ts";
 
 const site = fileURLToPath(new URL(".", import.meta.url));
@@ -12,6 +13,7 @@ const pages = {
 	"not-found": "404.html",
 	privacy: "privacy/index.html",
 	terms: "terms/index.html",
+	changelog: "changelog/index.html",
 };
 
 // The dev server serves each page rendered into its HTML's outlet, as the build's prerender.ts
@@ -35,7 +37,7 @@ function renderInDev(): Plugin {
 export default defineConfig(({ command }) => ({
 	// Absolute, since Pages serves 404.html at whatever path was missing.
 	base: "/",
-	plugins: [design(), tailwindcss(), react(), renderInDev()],
+	plugins: [design(), changelog(), tailwindcss(), react(), renderInDev()],
 	css: {
 		// Readable, and the same in the client and server builds, whose markup must match.
 		modules: {

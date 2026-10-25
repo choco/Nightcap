@@ -28,3 +28,17 @@ export function DownloadButton({
 		</ButtonLink>
 	);
 }
+
+/** The newest release's notes, beside the download that names its version, or the whole
+ *  changelog in a build without a release. Muted, since the download button is the view's one
+ *  gold. */
+export function WhatsNew() {
+	return (
+		<a
+			className="text-ink-muted"
+			href={version ? `/changelog/#v${version}` : "/changelog/"}
+		>
+			What’s new
+		</a>
+	);
+}

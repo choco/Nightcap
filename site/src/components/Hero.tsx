@@ -1,7 +1,7 @@
 import type { Doodle } from "../lib/doodles";
 import { Celestial } from "./Celestial";
 import { Doodles } from "./Doodles";
-import { DownloadButton } from "./Download";
+import { DownloadButton, WhatsNew } from "./Download";
 import styles from "./Hero.module.css";
 import { Nav } from "./Nav";
 import { Scene } from "./Scene";
@@ -49,8 +49,9 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 						</p>
 						<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
 							<DownloadButton showVersion />
-							<span className="text-[14px] text-ink-muted">
-								macOS 15 or later, Apple silicon
+							<span className="flex flex-col gap-0.5 text-[14px] text-ink-muted">
+								<span>macOS 15 or later, Apple silicon</span>
+								<WhatsNew />
 							</span>
 						</div>
 					</div>

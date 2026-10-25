@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { prerender } from "react-dom/static";
 import { App } from "./App";
+import { Changelog } from "./Changelog";
 import { NotFound } from "./NotFound";
 import { Privacy } from "./Privacy";
 import { Terms } from "./Terms";
@@ -11,6 +12,7 @@ const PAGES: Record<string, ComponentType> = {
 	"404.html": NotFound,
 	"privacy/index.html": Privacy,
 	"terms/index.html": Terms,
+	"changelog/index.html": Changelog,
 };
 
 export const pageFiles = Object.keys(PAGES);

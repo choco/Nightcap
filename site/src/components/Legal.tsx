@@ -10,9 +10,9 @@ const day = new Intl.DateTimeFormat("en-GB", {
 	timeZone: "UTC",
 });
 
-/** A page of text beside the home page, the privacy policy or the terms: the wordmark, the title
- *  and its lead under the sky, then the text on the ground, and the footer. `updated` is the
- *  day the text last changed, as YYYY-MM-DD. */
+/** A page of text beside the home page, such as the privacy policy, the terms or the changelog:
+ *  the wordmark, the title and its lead under the sky, then the text on the ground, and the
+ *  footer. `updated` is the day the text last changed, as YYYY-MM-DD, for a page that says so. */
 export function Legal({
 	title,
 	lead,
@@ -21,7 +21,7 @@ export function Legal({
 }: {
 	title: string;
 	lead: string;
-	updated: string;
+	updated?: string;
 	children: ReactNode;
 }) {
 	useBodyEdge();
@@ -39,10 +39,12 @@ export function Legal({
 						<p className="max-w-[46ch] text-[19px] leading-[1.6] max-sm:text-[17px]">
 							{lead}
 						</p>
-						<p className="text-[14px] text-ink-muted">
-							Last updated{" "}
-							<time dateTime={updated}>{day.format(new Date(updated))}</time>
-						</p>
+						{updated && (
+							<p className="text-[14px] text-ink-muted">
+								Last updated{" "}
+								<time dateTime={updated}>{day.format(new Date(updated))}</time>
+							</p>
+						)}
 					</div>
 				</div>
 			</header>

@@ -1,0 +1,41 @@
+/* Each version under a hairline: its number in Martian Mono with its day beside it, its headline,
+   then what's new and what's fixed under small capital labels. The page's text styles come from
+   Legal's `.text`. */
+.versions h2 {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 4px 12px;
+	padding-top: 40px;
+	border-top: 1px solid var(--line);
+}
+.versions h2:first-child {
+	padding-top: 0;
+	border-top: 0;
+}
+.versions :global(.version) {
+	font: 600 22px / 1.3 var(--font-mono);
+}
+.versions :global(.day) {
+	font: 400 15px / 1.3 var(--font-text);
+	color: var(--ink-muted);
+}
+.versions h3 {
+	margin-top: 24px;
+	font-size: 12px;
+	font-weight: 650;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--ink-muted);
+}
+.versions h3 + ul {
+	margin-top: 8px;
+}
+
+/* After the versions, so it outweighs `.text p`'s margin. */
+.versions + .downloads {
+	margin-top: 48px;
+	padding-top: 24px;
+	border-top: 1px solid var(--line);
+	color: var(--ink-muted);
+}
