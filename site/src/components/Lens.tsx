@@ -199,13 +199,8 @@ export function Lens({ page }: { page: RefObject<HTMLElement | null> }) {
 		// The first place is taken at once, rather than glided to from the prerendered one.
 		wander(false);
 
-		// The tint reaches across the whole page from wherever the circle is; and a page that
-		// changes size may have moved the area.
+		// A page that changes size may have moved the area.
 		const resize = new ResizeObserver(() => {
-			tinted.style.setProperty(
-				"--reach",
-				`${root.offsetWidth + root.offsetHeight}px`,
-			);
 			if (pointer) chase();
 			else wander(true);
 		});

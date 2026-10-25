@@ -12,6 +12,7 @@
 .tint {
 	/* The tint's two layers, 22% of #ff8a2e under 10% of #ff9a4d, as one colour. */
 	--tint: rgb(255 143.4 56.4 / 0.298);
+	--reach: 10000px;
 	z-index: 5;
 	transition:
 		transform 800ms cubic-bezier(0.33, 1, 0.68, 1),
@@ -39,7 +40,10 @@
 /* The tint is five pieces around the circle, each its own layer: a square with the circle cut out
    of it, and four bands, --reach long, with nothing to draw but their colour. WebKit splits a layer
    the page's size that has pixels to draw into tiles, redraws them on its main thread when the
-   layer moves, and leaves them blank until it has; a layer that's only a colour has no tiles. */
+   layer moves, and leaves them blank until it has; a layer that's only a colour has no tiles, so
+   the bands can reach past any page's edges from wherever the circle is. The reach is fixed: a
+   band that changed its size or place after the first paint would be a layout shift as big as
+   the screen. */
 .hole,
 .above,
 .below,
@@ -61,9 +65,9 @@
 }
 .above,
 .below {
-	left: calc(-1 * var(--reach, 400vmax));
-	width: calc(var(--reach, 400vmax) * 2);
-	height: calc(var(--reach, 400vmax) - var(--lr));
+	left: calc(-1 * var(--reach));
+	width: calc(var(--reach) * 2);
+	height: calc(var(--reach) - var(--lr));
 	background-color: var(--tint);
 }
 .above {
@@ -75,7 +79,7 @@
 .left,
 .right {
 	top: calc(-1 * var(--lr));
-	width: calc(var(--reach, 400vmax) - var(--lr));
+	width: calc(var(--reach) - var(--lr));
 	height: calc(var(--lr) * 2);
 	background-color: var(--tint);
 }
