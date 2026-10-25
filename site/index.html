@@ -5,17 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nightcap</title>
 <meta name="description" content="Nightcap brings Night Shift to your menu bar: set how warm it gets, switch it or peek past it with a shortcut, and keep it off for the apps and websites you choose.">
+<link rel="canonical" href="https://nightcap.choco.me/">
+<meta name="color-scheme" content="light dark">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://nightcap.choco.me/">
+<meta property="og:site_name" content="Nightcap">
 <meta property="og:title" content="Nightcap: Night Shift, made yours">
 <meta property="og:description" content="Nightcap brings Night Shift to your menu bar: set how warm it gets, switch it or peek past it with a shortcut, and keep it off for the apps and websites you choose.">
+<meta property="og:image" content="https://nightcap.choco.me/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Night Shift, made yours: Nightcap's menu open in the Mac menu bar, keeping Night Shift off while Figma is in front">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="theme-color" content="#dde5f6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#16224b" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <script>
   // The footer's appearance switch, applied before the first paint.
   try {
     const theme = localStorage.getItem('nightcap-theme');
     if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-  } catch (e) {}
+  } catch {}
   // Safari draws a page under an iPhone's status bar only once it's scrolled, so on iPhones with
   // a notch or Dynamic Island, held upright, the hero starts with room for the bar (Hero.module.css)
   // that the page scrolls past. Their screens are taller than 2:1; the iPhone SE's is 16:9.

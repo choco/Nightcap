@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Renders the site's social card, site/public/og.png: the top of the built page at 1200 × 630, in
+# the night theme, held still (site/render-og.ts). Needs Google Chrome; the PNG is committed, so
+# site builds don't. Render it again when the hero changes.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+"$root/scripts/build-site"
+cd "$root/site"
+node render-og.ts

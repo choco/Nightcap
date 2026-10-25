@@ -78,15 +78,19 @@ export function placeDoodles(
 	const tiers: Partial<Record<DoodleKind, number[]>> = {};
 	const sizeOf = (kind: DoodleKind) => {
 		let tier = tiers[kind];
-		if (!tier || tier.length === 0)
-			tier = tiers[kind] = shuffle([0.15, 0.5, 0.85]);
-		const f = Math.min(1, Math.max(0, tier.pop()! + between(-0.1, 0.1)));
+		if (!tier?.length) {
+			tier = shuffle([0.15, 0.5, 0.85]);
+			tiers[kind] = tier;
+		}
+		const [step] = tier.splice(-1);
+		const f = Math.min(1, Math.max(0, step + between(-0.1, 0.1)));
 		return Math.round(sizes[kind][0] + f * (sizes[kind][1] - sizes[kind][0]));
 	};
 	const counts: Partial<Record<DoodleKind, number>> = {};
 	let placedCount = 0;
 	const doodle = (kind: DoodleKind, x: number, y: number): Doodle => {
-		const count = (counts[kind] = (counts[kind] ?? 0) + 1);
+		const count = (counts[kind] ?? 0) + 1;
+		counts[kind] = count;
 		const motion: DoodleMotion =
 			kind === "sun"
 				? "spin"
@@ -166,7 +170,7 @@ export function placeDoodles(
 		)
 			centre.push({ x, y });
 	}
-	centre.forEach((d) => placed.push(doodle(drawKind([]), d.x, d.y)));
+	for (const d of centre) placed.push(doodle(drawKind([]), d.x, d.y));
 	// A doodle at (x, y) spans at most 36px, the largest sun.
 	const covers = (x: number, y: number) =>
 		hero.clear.some(

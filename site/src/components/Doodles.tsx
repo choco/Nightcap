@@ -65,9 +65,9 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 			className="pointer-events-none absolute inset-0 z-0"
 			aria-hidden="true"
 		>
-			{doodles.map((d, index) => (
+			{doodles.map((d) => (
 				<span
-					key={index}
+					key={`${d.kind}-${d.x}-${d.y}`}
 					className={cx("absolute", !d.keep && "max-sm:hidden")}
 					style={{
 						left: `${d.x.toFixed(2)}%`,
@@ -89,7 +89,11 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 							animationDuration: `${d.duration.toFixed(1)}s`,
 						}}
 					>
-						<svg className="block size-full" viewBox="0 0 24 24">
+						<svg
+							aria-hidden="true"
+							className="block size-full"
+							viewBox="0 0 24 24"
+						>
 							{PATHS[d.kind]}
 						</svg>
 					</span>
@@ -170,9 +174,8 @@ export function useDoodles(page: RefObject<HTMLElement | null>) {
 		window.addEventListener("resize", redraw);
 		// The web fonts arriving reflow the text, which the doodles keep clear of.
 		const reflow = new ResizeObserver(redraw);
-		root
-			.querySelectorAll("[data-hero] [data-doodle-clear]")
-			.forEach((node) => reflow.observe(node));
+		for (const node of root.querySelectorAll("[data-hero] [data-doodle-clear]"))
+			reflow.observe(node);
 		reflow.observe(root);
 		return () => {
 			clearTimeout(timer);

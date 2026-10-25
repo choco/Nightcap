@@ -1,27 +1,22 @@
-import { type RefObject, useEffect } from "react";
+import { type RefObject, useEffect, useRef } from "react";
 import styles from "./Lens.module.css";
 
-/** The page's Night Shift tint and the ring around the true-colour circle cut out of it. */
-export function Lens() {
-	return (
-		<>
-			<div className={styles.tint} aria-hidden="true">
-				<span />
-				<span />
-			</div>
-			<div className={styles.ring} aria-hidden="true" />
-		</>
-	);
-}
+/** The page's Night Shift tint and the ring around the true-colour circle cut out of it.
+ *
+ *  The circle follows the pointer, staying under it through scrolling. After 2.5 s still, it
+ *  wanders inside the lens area (`data-lens-area`) of the section (`data-lens-section`) most in
+ *  view, or, on phones, which have no pointer to steer it, over the page's first lens area, the
+ *  hero's scene. Each frame writes --lx and --ly on the tint and the ring alone: written on the
+ *  page, they'd be inherited by every element on it, and restyle them all, every frame. */
+export function Lens({ page }: { page: RefObject<HTMLElement | null> }) {
+	const tint = useRef<HTMLDivElement>(null);
+	const ring = useRef<HTMLDivElement>(null);
 
-/** The true-colour circle follows the pointer, staying under it through scrolling. After 2.5 s
- *  still, it wanders inside the lens area (`data-lens-area`) of the section (`data-lens-section`)
- *  most in view, or, on phones, which have no pointer to steer it, over the page's first lens
- *  area, the hero's scene. It writes CSS variables, so a frame never lays the page out again. */
-export function useLens(page: RefObject<HTMLElement | null>) {
 	useEffect(() => {
 		const root = page.current;
-		if (!root) throw new Error("the lens has no page");
+		if (!root || !tint.current || !ring.current)
+			throw new Error("the lens has no page");
+		const circles = [tint.current, ring.current];
 		const phone = window.matchMedia("(max-width: 560px)");
 		const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 		const lens: {
@@ -30,12 +25,14 @@ export function useLens(page: RefObject<HTMLElement | null>) {
 			area: Element | null;
 			picked: number;
 			pos: { x: number; y: number } | null;
+			written: string;
 		} = {
 			client: null,
 			lastMove: 0,
 			area: null,
 			picked: 0,
 			pos: null,
+			written: "",
 		};
 		const move = (event: PointerEvent) => {
 			if (event.pointerType !== "mouse") return;
@@ -98,8 +95,15 @@ export function useLens(page: RefObject<HTMLElement | null>) {
 			const ease = reducedMotion.matches ? 1 : 0.1;
 			lens.pos.x += (target.x - lens.pos.x) * ease;
 			lens.pos.y += (target.y - lens.pos.y) * ease;
-			root.style.setProperty("--lx", lens.pos.x.toFixed(1) + "px");
-			root.style.setProperty("--ly", lens.pos.y.toFixed(1) + "px");
+			const x = `${lens.pos.x.toFixed(1)}px`;
+			const y = `${lens.pos.y.toFixed(1)}px`;
+			// A circle at rest, as it is with reduced motion, restyles nothing.
+			if (`${x} ${y}` === lens.written) return;
+			lens.written = `${x} ${y}`;
+			for (const circle of circles) {
+				circle.style.setProperty("--lx", x);
+				circle.style.setProperty("--ly", y);
+			}
 		};
 		let frame = requestAnimationFrame(tick);
 		return () => {
@@ -108,4 +112,14 @@ export function useLens(page: RefObject<HTMLElement | null>) {
 			root.removeEventListener("pointerleave", leave);
 		};
 	}, [page]);
+
+	return (
+		<>
+			<div ref={tint} className={styles.tint} aria-hidden="true">
+				<span />
+				<span />
+			</div>
+			<div ref={ring} className={styles.ring} aria-hidden="true" />
+		</>
+	);
 }

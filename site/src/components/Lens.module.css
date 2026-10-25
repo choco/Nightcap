@@ -1,5 +1,5 @@
 /* The page under Night Shift, with the true-colour circle cut out of it. The circle's radius is
-   --lr; useLens moves it with --lx and --ly on the page. */
+   --lr; Lens moves it with --lx and --ly on the tint and the ring. */
 .tint,
 .ring {
 	--lr: min(140px, 30vw);

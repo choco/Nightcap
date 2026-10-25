@@ -19,17 +19,16 @@ export function Evening() {
 				schedule's next change instead of fighting you.
 			</SplitHeading>
 			<div className={styles.sky} aria-hidden="true">
-				{MOMENTS.map((_, i) => (
+				{MOMENTS.map((m, i) => (
 					<span
-						key={i}
+						key={m.time}
 						className={cx(styles.marker, i === index && styles.on)}
 						style={{ left: `${10 + i * 20}%` }}
 					/>
 				))}
 			</div>
-			<div
-				className="grid grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-2"
-				role="group"
+			<fieldset
+				className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-2"
 				aria-label="Moments of one evening"
 				data-lens-area
 			>
@@ -57,7 +56,7 @@ export function Evening() {
 						</span>
 					</button>
 				))}
-			</div>
+			</fieldset>
 			<div className="flex flex-wrap items-start gap-x-10 gap-y-6">
 				<p
 					key={index}

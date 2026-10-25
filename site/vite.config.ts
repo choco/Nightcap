@@ -23,7 +23,7 @@ function renderInDev(): Plugin {
 }
 
 export default defineConfig(({ command }) => ({
-	// Relative, as the page's own fetch of download.json is, so the site works under any path.
+	// Relative, so the built site works under any path.
 	base: "./",
 	plugins: [design(), tailwindcss(), react(), renderInDev()],
 	css: {

@@ -16,5 +16,5 @@
 		"noEmit": true,
 		"skipLibCheck": true
 	},
-	"include": ["vite.config.ts", "plugins", "prerender.ts"]
+	"include": ["vite.config.ts", "plugins", "prerender.ts", "render-og.ts"]
 }

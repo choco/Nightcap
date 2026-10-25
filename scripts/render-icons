@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Renders app/icons/AppIcon.svg into every size of the app's icon set, and TourSample.svg into the
-# tour sample's. The menu-bar icons are vector images in the asset catalog, used as they are.
+# Renders app/icons/AppIcon.svg into every size of the app's icon set and into the site's touch
+# icon, and TourSample.svg into the tour sample's icon set. The menu-bar icons are vector images
+# in the asset catalog, used as they are.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -16,3 +17,15 @@ render() {
 
 render app/icons/AppIcon.svg app/Nightcap/Assets.xcassets/AppIcon.appiconset
 render app/icons/TourSample.svg app/TourSample/Assets.xcassets/AppIcon.appiconset
+
+# The touch icon is the icon's body alone, square and edge to edge: iOS rounds it with its own
+# mask, and fills whatever is transparent, the macOS margin and shadow, with black.
+body=('viewBox="0 0 1024 1024"' ' rx="185"' ' filter="url(#drop)"')
+for attribute in "${body[@]}"; do
+  if ! grep -qF -- "$attribute" app/icons/AppIcon.svg; then
+    echo "error: app/icons/AppIcon.svg has no $attribute to cut the touch icon from" >&2
+    exit 1
+  fi
+done
+sed -e 's/viewBox="0 0 1024 1024"/viewBox="100 100 824 824"/' -e 's/ rx="185"//' -e 's/ filter="url(#drop)"//' \
+  app/icons/AppIcon.svg | rsvg-convert -w 180 -h 180 -o site/public/apple-touch-icon.png

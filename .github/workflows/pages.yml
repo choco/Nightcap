@@ -52,8 +52,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          scripts/build-site
           tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[].tagName')"
+          if [[ -n "$tag" ]]; then
+            # The site's download buttons, prerendered: the DMG, or the zip of a release that has none.
+            export VITE_RELEASE_VERSION="${tag#v}"
+            VITE_RELEASE_URL="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq \
+              '([.assets[] | select(.name | endswith(".dmg"))] + [.assets[] | select(.name | endswith(".zip"))])[0].url // empty')"
+            export VITE_RELEASE_URL
+          fi
+          scripts/build-site
           if [[ -n "$tag" ]]; then
             assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
             if grep -qx appcast.xml <<<"$assets"; then
@@ -61,10 +68,6 @@ jobs:
             else
               echo "::notice::the newest release predates Sparkle and has no appcast.xml"
             fi
-            # The site's download buttons: the DMG, or the zip of a release that has none.
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq \
-              '([.assets[] | select(.name | endswith(".dmg"))] + [.assets[] | select(.name | endswith(".zip"))])[0]
-               | {version: ("'"${tag#v}"'"), url: .url}' > build/site/download.json
           fi
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         if: steps.pending.outputs.release != 'true'

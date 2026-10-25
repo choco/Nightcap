@@ -1,36 +1,19 @@
-import { useEffect, useState } from "react";
 import { cx } from "../lib/cx";
-
-export interface Release {
-	version: string;
-	url: string;
-}
 
 const RELEASES = "https://github.com/choco/Nightcap/releases/latest";
 
-/** The newest release's DMG, as the Pages deploy writes it into download.json. Until it loads, or
- *  where the site has none, which is before the first release and in a local preview, the
- *  download buttons lead to the releases page. */
-export function useRelease(): Release | null {
-	const [release, setRelease] = useState<Release | null>(null);
-	useEffect(() => {
-		fetch("download.json")
-			.then((response) => {
-				if (response.status === 404) return null;
-				if (!response.ok) throw new Error(`download.json: ${response.status}`);
-				return response.json() as Promise<Release>;
-			})
-			.then(setRelease);
-	}, []);
-	return release;
-}
+/** The newest release's DMG, which the Pages deploy builds the site with (pages.yml), so the
+ *  prerendered page links it. A build without one, as before the first release and everywhere
+ *  but the deploy, leads to the releases page. */
+const { VITE_RELEASE_VERSION: version, VITE_RELEASE_URL: url } = import.meta
+	.env;
+if (Boolean(version) !== Boolean(url))
+	throw new Error("VITE_RELEASE_VERSION and VITE_RELEASE_URL go together");
 
 export function DownloadButton({
-	release,
 	plain,
 	showVersion,
 }: {
-	release: Release | null;
 	plain?: boolean;
 	showVersion?: boolean;
 }) {
@@ -41,12 +24,12 @@ export function DownloadButton({
 				plain ? "border-transparent" : "border-primary-edge",
 				"transition-transform duration-[420ms] ease-spring hover:scale-[1.045] active:scale-[.97] motion-reduce:transition-none",
 			)}
-			href={release?.url ?? RELEASES}
+			href={url || RELEASES}
 		>
 			Download for Mac
-			{showVersion && release && (
+			{showVersion && version && (
 				<span className="font-mono text-[12px] font-medium opacity-75">
-					{release.version}
+					{version}
 				</span>
 			)}
 		</a>

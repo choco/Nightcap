@@ -10,13 +10,16 @@ Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo a
 - `build-app [--release]`: builds `build/xcode/Release/Nightcap.app` or the dev build, `build/xcode/Debug/Nightcap Dev.app` (`io.github.choco.nightcap.dev`), unsigned. The dev build's own name keeps it apart from the installed app in System Settings.
 - `run-dev`: builds, signs and launches the dev build.
 - `run-tests`: runs the Rust tests.
-- `build-site`: installs, type-checks and builds the project site into `build/site`, prerendered to static HTML. Preview it with `python3 -m http.server -d build/site`; the download buttons need a `download.json` beside it (`{"version", "url"}`), as the Pages deploy writes one.
+- `build-site`: installs, lints, type-checks and builds the project site into `build/site`, prerendered to static HTML. Preview it with `python3 -m http.server -d build/site`. The download buttons lead to the releases page unless `VITE_RELEASE_VERSION` and `VITE_RELEASE_URL` name a release's version and DMG, as the Pages deploy sets them.
 - `render-dmg-background`: renders `release/dmg-assets/background.html` into the DMG's background PNGs, with Google Chrome. `release/dmg` builds the DMG from a signed app.
-- `render-icons`: renders `app/icons/AppIcon.svg` into the app's icon set, and `TourSample.svg` into the tour sample's. The menu-bar moons are SVGs in `app/Nightcap/Assets.xcassets`, used as they are.
+- `render-icons`: renders `app/icons/AppIcon.svg` into the app's icon set and the site's touch icon, and `TourSample.svg` into the tour sample's. The menu-bar moons are SVGs in `app/Nightcap/Assets.xcassets`, used as they are.
+- `render-og-image`: renders the site's social card, `site/public/og.png`, from the built page, with Google Chrome. Render it again when the hero changes.
 
 To compare the UI against a mockup, a dev build renders the settings window's tabs, onboarding's steps, the tour's panels and the pointer to the moon, light and dark, from a fixed scenario into a folder and quits: `NIGHTCAP_SNAPSHOT="$PWD/tmp/snap" "build/xcode/Debug/Nightcap Dev.app/Contents/MacOS/Nightcap Dev"`. It needs no core and no screen-recording permission (`app/Nightcap/Snapshot.swift`).
 
 The site (`site/`) is React and TypeScript, built with Vite and pnpm, and prerendered at build time (`prerender.ts`), so the page arrives whole and React hydrates it. `pnpm --dir site dev` serves it, rendered the same way, with hot reload. Tailwind styles its layout and type, themed from the design system's tokens; the drawn mocks (the macOS scene, menus, desk) keep their measures in CSS modules beside their components. `site/plugins/design.ts` writes `src/styles/tokens.css` from `design/tokens.json` and copies the app icon to `public/icon.svg`; both are build outputs.
+
+The site's dependencies are pinned to exact versions at least two weeks old; `site/pnpm-workspace.yaml` enforces the age for transitive ones too. Biome lints and formats the site with its recommended defaults (`pnpm --dir site check`, and `pnpm --dir site format` to apply fixes); it stands in for ESLint because typescript-eslint doesn't support TypeScript 7 yet.
 
 Swift files under `app/Nightcap/` join the app target automatically (a folder-synced group); the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and `NightcapCore.swift` are build outputs: change their sources and rebuild.
 

@@ -103,8 +103,8 @@ function writeTokens() {
 
 /** What the site takes from the rest of the repo: src/styles/tokens.css from the design system's
  *  tokens, and public/icon.svg, the app icon, both written before Vite reads anything and again
- *  when their sources change while serving; and the fonts' licences beside the built site's
- *  fonts. */
+ *  when their sources change while serving; preloads for the first screen's fonts; and the fonts'
+ *  licences beside the built site's fonts. */
 export function design(): Plugin {
 	return {
 		name: "nightcap:design",
@@ -119,6 +119,31 @@ export function design(): Plugin {
 				if (path === source) writeTokens();
 				if (path === appIcon) copyFileSync(appIcon, `${publicDir}icon.svg`);
 			});
+		},
+		// The faces the first screen sets (the headline's and the text's), preloaded so the headline
+		// doesn't wait for the stylesheet to ask for them. Only a build knows their hashed names.
+		transformIndexHtml: {
+			order: "post",
+			handler(_html, { bundle }) {
+				if (!bundle) return [];
+				return Object.keys(bundle)
+					.filter((name) =>
+						/^fonts\/(Caprasimo-Regular|Figtree-Variable)-[\w-]+\.woff2$/.test(
+							name,
+						),
+					)
+					.map((name) => ({
+						tag: "link",
+						attrs: {
+							rel: "preload",
+							href: `./${name}`,
+							as: "font",
+							type: "font/woff2",
+							crossorigin: "",
+						},
+						injectTo: "head" as const,
+					}));
+			},
 		},
 		generateBundle() {
 			if (this.environment.name !== "client") return;

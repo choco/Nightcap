@@ -8,6 +8,7 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 		label: "Match the system",
 		icon: (
 			<svg
+				aria-hidden="true"
 				viewBox="0 0 24 24"
 				width="17"
 				height="17"
@@ -26,6 +27,7 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 		label: "Light",
 		icon: (
 			<svg
+				aria-hidden="true"
 				viewBox="0 0 24 24"
 				width="17"
 				height="17"
@@ -44,6 +46,7 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 		label: "Dark",
 		icon: (
 			<svg
+				aria-hidden="true"
 				viewBox="0 0 24 24"
 				width="17"
 				height="17"
@@ -61,14 +64,12 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 /** The appearance: the system's, unless this switch chose one, remembered on this device.
  *  index.html applies a remembered choice before the first paint. */
 function ThemeSwitch() {
+	// The server can't know the visitor's choice, so the page hydrates as "system" and then reads
+	// the one index.html applied.
 	const [choice, setChoice] = useState<Theme>("system");
 	useEffect(() => {
-		try {
-			const stored = localStorage.getItem("nightcap-theme");
-			if (stored === "light" || stored === "dark") setChoice(stored);
-		} catch {
-			// Without storage, the page follows the system.
-		}
+		const applied = document.documentElement.dataset.theme;
+		if (applied === "light" || applied === "dark") setChoice(applied);
 	}, []);
 	const choose = (theme: Theme) => {
 		setChoice(theme);
@@ -83,9 +84,8 @@ function ThemeSwitch() {
 		}
 	};
 	return (
-		<span
+		<fieldset
 			className="inline-flex gap-0.5 rounded-full p-[3px] shadow-[inset_0_0_0_1px_var(--line-strong)]"
-			role="group"
 			aria-label="Appearance"
 		>
 			{THEMES.map(({ theme, label, icon }) => (
@@ -101,7 +101,7 @@ function ThemeSwitch() {
 					{icon}
 				</button>
 			))}
-		</span>
+		</fieldset>
 	);
 }
 

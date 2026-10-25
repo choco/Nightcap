@@ -19,6 +19,7 @@ export function Celestial() {
 			<div className={styles.sun}>
 				<div className={cx(styles.rays, "animate-spin", ambient)}>
 					<svg
+						aria-hidden="true"
 						viewBox="0 0 100 100"
 						fill="none"
 						stroke="var(--doodle-gold)"

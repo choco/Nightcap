@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { cx } from "../lib/cx";
-import { DownloadButton, type Release } from "./Download";
+import { DownloadButton } from "./Download";
 import styles from "./Dusk.module.css";
 
 function Star({
@@ -38,7 +38,7 @@ function Star({
 const SPARKLE =
 	"M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z";
 
-export function Dusk({ release }: { release: Release | null }) {
+export function Dusk() {
 	return (
 		<section
 			className={cx(
@@ -97,7 +97,7 @@ export function Dusk({ release }: { release: Release | null }) {
 					Free and open source, for macOS 15 or later on Apple silicon.
 				</p>
 			</div>
-			<DownloadButton release={release} plain />
+			<DownloadButton plain />
 		</section>
 	);
 }

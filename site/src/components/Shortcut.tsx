@@ -1,5 +1,4 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { Moon } from "../data/menus";
 import { cx } from "../lib/cx";
 import { Mini } from "./Mini";
 import { Section, SplitHeading } from "./Section";
@@ -19,10 +18,7 @@ interface Props {
  *  press lifts the page's warmth at once, and a release within 0.3 s was a tap, which switches
  *  the page's Night Shift as the nav's switch does. The card for the move that happened lights. */
 export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
-	const [tap, setTap] = useState<{ warm: boolean; moon: Moon }>({
-		warm: true,
-		moon: "on",
-	});
+	const [tapOn, setTapOn] = useState(true);
 	const [holding, setHolding] = useState(false);
 	const [lit, setLit] = useState<Move | null>(null);
 	const [down, setDown] = useState(false);
@@ -35,9 +31,6 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 	const peeking = useRef(false);
 	const lastMove = useRef<Move | null>(null);
 
-	const showTap = (on: boolean) =>
-		setTap({ warm: on, moon: on ? "on" : "off" });
-
 	useEffect(() => {
 		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 		demoing.current = true;
@@ -48,12 +41,12 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			at(140, () => {
 				setDown(false);
 				setLit("tap");
-				showTap(false);
+				setTapOn(false);
 			});
 			at(1700, () => setDown(true));
 			at(1840, () => {
 				setDown(false);
-				showTap(true);
+				setTapOn(true);
 			});
 			at(3300, () => {
 				setDown(true);
@@ -80,7 +73,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			demoing.current = false;
 			timers.current.forEach(clearTimeout);
 			setLit(null);
-			showTap(shiftOn);
+			setTapOn(shiftOn);
 		}
 		pressedAt.current = performance.now();
 		setDown(true);
@@ -103,7 +96,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 		if (held < 300) {
 			const on = !shiftOn;
 			onShift();
-			showTap(on);
+			setTapOn(on);
 			setLit("tap");
 			setHint(
 				on
@@ -141,7 +134,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			<div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-6">
 				<MoveCard
 					lit={lit === "tap"}
-					mini={<Mini warm={tap.warm} moon={tap.moon} />}
+					mini={<Mini warm={tapOn} moon={tapOn ? "on" : "off"} />}
 					title="Tap"
 					glyph={
 						<>
@@ -249,6 +242,7 @@ function MoveCard({
 					aria-hidden="true"
 				>
 					<svg
+						aria-hidden="true"
 						className="size-[26px]"
 						viewBox="0 0 24 24"
 						fill="none"

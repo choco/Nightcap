@@ -29,13 +29,13 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 		cx(styles.window, styles[app], "animate-swap motion-reduce:animate-none");
 
 	return (
-		<figure className={styles.desk}>
-			<div
-				className={styles.screen}
-				role="img"
-				aria-label="A Mac running Nightcap: Night Shift is off while Figma is in front, and on in Mail"
-			>
-				<div className={styles.menubar}>
+		<figure
+			className={styles.desk}
+			aria-label="A Mac running Nightcap: Night Shift is off while Figma is in front, and on in Mail"
+		>
+			{/* The screen is drawn, and hidden from assistive technology, all but the dock's buttons. */}
+			<div className={styles.screen}>
+				<div className={styles.menubar} aria-hidden="true">
 					<span className={styles.appName}>{APPS[front].name}</span>
 					<span className={styles.label}>File</span>
 					<span className={styles.label}>Edit</span>
@@ -46,7 +46,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					<Clock className={styles.time} />
 				</div>
 
-				<div className={styles.windowSlot}>
+				<div className={styles.windowSlot} aria-hidden="true">
 					<div className={windowClass("mail")} hidden={front !== "mail"}>
 						<div className={styles.windowBar}>Inbox</div>
 						<div className={styles.mailRow}>
@@ -74,7 +74,12 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 						</div>
 						<div className={styles.video}>
 							<span className={styles.play}>
-								<svg viewBox="0 0 24 24" width="18" height="18">
+								<svg
+									aria-hidden="true"
+									viewBox="0 0 24 24"
+									width="18"
+									height="18"
+								>
 									<path d="M8 5v14l11-7z" fill="#eef1fa" />
 								</svg>
 							</span>
@@ -86,6 +91,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					className={styles.menuInline}
 					entries={MENUS[front]}
 					look="night"
+					aria-hidden="true"
 				/>
 
 				<div className={styles.dock}>

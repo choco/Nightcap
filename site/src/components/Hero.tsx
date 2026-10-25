@@ -2,19 +2,18 @@ import { useEffect, useRef } from "react";
 import type { Doodle } from "../lib/doodles";
 import { Celestial } from "./Celestial";
 import { Doodles } from "./Doodles";
-import { DownloadButton, type Release } from "./Download";
+import { DownloadButton } from "./Download";
 import styles from "./Hero.module.css";
 import { Nav } from "./Nav";
 import { Scene } from "./Scene";
 
 interface Props {
 	doodles: Doodle[];
-	release: Release | null;
 	shiftOn: boolean;
 	onShift: () => void;
 }
 
-export function Hero({ doodles, release, shiftOn, onShift }: Props) {
+export function Hero({ doodles, shiftOn, onShift }: Props) {
 	const hero = useRef<HTMLElement>(null);
 	// The iPhone's runway is scrolled past on arrival, unless the link points into the page or the
 	// reader has already scrolled.
@@ -60,7 +59,7 @@ export function Hero({ doodles, release, shiftOn, onShift }: Props) {
 							while the apps and websites you choose are in front.
 						</p>
 						<div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-							<DownloadButton release={release} showVersion />
+							<DownloadButton showVersion />
 							<span className="text-[14px] text-ink-muted">
 								macOS 15 or later, Apple silicon
 							</span>
