@@ -152,6 +152,7 @@ fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     assert_eq!(
         activate(&core, "com.figma.Desktop"),
@@ -160,6 +161,7 @@ fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     (core, wakes, clock)
 }
@@ -258,6 +260,7 @@ fn start_with_figma_domain(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<Test
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     (core, wakes, clock)
 }
@@ -370,6 +373,7 @@ fn the_status_reports_night_shift_as_last_observed() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -396,6 +400,7 @@ fn start_at_strength_60(socket: &Path) -> (Core, mpsc::Receiver<()>) {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
     core.handle(Event::StrengthChanged { value: 60 });
     (core, wakes)
@@ -457,6 +462,7 @@ fn strength_before_the_shell_could_read_it_is_refused() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::PreviewStrength(40));
@@ -503,6 +509,7 @@ fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     send(&core, &socket, &wakes, Command::SetSchedule(Schedule::Off));
@@ -510,6 +517,7 @@ fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
@@ -560,6 +568,7 @@ fn report_night_shift(core: &Core, schedule: Schedule, strength: u8) {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule,
+        sun_schedule_set_aside: false,
     });
     core.handle(Event::StrengthChanged { value: strength });
 }
@@ -789,6 +798,7 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
@@ -806,6 +816,7 @@ fn off_takes_off_everywheres_hold_where_that_is_enough() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::Off);
@@ -822,6 +833,7 @@ fn on_while_everywhere_says_on_writes_nothing() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
@@ -838,6 +850,7 @@ fn toggle_turns_everywhere_the_other_way() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
@@ -854,11 +867,13 @@ fn two_flips_leave_nothing_behind() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::Toggle);
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
@@ -876,6 +891,7 @@ fn on_while_the_schedule_says_on_holds_nothing() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (effects, response) = send(&core, &socket, &wakes, Command::On);
@@ -893,11 +909,13 @@ fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::On);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     clock.set("2026-10-17T07:00:00+02:00");
@@ -906,6 +924,7 @@ fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
@@ -927,11 +946,13 @@ fn an_external_change_holds_everywhere_until_the_schedule_turns_it_back() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, Vec::new());
@@ -953,16 +974,19 @@ fn an_external_change_back_takes_off_what_the_switch_held() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::On);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, Vec::new());
@@ -977,6 +1001,7 @@ fn an_edited_schedule_ends_the_holds_waiting_on_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -987,6 +1012,7 @@ fn an_edited_schedule_ends_the_holds_waiting_on_it() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     // Moving the start to 21:00 makes macOS apply the schedule again, so Night Shift comes on.
@@ -999,6 +1025,7 @@ fn an_edited_schedule_ends_the_holds_waiting_on_it() {
             },
             to: TimeOfDay { hour: 7, minute: 0 },
         },
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, Vec::new());
@@ -1013,6 +1040,7 @@ fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::Off);
     send(
@@ -1025,6 +1053,7 @@ fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1045,6 +1074,7 @@ fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -1073,6 +1103,7 @@ fn a_timer_gives_back_what_was_under_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (effects, _) = send(
@@ -1093,6 +1124,7 @@ fn a_timer_gives_back_what_was_under_it() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     clock.set("2026-10-16T23:30:00+02:00");
@@ -1116,6 +1148,7 @@ fn a_new_timer_replaces_the_places_timer_and_keeps_its_hold() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::Off);
     send(
@@ -1150,6 +1183,7 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     send(
@@ -1192,6 +1226,7 @@ fn a_new_hold_replaces_the_places_hold_and_ends_its_timer() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::Off);
     send(
@@ -1226,6 +1261,7 @@ fn until_a_picked_time_is_a_timer_that_ends_then() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (effects, _) = send(
@@ -1260,6 +1296,7 @@ fn lengths_that_cant_be_are_refused() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     for command in [
@@ -1291,6 +1328,7 @@ fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition()
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let status = status_of(&core, &socket, &wakes);
@@ -1310,6 +1348,7 @@ fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1327,6 +1366,7 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     clock.set("2026-10-16T21:59:59+02:00");
@@ -1347,6 +1387,7 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -1359,6 +1400,7 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1380,17 +1422,20 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::On);
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     clock.set("2026-10-16T21:59:00+02:00");
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let status = status_of(&core, &socket, &wakes);
@@ -1408,6 +1453,7 @@ fn a_time_zone_change_moves_the_custom_hours() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = core.handle(Event::TimeZoneChanged {
@@ -1452,6 +1498,7 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1474,6 +1521,7 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
     assert_eq!(
         effects,
@@ -1514,11 +1562,13 @@ fn turning_the_schedule_off_cancels_the_wakeup() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
@@ -1536,6 +1586,7 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = activate(&core, "com.figma.Desktop");
@@ -1562,11 +1613,13 @@ fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let effects = activate(&core, "com.apple.Terminal");
@@ -1604,6 +1657,7 @@ fn reload_applies_a_changed_config() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
 
@@ -1645,6 +1699,7 @@ fn a_command_answers_with_the_resulting_decision() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (_, response) = send(&core, &socket, &wakes, Command::Off);
@@ -1674,6 +1729,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_extern
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
     clock.set("2026-10-16T22:00:00+02:00");
@@ -1683,6 +1739,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_extern
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
@@ -1698,6 +1755,7 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_chan
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
     clock.set("2026-10-16T23:00:00+02:00");
@@ -1707,6 +1765,7 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_chan
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
@@ -1786,6 +1845,7 @@ fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     clock.set("2026-10-16T23:30:00+02:00");
@@ -1811,6 +1871,7 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(activate(&core, "com.apple.Terminal"), Vec::new());
@@ -1830,6 +1891,7 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1856,6 +1918,7 @@ fn with_no_schedule_the_night_shift_item_says_so() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1872,11 +1935,13 @@ fn with_no_schedule_an_external_change_holds_until_turned_back() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1898,12 +1963,14 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
 
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -1932,6 +1999,7 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
@@ -1946,6 +2014,7 @@ fn the_switch_first_takes_off_everywheres_layers_that_say_otherwise() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -2084,11 +2153,13 @@ fn on_the_way_out_only_everywheres_hold_still_applies() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(&core, &socket, &wakes, Command::Off);
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -2099,6 +2170,7 @@ fn on_the_way_out_only_everywheres_hold_still_applies() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -2129,6 +2201,7 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -2155,6 +2228,7 @@ fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -2180,6 +2254,7 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -2232,6 +2307,7 @@ fn start_disabled(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     send(
         &core,
@@ -2242,6 +2318,7 @@ fn start_disabled(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     (core, wakes, clock)
 }
@@ -2273,6 +2350,7 @@ fn status_callbacks_while_another_user_is_active_are_ignored() {
     let effects = core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, Vec::new());
@@ -2296,6 +2374,7 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
     let effects = core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
@@ -2334,6 +2413,7 @@ fn start_on_figma(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     (core, wakes, clock)
 }
@@ -2378,6 +2458,7 @@ fn with_website_checking_on_the_front_browser_is_watched_without_any_domain_rule
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -2464,6 +2545,7 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
 
@@ -2523,12 +2605,14 @@ fn removing_an_ad_hoc_rule_lifts_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
     send(&core, &socket, &wakes, add_rule(figma()));
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let (effects, _) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
@@ -2601,6 +2685,7 @@ fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     let safari_app = Place::App("com.apple.Safari".to_owned());
 
@@ -2699,6 +2784,7 @@ fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() 
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.apple.mail");
     send(&core, &socket, &wakes, add_rule(mail()));
@@ -2737,6 +2823,7 @@ fn start_in_books_at_noon(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestC
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.apple.iBooksX");
     (core, wakes, clock)
@@ -2764,6 +2851,7 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
@@ -2790,6 +2878,7 @@ fn a_rule_that_says_on_is_released_on_a_clean_exit() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -3082,6 +3171,7 @@ fn everywheres_row_has_every_length_but_the_switchs() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     let menu = core.menu();
@@ -3126,7 +3216,11 @@ fn until_note(time: &str, enabled: bool, schedule: Schedule, title: &str) -> Opt
     let dir = tempfile::tempdir().unwrap();
     let (core, _wakes, _clock) = start_at(&socket_in(&dir), time);
     report_zurich_sun(&core);
-    core.handle(Event::StatusChanged { enabled, schedule });
+    core.handle(Event::StatusChanged {
+        enabled,
+        schedule,
+        sun_schedule_set_aside: false,
+    });
     choice_titled(&everywhere_row(&core).unwrap(), title).subtitle
 }
 
@@ -3187,6 +3281,7 @@ fn the_menus_lengths_come_from_the_config() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(
@@ -3212,6 +3307,7 @@ fn everywheres_row_names_the_place_that_keeps_the_other_way() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     let front = |bundle_id: &str, name: &str| {
         core.handle(Event::AppActivated {
@@ -3247,6 +3343,7 @@ fn by_day_the_rows_turn_on_and_by_night_off() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     core.handle(Event::AppActivated {
         bundle_id: Some("com.apple.mail".to_owned()),
@@ -3275,11 +3372,13 @@ fn without_the_sun_times_an_apps_row_turns_night_shift_the_other_way_from_how_it
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
     assert_eq!(app_row(&core).unwrap().title, "Turn Off in iTerm2");
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
     assert_eq!(app_row(&core).unwrap().title, "Turn On in iTerm2");
 }
@@ -3292,6 +3391,7 @@ fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
     });
 
     let menu = core.menu();
@@ -3440,6 +3540,7 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate_browser(&core, "com.apple.Safari");
     report_host(&core, 1, "docs.figma.com");
@@ -3483,6 +3584,7 @@ fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     core.handle(Event::AppActivated {
         bundle_id: Some("com.apple.Safari".to_owned()),
@@ -3550,6 +3652,7 @@ fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
     assert!(
         !core
@@ -3572,6 +3675,7 @@ fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     core.handle(Event::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
@@ -3600,6 +3704,7 @@ fn choosing_a_menu_item_runs_its_command() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     activate(&core, "com.figma.Desktop");
 
@@ -3619,6 +3724,7 @@ fn website_checking_is_off_until_turned_on() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
 
     assert_eq!(activate_browser(&core, "com.apple.Safari"), Vec::new());
@@ -3680,6 +3786,7 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     let switch = |on, locked, command| SettingsSwitch {
         on,
@@ -3717,6 +3824,7 @@ fn the_menu_shows_a_problem_line_while_any_problem_exists() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
     let line = |title: &str, subtitle: Option<&str>| {
         Some(ProblemLine {
@@ -4261,6 +4369,7 @@ fn saved_state_loads_back() {
             strength: Some(40),
             schedule: Some(custom_hours()),
         },
+        schedule_off_accepted: true,
     };
 
     store.save(&state).unwrap();
@@ -4462,6 +4571,7 @@ fn night_shift_missing_on_this_mac_is_broken() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: Schedule::Off,
+        sun_schedule_set_aside: false,
     });
     assert_eq!(
         check_of(&core, &socket, &wakes, CheckKind::NightShift),
@@ -4470,6 +4580,7 @@ fn night_shift_missing_on_this_mac_is_broken() {
     core.handle(Event::StatusChanged {
         enabled: false,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     assert_eq!(
         check_of(&core, &socket, &wakes, CheckKind::NightShift),
@@ -4567,6 +4678,149 @@ fn settings_offer_to_allow_notifications_or_keep_them_off() {
     let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
     core.handle(permissions(true, NotificationPermission::Denied));
     assert_eq!(settings_check(&core, CheckKind::Notifications), kept_off);
+}
+
+fn status(enabled: bool, schedule: Schedule, sun_schedule_set_aside: bool) -> Event {
+    Event::StatusChanged {
+        enabled,
+        schedule,
+        sun_schedule_set_aside,
+    }
+}
+
+fn night_shift_check(state: CheckState, text: &str) -> Option<SettingsCheck> {
+    Some(SettingsCheck {
+        kind: CheckKind::NightShift,
+        state,
+        text: text.to_owned(),
+        restore: None,
+        accept: None,
+    })
+}
+
+fn set_aside() -> Option<SettingsCheck> {
+    Some(SettingsCheck {
+        restore: button("Open Location Services…", Fix::OpenLocationServices),
+        accept: button("Keep the Schedule Off", Fix::KeepScheduleOff),
+        ..night_shift_check(
+            CheckState::Drifted,
+            "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
+        )
+        .unwrap()
+    })
+}
+
+#[test]
+fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+    report_zurich_sun(&core);
+    core.handle(status(true, Schedule::SunsetToSunrise, false));
+
+    let effects = core.handle(status(false, Schedule::Off, true));
+    assert!(effects.contains(&Effect::Notify {
+        title: "Sunset to sunrise needs Location Services".to_owned(),
+        body: "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off.".to_owned(),
+    }));
+    assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
+    assert_eq!(
+        core.menu().problem_line,
+        Some(ProblemLine {
+            title: "1 Thing Needs Attention…".to_owned(),
+            subtitle: Some("Night Shift".to_owned()),
+        })
+    );
+
+    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    assert_eq!(
+        settings_check(&core, CheckKind::NightShift),
+        night_shift_check(
+            CheckState::Ok,
+            "Available, following its schedule: sunset to sunrise."
+        )
+    );
+}
+
+#[test]
+fn nightcap_opening_with_sunset_to_sunrise_set_aside_shows_the_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+
+    core.handle(status(false, Schedule::Off, true));
+
+    assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
+}
+
+#[test]
+fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+    core.handle(status(false, Schedule::Off, true));
+
+    core.handle(Event::FixChosen {
+        fix: Fix::KeepScheduleOff,
+    });
+
+    let no_schedule = night_shift_check(CheckState::Ok, "Available, with no schedule.");
+    assert_eq!(settings_check(&core, CheckKind::NightShift), no_schedule);
+    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T01:45:00+02:00");
+    assert!(!notifies(&core.handle(status(false, Schedule::Off, true))));
+    assert_eq!(settings_check(&core, CheckKind::NightShift), no_schedule);
+
+    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    assert!(notifies(&core.handle(status(false, Schedule::Off, true))));
+    assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
+}
+
+#[test]
+fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+    core.handle(status(false, Schedule::Off, true));
+
+    core.handle(status(true, custom_hours(), true));
+
+    assert_eq!(
+        settings_check(&core, CheckKind::NightShift),
+        night_shift_check(
+            CheckState::Ok,
+            "Available, following its schedule: 22:00 to 07:00."
+        )
+    );
+}
+
+#[test]
+fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    let following = night_shift_check(
+        CheckState::Ok,
+        "Available, following its schedule: sunset to sunrise.",
+    );
+
+    clock.set("2026-10-16T01:49:00+02:00");
+    assert!(!notifies(&core.handle(Event::TimerFired)));
+    assert_eq!(settings_check(&core, CheckKind::NightShift), following);
+
+    clock.set("2026-10-16T01:50:00+02:00");
+    assert!(core.handle(Event::TimerFired).contains(&Effect::Notify {
+        title: "Nightcap can’t follow sunset to sunrise".to_owned(),
+        body: "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them.".to_owned(),
+    }));
+    assert_eq!(
+        settings_check(&core, CheckKind::NightShift),
+        night_shift_check(
+            CheckState::Broken,
+            "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
+        )
+    );
+
+    clock.set("2026-10-16T01:51:00+02:00");
+    report_zurich_sun(&core);
+    core.handle(Event::TimerFired);
+    assert_eq!(settings_check(&core, CheckKind::NightShift), following);
 }
 
 #[test]
@@ -4800,6 +5054,7 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     let photos = RuleIdentity::App("com.apple.Photos".to_owned());
     send(&core, &socket, &wakes, add_rule(photos.clone()));
@@ -4871,6 +5126,7 @@ fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
     core.handle(Event::StatusChanged {
         enabled: true,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     });
     let mail_app = Place::from(mail());
     send(
@@ -4959,6 +5215,7 @@ fn report(core: &Core, enabled: bool) -> Vec<Effect> {
     core.handle(Event::StatusChanged {
         enabled,
         schedule: custom_hours(),
+        sun_schedule_set_aside: false,
     })
 }
 

@@ -39,6 +39,9 @@ pub(crate) struct Persisted {
     /// The strength and schedule last applied from the config: a config value applies again
     /// only once it differs (ADR-0014).
     pub(crate) applied_from_config: NightShiftConfig,
+    /// The user accepted the schedule off while macOS has sunset to sunrise set aside, which
+    /// the Night Shift check compares against. Cleared once it isn't set aside.
+    pub(crate) schedule_off_accepted: bool,
 }
 
 impl Persisted {

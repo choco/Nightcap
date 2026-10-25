@@ -13,6 +13,9 @@ Night Shift's schedule in System Settings: off, sunset to sunrise, or custom hou
 The sunrises and sunsets macOS works out from the Mac's location, which sunset to sunrise follows. macOS can take a minute or two to have them after login, and has none while Location Services is off.
 _Avoid_: sun schedule
 
+**Set aside**:
+What macOS does to sunset to sunrise while Location Services is off: it turns the schedule off, and back on once Location Services is.
+
 **Scheduled state**:
 Whether the schedule says Night Shift should be on right now.
 

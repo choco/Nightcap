@@ -10,6 +10,8 @@ final class NightShiftAdapter {
     struct Status {
         var enabled: Bool
         var schedule: Schedule
+        /// Whether macOS has sunset to sunrise set aside, to put back once Location Services is on.
+        var sunScheduleSetAside: Bool
     }
 
     struct SunTimes {
@@ -175,7 +177,25 @@ final class NightShiftAdapter {
             log.error("CoreBrightness reported an unknown schedule mode \(mode)")
             return nil
         }
-        return Status(enabled: raw.load(fromByteOffset: Self.enabledOffset, as: Bool.self), schedule: schedule)
+        return Status(
+            enabled: raw.load(fromByteOffset: Self.enabledOffset, as: Bool.self),
+            schedule: schedule,
+            sunScheduleSetAside: sunScheduleSetAside
+        )
+    }
+
+    /// The mark CoreBrightness keeps to go back to sunset to sunrise, set while Location Services
+    /// is off. The status struct leaves it out, so it comes from the dictionary behind it.
+    private var sunScheduleSetAside: Bool {
+        let selector = NSSelectorFromString("copyPropertyForKey:")
+        guard let status = copyProperty(systemClient, selector, "CBBlueReductionStatus")?
+            .takeRetainedValue() as? [String: Any],
+            let setAside = status["BlueLightReductionRevertToSunriseSunset"] as? Bool
+        else {
+            log.error("CoreBrightness reported no mark to go back to sunset to sunrise")
+            return false
+        }
+        return setAside
     }
 
     /// The sunrises and sunsets CoreBrightness schedules by, from the day before to the day

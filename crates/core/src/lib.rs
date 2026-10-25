@@ -260,9 +260,12 @@ pub enum Fix {
     AllowNotifications,
     /// The shell's: Login Items in System Settings, where macOS asks for its approval.
     OpenLoginItems,
+    /// The shell's: Location Services in System Settings.
+    OpenLocationServices,
     /// The core's, like the rest: sent back as `Event::FixChosen`.
     StopCheckingWebsites,
     KeepNotificationsOff,
+    KeepScheduleOff,
     OpenAtLogin,
     DontOpenAtLogin,
     Reload,
@@ -395,6 +398,9 @@ pub enum Event {
     StatusChanged {
         enabled: bool,
         schedule: Schedule,
+        /// Whether macOS has sunset to sunrise set aside, to put back once Location Services
+        /// is on.
+        sun_schedule_set_aside: bool,
     },
     /// The strength, 0 to 100, as the shell read it. CoreBrightness announces no strength
     /// change, so the shell reads it whenever something is about to show it.
@@ -519,6 +525,11 @@ const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
 /// A guess until measured.
 const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
 
+/// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
+/// took 83 seconds to work them out after a login, and two minutes after Location Services came
+/// back on (macOS 27).
+const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
+
 /// Where the core reads the time, so that tests control it completely.
 trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
@@ -606,6 +617,12 @@ struct State {
     applied_until: Timestamp,
     /// The wakeup the shell was last asked for.
     wakeup: Option<Timestamp>,
+    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
+    sun_times_awaited_since: Option<Timestamp>,
+    /// macOS has sunset to sunrise set aside, and the schedule is off.
+    schedule_set_aside: bool,
+    /// See `state::Persisted::schedule_off_accepted`.
+    schedule_off_accepted: bool,
     /// None until the shell first reports it.
     accessibility: Option<bool>,
     notifications: NotificationPermission,
@@ -763,7 +780,7 @@ impl Core {
                     }
                 }),
             checks: state
-                .checks()
+                .checks(self.clock.now())
                 .into_iter()
                 .map(|check| {
                     let (restore, accept) = state.fixes(&check);
@@ -837,7 +854,7 @@ impl Core {
                     OnOff::Off => Command::On,
                 }),
             },
-            problem_line: state.problem_line(),
+            problem_line: state.problem_line(now),
             entries,
         }
     }
@@ -943,7 +960,11 @@ impl Core {
                 }
                 Vec::new()
             }
-            Event::StatusChanged { enabled, schedule } => {
+            Event::StatusChanged {
+                enabled,
+                schedule,
+                sun_schedule_set_aside,
+            } => {
                 let mut state = self.state();
                 if state.session == Session::Away {
                     tracing::debug!("ignored a status callback while dormant");
@@ -957,6 +978,10 @@ impl Core {
                 state.pending_write = None;
                 let keep_on = std::mem::take(&mut state.keep_on_with_schedule_off);
                 let previous = state.timeline.schedule.replace(schedule);
+                state.schedule_set_aside = sun_schedule_set_aside && schedule == Schedule::Off;
+                if !state.schedule_set_aside {
+                    state.schedule_off_accepted = false;
+                }
                 if state.session == Session::Back {
                     // The shell's fresh read after returning: nobody could change Night Shift by
                     // hand while the session was away.
@@ -1031,6 +1056,7 @@ impl Core {
                         }
                     }
                     Fix::KeepNotificationsOff => self.state().notifications_wanted = false,
+                    Fix::KeepScheduleOff => self.state().schedule_off_accepted = true,
                     Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
                     Fix::DontOpenAtLogin => {
                         let mut state = self.state();
@@ -1195,6 +1221,9 @@ impl Core {
                 tour: None,
                 applied_until: setup.clock.now(),
                 wakeup: None,
+                sun_times_awaited_since: None,
+                schedule_set_aside: false,
+                schedule_off_accepted: persisted.schedule_off_accepted,
                 accessibility: None,
                 notifications: NotificationPermission::NotRequested,
                 notifications_wanted: persisted.notifications_wanted,
@@ -1482,7 +1511,7 @@ impl Core {
     fn announce(&self, aloud: bool, effects: &mut Vec<Effect>) {
         let mut state = self.state();
         let problems: Vec<_> = state
-            .checks()
+            .checks(self.clock.now())
             .into_iter()
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
             .map(|check| check.kind)
@@ -1698,6 +1727,8 @@ impl Core {
         let transition = state.timeline.next_transition(state.applied_until);
         let awaits_sun_times =
             transition.is_none() && state.timeline.schedule == Some(Schedule::SunsetToSunrise);
+        state.sun_times_awaited_since =
+            awaits_sun_times.then(|| state.sun_times_awaited_since.unwrap_or(now));
         let retry = awaits_sun_times.then(|| {
             now.round(
                 jiff::TimestampRound::new()
@@ -1774,7 +1805,7 @@ impl Core {
                 accessibility: state.accessibility == Some(true),
                 notifications: state.notifications,
             },
-            checks: state.checks(),
+            checks: state.checks(self.clock.now()),
         })))
     }
 }
@@ -2102,6 +2133,7 @@ impl State {
             night_shift: wanted(&self.decide()).map(on_off),
             until: self.timeline.next_transition(self.applied_until),
             applied_from_config: self.applied_from_config,
+            schedule_off_accepted: self.schedule_off_accepted,
         }
     }
 
@@ -2550,6 +2582,10 @@ impl State {
                 button("Allow Notifications…", Fix::AllowNotifications),
                 None,
             ),
+            (CheckKind::NightShift, CheckState::Drifted) => (
+                button("Open Location Services…", Fix::OpenLocationServices),
+                button("Keep the Schedule Off", Fix::KeepScheduleOff),
+            ),
             (CheckKind::OpenAtLogin, CheckState::Drifted) => (
                 // Registering again doesn't help an item that's waiting for approval.
                 if self.login_item == Some(LoginItem::RequiresApproval) {
@@ -2564,15 +2600,12 @@ impl State {
         }
     }
 
-    /// The menu's problem line, from the checks. Night Shift's own is left to its item.
-    fn problem_line(&self) -> Option<ProblemLine> {
+    /// The menu's problem line, from the checks.
+    fn problem_line(&self, now: Timestamp) -> Option<ProblemLine> {
         let problems: Vec<_> = self
-            .checks()
+            .checks(now)
             .into_iter()
-            .filter(|check| {
-                check.kind != CheckKind::NightShift
-                    && matches!(check.state, CheckState::Drifted | CheckState::Broken)
-            })
+            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
             .map(|check| check.kind)
             .collect();
         if problems.is_empty() {
@@ -2602,7 +2635,7 @@ impl State {
     }
 
     /// Everything Nightcap depends on, compared with what the user set up.
-    fn checks(&self) -> Vec<Check> {
+    fn checks(&self, now: Timestamp) -> Vec<Check> {
         let check = |kind, state, text: &str| Check {
             kind,
             state,
@@ -2613,6 +2646,21 @@ impl State {
                 CheckKind::NightShift,
                 CheckState::Broken,
                 "Night Shift isn’t available on this Mac.",
+            )
+        } else if self.schedule_set_aside && !self.schedule_off_accepted {
+            check(
+                CheckKind::NightShift,
+                CheckState::Drifted,
+                "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
+            )
+        } else if self
+            .sun_times_awaited_since
+            .is_some_and(|since| now.duration_since(since) >= SUN_TIMES_PATIENCE)
+        {
+            check(
+                CheckKind::NightShift,
+                CheckState::Broken,
+                "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
             )
         } else {
             let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
@@ -2746,10 +2794,21 @@ impl State {
         }
     }
 
-    /// The notification for a problem that appeared on its own; Night Shift's is a fact about
-    /// the Mac, and switched-off notifications can't announce themselves.
+    /// The notification for a problem that appeared on its own; Night Shift being unavailable is
+    /// a fact about the Mac, and switched-off notifications can't announce themselves.
     fn notice(&self, kind: CheckKind) -> Option<(String, String)> {
         match kind {
+            CheckKind::NightShift if self.night_shift == NightShift::Unavailable => None,
+            CheckKind::NightShift if self.schedule_set_aside => Some((
+                "Sunset to sunrise needs Location Services".to_owned(),
+                "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off."
+                    .to_owned(),
+            )),
+            CheckKind::NightShift => Some((
+                "Nightcap can’t follow sunset to sunrise".to_owned(),
+                "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them."
+                    .to_owned(),
+            )),
             CheckKind::Accessibility => Some((
                 "Website checking needs Accessibility".to_owned(),
                 "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
@@ -2772,7 +2831,7 @@ impl State {
                     )
                 })
             }
-            CheckKind::NightShift | CheckKind::Notifications => None,
+            CheckKind::Notifications => None,
         }
     }
 

@@ -196,7 +196,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
         guard let core else { return }
-        apply(core.handle(event: .statusChanged(enabled: status.enabled, schedule: status.schedule)))
+        apply(core.handle(event: .statusChanged(
+            enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside
+        )))
     }
 
     /// CoreBrightness announces no strength change, so the strength is read whenever something
@@ -482,6 +484,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             allowNotifications()
         case .openLoginItems:
             SMAppService.openSystemSettingsLoginItems()
+        case .openLocationServices:
+            let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
+            NSWorkspace.shared.open(URL(string: pane)!)
         default:
             guard let core else { return }
             apply(core.handle(event: .fixChosen(fix: fix)))

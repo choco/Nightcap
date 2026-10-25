@@ -45,7 +45,7 @@ _Avoid_: issue, error
 A problem where something the user set up stopped working, such as notifications switched off after being allowed. It lasts until the user restores it or accepts the change.
 
 **Broken**:
-A problem the user can't accept, only fix: an invalid config or ad-hoc rules file, or Night Shift unavailable.
+A problem the user can't accept, only fix: an invalid config or ad-hoc rules file, Night Shift unavailable, or sunset to sunrise without sun times for ten minutes.
 
 **Fix**:
 An action offered with a problem: a restore, an accept, or reloading a broken file.
