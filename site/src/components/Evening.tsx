@@ -28,14 +28,14 @@ export function Evening() {
 				))}
 			</div>
 			<fieldset
-				className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(150px,100%),1fr))] gap-2"
+				className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-5"
 				aria-label="Moments of one evening"
 				data-lens-area
 			>
 				{MOMENTS.map((m, i) => (
 					<button
 						key={m.time}
-						className="group flex min-h-[76px] cursor-pointer flex-col items-start gap-1 rounded-[12px] border border-line bg-transparent px-3.5 py-3 text-left font-text text-ink aria-pressed:border-moon-text aria-pressed:bg-surface"
+						className="group flex min-h-[76px] cursor-pointer flex-col items-start gap-1 rounded-[12px] max-sm:last:col-span-2 border border-line bg-transparent px-3.5 py-3 text-left font-text text-ink aria-pressed:border-moon-text aria-pressed:bg-surface"
 						type="button"
 						aria-pressed={i === index}
 						onClick={() => setIndex(i)}

@@ -1,0 +1,56 @@
+/* The footer: the credit, the links, the year and the appearance switch. On phones, all centred,
+   one above the other, the links in two rows of three; from sm, the credit and the switch on a row
+   above the links and the year, at either edge; from lg, all on one row. */
+.footer {
+	display: grid;
+	grid-template-areas: "credit" "links" "switch" "year";
+	justify-items: center;
+	align-items: center;
+	gap: 16px;
+	padding-bottom: 48px;
+}
+.credit {
+	grid-area: credit;
+}
+.links {
+	grid-area: links;
+	display: grid;
+	grid-template-columns: repeat(3, auto);
+	justify-content: center;
+	justify-items: center;
+	gap: 8px 20px;
+}
+.year {
+	grid-area: year;
+}
+.switch {
+	grid-area: switch;
+}
+
+@media (width >= 561px) {
+	.footer {
+		grid-template-areas: "credit switch" "links year";
+		grid-template-columns: 1fr auto;
+		justify-items: start;
+		gap: 12px 24px;
+	}
+	.links {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: start;
+		column-gap: 16px;
+	}
+	.switch,
+	.year {
+		justify-self: end;
+	}
+}
+@media (width >= 1040px) {
+	.footer {
+		grid-template-areas: "credit links year switch";
+		grid-template-columns: auto 1fr auto auto;
+	}
+	.links {
+		justify-self: center;
+	}
+}

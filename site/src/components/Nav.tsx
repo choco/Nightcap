@@ -14,7 +14,7 @@ export function Nav({
 		// sections' column, and below lg it joins the hero's, the difference being too small to look
 		// deliberate. Below md its wide link would push the Night Shift switch onto a second row.
 		<nav
-			className="flex flex-wrap items-center gap-x-6 gap-y-3 py-6 max-md:gap-x-4 max-sm:flex-nowrap max-sm:gap-1.5 lg:mx-auto lg:w-full lg:max-w-[864px]"
+			className="flex flex-wrap items-center gap-x-6 gap-y-3 py-6 max-md:gap-x-4 max-sm:flex-nowrap max-sm:gap-1 lg:mx-auto lg:w-full lg:max-w-[864px]"
 			aria-label="Main"
 			data-doodle-clear="12"
 		>
@@ -43,7 +43,7 @@ export function Nav({
 				</NavLink>
 			</div>
 			<button
-				className="group inline-flex h-9 cursor-pointer items-center gap-2.5 rounded-full border border-line-strong bg-surface pr-3.5 pl-2 font-text text-[14px] leading-none font-semibold text-ink"
+				className="group inline-flex h-9 cursor-pointer items-center gap-2.5 rounded-full border border-line-strong bg-surface pr-3.5 pl-2 font-text text-[14px] leading-none font-semibold text-ink whitespace-nowrap max-sm:gap-2 max-sm:text-[13px]"
 				type="button"
 				aria-pressed={shiftOn}
 				onClick={onShift}

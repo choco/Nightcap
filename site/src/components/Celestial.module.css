@@ -1,9 +1,11 @@
-/* The hero's sky body: the moon at night, the sun by day. */
+/* The hero's sky body: the moon at night, the sun by day. It grows with the screen up to 620px,
+   and sits off the corner in proportion, so its rays and rings stay clear of the hero's text. */
 .celestial {
+	--size: min(620px, 52vw);
 	position: absolute;
-	right: min(-140px, -10vw);
-	top: -190px;
-	width: min(620px, 80vw);
+	right: min(var(--size) * -0.226, -10vw);
+	top: calc(var(--size) * -0.306);
+	width: var(--size);
 	aspect-ratio: 1;
 	pointer-events: none;
 }
@@ -76,10 +78,11 @@
 	height: 100%;
 }
 
-@media (width < 561px) {
+/* On phones, at the corner above the nav, small enough on the narrowest to keep off the wordmark. */
+@media (width < 721px) {
 	.celestial {
-		width: 240px;
-		right: -96px;
-		top: -150px;
+		--size: min(240px, 50vw);
+		right: calc(var(--size) * -0.4);
+		top: calc(var(--size) * -0.625);
 	}
 }

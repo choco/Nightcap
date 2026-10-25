@@ -242,6 +242,7 @@
 		font-family: var(--font-display);
 		font-weight: 400;
 		font-size: clamp(36px, 4vw, 44px);
+		text-wrap: balance;
 		line-height: 1.09;
 	}
 	code {

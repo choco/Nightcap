@@ -1,4 +1,6 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { cx } from "../lib/cx";
+import styles from "./Footer.module.css";
 
 type Theme = "system" | "light" | "dark";
 
@@ -85,7 +87,10 @@ function ThemeSwitch() {
 	};
 	return (
 		<fieldset
-			className="inline-flex gap-0.5 rounded-full p-[3px] shadow-[inset_0_0_0_1px_var(--line-strong)]"
+			className={cx(
+				styles.switch,
+				"inline-flex gap-0.5 rounded-full p-[3px] shadow-[inset_0_0_0_1px_var(--line-strong)]",
+			)}
 			aria-label="Appearance"
 		>
 			{THEMES.map(({ theme, label, icon }) => (
@@ -107,8 +112,8 @@ function ThemeSwitch() {
 
 export function Footer() {
 	return (
-		<footer className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 pb-12 text-[14px] text-ink-muted max-sm:flex-col max-sm:gap-4">
-			<span className="inline-flex items-center gap-1.5">
+		<footer className={cx(styles.footer, "text-[14px] text-ink-muted")}>
+			<span className={cx(styles.credit, "inline-flex items-center gap-1.5")}>
 				Made with
 				<svg
 					viewBox="0 0 24 24"
@@ -173,7 +178,7 @@ export function Footer() {
 					<rect x="3" y="29.5" width="24" height="6" fill="var(--choco-band)" />
 				</svg>
 			</span>
-			<span className="flex flex-wrap gap-x-5 gap-y-2 max-sm:justify-center">
+			<span className={styles.links}>
 				<a className="text-ink-muted" href="https://github.com/choco/Nightcap">
 					GitHub
 				</a>
@@ -198,8 +203,8 @@ export function Footer() {
 				>
 					MIT licence
 				</a>
-				<span>© 2026</span>
 			</span>
+			<span className={styles.year}>© 2026</span>
 			<ThemeSwitch />
 		</footer>
 	);

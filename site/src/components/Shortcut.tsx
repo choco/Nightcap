@@ -152,7 +152,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			</SplitHeading>
 			<div
 				ref={cards}
-				className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-6"
+				className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-6"
 			>
 				<MoveCard
 					lit={lit === "tap"}

@@ -19,14 +19,14 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 			<Celestial />
 			{/* The hero's column is wider than the sections', and on screens wider than phones it
           fills the first screen up to 940px tall, with the content centred in it. */}
-			<div className="relative mx-auto max-w-[calc(clamp(1080px,68vw,1280px)+4rem)] px-4 sm:flex sm:min-h-[min(100svh,940px)] sm:flex-col">
+			<div className="relative mx-auto max-w-[calc(clamp(1080px,68vw,1280px)+4rem)] px-4 md:flex md:min-h-[min(100svh,940px)] md:flex-col">
 				<Nav shiftOn={shiftOn} onShift={onShift} />
 				<header
 					id="top"
-					className="@container grid grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] content-center items-center gap-x-[clamp(24px,3.5vw,48px)] gap-y-10 pt-4 pb-22 max-sm:flex max-sm:flex-col max-sm:items-stretch max-sm:pt-12 max-sm:pb-20 sm:flex-[1_0_auto]"
+					className="@container grid grid-cols-[minmax(0,1.12fr)_minmax(0,1fr)] content-center items-center gap-x-[clamp(24px,3.5vw,48px)] gap-y-10 pt-4 pb-22 max-md:flex max-md:flex-col max-md:items-stretch max-md:pt-12 max-md:pb-20 md:flex-[1_0_auto]"
 				>
 					<div
-						className="flex min-w-0 flex-col gap-6 max-sm:flex-none"
+						className="flex min-w-0 flex-col gap-6 max-md:flex-none"
 						data-doodle-clear="26"
 					>
 						<span className="text-[12px] font-[650] tracking-[0.08em] text-ink-muted uppercase">
@@ -34,7 +34,7 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 						</span>
 						{/* The headline scales with the column, so beside the scene it always keeps its two
                 lines. */}
-						<h1 className="font-display text-[length:clamp(28px,5.8cqi,76px)] leading-none font-normal tracking-[-0.01em] text-balance max-sm:text-[length:clamp(32px,10.2vw,44px)]">
+						<h1 className="font-display text-[length:clamp(28px,5.8cqi,76px)] leading-none font-normal tracking-[-0.01em] text-balance max-md:text-[length:clamp(32px,10.2vw,44px)]">
 							<span className="inline-block animate-rise motion-reduce:animate-none">
 								Night Shift,
 							</span>{" "}
@@ -58,7 +58,7 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 				</header>
 			</div>
 			<a
-				className="absolute bottom-[22px] left-1/2 z-1 inline-flex -translate-x-1/2 flex-col items-center gap-0.5 text-[13px] font-semibold text-ink-muted no-underline hover:text-ink max-sm:hidden"
+				className="absolute bottom-[22px] left-1/2 z-1 inline-flex -translate-x-1/2 flex-col items-center gap-0.5 text-[13px] font-semibold text-ink-muted no-underline hover:text-ink max-md:hidden"
 				href="#how"
 				data-doodle-clear="20"
 			>
