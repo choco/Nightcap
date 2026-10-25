@@ -6,10 +6,3 @@
 		var(--hero-bottom) 100%
 	);
 }
-/* Room above the nav on an upright iPhone with a notch (index.html marks it), which the page
-   scrolls past on arrival: Safari draws a page under the status bar only once it's scrolled, so
-   this puts the sky and the sun there. */
-:global(.status-runway) .hero {
-	--runway: 80px;
-	padding-top: var(--runway);
-}

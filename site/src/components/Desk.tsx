@@ -1,13 +1,14 @@
-import { type CSSProperties, useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 import { APPS, type AppName, MENUS } from "../data/menus";
 import { cx } from "../lib/cx";
+import { useInView } from "../lib/inView";
 import { Clock } from "./Clock";
 import styles from "./Desk.module.css";
 import { MoonIcon } from "./icons";
 import { Menu } from "./Menu";
 import { Poster } from "./Poster";
 
-// Until the reader picks an app, the desk shows each in turn.
+// Until the reader picks an app, the desk shows each in turn, while it can be seen.
 const CYCLE: AppName[] = ["figma", "mail", "safari", "mail"];
 
 /** The live Mac: the Nightcap menu as the app builds it, for whatever is in front. Figma has a
@@ -15,14 +16,16 @@ const CYCLE: AppName[] = ["figma", "mail", "safari", "mail"];
 export function Desk({ shiftOn }: { shiftOn: boolean }) {
 	const [step, setStep] = useState(0);
 	const [picked, setPicked] = useState<AppName | null>(null);
+	const desk = useRef<HTMLElement>(null);
+	const inView = useInView(desk);
 	useEffect(() => {
-		if (picked) return;
+		if (picked || !inView) return;
 		const timer = setInterval(
 			() => setStep((current) => (current + 1) % CYCLE.length),
 			3200,
 		);
 		return () => clearInterval(timer);
-	}, [picked]);
+	}, [picked, inView]);
 	const front = picked ?? CYCLE[step];
 	const warm = front === "mail";
 	const windowClass = (app: AppName) =>
@@ -30,6 +33,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 
 	return (
 		<figure
+			ref={desk}
 			className={styles.desk}
 			aria-label="A Mac running Nightcap: Night Shift is off while Figma is in front, and on in Mail"
 		>

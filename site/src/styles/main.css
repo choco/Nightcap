@@ -114,9 +114,9 @@
 	--animate-drift: drift 9s ease-in-out infinite;
 	--animate-sway: sway 7s ease-in-out infinite;
 	--animate-spin: spin 60s linear infinite;
-	--animate-spin-back: spin 90s linear infinite reverse;
-	--animate-glow: glow 6s ease-in-out infinite;
-	--animate-dusk-glow: dusk-glow 6s ease-in-out infinite;
+	/* Forward to -360deg rather than `spin` in reverse: WebKit runs a reversed animation on its main
+	   thread, and with it restyles every animated element on the page, every frame. */
+	--animate-spin-back: spin-back 90s linear infinite;
 	@keyframes rise {
 		from {
 			opacity: 0;
@@ -190,22 +190,9 @@
 			transform: rotate(360deg);
 		}
 	}
-	@keyframes glow {
-		0%,
-		100% {
-			box-shadow: 0 0 90px 20px rgba(246, 213, 138, 0.16);
-		}
-		50% {
-			box-shadow: 0 0 140px 44px rgba(246, 213, 138, 0.26);
-		}
-	}
-	@keyframes dusk-glow {
-		0%,
-		100% {
-			box-shadow: 0 0 70px 16px rgba(255, 138, 70, 0.28);
-		}
-		50% {
-			box-shadow: 0 0 110px 30px rgba(255, 120, 70, 0.4);
+	@keyframes spin-back {
+		to {
+			transform: rotate(-360deg);
 		}
 	}
 }

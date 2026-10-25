@@ -2,6 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { cx } from "../lib/cx";
 import { DownloadButton } from "./Download";
 import styles from "./Dusk.module.css";
+import glow from "./Glow.module.css";
 
 function Star({
 	style,
@@ -50,13 +51,7 @@ export function Dusk() {
 			data-dusk
 		>
 			<span className={styles.sky} aria-hidden="true" />
-			<span
-				className={cx(
-					styles.sun,
-					"animate-dusk-glow motion-reduce:animate-none",
-				)}
-				aria-hidden="true"
-			/>
+			<span className={cx(styles.sun, glow.glow)} aria-hidden="true" />
 			<Star
 				style={{ right: "9%", top: 18 }}
 				size={22}

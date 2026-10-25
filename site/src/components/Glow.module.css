@@ -1,0 +1,38 @@
+/* A glow that swells and settles back every 6 s, from the shadow --glow-from to --glow-to. It
+   crossfades two still shadows, an opacity the browser animates by itself: animating the shadow
+   would repaint it, and restyle the page, every frame. With reduced motion there's no glow. */
+.glow::before,
+.glow::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	border-radius: inherit;
+	pointer-events: none;
+	animation: 6s ease-in-out infinite;
+}
+.glow::before {
+	box-shadow: var(--glow-from);
+	animation-name: settled;
+}
+.glow::after {
+	box-shadow: var(--glow-to);
+	opacity: 0;
+	animation-name: swollen;
+}
+@keyframes settled {
+	50% {
+		opacity: 0;
+	}
+}
+@keyframes swollen {
+	50% {
+		opacity: 1;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.glow::before,
+	.glow::after {
+		animation: none;
+		opacity: 0;
+	}
+}

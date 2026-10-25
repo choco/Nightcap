@@ -1,5 +1,6 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { cx } from "../lib/cx";
+import { useInView } from "../lib/inView";
 import { Mini } from "./Mini";
 import { Section, SplitHeading } from "./Section";
 
@@ -14,9 +15,10 @@ interface Props {
 }
 
 /** The shortcut: one set of keys under two cards, telling a tap from a hold as the app does.
- *  Until pressed, the keys act it out on the cards: a tap, a tap back, then a hold. Pressed, the
- *  press lifts the page's warmth at once, and a release within 0.3 s was a tap, which switches
- *  the page's Night Shift as the nav's switch does. The card for the move that happened lights. */
+ *  Until pressed, the keys act it out on the cards while they can be seen: a tap, a tap back,
+ *  then a hold. Pressed, the press lifts the page's warmth at once, and a release within 0.3 s
+ *  was a tap, which switches the page's Night Shift as the nav's switch does. The card for the
+ *  move that happened lights. */
 export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 	const [tapOn, setTapOn] = useState(true);
 	const [holding, setHolding] = useState(false);
@@ -30,10 +32,22 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 	const pressedAt = useRef<number | null>(null);
 	const peeking = useRef(false);
 	const lastMove = useRef<Move | null>(null);
+	const pressedOnce = useRef(false);
+	const cards = useRef<HTMLDivElement>(null);
+	const inView = useInView(cards);
 
 	useEffect(() => {
-		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		if (
+			!inView ||
+			pressedOnce.current ||
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches
+		)
+			return;
 		demoing.current = true;
+		setDown(false);
+		setHolding(false);
+		setLit(null);
+		setTapOn(true);
 		const at = (ms: number, run: () => void) =>
 			timers.current.push(setTimeout(run, ms));
 		const demo = () => {
@@ -64,11 +78,16 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			});
 		};
 		demo();
-		return () => timers.current.forEach(clearTimeout);
-	}, []);
+		return () => {
+			demoing.current = false;
+			for (const timer of timers.current) clearTimeout(timer);
+			timers.current = [];
+		};
+	}, [inView]);
 
 	function press() {
 		if (pressedAt.current !== null) return;
+		pressedOnce.current = true;
 		if (demoing.current) {
 			demoing.current = false;
 			timers.current.forEach(clearTimeout);
@@ -131,7 +150,10 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 				from any app. A tap switches Night Shift. A hold is a peek: true colour
 				until you let go, then the warmth comes straight back.
 			</SplitHeading>
-			<div className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-6">
+			<div
+				ref={cards}
+				className="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-6"
+			>
 				<MoveCard
 					lit={lit === "tap"}
 					mini={<Mini warm={tapOn} moon={tapOn ? "on" : "off"} />}

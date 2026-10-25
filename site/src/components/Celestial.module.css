@@ -45,12 +45,19 @@
 	position: absolute;
 	inset: 8% 30% 30% 8%;
 	border-radius: 50%;
+	--glow-from: 0 0 90px 20px rgba(246, 213, 138, 0.16);
+	--glow-to: 0 0 140px 44px rgba(246, 213, 138, 0.26);
 }
 .disc {
 	position: absolute;
 	inset: 0;
 	border-radius: 50%;
 	background: var(--moon);
+}
+/* The sun's disc glows as the moon's glow does. */
+.sun .disc {
+	--glow-from: 0 0 90px 20px rgba(246, 213, 138, 0.16);
+	--glow-to: 0 0 140px 44px rgba(246, 213, 138, 0.26);
 }
 .moon .disc {
 	-webkit-mask-image: radial-gradient(
@@ -73,6 +80,6 @@
 	.celestial {
 		width: 240px;
 		right: -96px;
-		top: calc(var(--runway, 0px) - 150px);
+		top: -150px;
 	}
 }

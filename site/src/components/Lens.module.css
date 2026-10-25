@@ -1,54 +1,103 @@
-/* The page under Night Shift, with the true-colour circle cut out of it. The circle's radius is
-   --lr; Lens moves it with --lx and --ly on the tint and the ring. */
+/* The page under Night Shift, with the true-colour circle cut out of it, and the ring around the
+   circle, of radius --lr. Lens places them with --lx and --ly, and glides or steers them there. */
 .tint,
 .ring {
 	--lr: min(140px, 30vw);
-}
-.tint {
 	position: absolute;
-	inset: 0;
-	z-index: 5;
-	pointer-events: none;
-	transition: opacity 900ms ease-in-out;
-	-webkit-mask-image: radial-gradient(
-		circle var(--lr) at var(--lx, 900px) var(--ly, 330px),
-		transparent 98%,
-		#000 100%
-	);
-	mask-image: radial-gradient(
-		circle var(--lr) at var(--lx, 900px) var(--ly, 330px),
-		transparent 98%,
-		#000 100%
-	);
-}
-.tint span {
-	position: absolute;
-	inset: 0;
-}
-.tint span:first-child {
-	background: rgba(255, 138, 46, 0.22);
-	mix-blend-mode: multiply;
-}
-.tint span:last-child {
-	background: rgba(255, 154, 77, 0.1);
-}
-/* The ring is its border wider than the circle, so it sits a touch off it, 2px right and down. */
-.ring {
-	position: absolute;
-	z-index: 20;
 	left: 0;
 	top: 0;
-	transform: translate(
-		calc(var(--lx, 900px) - var(--lr)),
-		calc(var(--ly, 330px) - var(--lr))
+	pointer-events: none;
+	transform: translate(var(--lx, 900px), var(--ly, 330px));
+}
+.tint {
+	/* The tint's two layers, 22% of #ff8a2e under 10% of #ff9a4d, as one colour. */
+	--tint: rgb(255 143.4 56.4 / 0.298);
+	z-index: 5;
+	transition:
+		transform 800ms cubic-bezier(0.33, 1, 0.68, 1),
+		opacity 900ms ease-in-out;
+}
+.ring {
+	z-index: 20;
+	transition: transform 800ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+/* Steered, while following the pointer or picking up where the sway left off, the circle moves
+   only as Lens moves it, without a glide. */
+.tint[data-steered] {
+	transition: opacity 900ms ease-in-out;
+}
+.ring[data-steered] {
+	transition: none;
+}
+/* What Lens sways (Lens.tsx), across and then down. */
+.sway {
+	position: absolute;
+	left: 0;
+	top: 0;
+}
+
+/* The tint is five pieces around the circle, each its own layer: a square with the circle cut out
+   of it, and four bands, --reach long, with nothing to draw but their colour. WebKit splits a layer
+   the page's size that has pixels to draw into tiles, redraws them on its main thread when the
+   layer moves, and leaves them blank until it has; a layer that's only a colour has no tiles. */
+.hole,
+.above,
+.below,
+.left,
+.right {
+	position: absolute;
+	will-change: transform;
+}
+.hole {
+	left: calc(-1 * var(--lr));
+	top: calc(-1 * var(--lr));
+	width: calc(var(--lr) * 2);
+	height: calc(var(--lr) * 2);
+	background: radial-gradient(
+		circle closest-side,
+		transparent 98%,
+		var(--tint) 100%
 	);
+}
+.above,
+.below {
+	left: calc(-1 * var(--reach, 400vmax));
+	width: calc(var(--reach, 400vmax) * 2);
+	height: calc(var(--reach, 400vmax) - var(--lr));
+	background-color: var(--tint);
+}
+.above {
+	bottom: var(--lr);
+}
+.below {
+	top: var(--lr);
+}
+.left,
+.right {
+	top: calc(-1 * var(--lr));
+	width: calc(var(--reach, 400vmax) - var(--lr));
+	height: calc(var(--lr) * 2);
+	background-color: var(--tint);
+}
+.left {
+	right: var(--lr);
+}
+.right {
+	left: var(--lr);
+}
+
+/* The ring is its border wider than the circle, so it sits a touch off it, 2px right and down. */
+.circle {
+	position: absolute;
+	left: calc(-1 * var(--lr));
+	top: calc(-1 * var(--lr));
 	width: calc(var(--lr) * 2 + 4px);
 	height: calc(var(--lr) * 2 + 4px);
 	border-radius: 50%;
 	border: 2px solid var(--moon);
 	box-shadow: 0 0 0 1px var(--ring-edge);
-	pointer-events: none;
 }
+
 /* Night Shift off, the page's switch or a tap of the shortcut, lifts both; a peek, a hold of
    the shortcut, lifts them at once and brings them back quickly. */
 :global([data-shift="off"]) > .tint,
@@ -65,7 +114,8 @@
 	transition-duration: 200ms;
 }
 @media (prefers-reduced-motion: reduce) {
-	.tint {
+	.tint,
+	.ring {
 		transition: none;
 	}
 }

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import type { Doodle } from "../lib/doodles";
 import { Celestial } from "./Celestial";
 import { Doodles } from "./Doodles";
@@ -14,18 +13,8 @@ interface Props {
 }
 
 export function Hero({ doodles, shiftOn, onShift }: Props) {
-	const hero = useRef<HTMLElement>(null);
-	// The iPhone's runway is scrolled past on arrival, unless the link points into the page or the
-	// reader has already scrolled.
-	useEffect(() => {
-		if (!hero.current) throw new Error("the hero has no element");
-		const runway = parseFloat(getComputedStyle(hero.current).paddingTop);
-		if (runway > 0 && !location.hash && window.scrollY < runway)
-			window.scrollTo({ top: runway, behavior: "instant" });
-	}, []);
-
 	return (
-		<section ref={hero} className={styles.hero} data-lens-section data-hero>
+		<section className={styles.hero} data-lens-section data-hero>
 			<Doodles doodles={doodles} />
 			<Celestial />
 			{/* The hero's column is wider than the sections', and on screens wider than phones it

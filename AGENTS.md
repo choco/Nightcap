@@ -21,6 +21,8 @@ The site (`site/`) is React and TypeScript, built with Vite and pnpm, and preren
 
 The site's dependencies are pinned to exact versions at least two weeks old; `site/pnpm-workspace.yaml` enforces the age for transitive ones too. Biome lints and formats the site with its recommended defaults (`pnpm --dir site check`, and `pnpm --dir site format` to apply fixes); it stands in for ESLint because typescript-eslint doesn't support TypeScript 7 yet.
 
+The site's ambient motion is free in Safari only while WebKit's compositor runs all of it. A single animation WebKit runs on its main thread (a `reverse` direction, an animated `box-shadow` or mask, a script loop), any listener for animation events (`src/hydrate.tsx` turns React's away), or a moving layer the page's size with pixels to draw has it restyle every animated element on the page, every frame: the doodles then cost a sixth of a core. Keep motion to transform and opacity keyframes, and check a change's idle CPU in Safari.
+
 The privacy policy (`site/src/Privacy.tsx`) says what Nightcap keeps, where, and what it sends over the network. A change to any of these, in the app or the site, changes the policy and its date in the same commit.
 
 Swift files under `app/Nightcap/` join the app target automatically (a folder-synced group); the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and `NightcapCore.swift` are build outputs: change their sources and rebuild.
