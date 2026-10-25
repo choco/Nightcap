@@ -1689,21 +1689,31 @@ impl Core {
     }
 
     /// Keeps the shell's one wakeup at the next schedule transition or the end of a timer or
-    /// hold, whichever comes first.
+    /// hold, whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
+    /// times, which CoreBrightness can take a minute or two after login to work out, so the
+    /// wakeup comes at the next whole minute instead: the shell reads them again before each.
     fn reschedule(&self, effects: &mut Vec<Effect>) {
+        let now = self.clock.now();
         let mut state = self.state();
+        let transition = state.timeline.next_transition(state.applied_until);
+        let awaits_sun_times =
+            transition.is_none() && state.timeline.schedule == Some(Schedule::SunsetToSunrise);
+        let retry = awaits_sun_times.then(|| {
+            now.round(
+                jiff::TimestampRound::new()
+                    .smallest(jiff::Unit::Minute)
+                    .mode(jiff::RoundMode::Trunc),
+            )
+            .expect("a minute rounds any time")
+                + SignedDuration::from_mins(1)
+        });
         let ends = state
             .layers
             .iter()
             .flat_map(|layers| [&layers.hold, &layers.timer])
             .flatten()
             .filter_map(|layer| layer.until);
-        let next = state
-            .timeline
-            .next_transition(state.applied_until)
-            .into_iter()
-            .chain(ends)
-            .min();
+        let next = transition.or(retry).into_iter().chain(ends).min();
         if next != state.wakeup {
             state.wakeup = next;
             effects.push(match next {
@@ -2143,7 +2153,10 @@ impl State {
     /// clicking the switch. None when it would offer nothing.
     fn everywhere_row(&self, decision: &Decision, now: Timestamp) -> Option<PlaceRow> {
         let place = Place::Everywhere;
-        let state = self.says(&place)?.other();
+        let state = self
+            .says(&place)
+            .unwrap_or(on_off(self.night_shift == NightShift::On))
+            .other();
         let mut items = Vec::new();
         let switched = self.after_switch(state);
         // While the tour stands in, what's under everywhere's layers is the tour's on, which the
@@ -2196,7 +2209,10 @@ impl State {
     /// putting its rule back where that goes the right way, and removing a rule of the user's;
     /// then its lengths, then for good, which is a rule.
     fn place_row(&self, place: &Place, now: Timestamp) -> PlaceRow {
-        let state = self.value_at(place).unwrap_or(OnOff::Off).other();
+        let state = self
+            .value_at(place)
+            .unwrap_or(on_off(self.night_shift == NightShift::On))
+            .other();
         let rule = self.rule_at(place);
         let layered = self.layers_at(place).is_some();
         let inherited = self.inherited(place);
@@ -2393,7 +2409,11 @@ impl State {
 
     /// The reason under the menu's Night Shift item: what decides the screen.
     fn menu_reason(&self, decision: &Decision) -> Option<String> {
-        let top = decision.reasons.first()?;
+        let Some(top) = decision.reasons.first() else {
+            // Without the sun times, only macOS knows where the schedule stands, and applies it.
+            return (self.timeline.schedule == Some(Schedule::SunsetToSunrise))
+                .then(|| "Following the schedule".to_owned());
+        };
         let at = match &decision.place {
             Place::Everywhere => String::new(),
             place => format!(" {}", self.here(place)),

@@ -1466,6 +1466,47 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
 }
 
 #[test]
+fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T01:40:20+02:00");
+
+    let effects = core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::SunsetToSunrise,
+    });
+    assert_eq!(
+        effects,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T01:41:00+02:00").into()
+        }]
+    );
+    clock.set("2026-10-16T01:40:50+02:00");
+    assert_eq!(core.handle(Event::Woke), Vec::new());
+
+    clock.set("2026-10-16T01:41:00+02:00");
+    assert_eq!(
+        core.handle(Event::TimerFired),
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T01:42:00+02:00").into()
+        }]
+    );
+
+    clock.set("2026-10-16T01:42:00+02:00");
+    report_zurich_sun(&core);
+    assert_eq!(
+        core.handle(Event::TimerFired),
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-16T05:50:47Z").into()
+        }]
+    );
+    assert_eq!(
+        status_of(&core, &socket, &wakes).scheduled_state,
+        Some(OnOff::On)
+    );
+}
+
+#[test]
 fn turning_the_schedule_off_cancels_the_wakeup() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -3219,6 +3260,58 @@ fn by_day_the_rows_turn_on_and_by_night_off() {
     clock.set("2026-10-16T23:00:00+02:00");
     core.handle(Event::Woke);
     assert_eq!(titles_of(&core), ["Turn Off", "Turn Off in Mail"]);
+}
+
+#[test]
+fn without_the_sun_times_an_apps_row_turns_night_shift_the_other_way_from_how_it_is() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    core.handle(Event::AppActivated {
+        bundle_id: Some("com.googlecode.iterm2".to_owned()),
+        name: Some("iTerm2".to_owned()),
+        is_browser: false,
+    });
+
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::SunsetToSunrise,
+    });
+    assert_eq!(app_row(&core).unwrap().title, "Turn Off in iTerm2");
+    core.handle(Event::StatusChanged {
+        enabled: false,
+        schedule: Schedule::SunsetToSunrise,
+    });
+    assert_eq!(app_row(&core).unwrap().title, "Turn On in iTerm2");
+}
+
+#[test]
+fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::SunsetToSunrise,
+    });
+
+    let menu = core.menu();
+    assert!(menu.night_shift.on);
+    assert_eq!(
+        menu.night_shift.reason.as_deref(),
+        Some("Following the schedule")
+    );
+    let row = everywhere_row(&core).unwrap();
+    assert_eq!(row.title, "Turn Off");
+    assert_eq!(
+        titles(&row),
+        ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…"]
+    );
+    assert!(
+        core.handle(Event::CommandChosen {
+            command: choice_titled(&row, "For 30 Minutes").command,
+        })
+        .contains(&Effect::SetNightShift { enabled: false })
+    );
 }
 
 #[test]

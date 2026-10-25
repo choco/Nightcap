@@ -9,6 +9,10 @@ How Nightcap decides whether Night Shift is on or off, from rules, the schedule 
 **Schedule**:
 Night Shift's schedule in System Settings: off, sunset to sunrise, or custom hours. The system owns it; Nightcap changes it only when the user asks.
 
+**Sun times**:
+The sunrises and sunsets macOS works out from the Mac's location, which sunset to sunrise follows. macOS can take a minute or two to have them after login, and has none while Location Services is off.
+_Avoid_: sun schedule
+
 **Scheduled state**:
 Whether the schedule says Night Shift should be on right now.
 
