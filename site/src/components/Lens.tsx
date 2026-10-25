@@ -223,7 +223,7 @@ export function Lens({ page }: { page: RefObject<HTMLElement | null> }) {
 		<>
 			<div ref={tint} className={styles.tint} aria-hidden="true">
 				<div className={styles.sway}>
-					<div className={styles.sway}>
+					<div className={`${styles.sway} ${styles.pieces}`}>
 						<div ref={hole} className={styles.hole} />
 						<div className={styles.above} />
 						<div className={styles.below} />
