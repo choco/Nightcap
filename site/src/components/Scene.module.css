@@ -1,31 +1,159 @@
 /* The hero's scene: a live mock of the menu bar with Nightcap's menu open over Figma, in macOS's
    own light or dark look. It's laid out in em of the 13-point menu text, at the real menu's size,
    and scales down as one piece where it gets less than 440px. */
-.scene { position: relative; margin: 0; width: 100%; aspect-ratio: 1.18; container-type: inline-size; border-radius: 14px; overflow: hidden; background: var(--scene-wall); box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px var(--line); color: var(--scene-ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif; -webkit-font-smoothing: antialiased; }
-.scene > * { font-size: min(13px, calc(100cqi * 13 / 440)); }
-.bar { display: flex; align-items: center; gap: 1.23em; height: 2em; padding: 0 0.77em; background: var(--scene-bar); -webkit-backdrop-filter: blur(20px) saturate(1.5); backdrop-filter: blur(20px) saturate(1.5); font-weight: 500; white-space: nowrap; }
-.apple { width: 1.08em; height: 1.23em; flex: none; }
-.app { font-weight: 700; }
+.scene {
+	position: relative;
+	margin: 0;
+	width: 100%;
+	aspect-ratio: 1.18;
+	container-type: inline-size;
+	border-radius: 14px;
+	overflow: hidden;
+	background: var(--scene-wall);
+	box-shadow:
+		0 10px 24px rgba(0, 0, 0, 0.3),
+		0 0 0 1px var(--line);
+	color: var(--scene-ink);
+	font-family:
+		-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+		sans-serif;
+	-webkit-font-smoothing: antialiased;
+}
+.scene > * {
+	font-size: min(13px, calc(100cqi * 13 / 440));
+}
+.bar {
+	display: flex;
+	align-items: center;
+	gap: 1.23em;
+	height: 2em;
+	padding: 0 0.77em;
+	background: var(--scene-bar);
+	-webkit-backdrop-filter: blur(20px) saturate(1.5);
+	backdrop-filter: blur(20px) saturate(1.5);
+	font-weight: 500;
+	white-space: nowrap;
+}
+.apple {
+	width: 1.08em;
+	height: 1.23em;
+	flex: none;
+}
+.app {
+	font-weight: 700;
+}
 /* Menus that don't fit wrap onto a hidden second line, so none shows cut. */
-.menus { flex: 0 1 auto; min-width: 0; display: flex; flex-wrap: wrap; column-gap: 1.23em; height: 1.3em; overflow: hidden; }
-.spacer { flex-grow: 1; }
-.status { flex: none; display: flex; align-items: center; gap: 0.31em; }
-.moon { display: inline-flex; align-items: center; justify-content: center; height: 1.54em; min-width: 2em; border-radius: 999px; background: var(--scene-pressed); }
-.moon svg { width: 1.31em; height: 1.31em; }
-.clock { padding-left: 0.31em; font-variant-numeric: tabular-nums; }
-.window { position: absolute; left: 6%; top: 20%; width: 58%; height: 70%; display: flex; flex-direction: column; border-radius: 0.77em; overflow: hidden; background: #2c2c2e; color: #f5f5f7; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.25), 0 0.92em 2.3em rgba(0, 0, 0, 0.28); }
-.titlebar { height: 2.17em; flex: none; display: flex; align-items: center; gap: 0.5em; padding: 0 0.83em; font-size: 0.92em; font-weight: 600; background: #1e1e20; }
-.lights { display: flex; gap: 0.5em; margin-right: 0.5em; }
-.lights i { width: 0.83em; height: 0.83em; border-radius: 50%; background: #ff5f57; }
-.lights i + i { background: #febc2e; }
-.lights i + i + i { background: #28c840; }
-.canvas { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0.92em; }
-.menu { position: absolute; right: 0.62em; top: 2.38em; }
+.menus {
+	flex: 0 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-wrap: wrap;
+	column-gap: 1.23em;
+	height: 1.3em;
+	overflow: hidden;
+}
+.spacer {
+	flex-grow: 1;
+}
+.status {
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 0.31em;
+}
+.moon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: 1.54em;
+	min-width: 2em;
+	border-radius: 999px;
+	background: var(--scene-pressed);
+}
+.moon svg {
+	width: 1.31em;
+	height: 1.31em;
+}
+.clock {
+	padding-left: 0.31em;
+	font-variant-numeric: tabular-nums;
+}
+.window {
+	position: absolute;
+	left: 6%;
+	top: 20%;
+	width: 58%;
+	height: 70%;
+	display: flex;
+	flex-direction: column;
+	border-radius: 0.77em;
+	overflow: hidden;
+	background: #2c2c2e;
+	color: #f5f5f7;
+	box-shadow:
+		0 0 0 0.5px rgba(0, 0, 0, 0.25),
+		0 0.92em 2.3em rgba(0, 0, 0, 0.28);
+}
+.titlebar {
+	height: 2.17em;
+	flex: none;
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	padding: 0 0.83em;
+	font-size: 0.92em;
+	font-weight: 600;
+	background: #1e1e20;
+}
+.lights {
+	display: flex;
+	gap: 0.5em;
+	margin-right: 0.5em;
+}
+.lights i {
+	width: 0.83em;
+	height: 0.83em;
+	border-radius: 50%;
+	background: #ff5f57;
+}
+.lights i + i {
+	background: #febc2e;
+}
+.lights i + i + i {
+	background: #28c840;
+}
+.canvas {
+	flex: 1 1 0;
+	min-height: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.92em;
+}
+.menu {
+	position: absolute;
+	right: 0.62em;
+	top: 2.38em;
+}
 
 @media (width < 561px) {
-  .scene { aspect-ratio: 0.95; }
-  .scene > * { font-size: 12px; }
-  .bar { gap: 0.83em; padding: 0 0.67em; }
-  .menus { display: none; }
-  .window { left: 5%; top: 40%; width: 62%; height: 54%; }
+	.scene {
+		aspect-ratio: 0.95;
+	}
+	.scene > * {
+		font-size: 12px;
+	}
+	.bar {
+		gap: 0.83em;
+		padding: 0 0.67em;
+	}
+	.menus {
+		display: none;
+	}
+	.window {
+		left: 5%;
+		top: 40%;
+		width: 62%;
+		height: 54%;
+	}
 }

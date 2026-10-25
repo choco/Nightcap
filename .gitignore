@@ -7,3 +7,8 @@ xcuserdata/
 .build/
 .swiftpm/
 /tmp/
+node_modules/
+# Written by site/plugins/design.ts from the rest of the repo. Biome, which skips what Git ignores,
+# reads this file but not one in site/.
+/site/src/styles/tokens.css
+/site/public/icon.svg

@@ -1,22 +1,78 @@
 /* The hero's sky body: the moon at night, the sun by day. */
-.celestial { position: absolute; right: min(-140px, -10vw); top: -190px; width: min(620px, 80vw); aspect-ratio: 1; pointer-events: none; }
-.moon, .sun { position: absolute; inset: 0; }
-.moon { display: none; }
-@media (prefers-color-scheme: dark) {
-  :global(:root:not([data-theme="light"])) .moon { display: block; }
-  :global(:root:not([data-theme="light"])) .sun { display: none; }
+.celestial {
+	position: absolute;
+	right: min(-140px, -10vw);
+	top: -190px;
+	width: min(620px, 80vw);
+	aspect-ratio: 1;
+	pointer-events: none;
 }
-:global(:root[data-theme="dark"]) .moon { display: block; }
-:global(:root[data-theme="dark"]) .sun { display: none; }
-.ring { position: absolute; border-radius: 50%; }
-.near { inset: -14%; border: 1.5px dashed var(--doodle-gold); }
-.far { inset: -30%; border: 1.5px dashed var(--doodle); }
-.glow { position: absolute; inset: 8% 30% 30% 8%; border-radius: 50%; }
-.disc { position: absolute; inset: 0; border-radius: 50%; background: var(--moon); }
-.moon .disc { -webkit-mask-image: radial-gradient(circle at 74% 30%, transparent 0 41%, #000 41.4%); mask-image: radial-gradient(circle at 74% 30%, transparent 0 41%, #000 41.4%); }
-.rays { position: absolute; inset: -26%; }
-.rays svg { width: 100%; height: 100%; }
+.moon,
+.sun {
+	position: absolute;
+	inset: 0;
+}
+.moon {
+	display: none;
+}
+@media (prefers-color-scheme: dark) {
+	:global(:root:not([data-theme="light"])) .moon {
+		display: block;
+	}
+	:global(:root:not([data-theme="light"])) .sun {
+		display: none;
+	}
+}
+:global(:root[data-theme="dark"]) .moon {
+	display: block;
+}
+:global(:root[data-theme="dark"]) .sun {
+	display: none;
+}
+.ring {
+	position: absolute;
+	border-radius: 50%;
+}
+.near {
+	inset: -14%;
+	border: 1.5px dashed var(--doodle-gold);
+}
+.far {
+	inset: -30%;
+	border: 1.5px dashed var(--doodle);
+}
+.glow {
+	position: absolute;
+	inset: 8% 30% 30% 8%;
+	border-radius: 50%;
+}
+.disc {
+	position: absolute;
+	inset: 0;
+	border-radius: 50%;
+	background: var(--moon);
+}
+.moon .disc {
+	-webkit-mask-image: radial-gradient(
+		circle at 74% 30%,
+		transparent 0 41%,
+		#000 41.4%
+	);
+	mask-image: radial-gradient(circle at 74% 30%, transparent 0 41%, #000 41.4%);
+}
+.rays {
+	position: absolute;
+	inset: -26%;
+}
+.rays svg {
+	width: 100%;
+	height: 100%;
+}
 
 @media (width < 561px) {
-  .celestial { width: 240px; right: -96px; top: calc(var(--runway, 0px) - 150px); }
+	.celestial {
+		width: 240px;
+		right: -96px;
+		top: calc(var(--runway, 0px) - 150px);
+	}
 }

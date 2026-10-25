@@ -1,10 +1,44 @@
 /* The evening's sky, from sunset to sunrise, with a marker at each moment. */
-.sky { position: relative; height: 8px; margin: 2px 0 6px; border-radius: 999px; background: linear-gradient(90deg, #ff9a4d 0%, #d0567a 16%, #4a3f8a 30%, #24366a 46%, #1b2a52 66%, #3d528c 82%, #f6d58a 100%); box-shadow: inset 0 0 0 1px var(--line); }
-.marker { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--surface); box-shadow: 0 0 0 2px var(--line-strong); transition: transform 220ms cubic-bezier(0.2, 1.6, 0.4, 1); }
-.marker.on { background: var(--moon); box-shadow: 0 0 0 2px var(--moon-text); transform: scale(1.35); }
+.sky {
+	position: relative;
+	height: 8px;
+	margin: 2px 0 6px;
+	border-radius: 999px;
+	background: linear-gradient(
+		90deg,
+		#ff9a4d 0%,
+		#d0567a 16%,
+		#4a3f8a 30%,
+		#24366a 46%,
+		#1b2a52 66%,
+		#3d528c 82%,
+		#f6d58a 100%
+	);
+	box-shadow: inset 0 0 0 1px var(--line);
+}
+.marker {
+	position: absolute;
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	margin: -6px 0 0 -6px;
+	border-radius: 50%;
+	background: var(--surface);
+	box-shadow: 0 0 0 2px var(--line-strong);
+	transition: transform 220ms cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.marker.on {
+	background: var(--moon);
+	box-shadow: 0 0 0 2px var(--moon-text);
+	transform: scale(1.35);
+}
 @media (prefers-reduced-motion: reduce) {
-  .marker { transition: none; }
+	.marker {
+		transition: none;
+	}
 }
 @media (width < 561px) {
-  .sky { display: none; }
+	.sky {
+		display: none;
+	}
 }

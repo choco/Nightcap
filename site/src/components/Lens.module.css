@@ -1,20 +1,77 @@
 /* The page under Night Shift, with the true-colour circle cut out of it. The circle's radius is
    --lr; useLens moves it with --lx and --ly on the page. */
-.tint, .ring { --lr: min(140px, 30vw); }
-.tint { position: absolute; inset: 0; z-index: 5; pointer-events: none; transition: opacity 900ms ease-in-out; -webkit-mask-image: radial-gradient(circle var(--lr) at var(--lx, 900px) var(--ly, 330px), transparent 98%, #000 100%); mask-image: radial-gradient(circle var(--lr) at var(--lx, 900px) var(--ly, 330px), transparent 98%, #000 100%); }
-.tint span { position: absolute; inset: 0; }
-.tint span:first-child { background: rgba(255, 138, 46, 0.22); mix-blend-mode: multiply; }
-.tint span:last-child { background: rgba(255, 154, 77, 0.1); }
+.tint,
+.ring {
+	--lr: min(140px, 30vw);
+}
+.tint {
+	position: absolute;
+	inset: 0;
+	z-index: 5;
+	pointer-events: none;
+	transition: opacity 900ms ease-in-out;
+	-webkit-mask-image: radial-gradient(
+		circle var(--lr) at var(--lx, 900px) var(--ly, 330px),
+		transparent 98%,
+		#000 100%
+	);
+	mask-image: radial-gradient(
+		circle var(--lr) at var(--lx, 900px) var(--ly, 330px),
+		transparent 98%,
+		#000 100%
+	);
+}
+.tint span {
+	position: absolute;
+	inset: 0;
+}
+.tint span:first-child {
+	background: rgba(255, 138, 46, 0.22);
+	mix-blend-mode: multiply;
+}
+.tint span:last-child {
+	background: rgba(255, 154, 77, 0.1);
+}
 /* The ring is its border wider than the circle, so it sits a touch off it, 2px right and down. */
-.ring { position: absolute; z-index: 20; left: 0; top: 0; transform: translate(calc(var(--lx, 900px) - var(--lr)), calc(var(--ly, 330px) - var(--lr))); width: calc(var(--lr) * 2 + 4px); height: calc(var(--lr) * 2 + 4px); border-radius: 50%; border: 2px solid var(--moon); box-shadow: 0 0 0 1px var(--ring-edge); pointer-events: none; }
+.ring {
+	position: absolute;
+	z-index: 20;
+	left: 0;
+	top: 0;
+	transform: translate(
+		calc(var(--lx, 900px) - var(--lr)),
+		calc(var(--ly, 330px) - var(--lr))
+	);
+	width: calc(var(--lr) * 2 + 4px);
+	height: calc(var(--lr) * 2 + 4px);
+	border-radius: 50%;
+	border: 2px solid var(--moon);
+	box-shadow: 0 0 0 1px var(--ring-edge);
+	pointer-events: none;
+}
 /* Night Shift off, the page's switch or a tap of the shortcut, lifts both; a peek, a hold of
    the shortcut, lifts them at once and brings them back quickly. */
-:global([data-shift="off"]) > .tint, :global([data-shift="off"]) > .ring { opacity: 0; }
-:global([data-peek="peeking"]) > .tint, :global([data-peek="peeking"]) > .ring { opacity: 0; transition-duration: 90ms; }
-:global([data-peek="returning"]) > .tint, :global([data-peek="returning"]) > .ring { transition-duration: 200ms; }
+:global([data-shift="off"]) > .tint,
+:global([data-shift="off"]) > .ring {
+	opacity: 0;
+}
+:global([data-peek="peeking"]) > .tint,
+:global([data-peek="peeking"]) > .ring {
+	opacity: 0;
+	transition-duration: 90ms;
+}
+:global([data-peek="returning"]) > .tint,
+:global([data-peek="returning"]) > .ring {
+	transition-duration: 200ms;
+}
 @media (prefers-reduced-motion: reduce) {
-  .tint { transition: none; }
+	.tint {
+		transition: none;
+	}
 }
 @media (width < 561px) {
-  .tint, .ring { --lr: min(92px, 24vw); }
+	.tint,
+	.ring {
+		--lr: min(92px, 24vw);
+	}
 }

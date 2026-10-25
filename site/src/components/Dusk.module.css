@@ -1,9 +1,54 @@
 /* The download panel, at dusk: the sun setting into the panel's lower edge, and a few stars. */
-.dusk { position: relative; overflow: hidden; isolation: isolate; background: var(--night); color: var(--starlight); }
-.dusk > * { position: relative; z-index: 1; }
-.dusk > .sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse 60% 120% at 82% 118%, rgba(255, 154, 77, 0.62) 0%, rgba(208, 86, 122, 0.34) 38%, rgba(208, 86, 122, 0) 70%); }
-.dusk > .sun { position: absolute; z-index: 0; pointer-events: none; right: 24%; bottom: -72px; width: 124px; height: 124px; border-radius: 50%; background: radial-gradient(circle at 50% 30%, #ffb977 0%, #ff9a4d 42%, #e8664a 100%); }
-.dusk > .star { position: absolute; z-index: 0; pointer-events: none; color: rgba(238, 241, 250, 0.55); }
+.dusk {
+	position: relative;
+	overflow: hidden;
+	isolation: isolate;
+	background: var(--night);
+	color: var(--starlight);
+}
+.dusk > * {
+	position: relative;
+	z-index: 1;
+}
+.dusk > .sky {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	pointer-events: none;
+	background: radial-gradient(
+		ellipse 60% 120% at 82% 118%,
+		rgba(255, 154, 77, 0.62) 0%,
+		rgba(208, 86, 122, 0.34) 38%,
+		rgba(208, 86, 122, 0) 70%
+	);
+}
+.dusk > .sun {
+	position: absolute;
+	z-index: 0;
+	pointer-events: none;
+	right: 24%;
+	bottom: -72px;
+	width: 124px;
+	height: 124px;
+	border-radius: 50%;
+	background: radial-gradient(
+		circle at 50% 30%,
+		#ffb977 0%,
+		#ff9a4d 42%,
+		#e8664a 100%
+	);
+}
+.dusk > .star {
+	position: absolute;
+	z-index: 0;
+	pointer-events: none;
+	color: rgba(238, 241, 250, 0.55);
+}
 @media (width < 561px) {
-  .dusk > .sun { right: 10%; width: 96px; height: 96px; bottom: -50px; }
+	.dusk > .sun {
+		right: 10%;
+		width: 96px;
+		height: 96px;
+		bottom: -50px;
+	}
 }
