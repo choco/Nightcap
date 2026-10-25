@@ -1,4 +1,4 @@
-import { cx } from "../lib/cx";
+import { ButtonLink } from "./Button";
 
 const RELEASES = "https://github.com/choco/Nightcap/releases/latest";
 
@@ -18,20 +18,13 @@ export function DownloadButton({
 	showVersion?: boolean;
 }) {
 	return (
-		<a
-			className={cx(
-				"inline-flex h-[54px] items-center gap-2.5 rounded-full border bg-moon px-7 text-[17px] font-semibold text-on-moon no-underline hover:text-on-moon",
-				plain ? "border-transparent" : "border-primary-edge",
-				"transition-transform duration-[420ms] ease-spring hover:scale-[1.045] active:scale-[.97] motion-reduce:transition-none",
-			)}
-			href={url || RELEASES}
-		>
+		<ButtonLink href={url || RELEASES} primary large plain={plain}>
 			Download for Mac
 			{showVersion && version && (
 				<span className="font-mono text-[12px] font-medium opacity-75">
 					{version}
 				</span>
 			)}
-		</a>
+		</ButtonLink>
 	);
 }

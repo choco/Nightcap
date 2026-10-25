@@ -1,0 +1,44 @@
+/* The sky over a text page's title, fading into the ground as the hero's does. */
+.sky {
+	background: linear-gradient(
+		180deg,
+		var(--hero-top) 0%,
+		var(--hero-bottom) 100%
+	);
+}
+
+/* Running text near 65 characters a line, its headings in the `title` style. */
+.text {
+	max-width: 65ch;
+	padding-bottom: 72px;
+	font-size: 17px;
+	line-height: 1.6;
+}
+.text h2 {
+	margin: 48px 0 0;
+	font: 650 24px / 1.3 var(--font-text);
+}
+.text h2:first-child {
+	margin-top: 0;
+}
+.text p,
+.text ul {
+	margin-top: 14px;
+}
+.text ul {
+	padding-left: 1.3em;
+	list-style: disc;
+}
+.text li + li {
+	margin-top: 8px;
+}
+.text li::marker {
+	color: var(--ink-muted);
+}
+.text strong {
+	font-weight: 650;
+}
+.text code {
+	font-size: 0.88em;
+	overflow-wrap: anywhere;
+}

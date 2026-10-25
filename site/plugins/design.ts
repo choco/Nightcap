@@ -106,8 +106,13 @@ function writeTokens() {
  *  when their sources change while serving; preloads for the first screen's fonts; and the fonts'
  *  licences beside the built site's fonts. */
 export function design(): Plugin {
+	// The preloads' addresses, from the base the config resolves to.
+	let base = "/";
 	return {
 		name: "nightcap:design",
+		configResolved(config) {
+			base = config.base;
+		},
 		config() {
 			writeTokens();
 			mkdirSync(publicDir, { recursive: true });
@@ -136,7 +141,7 @@ export function design(): Plugin {
 						tag: "link",
 						attrs: {
 							rel: "preload",
-							href: `./${name}`,
+							href: `${base}${name}`,
 							as: "font",
 							type: "font/woff2",
 							crossorigin: "",

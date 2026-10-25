@@ -77,6 +77,9 @@ Run `nightcap reload` after changing it. Night Shift's strength and schedule sta
 - A copy that updates itself checks for a new release once a day. A copy whose updates a package manager handles, such as one in the Nix store, never does.
 - With website checking on, Nightcap reads only the front tab of the browser in front, and keeps only the site's name. macOS's log shows it as `<private>`.
 - With website checking on, opening the menu asks the site in front, and the sites your rules name, for their icons, with no cookies. The icons stay in Nightcap's cache, named by site, until macOS or you clear it.
+- Onboarding's websites step asks the sites it suggests, the same for everyone, for their icons.
+
+The [privacy policy](https://nightcap.choco.me/privacy/) has the details, and the [terms](https://nightcap.choco.me/terms/) cover using Nightcap and its site.
 
 ## How it works
 

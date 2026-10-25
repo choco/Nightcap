@@ -226,23 +226,23 @@
 		font-family: var(--font-text);
 	}
 	/* Safari paints its status bar and toolbar strips, and the overscroll past either end, in the
-     body's background, which the page covers everywhere else: the hero's sky at the top, the
-     ground once the end is in view, and under the page tint's two layers, flattened, while
-     Night Shift is on. The tint's mask isolates its layers, so the first one's multiply
-     composites as a plain mix. */
+     body's background, which the page covers everywhere else: the sky at the top, the ground
+     once the end is in view, and on the home page, under the page tint's two layers, flattened,
+     while its Night Shift is on. The tint's mask isolates its layers, so the first one's
+     multiply composites as a plain mix. */
 	body {
 		--edge: var(--hero-top);
+		background-color: var(--edge);
+	}
+	body.at-end {
+		--edge: var(--ground);
+	}
+	body:has([data-shift="on"]) {
 		background-color: color-mix(
 			in srgb,
 			color-mix(in srgb, var(--edge) 78%, rgb(255 138 46)) 90%,
 			rgb(255 154 77)
 		);
-	}
-	body.at-end {
-		--edge: var(--ground);
-	}
-	body:has([data-shift="off"]) {
-		background-color: var(--edge);
 	}
 	a {
 		color: var(--moon-text);

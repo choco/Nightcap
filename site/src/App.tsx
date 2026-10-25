@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Cli } from "./components/Cli";
 import { Doodles, useDoodles } from "./components/Doodles";
 import { Dusk } from "./components/Dusk";
@@ -8,6 +8,7 @@ import { Hero } from "./components/Hero";
 import { How } from "./components/How";
 import { Lens } from "./components/Lens";
 import { type Peek, Shortcut } from "./components/Shortcut";
+import { useBodyEdge } from "./lib/edge";
 
 /** The page, under its own Night Shift, which the nav's switch and the shortcut's tap turn off
  *  and the shortcut's hold peeks past. */
@@ -16,23 +17,7 @@ export function App() {
 	const [shiftOn, setShiftOn] = useState(true);
 	const [peek, setPeek] = useState<Peek>(null);
 	const doodles = useDoodles(page);
-
-	// The end of the page in view, for the body's background (main.css).
-	useEffect(() => {
-		const mark = () =>
-			document.body.classList.toggle(
-				"at-end",
-				window.scrollY + window.innerHeight / 2 >
-					document.documentElement.scrollHeight / 2,
-			);
-		mark();
-		window.addEventListener("scroll", mark, { passive: true });
-		window.addEventListener("resize", mark);
-		return () => {
-			window.removeEventListener("scroll", mark);
-			window.removeEventListener("resize", mark);
-		};
-	}, []);
+	useBodyEdge();
 
 	const toggleShift = () => setShiftOn((on) => !on);
 	return (

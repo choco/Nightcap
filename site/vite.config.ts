@@ -1,10 +1,20 @@
-import { basename } from "node:path";
+import { basename, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 import { design } from "./plugins/design.ts";
 
-// The dev server serves the page rendered into index.html's outlet, as the build's prerender.ts
+const site = fileURLToPath(new URL(".", import.meta.url));
+// Each page's HTML, by the name of its entry, as src/render.tsx renders them.
+const pages = {
+	home: "index.html",
+	"not-found": "404.html",
+	privacy: "privacy/index.html",
+	terms: "terms/index.html",
+};
+
+// The dev server serves each page rendered into its HTML's outlet, as the build's prerender.ts
 // writes it, so hydration meets the same markup in both.
 function renderInDev(): Plugin {
 	return {
@@ -12,10 +22,10 @@ function renderInDev(): Plugin {
 		apply: "serve",
 		transformIndexHtml: {
 			order: "post",
-			async handler(html, { server }) {
-				if (!server) throw new Error("rendering the page needs the dev server");
+			async handler(html, { server, filename }) {
+				if (!server) throw new Error("rendering a page needs the dev server");
 				const { render } = await server.ssrLoadModule("/src/render.tsx");
-				const markup = await render();
+				const markup = await render(relative(site, filename));
 				return html.replace("<!--app-->", () => markup);
 			},
 		},
@@ -23,8 +33,8 @@ function renderInDev(): Plugin {
 }
 
 export default defineConfig(({ command }) => ({
-	// Relative, so the built site works under any path.
-	base: "./",
+	// Absolute, since Pages serves 404.html at whatever path was missing.
+	base: "/",
 	plugins: [design(), tailwindcss(), react(), renderInDev()],
 	css: {
 		// Readable, and the same in the client and server builds, whose markup must match.
@@ -33,7 +43,7 @@ export default defineConfig(({ command }) => ({
 				`${basename(filename).split(".")[0]}_${name}`,
 		},
 	},
-	// A path that isn't a file is a 404, as on Pages, rather than the page again.
+	// A path that isn't a file is a 404, as on Pages, rather than the home page again.
 	appType: "mpa",
 	server: { fs: { allow: [".."] } },
 	// The server build runs once, from outside the site's folder, so it carries its dependencies.
@@ -42,6 +52,9 @@ export default defineConfig(({ command }) => ({
 		outDir: "../build/site",
 		emptyOutDir: true,
 		rolldownOptions: {
+			input: Object.fromEntries(
+				Object.entries(pages).map(([name, file]) => [name, site + file]),
+			),
 			output: {
 				assetFileNames: ({ names }) =>
 					names.some((name) => name.endsWith(".woff2"))

@@ -123,7 +123,12 @@ export function Footer() {
 				>
 					<path d="M12 20.2s-7.6-4.6-7.6-10.1a4.2 4.2 0 0 1 7.6-2.5 4.2 4.2 0 0 1 7.6 2.5c0 5.5-7.6 10.1-7.6 10.1z" />
 				</svg>
-				by choco
+				<span>
+					by{" "}
+					<a className="text-ink-muted" href="https://choco.me">
+						choco
+					</a>
+				</span>
 				<svg
 					className="ml-1 rotate-16"
 					viewBox="0 0 30 44"
@@ -180,6 +185,12 @@ export function Footer() {
 					href="https://github.com/choco/Nightcap/releases"
 				>
 					Releases
+				</a>
+				<a className="text-ink-muted" href="/privacy/">
+					Privacy
+				</a>
+				<a className="text-ink-muted" href="/terms/">
+					Terms
 				</a>
 				<a
 					className="text-ink-muted"

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cx } from "../lib/cx";
+import { Wordmark } from "./Wordmark";
 
 export function Nav({
 	shiftOn,
@@ -17,19 +18,7 @@ export function Nav({
 			aria-label="Main"
 			data-doodle-clear="12"
 		>
-			<a
-				className="flex items-center gap-3 font-display text-[30px] leading-none text-ink no-underline hover:text-ink"
-				href="#top"
-			>
-				<img
-					className="max-sm:size-9"
-					src="icon.svg"
-					alt="Nightcap"
-					width="44"
-					height="44"
-				/>
-				<span className="max-sm:hidden">Nightcap</span>
-			</a>
+			<Wordmark href="#top" compact />
 			<div className="grow" />
 			<div className="inline-flex items-center gap-0.5 rounded-full bg-nav-bg p-[3px] shadow-[inset_0_0_0_1px_var(--line)] backdrop-blur-[10px] max-sm:p-0.5">
 				<NavLink href="#how" wide>

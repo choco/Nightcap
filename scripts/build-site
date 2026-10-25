@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the project site into build/site: the React page in site/, prerendered to static HTML,
+# Builds the project site into build/site: the React pages in site/, prerendered to static HTML,
 # with the design system's tokens and fonts and the app icon (site/plugins/design.ts), after Biome
 # and the type checker pass it. The Pages workflow deploys the result; preview it with
 # `python3 -m http.server -d build/site`, or work on it with `pnpm --dir site dev`.

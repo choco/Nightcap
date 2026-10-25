@@ -1,0 +1,10 @@
+/* The 404's sky: the hero's, filling the screen. */
+.sky {
+	position: relative;
+	min-height: 100svh;
+	background: linear-gradient(
+		180deg,
+		var(--hero-top) 0%,
+		var(--hero-bottom) 100%
+	);
+}
