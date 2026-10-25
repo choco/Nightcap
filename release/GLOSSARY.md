@@ -15,7 +15,11 @@ The checks a signed app must pass before it's published: it satisfies the signin
 _Avoid_: verification gate
 
 **Release**:
-A tagged build of Nightcap.app, signed, notarized, passed through the release gate, and published as a zip and a DMG with their checksums and the appcast.
+A tagged build of Nightcap.app, signed, notarized, passed through the release gate, and published as a zip and a DMG with their checksums, its release notes and the appcast.
+
+**Release notes**:
+What a release changes, written for the people who use Nightcap: a headline, then what's new and what's fixed. The changelog keeps every release's, the update window and the release page show them, and the notification after an update opens them.
+_Avoid_: release log
 
 **Installer**:
 What puts a release on a Mac, such as the Nix package or the brew cask. A managed install's installer also starts and updates it.

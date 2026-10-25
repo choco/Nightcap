@@ -17,6 +17,8 @@ jobs:
           fetch-depth: 0
       - name: Check the tag matches the Cargo version
         run: test "v$(scripts/version)" = "$GITHUB_REF_NAME"
+      - name: Check CHANGELOG.md has the release's notes
+        run: scripts/release-notes >/dev/null
       - run: sudo xcode-select --switch /Applications/Xcode_27.0.app
       - run: scripts/build-core --release
       - run: scripts/build-app --release
@@ -70,6 +72,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release
@@ -78,10 +81,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          scripts/release-notes "${GITHUB_REF_NAME#v}" > "$RUNNER_TEMP/notes.md"
           gh release create "$GITHUB_REF_NAME" dist/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "Nightcap ${GITHUB_REF_NAME#v}" \
-            --generate-notes
+            --notes-file "$RUNNER_TEMP/notes.md"
 
   # Installs read the feed from the site, which serves the newest release's appcast (ADR-0011).
   pages:

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Prints a version's notes from CHANGELOG.md, the section under its "## <version> · <date>"
+# heading, for the GitHub release and Sparkle's update window. Fails when there are none.
+# Usage: release-notes [<version>], the workspace version by default
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+version="${1:-$("$root/scripts/version")}"
+
+notes="$(awk -v version="$version" '
+  /^## / { if (found) exit; found = ($2 == version); next }
+  found
+' "$root/CHANGELOG.md")"
+if [[ -z "${notes//[[:space:]]/}" ]]; then
+  echo "error: CHANGELOG.md has no notes for $version" >&2
+  exit 1
+fi
+printf '%s\n' "$notes" | sed '/./,$!d'

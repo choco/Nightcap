@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Signs the packaged zip for Sparkle and writes the appcast beside it: one item, the release
-# being published, which is all Sparkle reads (ADR-0011). The EdDSA key comes from
-# $SPARKLE_PRIVATE_KEY, or else from the login keychain.
+# being published with its notes from CHANGELOG.md, which is all Sparkle reads (ADR-0011). The
+# EdDSA key comes from $SPARKLE_PRIVATE_KEY, or else from the login keychain.
 # Usage: release/appcast <Nightcap.app> <out-dir>
 set -euo pipefail
 
@@ -19,6 +19,7 @@ build="$(plist CFBundleVersion)"
 minimum="$(plist LSMinimumSystemVersion)"
 zip="Nightcap-$version.zip"
 [[ -f "$out/$zip" ]] || { echo "error: $out/$zip is missing; run release/package first" >&2; exit 1; }
+notes="$("$root/scripts/release-notes" "$version")"
 
 tools="$root/build/sparkle-$sparkle_version"
 if [[ ! -x "$tools/bin/sign_update" ]]; then
@@ -49,6 +50,10 @@ cat > "$out/appcast.xml" <<EOF
       <sparkle:shortVersionString>$version</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>$minimum</sparkle:minimumSystemVersion>
       <enclosure url="https://github.com/$repo/releases/download/v$version/$zip" $enclosure type="application/octet-stream"/>
+      <description sparkle:format="markdown"><![CDATA[
+$notes
+]]></description>
+      <sparkle:fullReleaseNotesLink>https://nightcap.choco.me/changelog/</sparkle:fullReleaseNotesLink>
     </item>
   </channel>
 </rss>
