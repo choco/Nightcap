@@ -209,16 +209,19 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 				>
 					<span className="inline-flex gap-2.5" aria-hidden="true">
 						{["⌃", "⌥", "⌘", "N"].map((key) => (
+							// The key's side stays put, and the cap sinks over it.
 							<span
 								key={key}
-								className={cx(
-									"box-border inline-flex h-11 min-w-11 items-center justify-center rounded-[10px] border border-line-strong bg-surface-raised px-2.5 font-text text-[19px] text-ink transition-[translate,box-shadow] duration-[70ms] motion-reduce:transition-none max-sm:h-[38px] max-sm:min-w-[38px] max-sm:text-[17px]",
-									down
-										? "translate-y-[3px] shadow-[0_0_0_var(--line-strong)]"
-										: "shadow-[0_3px_0_var(--line-strong)]",
-								)}
+								className="relative inline-flex before:absolute before:inset-0 before:translate-y-[3px] before:rounded-[10px] before:bg-line-strong"
 							>
-								{key}
+								<span
+									className={cx(
+										"relative box-border inline-flex h-11 min-w-11 items-center justify-center rounded-[10px] border border-line-strong bg-surface-raised px-2.5 font-text text-[19px] text-ink transition-[translate] duration-[70ms] motion-reduce:transition-none max-sm:h-[38px] max-sm:min-w-[38px] max-sm:text-[17px]",
+										down && "translate-y-[3px]",
+									)}
+								>
+									{key}
+								</span>
 							</span>
 						))}
 					</span>
@@ -247,34 +250,43 @@ function MoveCard({
 	glyph: ReactNode;
 	children: ReactNode;
 }) {
+	const icon = (
+		<svg
+			aria-hidden="true"
+			className="size-[26px]"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			{glyph}
+		</svg>
+	);
+	// Lit, the card's ring and the icon's colours fade in as layers over it, by opacity alone.
 	return (
 		<figure
 			className={cx(
-				"m-0 flex flex-col gap-4 rounded-md border border-line bg-surface p-4 transition-shadow duration-200 ease-in-out motion-reduce:transition-none",
-				lit && "shadow-[0_0_0_2px_var(--moon-text),var(--shadow-lift)]",
+				"relative isolate m-0 flex flex-col gap-4 rounded-md border border-line bg-surface p-4 after:pointer-events-none after:absolute after:-inset-px after:-z-1 after:rounded-md after:opacity-0 after:shadow-[0_0_0_2px_var(--moon-text),var(--shadow-lift)] after:transition-opacity after:duration-200 after:ease-in-out motion-reduce:after:transition-none",
+				lit && "after:opacity-100",
 			)}
 		>
 			{mini}
 			<figcaption className="flex items-center gap-3.5">
 				<span
-					className={cx(
-						"grid size-[46px] flex-none place-items-center rounded-sm border bg-surface-raised transition-[color,border-color] duration-200 ease-in-out motion-reduce:transition-none",
-						lit ? "border-moon-text text-moon-text" : "border-line text-ink",
-					)}
+					className="relative grid size-[46px] flex-none place-items-center rounded-sm border border-line bg-surface-raised text-ink"
 					aria-hidden="true"
 				>
-					<svg
-						aria-hidden="true"
-						className="size-[26px]"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2"
-						strokeLinecap="round"
-						strokeLinejoin="round"
+					{icon}
+					<span
+						className={cx(
+							"absolute -inset-px grid place-items-center rounded-sm border border-moon-text bg-surface-raised text-moon-text opacity-0 transition-opacity duration-200 ease-in-out motion-reduce:transition-none",
+							lit && "opacity-100",
+						)}
 					>
-						{glyph}
-					</svg>
+						{icon}
+					</span>
 				</span>
 				<span className="text-[15px] leading-[1.5] text-ink-muted">
 					<strong className="block text-[16px] text-ink">{title}</strong>
