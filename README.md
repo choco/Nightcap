@@ -94,7 +94,10 @@ Work inside `nix develop`, which provides the pinned Rust toolchain and puts the
 ```sh
 build-core        # the Rust core and CLI, and the app's generated bindings
 build-app         # build/xcode/Debug/Nightcap Dev.app, unsigned
-run-tests
+run-dev           # builds, signs and launches the dev build
+run-tests         # the Rust tests
+test-app          # the Swift tests
+check             # everything CI checks
 ```
 
 The dev build has its own bundle ID, so it runs beside an installed copy without sharing its permissions or state. [`AGENTS.md`](AGENTS.md) covers the rest of the workflow.
