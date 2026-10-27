@@ -12,7 +12,8 @@ use crate::config::{self, NightShiftConfig};
 use crate::file::Files;
 use crate::places::{Context, Kept, Places};
 use crate::schedule::{SunTimes, Timeline};
-use crate::{Core, CoreError, Facts, Session, State, adhoc, ipc, state};
+use crate::turn::Session;
+use crate::{Core, CoreError, Facts, State, adhoc, ipc, state};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
