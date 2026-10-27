@@ -13,10 +13,10 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::file::{File, Memory, Paths};
-use crate::react::{Input, react};
+use crate::server::react::{Input, react};
+use crate::server::start::{Clock, Setup, install_of, instance_of, zone_of};
+use crate::server::state::Inner;
 use crate::server::{Published, Snapshot};
-use crate::start::{Clock, Setup, install_of, instance_of, zone_of};
-use crate::state::Inner;
 use crate::{Core, Fact, Outcome, Runs, UiCommand};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in

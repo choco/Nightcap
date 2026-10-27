@@ -11,7 +11,7 @@ use crate::adhoc::AdHocError;
 use crate::config::{ConfigError, NightShiftConfig};
 use crate::places::{Places, Refusal};
 use crate::schedule::CheckedSchedule;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Effect, Event, LoginItem, Outcome, config};
 
 impl Inner {

@@ -4,7 +4,7 @@
 use nightcap_protocol::{NightShift, Schedule};
 
 use crate::schedule::CheckedSchedule;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Effect, LoginItem};
 
 /// The current onboarding version: welcome, notifications, and website checking.

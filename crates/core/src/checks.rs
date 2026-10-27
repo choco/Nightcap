@@ -12,7 +12,7 @@ use nightcap_protocol::{
 use crate::adhoc::AdHocError;
 use crate::config::ConfigError;
 use crate::rows::capitalized;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Effect, Event, LoginItem};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness

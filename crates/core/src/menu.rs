@@ -8,7 +8,7 @@ use crate::ProblemLine;
 use crate::places::Stack;
 use crate::rows::{PlaceRow, Rows, capitalized, clock_time, here, until_text, whose};
 use crate::schedule::CheckedSchedule;
-use crate::state::Inner;
+use crate::server::state::Inner;
 
 /// What the menu shows. The core decides it; the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

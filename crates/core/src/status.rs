@@ -8,7 +8,7 @@ use nightcap_protocol::{
 };
 
 use crate::server::Snapshot;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Effect, Outcome};
 
 impl Inner {

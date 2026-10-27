@@ -7,7 +7,7 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
 
 use crate::schedule::CheckedSchedule;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Effect, Event, Outcome};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS

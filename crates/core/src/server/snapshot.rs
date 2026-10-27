@@ -7,7 +7,7 @@ use nightcap_protocol::{ErrorCode, OnOff, Payload, Query, Response, RuleIdentity
 
 use crate::commands::refused;
 use crate::file::File;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Menu, OnboardingSteps, Settings, TourSnapshot, adhoc};
 
 /// The core after one input, as each read sees it.

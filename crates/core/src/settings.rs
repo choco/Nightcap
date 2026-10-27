@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use nightcap_protocol::{Command, Layer, OnOff, Place, Rule, RuleIdentity, RuleSource};
 
 use crate::rows::{layer_text, until_text};
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{LoginItem, SettingsCheck};
 
 /// What the settings window shows, pulled like the menu: the shell only draws it.

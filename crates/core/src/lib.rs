@@ -13,7 +13,6 @@ mod logging;
 mod menu;
 mod onboarding;
 mod places;
-mod react;
 mod rows;
 mod schedule;
 mod server;
@@ -21,22 +20,17 @@ mod settings;
 mod shell;
 #[cfg(any(test, debug_assertions))]
 mod staging;
-mod start;
 mod state;
 mod status;
 mod tour;
-mod turn;
-mod watch;
 
 pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
-pub use server::Listener;
+pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
-pub use shell::{
-    CoreError, Effect, Event, Fact, LoginItem, Outcome, UiCommand, is_bundle_id, normalize_domain,
-};
+pub use shell::{CoreError, is_bundle_id, normalize_domain};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
 };
@@ -53,12 +47,12 @@ use std::sync::{Arc, mpsc};
 use nightcap_protocol::{Command, ExportFormat};
 
 use file::{Disk, Paths};
-use react::Input;
+use server::react::Input;
 #[cfg(any(test, debug_assertions))]
-use react::react;
+use server::react::react;
+use server::start::{Setup, SystemClock, install_of, instance_of, zone_of};
+use server::state::Inner;
 use server::{Mail, Mailbox, Published, Snapshot};
-use start::{Setup, SystemClock, install_of, instance_of, zone_of};
-use state::Inner;
 
 /// The core, a server on its own thread (ADR-0002): facts and commands go into its mailbox and
 /// return at once, its listener hears each one's outcome, and the reads answer from the snapshot

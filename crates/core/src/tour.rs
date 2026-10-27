@@ -12,7 +12,7 @@ use crate::domain::Host;
 use crate::places::{Context, Kept, Look, Places, Refusal, Stack, World};
 use crate::rows::{MenuItem, PlaceRow, RowItem, Rows};
 use crate::schedule::{SunTimes, Timeline};
-use crate::state::Inner;
+use crate::server::state::Inner;
 
 /// An app the tour names: its bundle ID, which a rule names it by, and its name, which the menu
 /// calls it by.

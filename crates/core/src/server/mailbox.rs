@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use nightcap_protocol::{Request, Response};
 
 use crate::Outcome;
-use crate::react::Input;
+use crate::server::react::Input;
 
 /// What the mailbox holds, each decided in the order it arrived.
 #[derive(Debug)]

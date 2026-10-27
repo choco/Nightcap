@@ -7,7 +7,7 @@ use jiff::tz::TimeZone;
 use nightcap_protocol::Command;
 
 use crate::schedule::SunTimes;
-use crate::state::Inner;
+use crate::server::state::Inner;
 use crate::{Fact, Outcome, UiCommand};
 
 /// Something that changes the core: a fact the platform reports, a command from the menu-bar

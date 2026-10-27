@@ -3,20 +3,25 @@
 //! they arrived: after each, it publishes a snapshot for the reads, then hands the outcome to the
 //! shell's listener.
 
-mod listener;
 mod mailbox;
+pub(crate) mod messages;
+pub(crate) mod react;
 mod snapshot;
+pub(crate) mod start;
+pub(crate) mod state;
+pub(crate) mod turn;
+pub(crate) mod watch;
 
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-pub use listener::Listener;
 pub(crate) use mailbox::{Mail, Mailbox};
 pub(crate) use snapshot::{Published, Snapshot};
 
 use crate::CoreError;
-use crate::react::{Input, react};
-use crate::state::Inner;
+use messages::Listener;
+use react::{Input, react};
+use state::Inner;
 
 /// Starts the core's thread on `inner`, which publishes to `published` and tells `listener`,
 /// and gives the mailbox it takes its mail from.
@@ -81,9 +86,9 @@ pub(crate) mod tests {
 
     use super::Listener;
     use crate::file::{Memory, Paths};
+    use crate::server::start::Setup;
+    use crate::server::state::Inner;
     use crate::staging::ManualClock;
-    use crate::start::Setup;
-    use crate::state::Inner;
     use crate::{Core, Effect, Fact, MenuIcon, Outcome};
 
     /// Stands in for the shell: every outcome arrives on a channel the test can wait on.

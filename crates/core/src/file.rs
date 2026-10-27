@@ -212,10 +212,10 @@ mod tests {
 
     use super::{Disk, File, Files, Owned, Paths};
     use crate::Fact;
-    use crate::react::{Input, react};
+    use crate::server::react::{Input, react};
+    use crate::server::start::Setup;
+    use crate::server::state::Inner;
     use crate::staging::ManualClock;
-    use crate::start::Setup;
-    use crate::state::Inner;
 
     fn disk(folder: &Path) -> Disk {
         Disk(Paths::in_folder(folder))
