@@ -541,9 +541,13 @@ fn a_config_that_cant_be_is_refused() {
             "[rules]\napp = [\"com.figma.Desktop\"]\n",
             "under [rules.off] and [rules.on]",
         ),
-        ("[menu]\nlengths = [\"45m\", \"forever\"]\n", "menu.lengths"),
-        ("[menu]\nlengths = [\"30s\"]\n", "menu.lengths"),
-        ("[menu]\nlengths = []\n", "menu.lengths"),
+        ("lengths = [\"45m\", \"forever\"]\n", "lengths are like"),
+        ("lengths = [\"30s\"]\n", "lengths are like"),
+        ("lengths = []\n", "lengths are like"),
+        (
+            "[menu]\nlengths = [\"45m\"]\n",
+            "lengths is a key of its own, before any table, not one under [menu]",
+        ),
         (
             "[rules.off]\napp = [\"com.figma.Desktop \"]\n",
             "\"com.figma.Desktop \" isn't a bundle ID",
@@ -595,7 +599,8 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
             3,
         ),
         ("[night_shift]\nschedule = \"dusk\"\n", 2),
-        ("\n[menu]\nlengths = [\"45m\", \"forever\"]\n", 3),
+        ("\nlengths = [\"45m\", \"forever\"]\n", 2),
+        ("websites = true\n\n[menu]\nlengths = [\"45m\"]\n", 3),
     ] {
         staged.write_config(Some(config));
         let (_, response) = staged.request(Request::Reload);

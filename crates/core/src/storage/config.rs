@@ -19,19 +19,14 @@ use crate::storage::file::{self, Files};
 struct File {
     /// Website checking, which Settings and the CLI then can't change (ADR-0012).
     websites: Option<bool>,
+    /// The lengths a change can be picked for, such as "30m", "1h" or "1h30m" (ADR-0018).
+    lengths: Option<Spanned<Vec<String>>>,
     #[serde(default)]
     night_shift: NightShiftFile,
     #[serde(default)]
     rules: Rules,
-    #[serde(default)]
-    menu: MenuFile,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MenuFile {
-    /// The menu's preset lengths, such as "30m", "1h" or "1h30m" (ADR-0018).
-    lengths: Option<Spanned<Vec<String>>>,
+    /// A `[menu]` table, read only to point its `lengths` at the top-level key.
+    menu: Option<Spanned<serde::de::IgnoredAny>>,
 }
 
 #[derive(Default, Deserialize)]
@@ -82,7 +77,7 @@ struct RuleLists {
     domain: Vec<Spanned<String>>,
 }
 
-/// The menu's preset lengths when the config sets none.
+/// The lengths a change can be picked for when the config sets none.
 pub(crate) fn default_lengths() -> Vec<SignedDuration> {
     vec![
         SignedDuration::from_mins(30),
@@ -170,10 +165,10 @@ pub(crate) enum Problem {
         "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not {0:?}"
     )]
     Schedule(String),
-    #[error(
-        "menu.lengths are lengths like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {0:?}"
-    )]
+    #[error("lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {0:?}")]
     Lengths(Vec<String>),
+    #[error("lengths is a key of its own, before any table, not one under [menu]")]
+    MenuTable,
 }
 
 /// The config. A missing file means no rules, as on a fresh brew install.
@@ -235,8 +230,11 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
             rules.push((identity, says));
         }
     }
+    if let Some(menu) = &file.menu {
+        return Err(Spanned::new(menu.span(), Problem::MenuTable));
+    }
     let night_shift = night_shift(file.night_shift)?;
-    let lengths = match file.menu.lengths {
+    let lengths = match file.lengths {
         None => default_lengths(),
         Some(lengths) => {
             let read = lengths

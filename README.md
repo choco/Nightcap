@@ -54,6 +54,7 @@ Rules can also live in `~/.config/nightcap/config.toml`:
 
 ```toml
 websites = true
+lengths = ["30m", "1h", "2h"]    # what a change can be picked for
 
 [rules.off]
 app = ["com.figma.Desktop", "com.adobe.Photoshop"]
@@ -65,9 +66,6 @@ app = ["com.apple.iBooksX"]
 [night_shift]
 strength = 60
 schedule = "sunset-to-sunrise"   # or "off", or custom hours such as "22:00-07:00"
-
-[menu]
-lengths = ["30m", "1h", "2h"]    # the menu's lengths
 ```
 
 Run `nightcap reload` after changing it. Night Shift's strength and schedule stay the system's: Nightcap applies a `[night_shift]` value when it changes, so a change you make later in System Settings stands. Rules you add from the menu or with `nightcap rules add` are kept by Nightcap itself, and `nightcap rules export --format toml` (or `nix`) prints them ready to paste into the config. [`docs/installing.md`](docs/installing.md) has the details.

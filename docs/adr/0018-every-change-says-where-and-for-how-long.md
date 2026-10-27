@@ -11,7 +11,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - A rule lasts one of three lengths:
   - **Indefinitely**, until it's taken off.
   - **Until the schedule next turns it back:** the next sunrise for an on and the next sunset for an off, or the end or start of custom hours, and earlier if the schedule is edited. Without a schedule there's no turn to wait for, so only an external change sets one then, and it lasts until it's taken off.
-  - **Until a time:** one picked, or one of the lengths, 30 minutes, 1 hour and 2 hours unless the config's `[menu] lengths` sets others, from now.
+  - **Until a time:** one picked, or one of the lengths, 30 minutes, 1 hour and 2 hours unless the config's `lengths` sets others, from now.
 - Who sets what:
   - The config sets only indefinite rules, and never for everywhere (ADR-0006, ADR-0007).
   - The user sets indefinite rules, an app's or site's as ad-hoc rules and everywhere's with the switch, and rules until the schedule turns or until a time, anywhere.
@@ -50,7 +50,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - `state.json` keeps every rule but the apps' and sites' indefinite ones, which the config and `rules.toml` keep, with its end, who set it and Adoption's link (ADR-0008).
 - Commands: `On`, `Off` and `Toggle` are the switch. `Set { place, state, length }` sets a rule of the user's for a time, until a time, until the schedule turns, or, for everywhere alone, indefinitely; an app's or site's indefinite rule is added with `AddRule` (ADR-0006). `Reset(place)` takes off what a reset does.
 - The CLI: `nightcap on|off [--for 45m | --until 23:30 | --until-schedule] [--app ID | --domain D]`, `nightcap toggle` and `nightcap reset [--app ID | --domain D]`. A length is written as `30m`, `1h` or `1h30m`.
-- The config's `[menu] lengths` sets the lengths a change can be picked for, in the same form.
+- The config's top-level `lengths` sets the lengths a change can be picked for, in the same form, and a `[menu]` table is an error that names it: the lengths are the model's, whichever client offers them.
 - What the menu offers for each place, and in what words, is the App context's: its glossary's Place row.
 
 ## Consequences

@@ -236,7 +236,7 @@ fn until_the_schedule_turns_names_custom_hours_start_or_end() {
 #[test]
 fn the_menus_lengths_come_from_the_config() {
     let staged = on_by_the_schedule()
-        .config("[menu]\nlengths = [\"15m\", \"1h30m\"]\n")
+        .config("lengths = [\"15m\", \"1h30m\"]\n")
         .stage()
         .unwrap();
 

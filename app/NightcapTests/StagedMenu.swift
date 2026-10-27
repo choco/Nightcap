@@ -76,9 +76,9 @@ func forced(_ steps: Step...) throws -> Core {
             steps: [reported(true), front("com.figma.Desktop", "Figma"), reported(false)] + steps))
 }
 
-/// The config's lengths, as `[menu] lengths` lists them.
+/// The config's lengths, as its `lengths` lists them.
 func lengths(_ lengths: [String]) -> String {
-    "[menu]\nlengths = [\(lengths.map { "\"\($0)\"" }.joined(separator: ", "))]\n"
+    "lengths = [\(lengths.map { "\"\($0)\"" }.joined(separator: ", "))]\n"
 }
 
 let figmaApp = Place.app("com.figma.Desktop")

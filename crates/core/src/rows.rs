@@ -61,7 +61,8 @@ pub struct MenuItem {
     pub command: Command,
 }
 
-/// What the rows read: a look at the places, the world it was taken in, and the menu's lengths.
+/// What the rows read: a look at the places, the world it was taken in, and the lengths a change
+/// can be picked for.
 pub(crate) struct Rows<'a> {
     pub look: &'a Look<'a>,
     pub world: &'a World<'a>,
