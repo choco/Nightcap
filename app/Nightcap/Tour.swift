@@ -102,8 +102,9 @@ final class Tour {
     func start() {
         draw()
         if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(
-                x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
+            panel.setFrameOrigin(
+                NSPoint(
+                    x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
         }
         panel.makeKeyAndOrderFront(nil)
     }
@@ -243,61 +244,92 @@ final class Tour {
         case .rule where returned:
             return (
                 "And it comes back",
-                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way.")
+                "Leave the sample and Night Shift returns, as warm as before. Every rule works this way."
+            )
         case .rule where ruled && front == Self.sampleApp:
             return (
                 "That’s true colour",
-                "Night Shift is off while the sample is in front, and the moon shows a “z”. Now click another window, or the desktop.")
+                "Night Shift is off while the sample is in front, and the moon shows a “z”. "
+                    + "Now click another window, or the desktop."
+            )
         case .rule where front == Self.sampleApp:
-            return ("Give it a rule", "Click the moon to open the menu, then choose “Turn Off in Tour Sample” › “Always”.")
+            return (
+                "Give it a rule", "Click the moon to open the menu, then choose “Turn Off in Tour Sample” › “Always”."
+            )
         case .rule:
             return ("Try a rule", "Bring Tour Sample to the front: click its window, or its icon in the Dock.")
         case .snooze where ruleBack:
             return (
                 "And the rule’s back",
-                "True colour again in the sample. Rules work the other way too: while Night Shift is off, “Turn On in Mail” › “Always” keeps it on in Mail.")
+                "True colour again in the sample. "
+                    + "Rules work the other way too: "
+                    + "while Night Shift is off, “Turn On in Mail” › “Always” keeps it on in Mail."
+            )
         case .snooze where snoozed && front == Self.sampleApp:
             return (
                 "That’s a snooze",
-                "Night Shift is back in the sample until the time you chose, then the rule returns by itself. To end it sooner, choose “Turn Off in Tour Sample” › “Put the Rule Back”.")
+                "Night Shift is back in the sample until the time you chose, then the rule returns by itself. "
+                    + "To end it sooner, choose “Turn Off in Tour Sample” › “Put the Rule Back”."
+            )
         case .snooze where snoozed:
             return (
                 "Put the rule back",
-                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Put the Rule Back”.")
+                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Put the Rule Back”."
+            )
         case .snooze where !ruled && front == Self.sampleApp:
-            return ("Snoozing needs a rule", "Choose “Turn Off in Tour Sample” › “Always” to give the sample its rule again.")
+            return (
+                "Snoozing needs a rule",
+                "Choose “Turn Off in Tour Sample” › “Always” to give the sample its rule again."
+            )
         case .snooze where !ruled:
             return (
                 "Snoozing needs a rule",
-                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Always”.")
+                "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Always”."
+            )
         case .snooze where front == Self.sampleApp:
             return (
                 "Snooze it",
-                "The rule keeps Night Shift off here. To give it a break, click the moon, then choose “Turn On in Tour Sample” and how long for.")
+                "The rule keeps Night Shift off here. "
+                    + "To give it a break, click the moon, then choose “Turn On in Tour Sample” and how long for."
+            )
         case .snooze:
             return (
                 "Snooze a rule",
-                "A rule can take a break. Bring Tour Sample back to the front: click its window, or its icon in the Dock.")
+                "A rule can take a break. "
+                    + "Bring Tour Sample back to the front: click its window, or its icon in the Dock."
+            )
         case .site where siteLeft:
             return (
                 "Sites work the same way",
-                "Leave the site’s tab and Night Shift returns. A site’s rule covers all its pages, in Safari, Chrome, Firefox and more.")
+                "Leave the site’s tab and Night Shift returns. "
+                    + "A site’s rule covers all its pages, in Safari, Chrome, Firefox and more."
+            )
         case .site where siteRuled:
-            return ("That’s true colour, on one site", "Night Shift is off while its tab is in front. Now switch to another tab.")
+            return (
+                "That’s true colour, on one site",
+                "Night Shift is off while its tab is in front. Now switch to another tab."
+            )
         case .site where front == self.browser?.bundleId:
             return (
                 "Now a site",
-                "\(browser) has Nightcap’s site open. Click the moon, then choose “Turn Off at This Site” › “Always”.")
+                "\(browser) has Nightcap’s site open. Click the moon, then choose “Turn Off at This Site” › “Always”."
+            )
         case .site:
             return ("Now a site", "Bring \(browser) back to the front, on Nightcap’s site.")
         case .peek:
             return (
                 "Peek at true colour",
-                "Hold \(keys) in any app to see true colour for as long as you hold it. Tap it to turn Night Shift off, and again to turn it back on.")
+                "Hold \(keys) in any app to see true colour for as long as you hold it. "
+                    + "Tap it to turn Night Shift off, and again to turn it back on."
+            )
         case .end:
             return (
                 "That’s the tour",
-                "What you changed during it goes with it, and your own rules are as they were. Everything else is in the moon’s menu: turning Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and Settings, where you’ll find the tour again.")
+                "What you changed during it goes with it, and your own rules are as they were. "
+                    + "Everything else is in the moon’s menu: turning Night Shift on or off, "
+                    + "everywhere or just in the app in front, for as long as you choose, "
+                    + "and Settings, where you’ll find the tour again."
+            )
         }
     }
 
@@ -324,7 +356,8 @@ final class Tour {
         case .end:
             return [firstClick(Look.button("Done", .primary) { [weak self] in self?.end() })]
         }
-        let buttons = done
+        let buttons =
+            done
             ? [Look.button("Continue", .primary, next)]
             : [Look.button("Skip", .regular, next)]
         return buttons.map(firstClick)
@@ -395,9 +428,11 @@ final class Tour {
             Look.label(body, size: 12, weight: .regular, color: .secondaryLabelColor, width: inner),
         ]
         if standsIn, step == .moon {
-            views.append(Look.label(
-                "Night Shift is off right now. When you continue, Nightcap turns it on for the tour, and back off once it ends.",
-                size: 12, weight: .regular, color: .nightcapMoon, width: inner))
+            views.append(
+                Look.label(
+                    "Night Shift is off right now. "
+                        + "When you continue, Nightcap turns it on for the tour, and back off once it ends.",
+                    size: 12, weight: .regular, color: .nightcapMoon, width: inner))
         }
         switch step {
         case .moon: views.append(legend(width: inner))
@@ -441,7 +476,8 @@ final class Tour {
             moon.heightAnchor.constraint(equalToConstant: 16).isActive = true
             let title = Look.label(name, size: 13, weight: .regular, color: .labelColor, width: 72)
             title.widthAnchor.constraint(equalToConstant: 72).isActive = true
-            let text = Look.label(meaning, size: 11, weight: .regular, color: .secondaryLabelColor, width: width - 20 - 16 - 72 - 20)
+            let text = Look.label(
+                meaning, size: 11, weight: .regular, color: .secondaryLabelColor, width: width - 20 - 16 - 72 - 20)
             let row = NSStackView(views: [moon, title, text])
             row.orientation = .horizontal
             row.alignment = .centerY
@@ -613,7 +649,9 @@ private final class KeyCaps: NSView {
                 NSColor.nightcapControlBorder.setStroke()
                 cap.lineWidth = 0.5
                 cap.stroke()
-                let attributes: [NSAttributedString.Key: Any] = [.font: Self.font, .foregroundColor: NSColor.labelColor]
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: Self.font, .foregroundColor: NSColor.labelColor,
+                ]
                 let text = (key as NSString).size(withAttributes: attributes)
                 (key as NSString).draw(
                     at: NSPoint(x: frame.midX - text.width / 2, y: frame.midY - text.height / 2),

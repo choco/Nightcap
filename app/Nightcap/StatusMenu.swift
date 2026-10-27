@@ -105,7 +105,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         dot.isHidden = snapshot.problemLine == nil
         guard let shown, snapshot != shown, let menu = item.menu else { return }
         if let slider, Self.apartFromStrength(snapshot) == Self.apartFromStrength(shown),
-           let strength = Self.strength(in: snapshot)
+            let strength = Self.strength(in: snapshot)
         {
             self.shown = snapshot
             if NSEvent.pressedMouseButtons == 0 { slider.doubleValue = Double(strength) }
@@ -180,8 +180,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 ])
                 panel.setContentSize(content.size)
                 if let screen = NSScreen.main?.visibleFrame {
-                    panel.setFrameOrigin(NSPoint(
-                        x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
+                    panel.setFrameOrigin(
+                        NSPoint(
+                            x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
                 }
                 panel.makeKeyAndOrderFront(nil)
                 hiddenPanel = (panel, content)
@@ -269,8 +270,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             bar.lineCapStyle = .round
             NSGraphicsContext.current?.compositingOperation = .clear
             bar.stroke()
-            NSBezierPath(ovalIn: NSRect(
-                x: (10 - 1.1) * unit, y: (14.6 - 1.1) * unit, width: 2.2 * unit, height: 2.2 * unit)).fill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x: (10 - 1.1) * unit, y: (14.6 - 1.1) * unit, width: 2.2 * unit, height: 2.2 * unit)
+            ).fill()
             return true
         }
         image.accessibilityDescription = "Needs attention"
@@ -388,13 +391,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
             let unit = side / 24
             let point = { (x: CGFloat, y: CGFloat) in NSPoint(x: x * unit, y: y * unit) }
-            let rays: [(CGFloat, CGFloat, CGFloat, CGFloat)] = large
-                ? [(12, 2.5, 12, 5), (12, 19, 12, 21.5), (2.5, 12, 5, 12), (19, 12, 21.5, 12),
-                   (5.3, 5.3, 7.1, 7.1), (16.9, 16.9, 18.7, 18.7), (5.3, 18.7, 7.1, 16.9), (16.9, 7.1, 18.7, 5.3)]
+            let rays: [(CGFloat, CGFloat, CGFloat, CGFloat)] =
+                large
+                ? [
+                    (12, 2.5, 12, 5), (12, 19, 12, 21.5), (2.5, 12, 5, 12), (19, 12, 21.5, 12),
+                    (5.3, 5.3, 7.1, 7.1), (16.9, 16.9, 18.7, 18.7), (5.3, 18.7, 7.1, 16.9), (16.9, 7.1, 18.7, 5.3),
+                ]
                 : [(12, 3, 12, 5), (12, 19, 12, 21), (3, 12, 5, 12), (19, 12, 21, 12)]
-            let path = NSBezierPath(ovalIn: NSRect(
-                x: (12 - (large ? 4.2 : 4)) * unit, y: (12 - (large ? 4.2 : 4)) * unit,
-                width: (large ? 8.4 : 8) * unit, height: (large ? 8.4 : 8) * unit))
+            let path = NSBezierPath(
+                ovalIn: NSRect(
+                    x: (12 - (large ? 4.2 : 4)) * unit, y: (12 - (large ? 4.2 : 4)) * unit,
+                    width: (large ? 8.4 : 8) * unit, height: (large ? 8.4 : 8) * unit))
             for (x0, y0, x1, y1) in rays {
                 path.move(to: point(x0, y0))
                 path.line(to: point(x1, y1))
@@ -566,8 +573,12 @@ final class PointOut: NSViewController {
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
             hidden
-                ? "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu. Quit an app with an icon up there and the moon appears. Until then, open Nightcap again for its Settings."
-                : "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon. New to Nightcap? The tour shows a rule at work, in about a minute.",
+                ? "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu. "
+                    + "Quit an app with an icon up there and the moon appears. "
+                    + "Until then, open Nightcap again for its Settings."
+                : "Its menu turns Night Shift on or off, everywhere or just in the app in front, "
+                    + "for as long as you choose, and changes its strength: click OK, then the moon. "
+                    + "New to Nightcap? The tour shows a rule at work, in about a minute.",
             size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
         let tour = Look.button("Take the Tour", .regular) { [weak self] in self?.takeTour() }

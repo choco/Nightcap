@@ -75,7 +75,8 @@ let delegate = Sample()
 app.delegate = delegate
 app.setActivationPolicy(.regular)
 let appMenu = NSMenu()
-appMenu.addItem(NSMenuItem(title: "Quit Tour Sample", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+appMenu.addItem(
+    NSMenuItem(title: "Quit Tour Sample", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
 let appItem = NSMenuItem()
 appItem.submenu = appMenu
 app.mainMenu = NSMenu()

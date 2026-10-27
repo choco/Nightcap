@@ -59,8 +59,9 @@ final class TimePicker: NSObject, NSWindowDelegate {
     /// At the top right, under the menu bar, where the moon's menu was.
     func show() {
         if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(
-                x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
+            panel.setFrameOrigin(
+                NSPoint(
+                    x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
         }
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(picker)

@@ -189,17 +189,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The default browser, for the tour's site step, while website checking can watch it.
     private func tourBrowser(_ settings: Settings) -> Tour.Browser? {
         guard settings.websiteChecking.on, accessibility?.granted == true,
-              let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
-              let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
+            let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
+            let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
         return Tour.Browser(bundleId: bundleId, name: FileManager.default.displayName(atPath: url.path))
     }
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
         guard let core else { return }
-        apply(core.handle(event: .statusChanged(
-            enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside
-        )))
+        apply(
+            core.handle(
+                event: .statusChanged(
+                    enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside
+                )))
     }
 
     /// CoreBrightness announces no strength change, so the strength is read whenever something
@@ -220,58 +222,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchSystem() {
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] notification in
-            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            MainActor.assumeIsolated {
-                self?.reportFrontmostApp(app)
-                // macOS posts nothing when notifications are switched in System Settings, so
-                // they're re-read whenever the user moves on to another app.
-                Task { await self?.reportSystemState() }
-            }
-        })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                self.reportSunTimes()
-                self.apply(core.handle(event: .woke))
-            }
-        })
+        observers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+            ) { [weak self] notification in
+                let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+                MainActor.assumeIsolated {
+                    self?.reportFrontmostApp(app)
+                    // macOS posts nothing when notifications are switched in System Settings, so
+                    // they're re-read whenever the user moves on to another app.
+                    Task { await self?.reportSystemState() }
+                }
+            })
+        observers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let core = self.core else { return }
+                    self.reportSunTimes()
+                    self.apply(core.handle(event: .woke))
+                }
+            })
         // Fast user switching: while another user is in front, the core writes nothing and
         // ignores status callbacks, then waits for a fresh read once this session is back.
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                self.apply(core.handle(event: .sessionChanged(active: false)))
-            }
-        })
-        observers.append(NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                self.reportSunTimes()
-                self.apply(core.handle(event: .sessionChanged(active: true)))
-                if let status = self.nightShift?.status {
-                    self.reportNightShift(status)
+        observers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let core = self.core else { return }
+                    self.apply(core.handle(event: .sessionChanged(active: false)))
                 }
-            }
-        })
-        observers.append(NotificationCenter.default.addObserver(
-            forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
-        ) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                // TimeZone.current caches the zone it first read.
-                NSTimeZone.resetSystemTimeZone()
-                self.apply(core.handle(event: .timeZoneChanged(ianaId: TimeZone.current.identifier)))
-            }
-        })
+            })
+        observers.append(
+            NSWorkspace.shared.notificationCenter.addObserver(
+                forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let core = self.core else { return }
+                    self.reportSunTimes()
+                    self.apply(core.handle(event: .sessionChanged(active: true)))
+                    if let status = self.nightShift?.status {
+                        self.reportNightShift(status)
+                    }
+                }
+            })
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, let core = self.core else { return }
+                    // TimeZone.current caches the zone it first read.
+                    NSTimeZone.resetSystemTimeZone()
+                    self.apply(core.handle(event: .timeZoneChanged(ianaId: TimeZone.current.identifier)))
+                }
+            })
     }
 
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
@@ -280,8 +287,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
         // The tour learns the front app first, so the force the new app brings is read as its.
         tour?.frontmostChanged(bundleId)
-        apply(core.handle(event: .appActivated(
-            bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
+        apply(
+            core.handle(
+                event: .appActivated(
+                    bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser)))
     }
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0009).
@@ -295,8 +304,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func watchBrowser(bundleId: String, generation: UInt64) {
-        guard let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
-            .first?.processIdentifier
+        guard
+            let pid = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+                .first?.processIdentifier
         else {
             reportHost(generation: generation, host: nil)
             return
@@ -330,10 +340,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func scheduleWakeup(at date: Date) {
         wakeup?.cancel()
         let seconds = date.timeIntervalSince1970.rounded(.down)
-        let deadline = DispatchWallTime(timespec: timespec(
-            tv_sec: Int(seconds),
-            tv_nsec: Int((date.timeIntervalSince1970 - seconds) * 1_000_000_000)
-        ))
+        let deadline = DispatchWallTime(
+            timespec: timespec(
+                tv_sec: Int(seconds),
+                tv_nsec: Int((date.timeIntervalSince1970 - seconds) * 1_000_000_000)
+            ))
         let timer = DispatchSource.makeTimerSource(queue: .main)
         timer.schedule(wallDeadline: deadline, leeway: .seconds(1))
         timer.setEventHandler { [weak self] in
@@ -501,7 +512,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             let center = UNUserNotificationCenter.current()
             guard await center.notificationSettings().authorizationStatus == .notDetermined else {
-                let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
+                let pane =
+                    "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+                    + "?id=\(Bundle.main.bundleIdentifier!)"
                 NSWorkspace.shared.open(URL(string: pane)!)
                 return
             }
@@ -530,8 +543,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let permissions = (accessibility: accessibility.granted, notifications: notifications)
         if let reportedPermissions, reportedPermissions == permissions { return }
         reportedPermissions = permissions
-        apply(core.handle(event: .permissionsChanged(
-            accessibility: permissions.accessibility, notifications: permissions.notifications)))
+        apply(
+            core.handle(
+                event: .permissionsChanged(
+                    accessibility: permissions.accessibility, notifications: permissions.notifications)))
     }
 
     private func tick() {
@@ -644,7 +659,7 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
     ) async {
         guard let page = response.notification.request.content.userInfo[pageKey] as? String,
-              let url = URL(string: page)
+            let url = URL(string: page)
         else { return }
         await MainActor.run { _ = NSWorkspace.shared.open(url) }
     }

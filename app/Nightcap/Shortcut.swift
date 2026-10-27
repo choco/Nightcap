@@ -38,7 +38,11 @@ final class Shortcut {
         guard let pressed else { return }
         self.pressed = nil
         let held = Date().timeIntervalSince(pressed)
-        log.info("shortcut \(held < Self.tap ? "tapped" : "held", privacy: .public) for \(held, format: .fixed(precision: 2), privacy: .public) s")
+        log.info(
+            """
+            shortcut \(held < Self.tap ? "tapped" : "held", privacy: .public) \
+            for \(held, format: .fixed(precision: 2), privacy: .public) s
+            """)
         if held < Self.tap { onTap() } else { onRelease() }
     }
 }

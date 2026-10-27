@@ -92,7 +92,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// The suggested sites, with their icons as far as they've arrived.
     private var sites: [GridItem] {
         Self.suggestedSites.map { site in
-            GridItem(site: site.name, host: site.host, icon: icons.icon(for: site.host), ruled: ruled[.domain(site.host)])
+            GridItem(
+                site: site.name, host: site.host, icon: icons.icon(for: site.host), ruled: ruled[.domain(site.host)])
         }
     }
     private var index = 0
@@ -440,7 +441,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     summary("Schedule", Self.describe(schedule)),
                 ]),
                 Look.secondary(
-                    "Skipping leaves them exactly as they are. You can change them any time in System Settings › Displays.",
+                    "Skipping leaves them exactly as they are. "
+                        + "You can change them any time in System Settings › Displays.",
                     width: Self.textWidth),
             ]
         case .strength:
@@ -449,41 +451,60 @@ final class Onboarding: NSObject, NSWindowDelegate {
             return scheduleControls()
         case .apps where apps.isEmpty:
             let note = Look.secondary(
-                "Nightcap looks for apps like Figma, Photoshop, Final Cut Pro and DaVinci Resolve, and found none on this Mac. Choose one yourself, or add one later from the menu while it’s in front.",
+                "Nightcap looks for apps like Figma, Photoshop, Final Cut Pro and DaVinci Resolve, "
+                    + "and found none on this Mac. "
+                    + "Choose one yourself, or add one later from the menu while it’s in front.",
                 width: Self.textWidth - 150)
             note.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            let line = NSStackView(views: [note, Look.button("Choose App…", .regular) { [weak self] in self?.chooseApp() }])
+            let line = NSStackView(views: [
+                note, Look.button("Choose App…", .regular) { [weak self] in self?.chooseApp() },
+            ])
             line.orientation = .horizontal
             line.distribution = .fill
             line.spacing = 14
             return [rows([Look.padded(line, top: 12, left: 14, bottom: 12, right: 14)])]
         case .apps:
-            return [grid(apps.map { app in
-                GridCell(app, ticked: app.ruled != nil || tickedApps.contains(app.id)) { [weak self] in
-                    guard let self else { return }
-                    if tickedApps.remove(app.id) == nil { tickedApps.insert(app.id) }
-                    draw()
-                }
-            })]
+            return [
+                grid(
+                    apps.map { app in
+                        GridCell(app, ticked: app.ruled != nil || tickedApps.contains(app.id)) { [weak self] in
+                            guard let self else { return }
+                            if tickedApps.remove(app.id) == nil { tickedApps.insert(app.id) }
+                            draw()
+                        }
+                    })
+            ]
         case .websites:
             return websitesControls()
         case .lastThings:
             var options: [NSView] = []
             if !notificationsAllowed {
                 let title = "Tell me when a rule is snoozed"
-                let detail = "If you turn Night Shift on in Control Center while a rule holds it off, Nightcap snoozes the rule until the schedule’s next change, and says so in a notification."
+                let detail =
+                    "If you turn Night Shift on in Control Center while a rule holds it off, "
+                    + "Nightcap snoozes the rule until the schedule’s next change, and says so in a notification."
                 // macOS shows its prompt only once, so after a refusal only System Settings can.
-                options.append(notifications == .denied
-                    ? option(title, detail + " Notifications are switched off for Nightcap in System Settings.", button: Look.button("Open Notification Settings…", .regular) {
-                        let pane = "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=\(Bundle.main.bundleIdentifier!)"
-                        NSWorkspace.shared.open(URL(string: pane)!)
-                    })
-                    : option(title, detail, ticked: wantsNotifications) { [weak self] in self?.wantsNotifications = $0 })
+                options.append(
+                    notifications == .denied
+                        ? option(
+                            title, detail + " Notifications are switched off for Nightcap in System Settings.",
+                            button: Look.button("Open Notification Settings…", .regular) {
+                                let pane =
+                                    "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+                                    + "?id=\(Bundle.main.bundleIdentifier!)"
+                                NSWorkspace.shared.open(URL(string: pane)!)
+                            })
+                        : option(title, detail, ticked: wantsNotifications) { [weak self] in
+                            self?.wantsNotifications = $0
+                        })
             }
             if let opensAtLogin {
-                options.append(option(
-                    "Open at login", "So your rules apply from the start. Nightcap lives in the menu bar, with no Dock icon.",
-                    ticked: opensAtLogin) { [weak self] in self?.opensAtLogin = $0 })
+                options.append(
+                    option(
+                        "Open at login",
+                        "So your rules apply from the start. Nightcap lives in the menu bar, with no Dock icon.",
+                        ticked: opensAtLogin
+                    ) { [weak self] in self?.opensAtLogin = $0 })
             }
             return [rows(options)]
         case .ready:
@@ -557,32 +578,47 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func websitesControls() -> [NSView] {
         switch page {
         case .ask:
-            return [rows([
-                fact(symbol: "globe", "Safari, Chrome, Firefox and more.", "Also Edge, Arc, Brave, Dia, Zen and Orion, in the front tab."),
-                fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
-                fact(symbol: "lock", "Only the site’s name.", "Like youtube.com; the rest of the address is dropped, and the icon comes from the site."),
-            ])]
+            return [
+                rows([
+                    fact(
+                        symbol: "globe", "Safari, Chrome, Firefox and more.",
+                        "Also Edge, Arc, Brave, Dia, Zen and Orion, in the front tab."),
+                    fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
+                    fact(
+                        symbol: "lock", "Only the site’s name.",
+                        "Like youtube.com; the rest of the address is dropped, and the icon comes from the site."),
+                ])
+            ]
         case .accessibility:
             let granted = accessibilityGranted()
             let asked = waitingForAccessibility || granted
-            return [rows([
-                progress(asked ? .ok : .current, "Click Allow Accessibility, then Open System Settings when macOS asks."),
-                progress(
-                    granted ? .ok : asked ? .current : .todo,
-                    "Switch Nightcap on under Privacy & Security › Accessibility."),
-                progress(granted ? .ok : .todo, "That’s all. This step moves on by itself the moment Nightcap is allowed."),
-            ])]
+            return [
+                rows([
+                    progress(
+                        asked ? .ok : .current,
+                        "Click Allow Accessibility, then Open System Settings when macOS asks."),
+                    progress(
+                        granted ? .ok : asked ? .current : .todo,
+                        "Switch Nightcap on under Privacy & Security › Accessibility."),
+                    progress(
+                        granted ? .ok : .todo,
+                        "That’s all. This step moves on by itself the moment Nightcap is allowed."),
+                ])
+            ]
         case .sites:
             // The suggestions are the same for everyone, so asking for their icons tells the
             // sites nothing about the user's browsing (ADR-0019).
             icons.ask(Self.suggestedSites.map(\.host))
-            return [grid(sites.map { site in
-                GridCell(site, ticked: site.ruled != nil || tickedSites.contains(site.id)) { [weak self] in
-                    guard let self else { return }
-                    if tickedSites.remove(site.id) == nil { tickedSites.insert(site.id) }
-                    draw()
-                }
-            })]
+            return [
+                grid(
+                    sites.map { site in
+                        GridCell(site, ticked: site.ruled != nil || tickedSites.contains(site.id)) { [weak self] in
+                            guard let self else { return }
+                            if tickedSites.remove(site.id) == nil { tickedSites.insert(site.id) }
+                            draw()
+                        }
+                    })
+            ]
         }
     }
 
@@ -594,9 +630,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
         glyph.contentTintColor = .nightcapSecondary
         glyph.widthAnchor.constraint(equalToConstant: 18).isActive = true
         let text = NSMutableAttributedString(
-            attributedString: Look.label("\(lead) \(rest)", size: 12, weight: .regular, color: .labelColor, width: Self.textWidth - 60)
-                .attributedStringValue)
-        text.addAttribute(.font, value: NSFont.systemFont(ofSize: 12, weight: .semibold), range: NSRange(location: 0, length: (lead as NSString).length))
+            attributedString: Look.label(
+                "\(lead) \(rest)", size: 12, weight: .regular, color: .labelColor, width: Self.textWidth - 60
+            )
+            .attributedStringValue)
+        text.addAttribute(
+            .font, value: NSFont.systemFont(ofSize: 12, weight: .semibold),
+            range: NSRange(location: 0, length: (lead as NSString).length))
         let label = NSTextField(labelWithAttributedString: text)
         let line = NSStackView(views: [glyph, label])
         line.orientation = .horizontal
@@ -608,7 +648,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func progress(_ mark: Look.Mark, _ text: String) -> NSView {
         let line = NSStackView(views: [
             Look.mark(mark),
-            Look.label(text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor, width: Self.textWidth - 60),
+            Look.label(
+                text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor,
+                width: Self.textWidth - 60),
         ])
         line.orientation = .horizontal
         line.spacing = 10
@@ -642,10 +684,10 @@ final class Onboarding: NSObject, NSWindowDelegate {
         panel.message = "Choose an app that needs true colour."
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .OK, let url = panel.url,
-                  let bundleId = Bundle(url: url)?.bundleIdentifier
+                let bundleId = Bundle(url: url)?.bundleIdentifier
             else { return }
             if !apps.contains(where: { $0.id == bundleId }),
-               let item = GridItem(app: bundleId, kind: "Chosen by you", ruled: nil)
+                let item = GridItem(app: bundleId, kind: "Chosen by you", ruled: nil)
             {
                 apps.append(item)
             }
@@ -696,7 +738,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// Says so while the screen shows the strength, which it does only during a drag.
     private func showPreview(_ previewing: Bool) {
         guard let previewNote else { return }
-        let text = previewing ? "Your screen is showing this strength now." : "Drag the slider to try it on your screen."
+        let text =
+            previewing ? "Your screen is showing this strength now." : "Drag the slider to try it on your screen."
         let replacement = Look.label(
             text, size: 12, weight: .regular, color: previewing ? .nightcapMoon : .nightcapSecondary,
             width: Self.textWidth)
@@ -731,7 +774,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
         hours.spacing = 6
         return [
             rows([
-                radioRow("On a schedule: sunset to sunrise", detail: Look.secondary("Follows your location", width: 200)) {
+                radioRow(
+                    "On a schedule: sunset to sunrise", detail: Look.secondary("Follows your location", width: 200)
+                ) {
                     .sunsetToSunrise
                 },
                 radioRow("On a schedule: custom hours", detail: hours, custom),
@@ -857,14 +902,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .alreadySetUp:
             return (
                 eyebrow, "You already use Night Shift",
-                "Nightcap found your Night Shift settings. Keep them as they are and go straight to Nightcap, or look over them first."
+                "Nightcap found your Night Shift settings. "
+                    + "Keep them as they are and go straight to Nightcap, or look over them first."
             )
         case .strength:
             return reviewing
                 ? (eyebrow, "How warm Night Shift gets", "This is your current strength. Drag to change it.")
                 : (
                     eyebrow, "This is Night Shift",
-                    "Night Shift is part of macOS. It shifts your screen toward warmer colours, which many people prefer in the evening. Choose how warm it gets."
+                    "Night Shift is part of macOS. "
+                        + "It shifts your screen toward warmer colours, which many people prefer in the evening. "
+                        + "Choose how warm it gets."
                 )
         case .schedule:
             return (
@@ -875,15 +923,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
             return (
                 eyebrow, "Night Shift, with exceptions",
                 apps.isEmpty
-                    ? "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you choose is in front, and gives it back when you leave."
-                    : "Warm is wrong for photos, video and design. Nightcap turns Night Shift off while an app you tick is in front, and gives it back when you leave. These are on your Mac."
+                    ? "Warm is wrong for photos, video and design. "
+                        + "Nightcap turns Night Shift off while an app you choose is in front, "
+                        + "and gives it back when you leave."
+                    : "Warm is wrong for photos, video and design. "
+                        + "Nightcap turns Night Shift off while an app you tick is in front, "
+                        + "and gives it back when you leave. These are on your Mac."
             )
         case .websites:
             switch page {
             case .ask:
                 return (
                     eyebrow, "Websites too?",
-                    "Nightcap can do the same for websites: Night Shift goes off while a site you choose is in the front tab."
+                    "Nightcap can do the same for websites: "
+                        + "Night Shift goes off while a site you choose is in the front tab."
                 )
             case .accessibility:
                 return (
@@ -901,7 +954,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .ready:
             return (
                 eyebrow, "Nightcap is ready",
-                "It lives in the menu bar, under the moon. Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose. You can change any of this later in Settings, along with the shortcut.")
+                "It lives in the menu bar, under the moon. "
+                    + "Its menu turns Night Shift on or off, everywhere or just in the app in front, "
+                    + "for as long as you choose. "
+                    + "You can change any of this later in Settings, along with the shortcut."
+            )
         }
     }
 

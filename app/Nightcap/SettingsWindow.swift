@@ -237,67 +237,80 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
         Look.attach(toggle) { [choose] in choose(websites.command) }
-        var websitesDetail = "Also keep Night Shift off, or on, on the websites you choose, in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion. Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, and asks the site for its icon."
+        var websitesDetail =
+            "Also keep Night Shift off, or on, on the websites you choose, "
+            + "in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion. "
+            + "Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, "
+            + "and asks the site for its icon."
         if websites.locked { websitesDetail += " Set in your config." }
         // Accessibility goes unmentioned while website checking doesn't need it.
         let accessibility = check(.accessibility).flatMap { $0.state == .off ? nil : $0 }
 
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         return pane([
-            block("Websites", [
-                cell(row(title: "Check websites", detail: websitesDetail, accessory: toggle), accessibility),
-            ]),
-            block("Night Shift", [
-                cell(
-                    row(
-                        title: "Schedule and strength",
-                        detail: "Kept by macOS. The menu’s slider sets the strength, and your config can set both.",
-                        accessory: Look.button("Open Night Shift Settings…", .regular) {
-                            let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
-                            NSWorkspace.shared.open(URL(string: pane)!)
-                        }),
-                    check(.nightShift)),
-                cell(
-                    row(
-                        title: "Shortcut",
-                        detail: "Tap it to turn Night Shift on or off. Hold it to see true colour until you let go.",
-                        accessory: KeyboardShortcuts.RecorderCocoa(for: .nightShift)),
-                    nil),
-            ]),
-            block("Notifications", [
-                cell(
-                    row(
-                        title: nil,
-                        detail: "Nightcap tells you when a change made outside it overrides one of your rules.",
-                        accessory: nil),
-                    check(.notifications)),
-            ]),
-            block("Nightcap", openAtLogin(settings) + [
-                cell(
-                    row(
-                        title: "Tour",
-                        detail: "A rule at work, the peek and the menu, in about a minute.",
-                        accessory: Look.button("Take the Tour", .regular) { [takeTour] in takeTour() }),
-                    nil),
-                cell(
-                    row(
-                        title: "Version \(version)",
-                        detail: checkForUpdates == nil
-                            ? "Updates come from your installer."
-                            : "Checks for updates once a day and installs them when you quit.",
-                        accessory: checkForUpdates.map { update in
-                            Look.button("Check for Updates…", .regular, update)
-                        }),
-                    nil),
-                cell(
-                    row(
-                        title: "Support Nightcap",
-                        detail: "It’s free and open source. If it helps you, you can sponsor it on GitHub.",
-                        accessory: Look.button("Sponsor…", .regular) {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/choco")!)
-                        }),
-                    nil),
-            ]),
+            block(
+                "Websites",
+                [
+                    cell(row(title: "Check websites", detail: websitesDetail, accessory: toggle), accessibility)
+                ]),
+            block(
+                "Night Shift",
+                [
+                    cell(
+                        row(
+                            title: "Schedule and strength",
+                            detail: "Kept by macOS. The menu’s slider sets the strength, and your config can set both.",
+                            accessory: Look.button("Open Night Shift Settings…", .regular) {
+                                let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
+                                NSWorkspace.shared.open(URL(string: pane)!)
+                            }),
+                        check(.nightShift)),
+                    cell(
+                        row(
+                            title: "Shortcut",
+                            detail:
+                                "Tap it to turn Night Shift on or off. Hold it to see true colour until you let go.",
+                            accessory: KeyboardShortcuts.RecorderCocoa(for: .nightShift)),
+                        nil),
+                ]),
+            block(
+                "Notifications",
+                [
+                    cell(
+                        row(
+                            title: nil,
+                            detail: "Nightcap tells you when a change made outside it overrides one of your rules.",
+                            accessory: nil),
+                        check(.notifications))
+                ]),
+            block(
+                "Nightcap",
+                openAtLogin(settings) + [
+                    cell(
+                        row(
+                            title: "Tour",
+                            detail: "A rule at work, the peek and the menu, in about a minute.",
+                            accessory: Look.button("Take the Tour", .regular) { [takeTour] in takeTour() }),
+                        nil),
+                    cell(
+                        row(
+                            title: "Version \(version)",
+                            detail: checkForUpdates == nil
+                                ? "Updates come from your installer."
+                                : "Checks for updates once a day and installs them when you quit.",
+                            accessory: checkForUpdates.map { update in
+                                Look.button("Check for Updates…", .regular, update)
+                            }),
+                        nil),
+                    cell(
+                        row(
+                            title: "Support Nightcap",
+                            detail: "It’s free and open source. If it helps you, you can sponsor it on GitHub.",
+                            accessory: Look.button("Sponsor…", .regular) {
+                                NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/choco")!)
+                            }),
+                        nil),
+                ]),
         ])
     }
 
@@ -381,7 +394,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let action = rule.action.map { action in
             Look.button(action.title, .small) { [choose] in choose(action.command) }
         }
-        let row = NSStackView(views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [action].compactMap { $0 })
+        let row = NSStackView(
+            views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [action].compactMap { $0 })
         row.orientation = .horizontal
         row.distribution = .fill
         row.alignment = .centerY
@@ -453,7 +467,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         panel.accessoryView = Look.padded(says, top: 8, bottom: 8)
         panel.isAccessoryViewDisclosed = true
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier else { return }
+            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier else {
+                return
+            }
             self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
         }
     }
@@ -503,7 +519,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         alert.beginSheetModal(for: window) { [weak self] response in
             NotificationCenter.default.removeObserver(typing)
             guard response == .alertFirstButtonReturn,
-                  let domain = normalizeDomain(text: field.stringValue)
+                let domain = normalizeDomain(text: field.stringValue)
             else { return }
             self?.choose(.addRule(identity: .domain(domain), says: Self.says(says)))
         }

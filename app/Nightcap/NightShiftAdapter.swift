@@ -41,7 +41,7 @@ final class NightShiftAdapter {
             "setStatusNotificationBlock:": "v24@0:8@?16",
         ],
         "BrightnessSystemClient": [
-            "copyPropertyForKey:": "@24@0:8@16",
+            "copyPropertyForKey:": "@24@0:8@16"
         ],
     ]
     /// Checked apart from the rest: without them Night Shift still works, with no strength to
@@ -100,7 +100,11 @@ final class NightShiftAdapter {
                 let method = class_getInstanceMethod(found, NSSelectorFromString(name))
                 let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
                 guard encoding == expected else {
-                    log.fault("\(className, privacy: .public).\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public)")
+                    log.fault(
+                        """
+                        \(className, privacy: .public).\(name, privacy: .public) is \
+                        \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public)
+                        """)
                     return nil
                 }
             }
@@ -109,14 +113,21 @@ final class NightShiftAdapter {
         client = classes["CBBlueLightClient"]!.init()
         systemClient = classes["BrightnessSystemClient"]!.init()
         getStatus = unsafeBitCast(client.method(for: NSSelectorFromString("getBlueLightStatus:")), to: GetStatus.self)
-        setEnabledImplementation = unsafeBitCast(client.method(for: NSSelectorFromString("setEnabled:")), to: SetEnabled.self)
-        copyProperty = unsafeBitCast(systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
+        setEnabledImplementation = unsafeBitCast(
+            client.method(for: NSSelectorFromString("setEnabled:")), to: SetEnabled.self)
+        copyProperty = unsafeBitCast(
+            systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
         let found = { (encodings: [String: String], what: String, className: String) in
             encodings.allSatisfy { name, expected in
                 let method = class_getInstanceMethod(classes[className]!, NSSelectorFromString(name))
                 let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
                 if encoding != expected {
-                    log.fault("\(className, privacy: .public).\(name, privacy: .public) is \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \(what, privacy: .public) can't be set")
+                    log.fault(
+                        """
+                        \(className, privacy: .public).\(name, privacy: .public) is \
+                        \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \
+                        \(what, privacy: .public) can't be set
+                        """)
                 }
                 return encoding == expected
             }
@@ -124,18 +135,25 @@ final class NightShiftAdapter {
         let strengthFound = found(Self.strengthEncodings, "the strength", "CBBlueLightClient")
         let scheduleFound = found(Self.scheduleEncodings, "the schedule", "CBBlueLightClient")
         let peekFound = found(Self.peekEncodings, "the peek", "BrightnessSystemClient")
-        getStrength = strengthFound
+        getStrength =
+            strengthFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self) : nil
-        setStrengthImplementation = strengthFound
+        setStrengthImplementation =
+            strengthFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setStrength:commit:")), to: SetStrength.self) : nil
-        setMode = scheduleFound
+        setMode =
+            scheduleFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setMode:")), to: SetMode.self) : nil
-        setScheduleImplementation = scheduleFound
+        setScheduleImplementation =
+            scheduleFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setSchedule:")), to: SetSchedule.self) : nil
-        setProperty = peekFound
-            ? unsafeBitCast(systemClient.method(for: NSSelectorFromString("setProperty:forKey:")), to: SetProperty.self) : nil
+        setProperty =
+            peekFound
+            ? unsafeBitCast(systemClient.method(for: NSSelectorFromString("setProperty:forKey:")), to: SetProperty.self)
+            : nil
 
-        let setBlock = unsafeBitCast(client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
+        let setBlock = unsafeBitCast(
+            client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
         // CoreBrightness calls this on one of its own queues, often several times per change.
         setBlock(client, NSSelectorFromString("setStatusNotificationBlock:")) { [weak self] in
             DispatchQueue.main.async {
@@ -153,7 +171,7 @@ final class NightShiftAdapter {
         defer { raw.deallocate() }
         raw.initializeMemory(as: UInt8.self, repeating: 0, count: Self.statusSize)
         guard getStatus(client, NSSelectorFromString("getBlueLightStatus:"), raw),
-              raw.load(fromByteOffset: Self.availableOffset, as: Bool.self)
+            raw.load(fromByteOffset: Self.availableOffset, as: Bool.self)
         else {
             log.error("CoreBrightness didn't report a usable status")
             return nil
@@ -167,7 +185,7 @@ final class NightShiftAdapter {
         case 2:
             // CoreBrightness keeps the custom hours in every mode; only mode 2 uses them.
             guard let from = Self.timeOfDay(int(Self.fromHourOffset), int(Self.fromMinuteOffset)),
-                  let to = Self.timeOfDay(int(Self.toHourOffset), int(Self.toMinuteOffset))
+                let to = Self.timeOfDay(int(Self.toHourOffset), int(Self.toMinuteOffset))
             else {
                 log.error("CoreBrightness reported custom hours out of range")
                 return nil
@@ -188,8 +206,9 @@ final class NightShiftAdapter {
     /// is off. The status struct leaves it out, so it comes from the dictionary behind it.
     private var sunScheduleSetAside: Bool {
         let selector = NSSelectorFromString("copyPropertyForKey:")
-        guard let status = copyProperty(systemClient, selector, "CBBlueReductionStatus")?
-            .takeRetainedValue() as? [String: Any],
+        guard
+            let status = copyProperty(systemClient, selector, "CBBlueReductionStatus")?
+                .takeRetainedValue() as? [String: Any],
             let setAside = status["BlueLightReductionRevertToSunriseSunset"] as? Bool
         else {
             log.error("CoreBrightness reported no mark to go back to sunset to sunrise")
@@ -202,8 +221,9 @@ final class NightShiftAdapter {
     /// after, or nil when it reports none.
     var sunTimes: SunTimes? {
         let selector = NSSelectorFromString("copyPropertyForKey:")
-        guard let schedule = copyProperty(systemClient, selector, "BlueLightSunSchedule")?
-            .takeRetainedValue() as? [String: Any]
+        guard
+            let schedule = copyProperty(systemClient, selector, "BlueLightSunSchedule")?
+                .takeRetainedValue() as? [String: Any]
         else {
             log.error("CoreBrightness reported no sun schedule")
             return nil
@@ -265,7 +285,8 @@ final class NightShiftAdapter {
     }
 
     private var tintFactor: Double? {
-        let value = copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), "BlueLightReductionFactor")?
+        let value =
+            copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), "BlueLightReductionFactor")?
             .takeRetainedValue() as? [String: Any]
         return (value?["BlueLightReductionFactorValue"] as? NSNumber)?.doubleValue
     }
@@ -275,7 +296,8 @@ final class NightShiftAdapter {
         let factor: NSDictionary = [
             "BlueLightReductionFactorValue": value, "BlueLightReductionFactorFadePeriod": fade, "ForceUpdate": true,
         ]
-        guard setProperty(systemClient, NSSelectorFromString("setProperty:forKey:"), factor, "BlueLightReductionFactor") else {
+        guard setProperty(systemClient, NSSelectorFromString("setProperty:forKey:"), factor, "BlueLightReductionFactor")
+        else {
             log.error("CoreBrightness refused the tint factor \(value)")
             return false
         }

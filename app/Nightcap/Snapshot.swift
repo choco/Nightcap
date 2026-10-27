@@ -50,10 +50,11 @@ enum Snapshot {
             forNow: [
                 SettingsLayers(
                     place: .app("com.apple.mail"), label: "Night Shift off until 22:00",
-                    action: RuleAction(title: "End", command: .reset(.app("com.apple.mail")))),
+                    action: RuleAction(title: "End", command: .reset(.app("com.apple.mail"))))
             ])
         // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
-        let icons = SiteIcons(directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
+        let icons = SiteIcons(
+            directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
             current: { settings }, icons: icons, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
             export: { _ in "" }, takeTour: {}, onClose: {})
@@ -70,9 +71,11 @@ enum Snapshot {
         let steps = { (nightShift: OnboardingNightShift) in
             Onboarding(
                 steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
-                rules: [SettingsRule(
-                    identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
-                    action: nil)],
+                rules: [
+                    SettingsRule(
+                        identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
+                        action: nil)
+                ],
                 icons: icons,
                 sun: Sun(
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
@@ -144,10 +147,11 @@ enum Snapshot {
             NSApp.appearance = NSAppearance(named: appearance)
             for state in tourStates {
                 let url = URL(fileURLWithPath: folder).appendingPathComponent("app-tour-\(state.name)-\(name).png")
-                guard let png = tour.snapshot(
-                    state.step, front: state.front, ruled: state.ruled, returned: state.returned,
-                    snoozed: state.snoozed, ruleBack: state.ruleBack, siteRuled: state.siteRuled,
-                    siteLeft: state.siteLeft)
+                guard
+                    let png = tour.snapshot(
+                        state.step, front: state.front, ruled: state.ruled, returned: state.returned,
+                        snoozed: state.snoozed, ruleBack: state.ruleBack, siteRuled: state.siteRuled,
+                        siteLeft: state.siteLeft)
                 else {
                     fatalError("couldn't render the tour at \(state.name)")
                 }
@@ -168,7 +172,8 @@ enum Snapshot {
                 }
                 backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
                 try! bitmap.representation(using: .png, properties: [:])!
-                    .write(to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
+                    .write(
+                        to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
             }
         }
         for icon in [MenuIcon.on, .off, .forcedOff] {
@@ -202,8 +207,10 @@ enum Snapshot {
                 x: size.width / 2 + StatusMenu.dotOffset.x * scale,
                 y: size.height / 2 + StatusMenu.dotOffset.y * scale)
             NSColor.systemOrange.setFill()
-            NSBezierPath(ovalIn: NSRect(
-                x: centre.x - diameter / 2, y: centre.y - diameter / 2, width: diameter, height: diameter)).fill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x: centre.x - diameter / 2, y: centre.y - diameter / 2, width: diameter, height: diameter)
+            ).fill()
         }
         let warning = StatusMenu.warning!
         warning.draw(in: NSRect(x: 0, y: 0, width: warning.size.width * 3, height: warning.size.height * 3))

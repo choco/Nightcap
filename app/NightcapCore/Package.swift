@@ -8,7 +8,7 @@ let package = Package(
     name: "NightcapCore",
     platforms: [.macOS("15.0")],
     products: [
-        .library(name: "NightcapCore", targets: ["NightcapCore"]),
+        .library(name: "NightcapCore", targets: ["NightcapCore"])
     ],
     targets: [
         .binaryTarget(name: "NightcapCoreFFI", path: "NightcapCoreFFI.xcframework"),

@@ -45,8 +45,11 @@ enum StageArt {
         let (start, end, sunset): (TimeOfDay, TimeOfDay, Bool) =
             switch schedule {
             case .custom(let from, let to): (from, to, false)
-            default: (sun.map { time(of: $0.sunset) } ?? TimeOfDay(hour: 19, minute: 0),
-                      sun.map { time(of: $0.sunrise) } ?? TimeOfDay(hour: 7, minute: 0), true)
+            default:
+                (
+                    sun.map { time(of: $0.sunset) } ?? TimeOfDay(hour: 19, minute: 0),
+                    sun.map { time(of: $0.sunrise) } ?? TimeOfDay(hour: 7, minute: 0), true
+                )
             }
         let now = time(of: Date())
         let on = covers(start, end, now)
@@ -106,14 +109,17 @@ enum StageArt {
             Paint.text("Display", .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 14, y: 12))
             let slider = NSRect(x: 14, y: 34, width: 292, height: 20)
             Paint.rounded(slider, 10, .nightcapTile)
-            Paint.rounded(NSRect(x: slider.minX, y: slider.minY, width: slider.width * 0.68, height: slider.height), 10, .nightcapControl)
+            Paint.rounded(
+                NSRect(x: slider.minX, y: slider.minY, width: slider.width * 0.68, height: slider.height), 10,
+                .nightcapControl)
             Paint.rounded(pill, 12, .controlAccentColor)
             Paint.glyph("moon.fill", 10, .white, centredAt: NSPoint(x: pill.minX + 16, y: pill.midY))
             Paint.text("Night Shift", .systemFont(ofSize: 12), .white, at: NSPoint(x: pill.minX + 26, y: pill.minY + 4))
             for (index, name) in ["True Tone", "Dark Mode"].enumerated() {
                 let other = NSRect(x: 128 + CGFloat(index) * 92, y: pill.minY, width: 84, height: 24)
                 Paint.rounded(other, 12, .nightcapTile)
-                Paint.text(name, .systemFont(ofSize: 12), .nightcapSecondary, centredAt: NSPoint(x: other.midX, y: other.midY))
+                Paint.text(
+                    name, .systemFont(ofSize: 12), .nightcapSecondary, centredAt: NSPoint(x: other.midX, y: other.midY))
             }
             Paint.text(
                 "Control Center › Display, or the top of Nightcap’s menu", .systemFont(ofSize: 12), .labelColor,
@@ -202,11 +208,13 @@ enum StageArt {
             Paint.rounded(selected, 5, .controlAccentColor)
             Paint.text("Privacy & Security", .systemFont(ofSize: 10), .white, at: NSPoint(x: 16, y: 60))
             Paint.rounded(NSRect(x: 16, y: 84, width: 74, height: 8), 4, .nightcapTile)
-            Paint.text("‹ Accessibility", .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 152, y: 12))
+            Paint.text(
+                "‹ Accessibility", .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 152, y: 12))
             let list = NSRect(x: 152, y: 38, width: 312, height: 74)
             Paint.rounded(list, 7, .clear, stroke: .nightcapSeparator)
             NSApp.applicationIconImage.draw(in: NSRect(x: list.minX + 6, y: list.minY + 6, width: 26, height: 26))
-            Paint.text("Nightcap", .systemFont(ofSize: 12), .labelColor, at: NSPoint(x: list.minX + 38, y: list.minY + 11))
+            Paint.text(
+                "Nightcap", .systemFont(ofSize: 12), .labelColor, at: NSPoint(x: list.minX + 38, y: list.minY + 11))
             Paint.toggle(NSRect(x: list.maxX - 40, y: list.minY + 11, width: 28, height: 16), on: granted)
             NSColor.nightcapSeparator.setFill()
             NSRect(x: list.minX, y: list.midY, width: list.width, height: 0.5).fill()
@@ -219,8 +227,12 @@ enum StageArt {
     /// Safari with an ordinary tab in front, then YouTube, in true colour.
     private static func sites(strength: UInt8) -> NSView {
         let screen = MiniScreen(NSSize(width: 360, height: 150), app: "Safari", otherApp: nil, forcesOff: true)
-        let browser = Drawn(NSSize(width: 320, height: 120)) { bounds in Paint.browser(bounds, tab: "Inbox", address: "mail.example.com", video: false) }
-        let youtube = Drawn(NSSize(width: 320, height: 120)) { bounds in Paint.browser(bounds, tab: "YouTube", address: "youtube.com", video: true) }
+        let browser = Drawn(NSSize(width: 320, height: 120)) { bounds in
+            Paint.browser(bounds, tab: "Inbox", address: "mail.example.com", video: false)
+        }
+        let youtube = Drawn(NSSize(width: 320, height: 120)) { bounds in
+            Paint.browser(bounds, tab: "YouTube", address: "youtube.com", video: true)
+        }
         screen.add(browser, at: NSPoint(x: 20, y: 22))
         screen.add(youtube, at: NSPoint(x: 20, y: 22))
         Loop.middle(youtube)
@@ -236,8 +248,12 @@ enum StageArt {
         let banner = Drawn(NSSize(width: 226, height: 46)) { bounds in
             Paint.lifted { Paint.rounded(bounds, 12, NSColor(white: 0.97, alpha: 0.97)) }
             NSApp.applicationIconImage.draw(in: NSRect(x: 6, y: 9, width: 28, height: 28))
-            Paint.text("Night Shift turned on outside Nightcap", .systemFont(ofSize: 9, weight: .semibold), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 9))
-            Paint.text("Snoozed the \(app) rule until 07:00.", .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 23))
+            Paint.text(
+                "Night Shift turned on outside Nightcap", .systemFont(ofSize: 9, weight: .semibold),
+                NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 9))
+            Paint.text(
+                "Snoozed the \(app) rule until 07:00.", .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1),
+                at: NSPoint(x: 38, y: 23))
         }
         screen.add(banner, at: NSPoint(x: 66, y: 22))
         Loop.fades(banner, values: [0, 0, 1, 1, 0, 0], times: [0, 0.12, 0.22, 0.8, 0.92, 1], duration: 5)
@@ -249,9 +265,12 @@ enum StageArt {
             Paint.text("Finder", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 14, y: 7))
             Paint.text("File", font, .labelColor, at: NSPoint(x: 66, y: 7))
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 98, y: 7))
-            Paint.template("MenuBarOff", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
+            Paint.template(
+                "MenuBarOff", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("Tue 08:30", font, .labelColor, at: NSPoint(x: moon.maxX + 6, y: 7))
-            Paint.text("Log in, and the moon is already there.", .systemFont(ofSize: 11), .nightcapSecondary, centredAt: NSPoint(x: 150, y: 48))
+            Paint.text(
+                "Log in, and the moon is already there.", .systemFont(ofSize: 11), .nightcapSecondary,
+                centredAt: NSPoint(x: 150, y: 48))
         }
         bar.addSubview(Ring(around: moon, radius: 5))
         return side(by: left, bar)
@@ -269,7 +288,8 @@ enum StageArt {
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 88, y: 7))
             let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
             Paint.rounded(moon, 10, Paint.highlight)
-            Paint.template("MenuBarOn", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
+            Paint.template(
+                "MenuBarOn", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
             // A status item's menu opens under it, to the right, unless that would leave the
             // screen, as it would this close to the edge: then it stays inside.
@@ -290,7 +310,8 @@ enum StageArt {
             }
             // The Night Shift item: the check, the moon and the shortcut sit across its lines.
             Paint.glyph("checkmark", 9, .labelColor, centredAt: NSPoint(x: check, y: menu.minY + 25))
-            Paint.template("MenuBarOn", .labelColor, in: NSRect(x: image - 6.5, y: menu.minY + 18.5, width: 13, height: 13))
+            Paint.template(
+                "MenuBarOn", .labelColor, in: NSRect(x: image - 6.5, y: menu.minY + 18.5, width: 13, height: 13))
             line("Night Shift", item, .labelColor, title, 13.5)
             let reason = StatusMenu.wrapped("Following the schedule until 07:00").split(separator: "\n")
             for (index, text) in reason.enumerated() {
@@ -302,13 +323,19 @@ enum StageArt {
             // The strength, as a slider in a menu draws: grey, with a white knob.
             let strength: CGFloat = 0.6
             let y = menu.minY + 58
-            Paint.template(StatusMenu.sun(large: false), .nightcapSecondary, in: NSRect(x: title, y: y - 4.5, width: 9, height: 9))
-            Paint.template(StatusMenu.sun(large: true), .nightcapSecondary, in: NSRect(x: menu.maxX - 26, y: y - 6.5, width: 13, height: 13))
+            Paint.template(
+                StatusMenu.sun(large: false), .nightcapSecondary, in: NSRect(x: title, y: y - 4.5, width: 9, height: 9))
+            Paint.template(
+                StatusMenu.sun(large: true), .nightcapSecondary,
+                in: NSRect(x: menu.maxX - 26, y: y - 6.5, width: 13, height: 13))
             let track = NSRect(x: menu.minX + 52, y: y - 1.5, width: menu.width - 83, height: 3)
             let knob = track.minX + 7.5 + (track.width - 15) * strength
             Paint.rounded(track, 1.5, NSColor.labelColor.withAlphaComponent(0.15))
-            Paint.rounded(NSRect(x: track.minX, y: track.minY, width: knob - track.minX, height: 3), 1.5, NSColor.labelColor.withAlphaComponent(0.45))
-            Paint.rounded(NSRect(x: knob - 7.5, y: y - 5.5, width: 15, height: 11), 5.5, .white, stroke: .nightcapControlBorder)
+            Paint.rounded(
+                NSRect(x: track.minX, y: track.minY, width: knob - track.minX, height: 3), 1.5,
+                NSColor.labelColor.withAlphaComponent(0.45))
+            Paint.rounded(
+                NSRect(x: knob - 7.5, y: y - 5.5, width: 15, height: 11), 5.5, .white, stroke: .nightcapControlBorder)
             Paint.glyph("timer", 10, .labelColor, centredAt: NSPoint(x: image, y: menu.minY + 79))
             line("Turn Off", item, .labelColor, title, 79)
             chevron(79)
@@ -316,7 +343,8 @@ enum StageArt {
             NSRect(x: menu.minX + 10, y: menu.minY + 94, width: menu.width - 20, height: 0.5).fill()
             if let mail = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail") {
                 NSWorkspace.shared.icon(forFile: mail.path).draw(
-                    in: NSRect(x: image - 7, y: menu.minY + 102, width: 14, height: 14), from: .zero, operation: .sourceOver,
+                    in: NSRect(x: image - 7, y: menu.minY + 102, width: 14, height: 14), from: .zero,
+                    operation: .sourceOver,
                     fraction: 1, respectFlipped: true, hints: nil)
             }
             line("Turn Off in Mail", item, .labelColor, title, 109)
@@ -381,7 +409,10 @@ enum StageArt {
 /// says.
 final class StrengthArt: NSView {
     var strength: UInt8 {
-        didSet { evening.needsDisplay = true; caption.needsDisplay = true }
+        didSet {
+            evening.needsDisplay = true
+            caption.needsDisplay = true
+        }
     }
     private let evening: Drawn
     private let caption: Drawn
@@ -416,7 +447,9 @@ final class StrengthArt: NSView {
         arrow.frame.origin = NSPoint(x: screen.width + 28, y: 59)
         addSubview(arrow)
         let dayCaption = Drawn(NSSize(width: screen.width, height: 16)) { bounds in
-            Paint.text("Daytime: true colour", .systemFont(ofSize: 11), .nightcapSecondary, centredAt: NSPoint(x: bounds.midX, y: 8))
+            Paint.text(
+                "Daytime: true colour", .systemFont(ofSize: 11), .nightcapSecondary,
+                centredAt: NSPoint(x: bounds.midX, y: 8))
         }
         dayCaption.frame.origin = NSPoint(x: 0, y: 146)
         caption.frame.origin = NSPoint(x: night.frame.minX, y: 146)
@@ -446,8 +479,9 @@ final class MiniScreen: NSView {
         layer?.cornerRadius = 8
         layer?.masksToBounds = true
         let backdrop = Drawn(size) { bounds in
-            NSGradient(starting: NSColor(srgbRed: 0.62, green: 0.72, blue: 0.88, alpha: 1),
-                       ending: NSColor(srgbRed: 0.78, green: 0.71, blue: 0.86, alpha: 1))?.draw(in: bounds, angle: -20)
+            NSGradient(
+                starting: NSColor(srgbRed: 0.62, green: 0.72, blue: 0.88, alpha: 1),
+                ending: NSColor(srgbRed: 0.78, green: 0.71, blue: 0.86, alpha: 1))?.draw(in: bounds, angle: -20)
         }
         addSubview(backdrop)
         let bar = Drawn(NSSize(width: size.width, height: 15)) { bounds in
@@ -653,12 +687,15 @@ enum Paint {
     }
 
     static func glyph(_ symbol: String, _ size: CGFloat, _ colour: NSColor, centredAt point: NSPoint) {
-        guard let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: size, weight: .regular).applying(.init(paletteColors: [colour])))
+        guard
+            let image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+                .withSymbolConfiguration(
+                    .init(pointSize: size, weight: .regular).applying(.init(paletteColors: [colour])))
         else { return }
-        image.draw(in: NSRect(
-            x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
-            width: image.size.width, height: image.size.height),
+        image.draw(
+            in: NSRect(
+                x: point.x - image.size.width / 2, y: point.y - image.size.height / 2,
+                width: image.size.width, height: image.size.height),
             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
@@ -682,8 +719,10 @@ enum Paint {
     static func trafficLights(at origin: NSPoint, size: CGFloat) {
         for (index, colour) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
             colour.withAlphaComponent(0.9).setFill()
-            NSBezierPath(ovalIn: NSRect(
-                x: origin.x + CGFloat(index) * (size + 4), y: origin.y, width: size, height: size)).fill()
+            NSBezierPath(
+                ovalIn: NSRect(
+                    x: origin.x + CGFloat(index) * (size + 4), y: origin.y, width: size, height: size)
+            ).fill()
         }
     }
 
@@ -692,7 +731,9 @@ enum Paint {
         rounded(rect, rect.height / 2, on ? NSColor.controlAccentColor.withAlphaComponent(alpha) : .nightcapTile)
         let knob = rect.height - 4
         let x = on ? rect.maxX - knob - 2 : rect.minX + 2
-        rounded(NSRect(x: x, y: rect.minY + 2, width: knob, height: knob), knob / 2, NSColor.white.withAlphaComponent(alpha))
+        rounded(
+            NSRect(x: x, y: rect.minY + 2, width: knob, height: knob), knob / 2, NSColor.white.withAlphaComponent(alpha)
+        )
     }
 
     /// A light window with lines of text, as a mini screen's windows have; screens stay light, as
@@ -705,7 +746,9 @@ enum Paint {
 
     static func page(_ bounds: NSRect) {
         window(bounds)
-        rounded(NSRect(x: 10, y: 10, width: bounds.width * 0.46, height: 5), 2.5, NSColor.systemBlue.withAlphaComponent(0.8))
+        rounded(
+            NSRect(x: 10, y: 10, width: bounds.width * 0.46, height: 5), 2.5, NSColor.systemBlue.withAlphaComponent(0.8)
+        )
         rounded(NSRect(x: 10, y: 22, width: bounds.width * 0.78, height: 5), 2.5, line)
         picture(NSRect(x: 10, y: 36, width: 84, height: 56), dark: false)
         rounded(NSRect(x: 104, y: 40, width: 72, height: 5), 2.5, line)
@@ -751,7 +794,9 @@ enum Paint {
         rounded(NSRect(x: 8, y: 4, width: 92, height: 18), 4, NSColor(white: 0.96, alpha: 1))
         let ink = NSColor(white: 0.11, alpha: 1)
         text(tab, .systemFont(ofSize: 8), ink, at: NSPoint(x: 14, y: 7))
-        text(address, .monospacedSystemFont(ofSize: 8, weight: .regular), NSColor(white: 0.37, alpha: 1), at: NSPoint(x: 8, y: 23))
+        text(
+            address, .monospacedSystemFont(ofSize: 8, weight: .regular), NSColor(white: 0.37, alpha: 1),
+            at: NSPoint(x: 8, y: 23))
         NSColor.white.setFill()
         NSRect(x: 0, y: 38, width: bounds.width, height: bounds.height - 38).fill()
         if video {

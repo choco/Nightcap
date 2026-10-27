@@ -20,7 +20,8 @@ final class SiteIcons {
     nonisolated private static let wanted = 32
 
     init(
-        directory: URL = URL.cachesDirectory.appending(path: Bundle.main.bundleIdentifier!).appending(path: "Site Icons"),
+        directory: URL = URL.cachesDirectory.appending(path: Bundle.main.bundleIdentifier!).appending(
+            path: "Site Icons"),
         online: Bool = true
     ) {
         self.directory = directory
@@ -87,7 +88,7 @@ final class SiteIcons {
     /// about before an app may reach it.
     nonisolated private static func isPublic(_ host: String) -> Bool {
         guard host.wholeMatch(of: /[a-z0-9-]+(\.[a-z0-9-]+)+/) != nil, host.wholeMatch(of: /[0-9.]+/) == nil,
-              let last = host.split(separator: ".").last
+            let last = host.split(separator: ".").last
         else { return false }
         return !["local", "lan", "home", "internal", "intranet", "corp", "localhost", "arpa"].contains(String(last))
     }
@@ -126,9 +127,9 @@ final class SiteIcons {
         candidates.append(home.appending(path: "favicon.ico"))
         for url in candidates {
             guard let (data, response) = try? await session.data(from: url),
-                  (response as? HTTPURLResponse)?.statusCode == 200,
-                  let image = NSImage(data: data), image.isValid,
-                  let png = png(image)
+                (response as? HTTPURLResponse)?.statusCode == 200,
+                let image = NSImage(data: data), image.isValid,
+                let png = png(image)
             else { continue }
             return png
         }
@@ -139,24 +140,28 @@ final class SiteIcons {
     /// the nearest at or above 32 pixels, an SVG, one of no stated size, then smaller ones.
     nonisolated private static func declaredIcons(in page: Data, at url: URL) -> [URL] {
         guard let document = try? XMLDocument(data: page, options: [.documentTidyHTML]) else { return [] }
-        let base = (try? document.nodes(forXPath: "//base/@href"))?.first?.stringValue
+        let base =
+            (try? document.nodes(forXPath: "//base/@href"))?.first?.stringValue
             .flatMap { URL(string: $0, relativeTo: url) } ?? url
         let links = (try? document.nodes(forXPath: "//link[@rel][@href]")) ?? []
         let ranked = links.compactMap { node -> (url: URL, rank: (Int, Int))? in
             guard let link = node as? XMLElement,
-                  let rel = link.attribute(forName: "rel")?.stringValue?.lowercased().split(separator: " "),
-                  let href = link.attribute(forName: "href")?.stringValue,
-                  let target = URL(string: href, relativeTo: base)?.absoluteURL, target.scheme == "https",
-                  let host = target.host()?.lowercased(), isPublic(host)
+                let rel = link.attribute(forName: "rel")?.stringValue?.lowercased().split(separator: " "),
+                let href = link.attribute(forName: "href")?.stringValue,
+                let target = URL(string: href, relativeTo: base)?.absoluteURL, target.scheme == "https",
+                let host = target.host()?.lowercased(), isPublic(host)
             else { return nil }
             let touch = rel.contains("apple-touch-icon") || rel.contains("apple-touch-icon-precomposed")
             guard touch || rel.contains("icon") else { return nil }
             let sizes = link.attribute(forName: "sizes")?.stringValue?.lowercased() ?? ""
             let size = sizes.split(separator: " ").compactMap { Int($0.split(separator: "x").first ?? "") }.max()
-            let svg = sizes == "any" || link.attribute(forName: "type")?.stringValue == "image/svg+xml"
+            let svg =
+                sizes == "any" || link.attribute(forName: "type")?.stringValue == "image/svg+xml"
                 || target.pathExtension.lowercased() == "svg"
             let fit =
-                if let size, size >= wanted { size } else if svg { 10_000 } else if let size { 30_000 - size } else { 20_000 }
+                if let size, size >= wanted { size } else if svg { 10_000 } else if let size { 30_000 - size } else {
+                    20_000
+                }
             return (target, (touch ? 1 : 0, fit))
         }
         return ranked.sorted { $0.rank < $1.rank }.map(\.url)
@@ -165,18 +170,20 @@ final class SiteIcons {
     /// The image fitted into a square of 32 points at 64 pixels.
     nonisolated private static func png(_ image: NSImage) -> Data? {
         let side: CGFloat = 32
-        guard let bitmap = NSBitmapImageRep(
-            bitmapDataPlanes: nil, pixelsWide: Int(side) * 2, pixelsHigh: Int(side) * 2, bitsPerSample: 8,
-            samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
-            bitsPerPixel: 0)
+        guard
+            let bitmap = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(side) * 2, pixelsHigh: Int(side) * 2, bitsPerSample: 8,
+                samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
+                bitsPerPixel: 0)
         else { return nil }
         bitmap.size = NSSize(width: side, height: side)
         let scale = side / max(image.size.width, image.size.height)
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: bitmap)
-        image.draw(in: NSRect(
-            x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height))
+        image.draw(
+            in: NSRect(
+                x: (side - size.width) / 2, y: (side - size.height) / 2, width: size.width, height: size.height))
         NSGraphicsContext.restoreGraphicsState()
         return bitmap.representation(using: .png, properties: [:])
     }

@@ -82,7 +82,9 @@ enum Look {
     }
 
     /// `content` inside the given margins, held by constraints.
-    static func padded(_ content: NSView, top: CGFloat, left: CGFloat = 14, bottom: CGFloat, right: CGFloat = 14) -> NSView {
+    static func padded(_ content: NSView, top: CGFloat, left: CGFloat = 14, bottom: CGFloat, right: CGFloat = 14)
+        -> NSView
+    {
         let box = NSView()
         content.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(content)
