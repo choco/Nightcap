@@ -470,7 +470,7 @@ final class Tour {
         var views: [NSView] = []
         for (index, (icon, name, meaning)) in rows.enumerated() {
             if index > 0 { views.append(Hairline()) }
-            let moon = NSImageView(image: StatusMenu.image(for: icon)!)
+            let moon = NSImageView(image: MenuArt.moon(for: icon)!)
             moon.contentTintColor = .labelColor
             moon.widthAnchor.constraint(equalToConstant: 16).isActive = true
             moon.heightAnchor.constraint(equalToConstant: 16).isActive = true

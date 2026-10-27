@@ -70,33 +70,28 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         if let button = item.button {
             dot.wantsLayer = true
             dot.layer?.backgroundColor = NSColor.systemOrange.cgColor
-            dot.layer?.cornerRadius = Self.dotSize / 2
+            dot.layer?.cornerRadius = MenuArt.dotSize / 2
             dot.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(dot)
             NSLayoutConstraint.activate([
-                dot.widthAnchor.constraint(equalToConstant: Self.dotSize),
-                dot.heightAnchor.constraint(equalToConstant: Self.dotSize),
-                dot.centerXAnchor.constraint(equalTo: button.centerXAnchor, constant: Self.dotOffset.x),
-                dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -Self.dotOffset.y),
+                dot.widthAnchor.constraint(equalToConstant: MenuArt.dotSize),
+                dot.heightAnchor.constraint(equalToConstant: MenuArt.dotSize),
+                dot.centerXAnchor.constraint(equalTo: button.centerXAnchor, constant: MenuArt.dotOffset.x),
+                dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -MenuArt.dotOffset.y),
             ])
         }
         refresh()
     }
 
-    static let dotSize: CGFloat = 5.5
     /// Where items' titles start, in the slider's view, which puts its small sun there as the
-    /// mockup does; and the widest a subtitle's line gets.
+    /// mockup does.
     private static let titleInset: CGFloat = 46
-    private static let subtitleWidth: CGFloat = 160
-    /// From the icon's centre to its top right corner, as in the mockup: clear of the forced
-    /// moon's "z", and inside the status item's square.
-    static let dotOffset = CGPoint(x: 9.2, y: 7.5)
 
     /// Redraws the icon, and the menu too while it's open and what it shows changed. A new
     /// strength alone moves the slider in place, since rebuilding the menu would end a drag.
     func refresh() {
         let snapshot = current()
-        let image = Self.image(for: snapshot.icon)
+        let image = MenuArt.moon(for: snapshot.icon)
         if snapshot.problemLine != nil, let description = image?.accessibilityDescription {
             image?.accessibilityDescription = "\(description), needs attention"
         }
@@ -229,57 +224,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         onClose()
     }
 
-    /// The mockup's moons, template images from the asset catalog.
-    static func image(for icon: MenuIcon) -> NSImage? {
-        let (name, description) =
-            switch icon {
-            case .on: ("MenuBarOn", "Night Shift on")
-            case .off: ("MenuBarOff", "Night Shift off")
-            case .forcedOff: ("MenuBarForcedOff", "Night Shift forced off")
-            case .unavailable: ("MenuBarOff", "Night Shift unavailable")
-            }
-        let image = NSImage(named: name)?.copy() as? NSImage
-        image?.accessibilityDescription = description
-        return image
-    }
-
-    /// The mockup's orange triangle, beside the problem line. Drawn rather than an SF Symbol,
-    /// which menus draw as a monochrome template whatever its colours. The "!" is cut out, so
-    /// it still shows when a highlighted item turns the image white.
-    static var warning: NSImage? {
-        let side: CGFloat = 14
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
-            // The mockup's 20-point geometry, scaled to the image.
-            let unit = side / 20
-            let point = { (x: CGFloat, y: CGFloat) in NSPoint(x: x * unit, y: y * unit) }
-            let triangle = NSBezierPath()
-            triangle.move(to: point(10, 1.8))
-            triangle.line(to: point(19, 17.6))
-            triangle.line(to: point(1, 17.6))
-            triangle.close()
-            triangle.lineJoinStyle = .round
-            triangle.lineWidth = 1.5 * unit
-            NSColor.systemOrange.setFill()
-            NSColor.systemOrange.setStroke()
-            triangle.fill()
-            triangle.stroke()
-            let bar = NSBezierPath()
-            bar.move(to: point(10, 7.2))
-            bar.line(to: point(10, 11.8))
-            bar.lineWidth = 2 * unit
-            bar.lineCapStyle = .round
-            NSGraphicsContext.current?.compositingOperation = .clear
-            bar.stroke()
-            NSBezierPath(
-                ovalIn: NSRect(
-                    x: (10 - 1.1) * unit, y: (14.6 - 1.1) * unit, width: 2.2 * unit, height: 2.2 * unit)
-            ).fill()
-            return true
-        }
-        image.accessibilityDescription = "Needs attention"
-        return image
-    }
-
     func menuNeedsUpdate(_ menu: NSMenu) {
         let snapshot = current()
         shown = snapshot
@@ -287,8 +231,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         if let problemLine = snapshot.problemLine {
             let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
-            line.subtitle = problemLine.subtitle.map(Self.wrapped)
-            line.image = Self.warning
+            line.subtitle = problemLine.subtitle.map(MenuArt.wrapped)
+            line.image = MenuArt.warning
             Self.showImage(line)
             menu.addItem(line)
             menu.addItem(.separator())
@@ -321,10 +265,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func nightShiftItem(_ menu: Menu) -> NSMenuItem {
         let state = menu.nightShift
         let item = NSMenuItem(title: "Night Shift", action: #selector(chose(_:)), keyEquivalent: "")
-        item.image = Self.image(for: menu.icon).map(Self.menuSized)
+        item.image = MenuArt.moon(for: menu.icon).map(Self.menuSized)
         Self.showImage(item)
         item.state = state.on ? .on : .off
-        item.subtitle = state.reason.map(Self.wrapped)
+        item.subtitle = state.reason.map(MenuArt.wrapped)
         if let command = state.command {
             item.representedObject = Choice(command)
         } else {
@@ -339,38 +283,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return item
     }
 
-    /// A subtitle broken into lines at words, at most `subtitleWidth` wide: a menu is as wide as
-    /// its longest line, and NSMenuItem never wraps one itself. Two lines break where they come
-    /// out most even, so neither ends on a lone word.
-    static func wrapped(_ text: String) -> String {
-        // The size macOS 27 sets subtitles in.
-        let font = NSFont.menuFont(ofSize: 12)
-        let width = { (line: String) in (line as NSString).size(withAttributes: [.font: font]).width }
-        guard width(text) > subtitleWidth else { return text }
-        let words = text.split(separator: " ").map(String.init)
-        let halves = (1..<words.count).map { split in
-            (words[..<split].joined(separator: " "), words[split...].joined(separator: " "))
-        }
-        if let even = halves.filter({ width($0.0) <= subtitleWidth && width($0.1) <= subtitleWidth })
-            .min(by: { max(width($0.0), width($0.1)) < max(width($1.0), width($1.1)) })
-        {
-            return "\(even.0)\n\(even.1)"
-        }
-        var lines: [String] = []
-        var line = ""
-        for word in text.split(separator: " ") {
-            let longer = line.isEmpty ? String(word) : "\(line) \(word)"
-            if !line.isEmpty, width(longer) > subtitleWidth {
-                lines.append(line)
-                line = String(word)
-            } else {
-                line = longer
-            }
-        }
-        lines.append(line)
-        return lines.joined(separator: "\n")
-    }
-
     /// macOS 27 hides menu items' images unless the system is set to show them, and an item
     /// whose image is hidden sets its title further left. Every item's shows, so the titles line
     /// up and the moon and the apps' icons say what the words don't.
@@ -382,38 +294,6 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private static func symbol(_ name: String) -> NSImage? {
         NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: NSFont.menuFont(ofSize: 0).pointSize, weight: .regular))
-    }
-
-    /// The mockup's suns at the slider's ends: a small one with four rays for less warmth, a
-    /// large one with eight for more. Templates, so they take the menu's text colour.
-    static func sun(large: Bool) -> NSImage {
-        let side: CGFloat = large ? 16 : 11
-        let image = NSImage(size: NSSize(width: side, height: side), flipped: true) { _ in
-            let unit = side / 24
-            let point = { (x: CGFloat, y: CGFloat) in NSPoint(x: x * unit, y: y * unit) }
-            let rays: [(CGFloat, CGFloat, CGFloat, CGFloat)] =
-                large
-                ? [
-                    (12, 2.5, 12, 5), (12, 19, 12, 21.5), (2.5, 12, 5, 12), (19, 12, 21.5, 12),
-                    (5.3, 5.3, 7.1, 7.1), (16.9, 16.9, 18.7, 18.7), (5.3, 18.7, 7.1, 16.9), (16.9, 7.1, 18.7, 5.3),
-                ]
-                : [(12, 3, 12, 5), (12, 19, 12, 21), (3, 12, 5, 12), (19, 12, 21, 12)]
-            let path = NSBezierPath(
-                ovalIn: NSRect(
-                    x: (12 - (large ? 4.2 : 4)) * unit, y: (12 - (large ? 4.2 : 4)) * unit,
-                    width: (large ? 8.4 : 8) * unit, height: (large ? 8.4 : 8) * unit))
-            for (x0, y0, x1, y1) in rays {
-                path.move(to: point(x0, y0))
-                path.line(to: point(x1, y1))
-            }
-            path.lineWidth = (large ? 2 : 2.4) * unit
-            path.lineCapStyle = .round
-            NSColor.black.setStroke()
-            path.stroke()
-            return true
-        }
-        image.isTemplate = true
-        return image
     }
 
     /// A copy at an item image's 16 points.
@@ -442,7 +322,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func rowItem(_ row: PlaceRow) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
         // A site's row names the site on the first line under its title, unwrapped.
-        let lines = [row.site, row.subtitle.map(Self.wrapped)].compactMap { $0 }
+        let lines = [row.site, row.subtitle.map(MenuArt.wrapped)].compactMap { $0 }
         item.subtitle = lines.isEmpty ? nil : lines.joined(separator: "\n")
         item.image = row.site.flatMap(icons.icon(for:)).map(Self.menuSized) ?? Self.image(for: row.image)
         if let site = row.site { siteRow = (site, item) }
@@ -497,7 +377,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         slider.translatesAutoresizingMaskIntoConstraints = false
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         view.autoresizingMask = [.width]
-        let suns = [Self.sun(large: false), Self.sun(large: true)].map { image in
+        let suns = [MenuArt.sun(large: false), MenuArt.sun(large: true)].map { image in
             let sun = NSImageView(image: image)
             sun.contentTintColor = .secondaryLabelColor
             sun.translatesAutoresizingMaskIntoConstraints = false
@@ -530,7 +410,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private func menuItem(_ item: MenuItem) -> NSMenuItem {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
-        menuItem.subtitle = item.subtitle.map(Self.wrapped)
+        menuItem.subtitle = item.subtitle.map(MenuArt.wrapped)
         menuItem.isEnabled = item.enabled
         menuItem.representedObject = Choice(item.command)
         return menuItem

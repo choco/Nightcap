@@ -265,8 +265,7 @@ enum StageArt {
             Paint.text("Finder", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 14, y: 7))
             Paint.text("File", font, .labelColor, at: NSPoint(x: 66, y: 7))
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 98, y: 7))
-            Paint.template(
-                "MenuBarOff", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
+            Paint.moon(.off, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("Tue 08:30", font, .labelColor, at: NSPoint(x: moon.maxX + 6, y: 7))
             Paint.text(
                 "Log in, and the moon is already there.", .systemFont(ofSize: 11), .nightcapSecondary,
@@ -288,8 +287,7 @@ enum StageArt {
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 88, y: 7))
             let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
             Paint.rounded(moon, 10, Paint.highlight)
-            Paint.template(
-                "MenuBarOn", .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
+            Paint.moon(.on, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
             // A status item's menu opens under it, to the right, unless that would leave the
             // screen, as it would this close to the edge: then it stays inside.
@@ -310,10 +308,9 @@ enum StageArt {
             }
             // The Night Shift item: the check, the moon and the shortcut sit across its lines.
             Paint.glyph("checkmark", 9, .labelColor, centredAt: NSPoint(x: check, y: menu.minY + 25))
-            Paint.template(
-                "MenuBarOn", .labelColor, in: NSRect(x: image - 6.5, y: menu.minY + 18.5, width: 13, height: 13))
+            Paint.moon(.on, .labelColor, in: NSRect(x: image - 6.5, y: menu.minY + 18.5, width: 13, height: 13))
             line("Night Shift", item, .labelColor, title, 13.5)
-            let reason = StatusMenu.wrapped("Following the schedule until 07:00").split(separator: "\n")
+            let reason = MenuArt.wrapped("Following the schedule until 07:00").split(separator: "\n")
             for (index, text) in reason.enumerated() {
                 line(String(text), .systemFont(ofSize: 10), .nightcapSecondary, title, 26 + CGFloat(index) * 12)
             }
@@ -324,9 +321,9 @@ enum StageArt {
             let strength: CGFloat = 0.6
             let y = menu.minY + 58
             Paint.template(
-                StatusMenu.sun(large: false), .nightcapSecondary, in: NSRect(x: title, y: y - 4.5, width: 9, height: 9))
+                MenuArt.sun(large: false), .nightcapSecondary, in: NSRect(x: title, y: y - 4.5, width: 9, height: 9))
             Paint.template(
-                StatusMenu.sun(large: true), .nightcapSecondary,
+                MenuArt.sun(large: true), .nightcapSecondary,
                 in: NSRect(x: menu.maxX - 26, y: y - 6.5, width: 13, height: 13))
             let track = NSRect(x: menu.minX + 52, y: y - 1.5, width: menu.width - 83, height: 3)
             let knob = track.minX + 7.5 + (track.width - 15) * strength
@@ -505,17 +502,17 @@ final class MiniScreen: NSView {
             Loop.middle(second)
             Loop.ends(first)
         }
-        let status = { (image: String) in
+        let status = { (icon: MenuIcon) in
             Drawn(NSSize(width: 40, height: 15)) { _ in
-                Paint.template(image, ink, in: NSRect(x: 0, y: 3, width: 9, height: 9))
+                Paint.moon(icon, ink, in: NSRect(x: 0, y: 3, width: 9, height: 9))
                 Paint.text(daytime ? "14:00" : "21:42", .systemFont(ofSize: 8), ink, at: NSPoint(x: 13, y: 3))
             }
         }
-        let on = status(daytime ? "MenuBarOff" : "MenuBarOn")
+        let on = status(daytime ? .off : .on)
         on.frame.origin = NSPoint(x: size.width - 44, y: 0)
         addSubview(on)
         if forcesOff {
-            let forced = status("MenuBarForcedOff")
+            let forced = status(.forcedOff)
             forced.frame.origin = on.frame.origin
             addSubview(forced)
             Loop.middle(forced)
@@ -699,9 +696,9 @@ enum Paint {
             from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
     }
 
-    /// One of the asset catalog's template images, such as the menu-bar moons, in `colour`.
-    static func template(_ name: String, _ colour: NSColor, in rect: NSRect) {
-        guard let image = NSImage(named: name) else { return }
+    /// One of the menu-bar moons, in `colour`.
+    static func moon(_ icon: MenuIcon, _ colour: NSColor, in rect: NSRect) {
+        guard let image = MenuArt.moon(for: icon) else { return }
         template(image, colour, in: rect)
     }
 

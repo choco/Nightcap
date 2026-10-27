@@ -189,7 +189,7 @@ enum Snapshot {
     /// The menu-bar icon at 8x, black on white as a template draws in a light menu bar, with the
     /// dot where the status item lays it over the moon.
     private static func menuBarIcon(_ icon: MenuIcon, problems: Bool) -> Data {
-        let image = StatusMenu.image(for: icon)!
+        let image = MenuArt.moon(for: icon)!
         let scale: CGFloat = 8
         let size = NSSize(width: image.size.width * scale + 64, height: image.size.height * scale + 64)
         let bitmap = NSBitmapImageRep(
@@ -202,17 +202,17 @@ enum Snapshot {
         NSRect(origin: .zero, size: size).fill()
         image.draw(in: NSRect(x: 32, y: 32, width: size.width - 64, height: size.height - 64))
         if problems {
-            let diameter = StatusMenu.dotSize * scale
+            let diameter = MenuArt.dotSize * scale
             let centre = NSPoint(
-                x: size.width / 2 + StatusMenu.dotOffset.x * scale,
-                y: size.height / 2 + StatusMenu.dotOffset.y * scale)
+                x: size.width / 2 + MenuArt.dotOffset.x * scale,
+                y: size.height / 2 + MenuArt.dotOffset.y * scale)
             NSColor.systemOrange.setFill()
             NSBezierPath(
                 ovalIn: NSRect(
                     x: centre.x - diameter / 2, y: centre.y - diameter / 2, width: diameter, height: diameter)
             ).fill()
         }
-        let warning = StatusMenu.warning!
+        let warning = MenuArt.warning!
         warning.draw(in: NSRect(x: 0, y: 0, width: warning.size.width * 3, height: warning.size.height * 3))
         NSGraphicsContext.restoreGraphicsState()
         return bitmap.representation(using: .png, properties: [:])!
