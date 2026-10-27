@@ -2,7 +2,6 @@
 @preconcurrency import AppKit
 import KeyboardShortcuts
 import NightcapCore
-import UniformTypeIdentifiers
 
 /// Nightcap's settings, as the core describes them (`Core.settings()`). The shell only draws
 /// them, rebuilding the shown tab whenever the snapshot changes while the window is open.
@@ -406,7 +405,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
             icon.heightAnchor.constraint(equalToConstant: 26).isActive = true
-            return (FileManager.default.displayName(atPath: url.path), bundleId, icon)
+            return (Apps.name(at: url), bundleId, icon)
         case .domain(let domain):
             let icon = icons.icon(for: domain).map { Tile(image: $0) } ?? Tile(symbol: "globe")
             return (domain, "Website, with its subdomains", icon)
@@ -449,18 +448,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// The Applications folder, for picking an app to add a rule for.
     private func addApp() {
         guard let window else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Add"
-        panel.message = "Choose an app for a rule."
         let says = Self.saysPopup()
-        panel.accessoryView = Look.padded(says, top: 8, bottom: 8)
-        panel.isAccessoryViewDisclosed = true
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier,
-                isBundleId(text: bundleId)
-            else { return }
+        Apps.pick(
+            on: window, prompt: "Add", message: "Choose an app for a rule.",
+            accessory: Look.padded(says, top: 8, bottom: 8)
+        ) { [weak self] bundleId in
             self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
         }
     }

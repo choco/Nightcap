@@ -646,15 +646,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// An app from Applications, like Settings' "Add App…", added to the grid ticked.
     private func chooseApp() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.application]
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.prompt = "Choose"
-        panel.message = "Choose an app that needs true colour."
-        panel.beginSheetModal(for: window) { [weak self] response in
-            guard let self, response == .OK, let url = panel.url,
-                let bundleId = Bundle(url: url)?.bundleIdentifier, isBundleId(text: bundleId)
-            else { return }
+        Apps.pick(on: window, prompt: "Choose", message: "Choose an app that needs true colour.") {
+            [weak self] bundleId in
+            guard let self else { return }
             if !apps.contains(where: { $0.id == bundleId }),
                 let item = GridItem(app: bundleId, kind: "Chosen by you", ruled: nil)
             {
@@ -1204,7 +1198,7 @@ struct GridItem {
     init?(app bundleId: String, kind: String, ruled: String?) {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else { return nil }
         id = bundleId
-        name = FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        name = Apps.name(at: url)
         detail = ruled ?? kind
         icon = .app(Self.loaded(NSWorkspace.shared.icon(forFile: url.path)))
         self.ruled = ruled
