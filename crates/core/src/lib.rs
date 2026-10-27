@@ -18,6 +18,7 @@ mod settings;
 mod shell;
 #[cfg(any(test, debug_assertions))]
 mod staging;
+mod start;
 mod state;
 mod tour;
 
@@ -56,9 +57,10 @@ use domain::Host;
 use file::File;
 use file::{Disk, Files, Paths};
 use onboarding::ONBOARDING;
-use places::{Context, Kept, Places, Refusal, World};
+use places::{Context, Places, Refusal, World};
 use rows::{name_in_front, until_text};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
+use start::{Clock, Setup, SystemClock, install_of, instance_of, zone_of};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
@@ -67,19 +69,6 @@ const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
 /// How long after waking macOS may take to perform a schedule transition it missed during sleep.
 /// A guess until measured.
 const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
-
-/// Where the core reads the time, so that tests control it completely.
-trait Clock: Send + Sync {
-    fn now(&self) -> Timestamp;
-}
-
-struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Timestamp {
-        Timestamp::now()
-    }
-}
 
 #[derive(uniffi::Object)]
 pub struct Core {
@@ -103,19 +92,6 @@ impl fmt::Debug for Core {
             .field("socket", &self.socket)
             .finish_non_exhaustive()
     }
-}
-
-/// Where a core lives and what kind of install it serves.
-struct Setup {
-    instance: Instance,
-    install: Install,
-    /// The socket the IPC thread serves, which the core removes on the way out.
-    socket: Option<PathBuf>,
-    /// The requests to answer on the next tick, which the IPC thread queues.
-    requests: mpsc::Receiver<ipc::Pending>,
-    files: Arc<dyn Files>,
-    clock: Arc<dyn Clock>,
-    zone: TimeZone,
 }
 
 /// What the core believes about the system, as last reported by the shell, plus what it
@@ -629,107 +605,6 @@ impl Core {
                 Vec::new()
             }
         }
-    }
-
-    fn start(setup: Setup) -> Self {
-        let store = state::Store::new(setup.files.clone());
-        let mut persisted = store.load();
-        persisted.expire(setup.clock.now());
-        let (config, config_error) = match config::load(setup.files.as_ref()) {
-            Ok(config) => (config, None),
-            Err(error) => {
-                tracing::warn!(
-                    "running without config rules: the config {}; see status",
-                    error.kind()
-                );
-                let config = config::Config {
-                    rules: Vec::new(),
-                    websites: None,
-                    night_shift: NightShiftConfig::default(),
-                    lengths: config::default_lengths(),
-                    found: true,
-                };
-                (config, Some(error))
-            }
-        };
-        let ad_hoc_store = adhoc::Store::new(setup.files.clone());
-        let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
-            Ok(rules) => (rules, None),
-            Err(error) => {
-                tracing::warn!(
-                    "ad-hoc rules are off: rules.toml {}; see status",
-                    error.kind()
-                );
-                (Vec::new(), Some(error))
-            }
-        };
-        let core = Self {
-            instance: setup.instance,
-            install: setup.install,
-            socket: setup.socket,
-            files: setup.files,
-            store,
-            ad_hoc_store,
-            clock: setup.clock.clone(),
-            requests: Mutex::new(setup.requests),
-            state: Mutex::new(State {
-                facts: Facts {
-                    night_shift: NightShift::Unavailable,
-                    timeline: Timeline {
-                        schedule: None,
-                        sun_times: SunTimes::default(),
-                        zone: setup.zone,
-                    },
-                    context: Context::default(),
-                    applied_until: setup.clock.now(),
-                    websites: persisted.websites,
-                    config_websites: config.websites,
-                },
-                places: Places::new(Kept {
-                    layers: persisted.layers.clone(),
-                    ad_hoc,
-                }),
-                strength: None,
-                config_error,
-                config_found: config.found,
-                lengths: config.lengths,
-                ad_hoc_error,
-                onboarding: persisted.onboarding,
-                config_night_shift: config.night_shift,
-                applied_from_config: persisted.applied_from_config,
-                keep_on_with_schedule_off: false,
-                is_browser: false,
-                watch: None,
-                generation: 0,
-                pending_write: None,
-                unreported: None,
-                session: Session::Active,
-                left_by_last_run: persisted.night_shift,
-                wakeup: None,
-                sun_times_awaited_since: None,
-                schedule_set_aside: false,
-                schedule_off_accepted: persisted.schedule_off_accepted,
-                accessibility: None,
-                notifications: NotificationPermission::NotRequested,
-                notifications_wanted: persisted.notifications_wanted,
-                announced: persisted.announced.clone(),
-                login_item: None,
-                open_at_login: persisted.open_at_login,
-                opens_itself_at_login: setup.install == Install::SelfManaged
-                    && setup.instance == Instance::Release,
-                last_version: persisted.last_version.clone(),
-                tour: None,
-                saved: persisted,
-            }),
-        };
-        core.graduate(&mut core.state(), config.rules);
-        core
-    }
-
-    /// Only a self-managed release opens at login and updates through Sparkle: an installer
-    /// owns a managed one, and a dev build would shadow the installed app (ADR-0011).
-    fn updates_itself(&self) -> bool {
-        self.install == Install::SelfManaged && self.instance == Instance::Release
     }
 
     #[expect(
@@ -1345,37 +1220,6 @@ impl State {
             )),
         }
     }
-}
-
-/// The instance the app with this bundle ID is.
-fn instance_of(bundle_id: &str) -> Result<Instance, CoreError> {
-    Instance::from_bundle_id(bundle_id).ok_or_else(|| CoreError::UnknownBundleId {
-        bundle_id: bundle_id.to_owned(),
-    })
-}
-
-/// A bundle the user can replace makes a self-managed install (ADR-0011).
-fn install_of(bundle_writable: bool) -> Install {
-    if bundle_writable {
-        Install::SelfManaged
-    } else {
-        Install::Managed
-    }
-}
-
-/// The system's time zone, by its IANA ID.
-fn zone_of(iana_id: &str) -> Result<TimeZone, CoreError> {
-    TimeZone::get(iana_id).map_err(|error| {
-        if jiff::tz::db().is_definitively_empty() {
-            CoreError::Io {
-                message: format!("can't read the time zone database: {error}"),
-            }
-        } else {
-            CoreError::UnknownTimeZone {
-                iana_id: iana_id.to_owned(),
-            }
-        }
-    })
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.

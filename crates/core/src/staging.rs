@@ -12,7 +12,8 @@ use serde::de::DeserializeOwned;
 
 use crate::file::{File, Memory, Paths};
 use crate::ipc::Pending;
-use crate::{Clock, Core, Effect, Event, Setup, install_of, instance_of, zone_of};
+use crate::start::{Clock, Setup, install_of, instance_of, zone_of};
+use crate::{Core, Effect, Event};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in
 /// their own formats, then what happens, in order.

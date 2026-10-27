@@ -198,7 +198,8 @@ mod tests {
     use super::{Pending, serve};
     use crate::file::{Memory, Paths};
     use crate::staging::ManualClock;
-    use crate::{Core, CoreError, Event, Setup, Waker};
+    use crate::start::Setup;
+    use crate::{Core, CoreError, Event, Waker};
 
     /// Stands in for the shell: every wake is reported on a channel the test can wait on.
     struct ChannelWaker(Mutex<mpsc::Sender<()>>);

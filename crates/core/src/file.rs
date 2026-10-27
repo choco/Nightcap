@@ -212,7 +212,8 @@ mod tests {
 
     use super::{Disk, File, Files, Owned, Paths};
     use crate::staging::ManualClock;
-    use crate::{Core, Event, Setup};
+    use crate::start::Setup;
+    use crate::{Core, Event};
 
     fn disk(folder: &Path) -> Disk {
         Disk(Paths::in_folder(folder))
