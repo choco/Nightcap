@@ -1,41 +1,24 @@
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, mpsc};
-use std::thread;
+use std::sync::Arc;
 use std::time::Duration;
 
-use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ExportFormat, Hello, HelloMessage,
-    HelloReply, Install, Instance, Layer, Length, NightShift, NotificationPermission, OnOff,
-    Payload, Permissions, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity,
-    RuleSource, Schedule, Status, TimeOfDay, WebsiteChecking,
+    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ExportFormat, Install, Instance,
+    Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Permissions, Place,
+    PlaceLayers, Reason, Request, Response, Rule, RuleIdentity, RuleSource, Schedule, TimeOfDay,
+    WebsiteChecking,
 };
 
 use crate::config::NightShiftConfig;
-use crate::file::{Disk, File, Files, Paths};
+use crate::file::{File, Memory, Paths};
 use crate::harness::Harness;
-use crate::staging::ManualClock;
 use crate::state::{Persisted, Store};
 use crate::{
     Core, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon, MenuItem, MenuPath,
     NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine, RowImage,
     RowItem, RuleAction, Scenario, SettingsCheck, SettingsLayers, SettingsRule, SettingsSwitch,
-    Setup, TourApp, TourFacts, TourPlace, TourSite, TourTitles, Waker, normalize_domain,
-    tour_titles,
+    TourApp, TourFacts, TourPlace, TourSite, TourTitles, adhoc, normalize_domain, tour_titles,
 };
-use crate::{adhoc, ipc};
-
-/// Stands in for the shell: every wake is reported on a channel the test can wait on.
-struct ChannelWaker(Mutex<mpsc::Sender<()>>);
-
-impl Waker for ChannelWaker {
-    fn wake(&self) {
-        self.0.lock().unwrap().send(()).unwrap();
-    }
-}
 
 fn at(instant: &str) -> Timestamp {
     instant.parse().unwrap()
@@ -71,78 +54,23 @@ fn custom_hours() -> Schedule {
     }
 }
 
-fn start(socket: &Path) -> (Core, mpsc::Receiver<()>) {
-    start_as(socket, Instance::Release, Install::Managed)
+/// Files in memory, for the stores alone.
+fn in_memory() -> Arc<Memory> {
+    Arc::new(Memory::new(Paths::xdg(Instance::Release).unwrap()))
 }
 
-fn start_as(socket: &Path, instance: Instance, install: Install) -> (Core, mpsc::Receiver<()>) {
-    start_with(setup(socket, instance, install))
+/// Files in memory with `text` in `file`.
+fn holding(file: File, text: &str) -> Arc<Memory> {
+    let files = in_memory();
+    files.put(file, Some(text.as_bytes().to_owned()));
+    files
 }
 
-/// Starts a core whose IPC thread serves `setup`'s socket.
-fn start_with(setup: Setup) -> (Core, mpsc::Receiver<()>) {
-    let (sender, wakes) = mpsc::channel();
-    let waker = Arc::new(ChannelWaker(Mutex::new(sender)));
-    let requests = ipc::serve(setup.socket.as_ref().unwrap(), waker).unwrap();
-    (Core::start(Setup { requests, ..setup }), wakes)
-}
-
-/// Starts a release core in Zurich whose clock reads `now` until the test moves it.
-fn start_at(socket: &Path, now: &str) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let clock = Arc::new(ManualClock::new(at(now)));
-    let (core, wakes) = start_with(Setup {
-        clock: clock.clone(),
-        ..setup(socket, Instance::Release, Install::Managed)
-    });
-    (core, wakes, clock)
-}
-
-/// Starts a second core on the first one's state and config, as launchd would after a restart
-/// or a crash. The first core still holds its socket, so the second gets its own.
-fn restart_at(socket: &Path, now: &str) -> (Core, PathBuf, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let clock = Arc::new(ManualClock::new(at(now)));
-    let restarted = socket
-        .parent()
-        .unwrap()
-        .with_file_name("restarted")
-        .join("nightcap.sock");
-    let (core, wakes) = start_with(Setup {
-        socket: Some(restarted.clone()),
-        clock: clock.clone(),
-        ..setup(socket, Instance::Release, Install::Managed)
-    });
-    (core, restarted, wakes, clock)
-}
-
-/// Keeps the files beside the socket's folder, in the test's temporary folder.
-fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
-    Setup {
-        instance,
-        install,
-        socket: Some(socket.to_owned()),
-        requests: mpsc::channel().1,
-        files: on_disk(socket.parent().unwrap().parent().unwrap()),
-        clock: Arc::new(ManualClock::new(at("2026-10-16T12:00:00+02:00"))),
-        zone: TimeZone::get("Europe/Zurich").unwrap(),
-    }
-}
-
-/// The core's files, each straight in `folder`.
-fn on_disk(folder: &Path) -> Arc<dyn Files> {
-    Arc::new(Disk(Paths::in_folder(folder)))
-}
-
-fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
-    dir.path().join("instance").join("nightcap.sock")
-}
-
-/// The config sits outside the socket's folder, which the core creates private at start.
-fn config_beside(socket: &Path) -> PathBuf {
-    socket.parent().unwrap().with_file_name("config.toml")
-}
-
-fn write_config(socket: &Path, contents: &str) {
-    std::fs::write(config_beside(socket), contents).unwrap();
+/// The ad-hoc rules `rules.toml` keeps, as the next start would load them.
+fn kept_ad_hoc(core: &Harness) -> Vec<(RuleIdentity, OnOff)> {
+    let files = in_memory();
+    files.put(File::Rules, core.file(File::Rules).map(String::into_bytes));
+    adhoc::Store::new(files).load().unwrap()
 }
 
 fn app_rule(bundle_id: &str) -> Rule {
@@ -155,24 +83,17 @@ fn app_rule(bundle_id: &str) -> Rule {
 
 /// Starts at 23:00 with Night Shift on by the custom hours, then brings Figma, which a config
 /// rule forces off, to the front, and reports the result.
-fn start_forced(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    write_config(socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+fn forced() -> Harness {
+    let core = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .then(reported(true, custom_hours()))
+        .start();
     assert_eq!(
         activate(&core, "com.figma.Desktop"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    (core, wakes, clock)
+    core.handle(reported(false, custom_hours()));
+    core
 }
 
 /// The launch's effects, leaving out onboarding, which only its own tests look at.
@@ -199,14 +120,6 @@ fn add_rule(identity: RuleIdentity) -> Command {
     }
 }
 
-fn rules_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Vec<Rule> {
-    let (_, response) = exchange(core, socket, wakes, Request::Query(Query::Rules));
-    let Response::Ok(Payload::Rules(rules)) = response else {
-        panic!("expected rules, got {response:?}");
-    };
-    rules
-}
-
 fn figma() -> RuleIdentity {
     RuleIdentity::App("com.figma.Desktop".parse().unwrap())
 }
@@ -225,18 +138,28 @@ fn activate_event(bundle_id: &str) -> Event {
 }
 
 fn activate_browser(core: &Core, bundle_id: &str) -> Vec<Effect> {
-    core.handle(Event::AppActivated {
+    core.handle(activate_browser_event(bundle_id))
+}
+
+/// A browser comes to the front.
+fn activate_browser_event(bundle_id: &str) -> Event {
+    Event::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
         name: None,
         is_browser: true,
-    })
+    }
 }
 
 fn report_host(core: &Core, generation: u64, host: &str) -> Vec<Effect> {
-    core.handle(Event::HostChanged {
+    core.handle(host_event(generation, host))
+}
+
+/// The watched browser's host, read under `generation`.
+fn host_event(generation: u64, host: &str) -> Event {
+    Event::HostChanged {
         generation,
         host: Some(host.to_owned()),
-    })
+    }
 }
 
 fn watch(bundle_id: &str, generation: u64) -> Effect {
@@ -248,10 +171,14 @@ fn watch(bundle_id: &str, generation: u64) -> Effect {
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
 fn grant_accessibility(core: &Core) {
-    core.handle(Event::PermissionsChanged {
+    core.handle(accessibility_granted());
+}
+
+fn accessibility_granted() -> Event {
+    Event::PermissionsChanged {
         accessibility: true,
         notifications: NotificationPermission::Granted,
-    });
+    }
 }
 
 fn domain_rule(domain: &str) -> Rule {
@@ -262,135 +189,13 @@ fn domain_rule(domain: &str) -> Rule {
     }
 }
 
-/// Starts at 23:00 with Night Shift on by the custom hours, website checking on and a config
-/// rule for figma.com.
-fn start_with_figma_domain(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    write_config(
-        socket,
-        "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n",
-    );
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
-    grant_accessibility(&core);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    (core, wakes, clock)
-}
-
-/// Speaks the wire protocol from the client side: a hello, then at most one request.
-struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
-}
-
-impl Client {
-    fn connect(socket: &Path) -> Self {
-        let stream = UnixStream::connect(socket).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
-        Self {
-            reader: BufReader::new(stream.try_clone().unwrap()),
-            writer: stream,
-        }
-    }
-
-    fn send(&mut self, line: &str) {
-        writeln!(self.writer, "{line}").unwrap();
-    }
-
-    fn receive<T: serde::de::DeserializeOwned>(&mut self) -> T {
-        let mut line = String::new();
-        self.reader.read_line(&mut line).unwrap();
-        serde_json::from_str(&line).unwrap()
-    }
-
-    fn hello(&mut self, protocol: u32) -> HelloReply {
-        let hello = HelloMessage {
-            hello: Hello {
-                protocol,
-                version: "test".to_owned(),
-            },
-        };
-        self.send(&serde_json::to_string(&hello).unwrap());
-        self.receive()
-    }
-}
-
-fn query_status(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Response {
-    let socket = socket.to_owned();
-    let client = thread::spawn(move || {
-        let mut client = Client::connect(&socket);
-        assert_eq!(
-            client.hello(nightcap_protocol::PROTOCOL_VERSION),
-            HelloReply::Hello(Hello::current())
-        );
-        client.send(&serde_json::to_string(&Request::Query(Query::Status)).unwrap());
-        client.receive::<Response>()
-    });
-    wakes
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the IPC thread asks for a tick");
-    assert_eq!(core.tick(), Vec::new());
-    client.join().unwrap()
-}
-
-/// Sends a command the way the CLI does, and returns the tick's effects and the response.
-fn send(
-    core: &Core,
-    socket: &Path,
-    wakes: &mpsc::Receiver<()>,
-    command: Command,
-) -> (Vec<Effect>, Response) {
-    exchange(core, socket, wakes, Request::Command(command))
-}
-
-/// Sends a request the way the CLI does, and returns the tick's effects and the response.
-fn exchange(
-    core: &Core,
-    socket: &Path,
-    wakes: &mpsc::Receiver<()>,
-    request: Request,
-) -> (Vec<Effect>, Response) {
-    exchange_line(
-        core,
-        socket,
-        wakes,
-        serde_json::to_string(&request).unwrap(),
-    )
-}
-
-/// Sends one line as the request, which the IPC thread passes on for a tick.
-fn exchange_line(
-    core: &Core,
-    socket: &Path,
-    wakes: &mpsc::Receiver<()>,
-    line: String,
-) -> (Vec<Effect>, Response) {
-    let socket = socket.to_owned();
-    let client = thread::spawn(move || {
-        let mut client = Client::connect(&socket);
-        assert_eq!(
-            client.hello(nightcap_protocol::PROTOCOL_VERSION),
-            HelloReply::Hello(Hello::current())
-        );
-        client.send(&line);
-        client.receive::<Response>()
-    });
-    wakes
-        .recv_timeout(Duration::from_secs(5))
-        .expect("the IPC thread asks for a tick");
-    let effects = core.tick();
-    (effects, client.join().unwrap())
-}
-
-fn status_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Status {
-    let Response::Ok(Payload::Status(status)) = query_status(core, socket, wakes) else {
-        panic!("expected a status");
-    };
-    *status
+/// At 23:00 with Night Shift on by the custom hours, website checking on and a config rule for
+/// figma.com.
+fn with_figma_domain() -> Scenario {
+    late()
+        .config("websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n")
+        .then(accessibility_granted())
+        .then(reported(true, custom_hours()))
 }
 
 #[test]
@@ -572,23 +377,15 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
 /// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
 /// `Launched`.
 fn report_night_shift(core: &Core, schedule: Schedule, strength: u8) {
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, schedule));
     core.handle(Event::StrengthChanged { value: strength });
 }
 
 #[test]
 fn the_configs_night_shift_values_are_applied_at_launch() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
-    );
-    let (core, _wakes) = start(&socket);
+    let core = noon()
+        .config("[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n")
+        .start();
     report_night_shift(&core, Schedule::Off, 60);
 
     assert_eq!(
@@ -622,16 +419,12 @@ fn the_configs_night_shift_values_apply_once_and_a_change_made_since_stays() {
 
 #[test]
 fn the_status_shows_the_configs_night_shift_values_beside_the_macs() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n",
-    );
-    let (core, wakes) = start(&socket);
+    let core = noon()
+        .config("[night_shift]\nstrength = 40\nschedule = \"sunset-to-sunrise\"\n")
+        .start();
     report_night_shift(&core, Schedule::Off, 60);
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
 
     assert_eq!(
         (status.strength, status.config_strength),
@@ -665,17 +458,14 @@ fn reloading_applies_only_the_night_shift_value_that_changed() {
 
 #[test]
 fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[night_shift]\nstrength = 40\n");
-    let (core, wakes) = start(&socket);
+    let core = noon().config("[night_shift]\nstrength = 40\n").start();
     report_night_shift(&core, Schedule::Off, 60);
     launch(&core);
 
-    write_config(&socket, "");
-    let (taken_out, _) = exchange(&core, &socket, &wakes, Request::Reload);
-    write_config(&socket, "[night_shift]\nstrength = 40\n");
-    let (put_back, _) = exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("");
+    let (taken_out, _) = core.request(Request::Reload);
+    core.write_config("[night_shift]\nstrength = 40\n");
+    let (put_back, _) = core.request(Request::Reload);
 
     assert_eq!(taken_out, Vec::new());
     assert_eq!(
@@ -689,9 +479,7 @@ fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_
 
 #[test]
 fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
     report_night_shift(&core, Schedule::Off, 60);
 
     for night_shift in [
@@ -700,8 +488,8 @@ fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
         "schedule = \"22:00-7am\"",
         "schedule = \"24:00-07:00\"",
     ] {
-        write_config(&socket, &format!("[night_shift]\n{night_shift}\n"));
-        let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+        core.write_config(&format!("[night_shift]\n{night_shift}\n"));
+        let (effects, response) = core.request(Request::Reload);
         assert_eq!(effects, Vec::new(), "{night_shift}");
         assert_eq!(refusal(response), ErrorCode::InvalidConfig, "{night_shift}");
     }
@@ -721,11 +509,9 @@ fn following_the_custom_hours_until_morning() -> Response {
 
 #[test]
 fn a_command_while_night_shift_is_unavailable_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+    let (effects, response) = core.send(Command::On);
 
     assert_eq!(effects, Vec::new());
     let Response::Error(error) = response else {
@@ -788,16 +574,10 @@ fn minutes(count: i64) -> Length {
 
 #[test]
 fn on_turns_night_shift_on_everywhere_until_turned_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(false, Schedule::Off));
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+    let (effects, response) = core.send(Command::On);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(response, held(OnOff::On));
@@ -805,17 +585,11 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
 
 #[test]
 fn off_takes_off_everywheres_hold_where_that_is_enough() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
     // Found on with no schedule, which the core takes as the user's own on.
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::Off));
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::Off);
+    let (effects, response) = core.send(Command::Off);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(response, off_with_no_schedule());
@@ -823,16 +597,10 @@ fn off_takes_off_everywheres_hold_where_that_is_enough() {
 
 #[test]
 fn on_while_everywhere_says_on_writes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(true, Schedule::Off));
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+    let (effects, response) = core.send(Command::On);
 
     assert_eq!(effects, Vec::new());
     assert_eq!(response, held(OnOff::On));
@@ -840,16 +608,10 @@ fn on_while_everywhere_says_on_writes_nothing() {
 
 #[test]
 fn toggle_turns_everywhere_the_other_way() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(true, Schedule::Off));
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+    let (effects, response) = core.send(Command::Toggle);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(response, off_with_no_schedule());
@@ -857,75 +619,42 @@ fn toggle_turns_everywhere_the_other_way() {
 
 #[test]
 fn two_flips_leave_nothing_behind() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::Toggle);
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
+    core.send(Command::Toggle);
+    core.handle(reported(false, custom_hours()));
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+    let (effects, response) = core.send(Command::Toggle);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn on_while_the_schedule_says_on_holds_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::On);
+    let (effects, response) = core.send(Command::On);
 
     assert_eq!(effects, Vec::new());
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::On);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
+    core.send(Command::On);
+    core.handle(reported(true, custom_hours()));
 
-    clock.set(at("2026-10-17T07:00:00+02:00"));
+    core.set_clock("2026-10-17T07:00:00+02:00");
     core.handle(Event::TimerFired);
     // macOS performs its own transition, and Nightcap puts Night Shift back on.
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::On, None)),
@@ -936,24 +665,13 @@ fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
 
 #[test]
 fn an_external_change_holds_everywhere_until_the_schedule_turns_it_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(effects, Vec::new());
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
@@ -964,96 +682,52 @@ fn an_external_change_holds_everywhere_until_the_schedule_turns_it_back() {
 
 #[test]
 fn an_external_change_back_takes_off_what_the_switch_held() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::On);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
+    core.send(Command::On);
+    core.handle(reported(true, custom_hours()));
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, custom_hours()));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn an_edited_schedule_ends_the_holds_waiting_on_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
-    );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
+    core.send(set(
+        Place::Everywhere,
+        OnOff::Off,
+        Length::UntilScheduleTurns,
+    ));
+    core.handle(reported(false, custom_hours()));
 
     // Moving the start to 21:00 makes macOS apply the schedule again, so Night Shift comes on.
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Custom {
+    let effects = core.handle(reported(
+        true,
+        Schedule::Custom {
             from: TimeOfDay {
                 hour: 21,
                 minute: 0,
             },
             to: TimeOfDay { hour: 7, minute: 0 },
         },
-        sun_schedule_set_aside: false,
-    });
+    ));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::Off);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, minutes(30)),
-    );
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
+    core.send(set(Place::Everywhere, OnOff::On, minutes(30)));
 
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::SunsetToSunrise));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -1064,22 +738,14 @@ fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
 
 #[test]
 fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
-    );
+    let core = off_by_the_schedule().start();
+    core.send(set(
+        Place::Everywhere,
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
 
-    clock.set(at("2026-10-17T08:00:00+02:00"));
+    core.set_clock("2026-10-17T08:00:00+02:00");
     let effects = core.handle(Event::Woke);
 
     assert_eq!(
@@ -1088,26 +754,14 @@ fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
             at: at("2026-10-17T22:00:00+02:00").into()
         }]
     );
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_timer_gives_back_what_was_under_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(30)),
-    );
+    let (effects, _) = core.send(set(Place::Everywhere, OnOff::Off, minutes(30)));
     assert_eq!(
         effects,
         vec![
@@ -1117,13 +771,9 @@ fn a_timer_gives_back_what_was_under_it() {
             },
         ]
     );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, custom_hours()));
 
-    clock.set(at("2026-10-16T23:30:00+02:00"));
+    core.set_clock("2026-10-16T23:30:00+02:00");
     assert_eq!(
         core.handle(Event::TimerFired),
         vec![
@@ -1133,36 +783,19 @@ fn a_timer_gives_back_what_was_under_it() {
             },
         ]
     );
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_new_timer_replaces_the_places_timer_and_keeps_its_hold() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::Off);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, minutes(30)),
-    );
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
+    core.send(set(Place::Everywhere, OnOff::On, minutes(30)));
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, minutes(120)),
-    );
+    core.send(set(Place::Everywhere, OnOff::On, minutes(120)));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -1173,23 +806,15 @@ fn a_new_timer_replaces_the_places_timer_and_keeps_its_hold() {
 
 #[test]
 fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
-    );
+    core.send(set(
+        Place::Everywhere,
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
@@ -1197,15 +822,14 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
         )]
     );
 
-    clock.set(at("2026-10-16T23:00:00+02:00"));
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
-    );
+    core.set_clock("2026-10-16T23:00:00+02:00");
+    core.send(set(
+        Place::Everywhere,
+        OnOff::Off,
+        Length::UntilScheduleTurns,
+    ));
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
@@ -1216,31 +840,18 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
 
 #[test]
 fn a_new_hold_replaces_the_places_hold_and_ends_its_timer() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::Off);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, minutes(30)),
-    );
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
+    core.send(set(Place::Everywhere, OnOff::On, minutes(30)));
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
-    );
+    core.send(set(
+        Place::Everywhere,
+        OnOff::Off,
+        Length::UntilScheduleTurns,
+    ));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
@@ -1251,31 +862,19 @@ fn a_new_hold_replaces_the_places_hold_and_ends_its_timer() {
 
 #[test]
 fn until_a_picked_time_is_a_timer_that_ends_then() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(
-            Place::Everywhere,
-            OnOff::Off,
-            Length::Until(at("2026-10-17T00:15:00+02:00")),
-        ),
-    );
+    let (effects, _) = core.send(set(
+        Place::Everywhere,
+        OnOff::Off,
+        Length::Until(at("2026-10-17T00:15:00+02:00")),
+    ));
 
     assert!(effects.contains(&Effect::ScheduleWakeup {
         at: at("2026-10-17T00:15:00+02:00").into()
     }));
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             None,
@@ -1286,14 +885,8 @@ fn until_a_picked_time_is_a_timer_that_ends_then() {
 
 #[test]
 fn lengths_that_cant_be_are_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = late().start();
+    core.handle(reported(true, Schedule::Off));
 
     for command in [
         set(Place::Everywhere, OnOff::Off, minutes(0)),
@@ -1309,7 +902,7 @@ fn lengths_that_cant_be_are_refused() {
             Length::UntilTurnedBack,
         ),
     ] {
-        let (effects, response) = send(&core, &socket, &wakes, command.clone());
+        let (effects, response) = core.send(command.clone());
         assert_eq!(effects, Vec::new(), "{command:?}");
         assert_eq!(refusal(response), ErrorCode::BadRequest, "{command:?}");
     }
@@ -1317,17 +910,9 @@ fn lengths_that_cant_be_are_refused() {
 
 #[test]
 fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
+    let core = off_by_the_schedule().start();
 
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.schedule, Some(custom_hours()));
     assert_eq!(status.scheduled_state, Some(OnOff::Off));
     assert_eq!(
@@ -1338,14 +923,9 @@ fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition()
 
 #[test]
 fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
+    let core = Scenario::at("2026-10-16T20:00:00+02:00").start();
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, custom_hours()));
 
     assert_eq!(
         effects,
@@ -1357,15 +937,9 @@ fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
 
 #[test]
 fn a_timer_that_fires_before_its_transition_is_set_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
 
-    clock.set(at("2026-10-16T21:59:59+02:00"));
+    core.set_clock("2026-10-16T21:59:59+02:00");
 
     assert_eq!(
         core.handle(Event::TimerFired),
@@ -1377,27 +951,15 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
 
 #[test]
 fn a_change_just_before_a_schedule_transition_is_that_transition() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
-    );
+    let core = off_by_the_schedule().start();
+    core.send(set(
+        Place::Everywhere,
+        OnOff::Off,
+        Length::UntilScheduleTurns,
+    ));
 
-    clock.set(at("2026-10-16T21:59:00+02:00"));
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.set_clock("2026-10-16T21:59:00+02:00");
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         effects,
@@ -1405,36 +967,21 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
             at: at("2026-10-17T07:00:00+02:00").into()
         }]
     );
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.layers, Vec::new());
     assert_eq!(status.scheduled_state, Some(OnOff::On));
 }
 
 #[test]
 fn a_change_against_the_coming_transition_is_still_an_external_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::On);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
+    core.send(Command::On);
+    core.handle(reported(true, custom_hours()));
 
-    clock.set(at("2026-10-16T21:59:00+02:00"));
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.set_clock("2026-10-16T21:59:00+02:00");
+    core.handle(reported(false, custom_hours()));
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.scheduled_state, Some(OnOff::Off));
     assert_eq!(
         status.next_transition,
@@ -1444,13 +991,7 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
 
 #[test]
 fn a_time_zone_change_moves_the_custom_hours() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
 
     let effects = core.handle(Event::TimeZoneChanged {
         iana_id: "Europe/London".to_owned(),
@@ -1486,16 +1027,10 @@ fn report_zurich_sun(core: &Core) {
 
 #[test]
 fn sunset_to_sunrise_follows_the_reported_sun_times() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
 
     report_zurich_sun(&core);
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, Schedule::SunsetToSunrise));
 
     assert_eq!(
         effects,
@@ -1503,22 +1038,16 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.scheduled_state, Some(OnOff::On));
     assert_eq!(status.layers, Vec::new());
 }
 
 #[test]
 fn sun_times_the_shell_reports_out_of_range_count_as_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
     report_zurich_sun(&core);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::SunsetToSunrise));
 
     let past_jiff = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(400_000_000_000);
     core.handle(Event::SunTimesChanged {
@@ -1526,32 +1055,26 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
         sunsets: Vec::new(),
     });
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.scheduled_state, None);
     assert_eq!(status.next_transition, None);
 }
 
 #[test]
 fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T01:40:20+02:00");
+    let core = Scenario::at("2026-10-16T01:40:20+02:00").start();
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(
         effects,
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-16T01:41:00+02:00").into()
         }]
     );
-    clock.set(at("2026-10-16T01:40:50+02:00"));
+    core.set_clock("2026-10-16T01:40:50+02:00");
     assert_eq!(core.handle(Event::Woke), Vec::new());
 
-    clock.set(at("2026-10-16T01:41:00+02:00"));
+    core.set_clock("2026-10-16T01:41:00+02:00");
     assert_eq!(
         core.handle(Event::TimerFired),
         vec![Effect::ScheduleWakeup {
@@ -1559,7 +1082,7 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
         }]
     );
 
-    clock.set(at("2026-10-16T01:42:00+02:00"));
+    core.set_clock("2026-10-16T01:42:00+02:00");
     report_zurich_sun(&core);
     assert_eq!(
         core.handle(Event::TimerFired),
@@ -1567,51 +1090,31 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    assert_eq!(
-        status_of(&core, &socket, &wakes).scheduled_state,
-        Some(OnOff::On)
-    );
+    assert_eq!(core.status().scheduled_state, Some(OnOff::On));
 }
 
 #[test]
 fn turning_the_schedule_off_cancels_the_wakeup() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T20:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = off_by_the_schedule().start();
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, Schedule::Off));
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.scheduled_state, Some(OnOff::Off));
     assert_eq!(status.next_transition, None);
 }
 
 #[test]
 fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
 
     let effects = activate(&core, "com.figma.Desktop");
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.frontmost_app.as_deref(), Some("com.figma.Desktop"));
     assert_eq!(
         status.decision,
@@ -1625,21 +1128,11 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
 
 #[test]
 fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     activate(&core, "com.figma.Desktop");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, custom_hours()));
 
     let effects = activate(&core, "com.apple.Terminal");
 
@@ -1648,10 +1141,9 @@ fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
 
 #[test]
 fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napps = [\"com.figma.Desktop\"]\n");
-    let (core, wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\napps = [\"com.figma.Desktop\"]\n")
+        .start();
 
     let effects = launch(&core);
 
@@ -1659,7 +1151,7 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
         panic!("expected one notification, got {effects:?}");
     };
     assert!(body.contains("apps"), "{body}");
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.rules, Vec::new());
     assert!(
         status
@@ -1670,18 +1162,11 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
 
 #[test]
 fn reload_applies_a_changed_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     activate(&core, "com.figma.Desktop");
 
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    let (effects, response) = core.request(Request::Reload);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     let Response::Ok(Payload::Status(status)) = response else {
@@ -1692,36 +1177,28 @@ fn reload_applies_a_changed_config() {
 
 #[test]
 fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
 
-    write_config(&socket, "[rules.off]\napp = \"com.figma.Desktop\"\n");
-    let (effects, response) = exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("[rules.off]\napp = \"com.figma.Desktop\"\n");
+    let (effects, response) = core.request(Request::Reload);
 
     assert_eq!(effects, Vec::new());
     let Response::Error(error) = response else {
         panic!("expected an error, got {response:?}");
     };
     assert_eq!(error.code, ErrorCode::InvalidConfig);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
     assert_eq!(status.config_error, Some(error.message));
 }
 
 #[test]
 fn a_command_answers_with_the_resulting_decision() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
-    let (_, response) = send(&core, &socket, &wakes, Command::Off);
+    let (_, response) = core.send(Command::Off);
 
     assert_eq!(
         response,
@@ -1741,54 +1218,36 @@ fn a_command_answers_with_the_resulting_decision() {
 
 #[test]
 fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_external_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T21:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = Scenario::at("2026-10-16T21:00:00+02:00")
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
+    core.handle(reported(false, custom_hours()));
     activate(&core, "com.figma.Desktop");
-    clock.set(at("2026-10-16T22:00:00+02:00"));
+    core.set_clock("2026-10-16T22:00:00+02:00");
     core.handle(Event::TimerFired);
 
-    clock.set(at("2026-10-16T22:01:00+02:00"));
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.set_clock("2026-10-16T22:01:00+02:00");
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, clock) = start_at(&socket, "2026-10-16T21:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = Scenario::at("2026-10-16T21:00:00+02:00")
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
+    core.handle(reported(false, custom_hours()));
     activate(&core, "com.figma.Desktop");
-    clock.set(at("2026-10-16T23:00:00+02:00"));
+    core.set_clock("2026-10-16T23:00:00+02:00");
     core.handle(Event::Woke);
 
-    clock.set(at("2026-10-16T23:03:00+02:00"));
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.set_clock("2026-10-16T23:03:00+02:00");
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 fn figma_app() -> Place {
@@ -1797,11 +1256,9 @@ fn figma_app() -> Place {
 
 #[test]
 fn in_front_of_a_rule_the_switch_changes_everywhere_and_the_rule_keeps_its_say() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::Off);
+    let (effects, response) = core.send(Command::Off);
 
     assert_eq!(effects, Vec::new());
     assert_eq!(
@@ -1813,7 +1270,7 @@ fn in_front_of_a_rule_the_switch_changes_everywhere_and_the_rule_keeps_its_say()
         }))
     );
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -1825,16 +1282,9 @@ fn in_front_of_a_rule_the_switch_changes_everywhere_and_the_rule_keeps_its_say()
 
 #[test]
 fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
 
-    let (effects, response) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let (effects, response) = core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(
@@ -1852,66 +1302,35 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
 
 #[test]
 fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_forced(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, minutes(30)),
-    );
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, minutes(30)));
+    core.handle(reported(true, custom_hours()));
 
-    clock.set(at("2026-10-16T23:30:00+02:00"));
+    core.set_clock("2026-10-16T23:30:00+02:00");
     let effects = core.handle(Event::TimerFired);
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.layers, Vec::new());
     assert_eq!(status.decision.place, figma_app());
 }
 
 #[test]
 fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
+    core.handle(reported(true, custom_hours()));
 
     assert_eq!(activate(&core, "com.apple.Terminal"), Vec::new());
     assert_eq!(activate(&core, "com.figma.Desktop"), Vec::new());
-    assert_eq!(
-        status_of(&core, &socket, &wakes).decision.state,
-        Some(OnOff::On)
-    );
+    assert_eq!(core.status().decision.state, Some(OnOff::On));
 }
 
 #[test]
 fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_says_so() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         effects,
@@ -1922,7 +1341,7 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
         }]
     );
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             figma_app(),
             Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
@@ -1933,13 +1352,8 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
 
 #[test]
 fn with_no_schedule_the_night_shift_item_says_so() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T12:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(false, Schedule::Off));
 
     assert_eq!(
         core.menu().night_shift.reason.as_deref(),
@@ -1949,23 +1363,13 @@ fn with_no_schedule_the_night_shift_item_says_so() {
 
 #[test]
 fn with_no_schedule_an_external_change_holds_until_turned_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(false, Schedule::Off));
 
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::Off));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::On, None)),
@@ -1976,22 +1380,13 @@ fn with_no_schedule_an_external_change_holds_until_turned_back() {
 
 #[test]
 fn flipping_back_from_outside_takes_off_both_linked_holds() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T12:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = noon()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
+    core.handle(reported(false, custom_hours()));
     activate(&core, "com.figma.Desktop");
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         effects,
@@ -2010,42 +1405,32 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
         })
     };
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![
             layered(figma_app(), linked(Place::Everywhere), None),
             layered(Place::Everywhere, linked(figma_app()), None),
         ]
     );
 
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, custom_hours()));
 
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
     assert_eq!(activate(&core, "com.apple.mail"), Vec::new());
 }
 
 #[test]
 fn a_hold_set_over_a_linked_one_leaves_its_partner_unlinked() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T12:00:00+02:00");
+    let core = noon()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     report(&core, false);
     activate(&core, "com.figma.Desktop");
     report(&core, true);
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::Off, Length::UntilScheduleTurns),
-    );
+    core.send(set(figma_app(), OnOff::Off, Length::UntilScheduleTurns));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![
             layered(
                 figma_app(),
@@ -2063,33 +1448,20 @@ fn a_hold_set_over_a_linked_one_leaves_its_partner_unlinked() {
 
 #[test]
 fn the_switch_first_takes_off_everywheres_layers_that_say_otherwise() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(60)),
-    );
+    let core = on_by_the_schedule().start();
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(60)));
 
-    let (_, response) = send(&core, &socket, &wakes, Command::On);
+    let (_, response) = core.send(Command::On);
 
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     report(&core, true);
     core.handle(Event::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
@@ -2097,15 +1469,10 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
         is_browser: false,
     });
     let figma = Place::App("com.figma.Desktop".parse().unwrap());
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma.clone(), OnOff::On, minutes(30)),
-    );
+    core.send(set(figma.clone(), OnOff::On, minutes(30)));
     report(&core, true);
 
-    let (effects, response) = send(&core, &socket, &wakes, Command::Off);
+    let (effects, response) = core.send(Command::Off);
 
     assert_eq!(effects, Vec::new());
     let Response::Ok(Payload::Decision(decision)) = response else {
@@ -2116,17 +1483,10 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
 
 #[test]
 fn reset_puts_a_snoozed_rule_back_early() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
 
-    let (_, response) = send(&core, &socket, &wakes, Command::Reset(figma_app()));
+    let (_, response) = core.send(Command::Reset(figma_app()));
 
     assert_eq!(
         response,
@@ -2136,33 +1496,21 @@ fn reset_puts_a_snoozed_rule_back_early() {
             reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
         }))
     );
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 /// Snoozes the Figma rule until 07:00, then turns Night Shift off everywhere for an hour.
-fn snooze_figma_and_break(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) {
-    send(
-        core,
-        socket,
-        wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
-    send(
-        core,
-        socket,
-        wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(60)),
-    );
+fn snooze_figma_and_break(core: &Harness) {
+    core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(60)));
 }
 
 #[test]
 fn holds_and_timers_survive_a_restart() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
-    snooze_figma_and_break(&core, &socket, &wakes);
+    let core = forced();
+    snooze_figma_and_break(&core);
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:30:00+02:00");
+    let core = core.restart_at("2026-10-16T23:30:00+02:00");
 
     assert_eq!(
         launch(&core),
@@ -2171,7 +1519,7 @@ fn holds_and_timers_survive_a_restart() {
         }]
     );
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![
             layered(
                 figma_app(),
@@ -2189,44 +1537,22 @@ fn holds_and_timers_survive_a_restart() {
 
 #[test]
 fn holds_and_timers_that_ended_while_nightcap_was_stopped_are_dropped_on_start() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
-    snooze_figma_and_break(&core, &socket, &wakes);
+    let core = forced();
+    snooze_figma_and_break(&core);
 
     // Past both the timer's end and the 07:00 schedule transition.
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-17T08:00:00+02:00");
+    let core = core.restart_at("2026-10-17T08:00:00+02:00");
 
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn on_the_way_out_only_everywheres_hold_still_applies() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(&core, &socket, &wakes, Command::Off);
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, minutes(30)),
-    );
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
+    core.handle(reported(false, custom_hours()));
+    core.send(set(Place::Everywhere, OnOff::On, minutes(30)));
+    core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         core.handle(Event::Terminating),
@@ -2236,8 +1562,7 @@ fn on_the_way_out_only_everywheres_hold_still_applies() {
 
 #[test]
 fn terminating_releases_every_force() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_forced(&socket_in(&dir));
+    let core = forced();
 
     assert_eq!(
         core.handle(Event::Terminating),
@@ -2247,17 +1572,11 @@ fn terminating_releases_every_force() {
 
 #[test]
 fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_crashed, _wakes, _clock) = start_forced(&socket);
+    let crashed = forced();
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    let core = crashed.restart_at("2026-10-16T23:10:00+02:00");
     activate(&core, "com.apple.Terminal");
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, custom_hours()));
 
     assert_eq!(
         effects,
@@ -2268,26 +1587,20 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
             },
         ]
     );
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (stopped, _wakes, _clock) = start_forced(&socket);
+    let stopped = forced();
     stopped.handle(Event::Terminating);
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    let core = stopped.restart_at("2026-10-16T23:10:00+02:00");
     activate(&core, "com.apple.Terminal");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, custom_hours()));
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
@@ -2298,19 +1611,13 @@ fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
 
 #[test]
 fn after_a_clean_exit_a_force_still_in_place_comes_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (stopped, _wakes, _clock) = start_forced(&socket);
+    let stopped = forced();
     stopped.handle(Event::Terminating);
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    let core = stopped.restart_at("2026-10-16T23:10:00+02:00");
     activate(&core, "com.figma.Desktop");
     // Night Shift as the release on exit left it.
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         effects,
@@ -2321,7 +1628,7 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
             },
         ]
     );
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
@@ -2355,35 +1662,19 @@ fn update_is_refused_where_nightcap_doesnt_update_itself() {
 }
 
 /// Starts at 23:00 with Night Shift on by the custom hours, then turns it off for an hour.
-fn start_disabled(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    send(
-        &core,
-        socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(60)),
-    );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    (core, wakes, clock)
+fn disabled() -> Harness {
+    let core = late().then(reported(true, custom_hours())).start();
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(60)));
+    core.handle(reported(false, custom_hours()));
+    core
 }
 
 #[test]
 fn while_another_user_is_active_nightcap_writes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, clock) = start_disabled(&socket);
+    let core = disabled();
     core.handle(Event::SessionChanged { active: false });
 
-    clock.set(at("2026-10-17T00:00:00+02:00"));
+    core.set_clock("2026-10-17T00:00:00+02:00");
 
     assert_eq!(
         core.handle(Event::TimerFired),
@@ -2395,28 +1686,20 @@ fn while_another_user_is_active_nightcap_writes_nothing() {
 
 #[test]
 fn status_callbacks_while_another_user_is_active_are_ignored() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
     core.handle(Event::SessionChanged { active: false });
 
-    let effects = core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(true, custom_hours()));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_disabled(&socket);
+    let core = disabled();
     core.handle(Event::SessionChanged { active: false });
-    clock.set(at("2026-10-17T00:00:00+02:00"));
+    core.set_clock("2026-10-17T00:00:00+02:00");
     core.handle(Event::TimerFired);
 
     assert_eq!(
@@ -2424,21 +1707,15 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
         Vec::new()
     );
     // The shell's fresh read: still off, as the timer left it.
-    let effects = core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let effects = core.handle(reported(false, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_domain_rule_turns_night_shift_off_on_its_site() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_with_figma_domain(&socket);
+    let core = with_figma_domain().start();
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
@@ -2449,7 +1726,7 @@ fn a_domain_rule_turns_night_shift_off_on_its_site() {
         vec![Effect::SetNightShift { enabled: false }]
     );
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert!(status.watching);
     assert_eq!(status.host.as_deref(), Some("www.figma.com"));
     assert_eq!(
@@ -2458,24 +1735,17 @@ fn a_domain_rule_turns_night_shift_off_on_its_site() {
     );
 }
 
-/// Starts with Safari in front on figma.com, Night Shift forced off and reported off.
-fn start_on_figma(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let (core, wakes, clock) = start_with_figma_domain(socket);
-    activate_browser(&core, "com.apple.Safari");
-    report_host(&core, 1, "www.figma.com");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    (core, wakes, clock)
+/// Safari in front on figma.com, Night Shift forced off and reported off.
+fn on_figma() -> Scenario {
+    with_figma_domain()
+        .then(activate_browser_event("com.apple.Safari"))
+        .then(host_event(1, "www.figma.com"))
+        .then(reported(false, custom_hours()))
 }
 
 #[test]
 fn a_host_from_an_older_watch_is_dropped() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_with_figma_domain(&socket);
+    let core = with_figma_domain().start();
     activate_browser(&core, "com.apple.Safari");
     assert_eq!(
         activate_browser(&core, "com.google.Chrome"),
@@ -2484,13 +1754,12 @@ fn a_host_from_an_older_watch_is_dropped() {
 
     assert_eq!(report_host(&core, 1, "www.figma.com"), Vec::new());
 
-    assert_eq!(status_of(&core, &socket, &wakes).host, None);
+    assert_eq!(core.status().host, None);
 }
 
 #[test]
 fn leaving_the_browser_stops_watching_and_lifts_the_force() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_on_figma(&socket_in(&dir));
+    let core = on_figma().start();
 
     assert_eq!(
         activate(&core, "com.apple.Terminal"),
@@ -2503,16 +1772,9 @@ fn leaving_the_browser_stops_watching_and_lifts_the_force() {
 
 #[test]
 fn with_website_checking_on_the_front_browser_is_watched_without_any_domain_rule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late().config("websites = true\n").start();
     grant_accessibility(&core);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
@@ -2522,8 +1784,7 @@ fn with_website_checking_on_the_front_browser_is_watched_without_any_domain_rule
 
 #[test]
 fn a_new_watch_leaves_night_shift_alone_until_its_first_read() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_on_figma(&socket_in(&dir));
+    let core = on_figma().start();
 
     // Without a host yet, Chrome alone wouldn't force Night Shift off, but switching it on until
     // the first read would only flash it.
@@ -2536,9 +1797,7 @@ fn a_new_watch_leaves_night_shift_alone_until_its_first_read() {
 
 #[test]
 fn an_unreadable_host_leaves_only_app_rules() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_figma(&socket);
+    let core = on_figma().start();
 
     let effects = core.handle(Event::HostChanged {
         generation: 1,
@@ -2546,22 +1805,18 @@ fn an_unreadable_host_leaves_only_app_rules() {
     });
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert!(status.watching);
     assert_eq!(status.host, None);
 }
 
 #[test]
 fn domains_in_the_config_are_normalized_and_checked() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\ndomain = [\"Bücher.DE.\"]\n");
-    let (core, wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\ndomain = [\"Bücher.DE.\"]\n")
+        .start();
 
-    assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
-        vec![domain_rule("xn--bcher-kva.de")]
-    );
+    assert_eq!(core.status().rules, vec![domain_rule("xn--bcher-kva.de")]);
     for entry in [
         "https://figma.com",
         "figma.com/files",
@@ -2569,8 +1824,8 @@ fn domains_in_the_config_are_normalized_and_checked() {
         "*.figma.com",
         "",
     ] {
-        write_config(&socket, &format!("[rules.off]\ndomain = [{entry:?}]\n"));
-        let (_, response) = exchange(&core, &socket, &wakes, Request::Reload);
+        core.write_config(&format!("[rules.off]\ndomain = [{entry:?}]\n"));
+        let (_, response) = core.request(Request::Reload);
         let Response::Error(error) = response else {
             panic!("{entry:?} was accepted: {response:?}");
         };
@@ -2580,8 +1835,7 @@ fn domains_in_the_config_are_normalized_and_checked() {
 
 #[test]
 fn hosts_compare_in_normal_form() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_with_figma_domain(&socket_in(&dir));
+    let core = with_figma_domain().start();
     activate_browser(&core, "com.apple.Safari");
 
     assert_eq!(
@@ -2592,17 +1846,10 @@ fn hosts_compare_in_normal_form() {
 
 #[test]
 fn an_added_rule_applies_at_once_and_survives_a_restart() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     activate(&core, "com.figma.Desktop");
 
-    let (effects, response) = send(&core, &socket, &wakes, add_rule(figma()));
+    let (effects, response) = core.send(add_rule(figma()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
@@ -2613,8 +1860,8 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
             reasons: vec![Reason::Rule(ad_hoc(figma()))],
         }))
     );
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
-    assert_eq!(rules_of(&core, &socket, &wakes), vec![ad_hoc(figma())]);
+    let core = core.restart_at("2026-10-16T23:10:00+02:00");
+    assert_eq!(core.rules(), vec![ad_hoc(figma())]);
 }
 
 fn refusal(response: Response) -> ErrorCode {
@@ -2639,66 +1886,45 @@ fn an_added_domain_is_normalized() {
 
 #[test]
 fn removing_an_ad_hoc_rule_lifts_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     activate(&core, "com.figma.Desktop");
-    send(&core, &socket, &wakes, add_rule(figma()));
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.send(add_rule(figma()));
+    core.handle(reported(false, custom_hours()));
 
-    let (effects, _) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
+    let (effects, _) = core.send(Command::RemoveRule(figma()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert_eq!(rules_of(&core, &socket, &wakes), Vec::new());
+    assert_eq!(core.rules(), Vec::new());
 }
 
 #[test]
 fn a_rule_that_doesnt_exist_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
-    let (_, removed) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
+    let (_, removed) = core.send(Command::RemoveRule(figma()));
 
     assert_eq!(refusal(removed), ErrorCode::NoSuchRule);
 }
 
 #[test]
 fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
     let newer = "version = 3\n[rules.off]\napp = [\"com.figma.Desktop\"]\n";
-    std::fs::write(&rules_file, newer).unwrap();
-    let (core, wakes) = start(&socket);
+    let core = noon().rules(newer).start();
 
-    let (_, response) = send(&core, &socket, &wakes, add_rule(figma()));
+    let (_, response) = core.send(add_rule(figma()));
 
     assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
-    assert!(status_of(&core, &socket, &wakes).ad_hoc_error.is_some());
-    assert_eq!(rules_of(&core, &socket, &wakes), Vec::new());
-    assert_eq!(std::fs::read_to_string(&rules_file).unwrap(), newer);
+    assert!(core.status().ad_hoc_error.is_some());
+    assert_eq!(core.rules(), Vec::new());
+    assert_eq!(core.file(File::Rules).as_deref(), Some(newer));
 }
 
 #[test]
 fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
     let invalid = "version = 2\n[rules.off]\napp = [\"com.figma.Desktop \"]\n";
-    std::fs::write(&rules_file, invalid).unwrap();
-    let (core, wakes) = start(&socket);
+    let core = noon().rules(invalid).start();
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
 
     assert!(
         status
@@ -2706,23 +1932,16 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
             .is_some_and(|error| error.contains("\"com.figma.Desktop \" isn't a bundle ID")),
     );
     assert_eq!(status.rules, Vec::new());
-    assert_eq!(std::fs::read_to_string(&rules_file).unwrap(), invalid);
+    assert_eq!(core.file(File::Rules).as_deref(), Some(invalid));
 }
 
 #[test]
 fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
     activate(&core, "unity.Team Cherry.Hollow Knight");
 
-    assert_eq!(status_of(&core, &socket, &wakes).frontmost_app, None);
+    assert_eq!(core.status().frontmost_app, None);
     let app_rows = core.menu().entries.into_iter().filter(|entry| {
         matches!(entry, MenuEntry::Row { row } if matches!(row.image, RowImage::App { .. }))
     });
@@ -2731,20 +1950,14 @@ fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
 
 #[test]
 fn the_rules_query_lists_every_rule_with_its_source() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        add_rule(RuleIdentity::Domain("figma.com".parse().unwrap())),
-    );
+    core.send(add_rule(RuleIdentity::Domain("figma.com".parse().unwrap())));
 
     assert_eq!(
-        rules_of(&core, &socket, &wakes),
+        core.rules(),
         vec![
             app_rule("com.figma.Desktop"),
             ad_hoc(RuleIdentity::Domain("figma.com".parse().unwrap())),
@@ -2754,62 +1967,45 @@ fn the_rules_query_lists_every_rule_with_its_source() {
 
 #[test]
 fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n",
-    );
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late()
+        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
+        .start();
     grant_accessibility(&core);
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, custom_hours()));
     let safari_app = Place::App("com.apple.Safari".parse().unwrap());
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(safari_app.clone(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let (effects, _) = core.send(set(
+        safari_app.clone(),
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
     assert!(effects.contains(&watch("com.apple.Safari", 1)));
-    let (effects, _) = send(&core, &socket, &wakes, Command::Reset(safari_app));
+    let (effects, _) = core.send(Command::Reset(safari_app));
     assert!(effects.contains(&Effect::StopWatching));
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
-            says: OnOff::On,
-        },
-    );
+    let (effects, _) = core.send(Command::AddRule {
+        identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
+        says: OnOff::On,
+    });
     assert!(effects.contains(&watch("com.apple.Safari", 2)));
 }
 
 #[test]
 fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_figma(&socket);
+    let core = on_figma().start();
     let figma_site = Place::Domain("figma.com".parse().unwrap());
 
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let (effects, _) = core.send(set(
+        figma_site.clone(),
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(
         status.layers,
         vec![layered(
@@ -2823,9 +2019,7 @@ fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
 
 #[test]
 fn a_config_rule_cant_be_replaced_or_removed() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
 
     for command in [
         Command::RemoveRule(figma()),
@@ -2834,7 +2028,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
             says: OnOff::On,
         },
     ] {
-        let (effects, response) = send(&core, &socket, &wakes, command.clone());
+        let (effects, response) = core.send(command.clone());
         assert_eq!(effects, Vec::new(), "{command:?}");
         let Response::Error(error) = response else {
             panic!("{command:?} was accepted: {response:?}");
@@ -2846,10 +2040,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
             error.message
         );
     }
-    assert_eq!(
-        rules_of(&core, &socket, &wakes),
-        vec![app_rule("com.figma.Desktop")]
-    );
+    assert_eq!(core.rules(), vec![app_rule("com.figma.Desktop")]);
 }
 
 #[test]
@@ -2889,34 +2080,17 @@ fn mail() -> RuleIdentity {
 
 #[test]
 fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     activate(&core, "com.apple.mail");
-    send(&core, &socket, &wakes, add_rule(mail()));
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::from(mail()), OnOff::On, minutes(30)),
-    );
+    core.send(add_rule(mail()));
+    core.send(set(Place::from(mail()), OnOff::On, minutes(30)));
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: mail(),
-            says: OnOff::On,
-        },
-    );
+    core.send(Command::AddRule {
+        identity: mail(),
+        says: OnOff::On,
+    });
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(
         status.rules,
         vec![Rule {
@@ -2928,16 +2102,11 @@ fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() 
     assert_eq!(status.layers, Vec::new());
 }
 
-/// Starts at noon, off by the custom hours, with Books in front.
-fn start_in_books_at_noon(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T12:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
-    activate(&core, "com.apple.iBooksX");
-    (core, wakes, clock)
+/// At noon, off by the custom hours, with Books in front.
+fn in_books_at_noon() -> Scenario {
+    noon()
+        .then(reported(false, custom_hours()))
+        .then(activate_event("com.apple.iBooksX"))
 }
 
 fn books() -> RuleIdentity {
@@ -2946,24 +2115,13 @@ fn books() -> RuleIdentity {
 
 #[test]
 fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_in_books_at_noon(&socket);
+    let core = in_books_at_noon().start();
 
-    let (effects, _) = send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: books(),
-            says: OnOff::On,
-        },
-    );
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
+    let (effects, _) = core.send(Command::AddRule {
+        identity: books(),
+        says: OnOff::On,
     });
+    core.handle(reported(true, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(
@@ -2974,23 +2132,12 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
 
 #[test]
 fn a_rule_that_says_on_is_released_on_a_clean_exit() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_in_books_at_noon(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: books(),
-            says: OnOff::On,
-        },
-    );
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
+    let core = in_books_at_noon().start();
+    core.send(Command::AddRule {
+        identity: books(),
+        says: OnOff::On,
     });
+    core.handle(reported(true, custom_hours()));
 
     assert_eq!(
         core.handle(Event::Terminating),
@@ -3000,45 +2147,27 @@ fn a_rule_that_says_on_is_released_on_a_clean_exit() {
 
 #[test]
 fn an_ad_hoc_rule_graduates_whatever_either_says() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: figma(),
-            says: OnOff::On,
-        },
-    );
+    let core = noon().start();
+    core.send(Command::AddRule {
+        identity: figma(),
+        says: OnOff::On,
+    });
 
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.desktop\"]\n");
-    exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("[rules.off]\napp = [\"com.figma.desktop\"]\n");
+    core.request(Request::Reload);
 
-    assert_eq!(
-        rules_of(&core, &socket, &wakes),
-        vec![app_rule("com.figma.desktop")]
-    );
-    let store = adhoc::Store::new(on_disk(dir.path()));
-    assert_eq!(store.load().unwrap(), Vec::new());
+    assert_eq!(core.rules(), vec![app_rule("com.figma.desktop")]);
+    assert_eq!(kept_ad_hoc(&core), Vec::new());
 }
 
 #[test]
 fn export_writes_both_lists() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    send(&core, &socket, &wakes, add_rule(figma()));
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
-            says: OnOff::On,
-        },
-    );
+    let core = noon().start();
+    core.send(add_rule(figma()));
+    core.send(Command::AddRule {
+        identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
+        says: OnOff::On,
+    });
 
     assert_eq!(
         core.export(ExportFormat::Nix),
@@ -3052,13 +2181,7 @@ fn export_writes_both_lists() {
 
 #[test]
 fn rules_are_listed_by_what_they_say() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\ndomain = [\"youtube.com\"]\n",
-    );
-    let (core, wakes) = start(&socket);
+    let core = noon().config("[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\ndomain = [\"youtube.com\"]\n").start();
 
     let on = |identity| Rule {
         identity,
@@ -3066,7 +2189,7 @@ fn rules_are_listed_by_what_they_say() {
         says: OnOff::On,
     };
     assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
+        core.status().rules,
         vec![
             app_rule("com.figma.Desktop"),
             on(books()),
@@ -3077,9 +2200,7 @@ fn rules_are_listed_by_what_they_say() {
 
 #[test]
 fn a_config_that_cant_be_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
     for (config, said) in [
         (
@@ -3103,8 +2224,8 @@ fn a_config_that_cant_be_is_refused() {
             "\"https://figma.com\" isn't a domain",
         ),
     ] {
-        write_config(&socket, config);
-        let (_, response) = exchange(&core, &socket, &wakes, Request::Reload);
+        core.write_config(config);
+        let (_, response) = core.request(Request::Reload);
         let Response::Error(error) = response else {
             panic!("{config:?} was accepted: {response:?}");
         };
@@ -3129,9 +2250,7 @@ fn night_shift_item(on: bool, reason: &str, command: Command) -> NightShiftItem 
 
 #[test]
 fn the_menu_says_what_night_shift_is_doing_and_why() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
+    let core = forced();
     core.handle(Event::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
@@ -3143,12 +2262,7 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
         core.menu().night_shift,
         night_shift_item(true, "Off in Figma: your config’s rule", Command::Off)
     );
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(30)),
-    );
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(30)));
     assert_eq!(
         core.menu().night_shift,
         night_shift_item(false, "Off in Figma: your config’s rule", Command::On)
@@ -3159,12 +2273,12 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
         core.menu().night_shift,
         night_shift_item(false, "Off until 23:30", Command::On)
     );
-    send(&core, &socket, &wakes, Command::On);
+    core.send(Command::On);
     assert_eq!(
         core.menu().night_shift,
         night_shift_item(true, "Following the schedule until 07:00", Command::Off)
     );
-    send(&core, &socket, &wakes, Command::Off);
+    core.send(Command::Off);
     assert_eq!(
         core.menu().night_shift,
         night_shift_item(false, "Off until you turn it on", Command::On)
@@ -3173,8 +2287,7 @@ fn the_menu_says_what_night_shift_is_doing_and_why() {
 
 #[test]
 fn while_night_shift_is_unavailable_the_menu_only_says_so() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start(&socket_in(&dir));
+    let core = noon().start();
 
     let menu = core.menu();
 
@@ -3262,8 +2375,7 @@ fn choice(title: &str, command: Command) -> RowItem {
 
 #[test]
 fn the_menu_has_everywheres_row_then_the_apps_and_the_sites() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_on_figma(&socket_in(&dir));
+    let core = on_figma().start();
     core.handle(Event::StrengthChanged { value: 60 });
 
     let entries = core.menu().entries;
@@ -3286,13 +2398,7 @@ fn the_menu_has_everywheres_row_then_the_apps_and_the_sites() {
 
 #[test]
 fn everywheres_row_has_every_length_but_the_switchs() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
 
     let menu = core.menu();
 
@@ -3333,14 +2439,9 @@ fn everywheres_row_has_every_length_but_the_switchs() {
 /// The line under everywhere's "Until" item at `time`, with Night Shift `enabled` as the
 /// schedule has it then.
 fn until_note(time: &str, enabled: bool, schedule: Schedule, title: &str) -> Option<String> {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), time);
+    let core = Scenario::at(time).start();
     report_zurich_sun(&core);
-    core.handle(Event::StatusChanged {
-        enabled,
-        schedule,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(enabled, schedule));
     choice_titled(&everywhere_row(&core).unwrap(), title).subtitle
 }
 
@@ -3394,15 +2495,9 @@ fn until_the_schedule_turns_names_custom_hours_start_or_end() {
 
 #[test]
 fn the_menus_lengths_come_from_the_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[menu]\nlengths = [\"15m\", \"1h30m\"]\n");
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[menu]\nlengths = [\"15m\", \"1h30m\"]\n")
+        .start();
 
     assert_eq!(
         titles(&everywhere_row(&core).unwrap()),
@@ -3417,18 +2512,8 @@ fn the_menus_lengths_come_from_the_config() {
 
 #[test]
 fn everywheres_row_names_the_place_that_keeps_the_other_way() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\n",
-    );
-    let (core, _wakes, clock) = start_at(&socket, "2026-10-16T12:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().config("[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\n").start();
+    core.handle(reported(false, custom_hours()));
     let front = |bundle_id: &str, name: &str| {
         core.handle(Event::AppActivated {
             bundle_id: Some(bundle_id.to_owned()),
@@ -3447,7 +2532,7 @@ fn everywheres_row_names_the_place_that_keeps_the_other_way() {
     );
     assert_eq!(front("com.apple.iBooksX", "Books"), row("Turn On", None));
     // At night, turning it off everywhere leaves Books on, and Figma off as it is.
-    clock.set(at("2026-10-16T23:00:00+02:00"));
+    core.set_clock("2026-10-16T23:00:00+02:00");
     core.handle(Event::Woke);
     assert_eq!(
         front("com.apple.iBooksX", "Books"),
@@ -3458,13 +2543,8 @@ fn everywheres_row_names_the_place_that_keeps_the_other_way() {
 
 #[test]
 fn by_day_the_rows_turn_on_and_by_night_off() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T12:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(false, custom_hours()));
     core.handle(Event::AppActivated {
         bundle_id: Some("com.apple.mail".to_owned()),
         name: Some("Mail".to_owned()),
@@ -3474,45 +2554,31 @@ fn by_day_the_rows_turn_on_and_by_night_off() {
         |core: &Core| -> Vec<String> { rows(core).into_iter().map(|row| row.title).collect() };
 
     assert_eq!(titles_of(&core), ["Turn On", "Turn On in Mail"]);
-    clock.set(at("2026-10-16T23:00:00+02:00"));
+    core.set_clock("2026-10-16T23:00:00+02:00");
     core.handle(Event::Woke);
     assert_eq!(titles_of(&core), ["Turn Off", "Turn Off in Mail"]);
 }
 
 #[test]
 fn without_the_sun_times_an_apps_row_turns_night_shift_the_other_way_from_how_it_is() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    let core = late().start();
     core.handle(Event::AppActivated {
         bundle_id: Some("com.googlecode.iterm2".to_owned()),
         name: Some("iTerm2".to_owned()),
         is_browser: false,
     });
 
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(app_row(&core).unwrap().title, "Turn Off in iTerm2");
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, Schedule::SunsetToSunrise));
     assert_eq!(app_row(&core).unwrap().title, "Turn On in iTerm2");
 }
 
 #[test]
 fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
+    let core = late().start();
 
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: Schedule::SunsetToSunrise,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(true, Schedule::SunsetToSunrise));
 
     let menu = core.menu();
     assert!(menu.night_shift.on);
@@ -3536,40 +2602,28 @@ fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
 
 #[test]
 fn undoing_is_offered_where_it_goes_the_right_way_and_a_rule_of_yours_can_always_go() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, clock) = start_forced(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
     assert_eq!(
         app_row(&core).unwrap().items[0],
         choice("Put the Rule Back", Command::Reset(figma_app()))
     );
 
     activate(&core, "com.apple.mail");
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::from(mail()), OnOff::Off, minutes(30)),
-    );
+    core.send(set(Place::from(mail()), OnOff::Off, minutes(30)));
     assert_eq!(
         app_row(&core).unwrap().items[0],
         choice("Like Everywhere Else", Command::Reset(Place::from(mail())))
     );
 
-    send(&core, &socket, &wakes, Command::Reset(Place::from(mail())));
-    send(&core, &socket, &wakes, add_rule(mail()));
+    core.send(Command::Reset(Place::from(mail())));
+    core.send(add_rule(mail()));
     assert_eq!(
         choice_titled(&app_row(&core).unwrap(), "Remove Your Rule").command,
         Command::RemoveRule(mail())
     );
     // By day removing it changes nothing on screen, but the rule is still the user's to remove.
-    clock.set(at("2026-10-17T12:00:00+02:00"));
+    core.set_clock("2026-10-17T12:00:00+02:00");
     core.handle(Event::Woke);
     assert_eq!(
         choice_titled(&app_row(&core).unwrap(), "Remove Your Rule").command,
@@ -3579,15 +2633,8 @@ fn undoing_is_offered_where_it_goes_the_right_way_and_a_rule_of_yours_can_always
 
 #[test]
 fn lengths_that_come_to_the_same_as_undoing_are_left_out() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_forced(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
 
     assert_eq!(
         titles(&app_row(&core).unwrap()),
@@ -3601,12 +2648,7 @@ fn lengths_that_come_to_the_same_as_undoing_are_left_out() {
         ]
     );
     activate(&core, "com.apple.mail");
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::from(mail()), OnOff::Off, minutes(30)),
-    );
+    core.send(set(Place::from(mail()), OnOff::Off, minutes(30)));
     assert_eq!(
         titles(&app_row(&core).unwrap()),
         ["Like Everywhere Else", "—", "Always"]
@@ -3615,8 +2657,7 @@ fn lengths_that_come_to_the_same_as_undoing_are_left_out() {
 
 #[test]
 fn a_config_rules_always_is_greyed() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_forced(&socket_in(&dir));
+    let core = forced();
 
     let row = app_row(&core).unwrap();
 
@@ -3632,9 +2673,8 @@ fn a_config_rules_always_is_greyed() {
 
 #[test]
 fn custom_is_offered_beside_the_lengths_with_its_place_and_way() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, clock) = start_forced(&socket_in(&dir));
-    clock.set(at("2026-10-16T23:10:00+02:00"));
+    let core = forced();
+    core.set_clock("2026-10-16T23:10:00+02:00");
     core.handle(Event::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
@@ -3653,15 +2693,7 @@ fn custom_is_offered_beside_the_lengths_with_its_place_and_way() {
 
 #[test]
 fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().config("websites = true\n").start();
     activate_browser(&core, "com.apple.Safari");
     report_host(&core, 1, "docs.figma.com");
     let row = site_row(&core).unwrap();
@@ -3680,12 +2712,12 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
     );
 
     report_host(&core, 1, "docs.figma.com");
-    send(&core, &socket, &wakes, add_rule(domain("figma.com")));
+    core.send(add_rule(domain("figma.com")));
     assert_eq!(
         site_title(&site_row(&core).unwrap()),
         ("Turn On at This Site", Some("figma.com"))
     );
-    send(&core, &socket, &wakes, add_rule(domain("docs.figma.com")));
+    core.send(add_rule(domain("docs.figma.com")));
     assert_eq!(
         site_title(&site_row(&core).unwrap()),
         ("Turn On at This Site", Some("docs.figma.com"))
@@ -3694,18 +2726,7 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
 
 #[test]
 fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-    );
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n").start();
     core.handle(Event::AppActivated {
         bundle_id: Some("com.apple.Safari".to_owned()),
         name: Some("Safari".to_owned()),
@@ -3714,12 +2735,7 @@ fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
     report_host(&core, 1, "example.com");
     let example = Place::Domain("example.com".parse().unwrap());
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(example.clone(), OnOff::On, minutes(30)),
-    );
+    core.send(set(example.clone(), OnOff::On, minutes(30)));
 
     let row = site_row(&core).unwrap();
     assert_eq!(
@@ -3730,18 +2746,7 @@ fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
 
 #[test]
 fn a_site_that_says_nothing_turns_the_other_way_from_its_browser() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-    );
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n").start();
     activate_browser(&core, "com.apple.Safari");
 
     report_host(&core, 1, "example.com");
@@ -3762,9 +2767,7 @@ fn a_site_that_says_nothing_turns_the_other_way_from_its_browser() {
 
 #[test]
 fn the_site_row_snoozes_a_config_rule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_figma(&socket);
+    let core = on_figma().start();
     let figma_site = Place::Domain("figma.com".parse().unwrap());
 
     let row = site_row(&core).unwrap();
@@ -3781,7 +2784,7 @@ fn the_site_row_snoozes_a_config_rule() {
         until_morning,
         set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns)
     );
-    send(&core, &socket, &wakes, until_morning);
+    core.send(until_morning);
     let row = site_row(&core).unwrap();
     assert_eq!(
         site_title(&row),
@@ -3799,13 +2802,8 @@ fn the_site_row_snoozes_a_config_rule() {
 
 #[test]
 fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start(&socket_in(&dir));
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().start();
+    core.handle(reported(false, Schedule::Off));
     assert!(
         !core
             .menu()
@@ -3821,14 +2819,7 @@ fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
 
 #[test]
 fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     core.handle(Event::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
@@ -3839,7 +2830,7 @@ fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
     assert_eq!(row.title, "Turn Off in Figma");
     assert_eq!(row.subtitle, None);
     assert_eq!(choice_titled(&row, "Always").command, add_rule(figma()));
-    send(&core, &socket, &wakes, add_rule(figma()));
+    core.send(add_rule(figma()));
     let row = app_row(&core).unwrap();
     assert_eq!(row.title, "Turn On in Figma");
     assert_eq!(row.subtitle.as_deref(), Some("Always off: your rule"));
@@ -3851,13 +2842,7 @@ fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
 
 #[test]
 fn choosing_a_menu_item_runs_its_command() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     activate(&core, "com.figma.Desktop");
 
     let effects = core.handle(Event::CommandChosen {
@@ -3869,26 +2854,20 @@ fn choosing_a_menu_item_runs_its_command() {
 
 #[test]
 fn website_checking_is_off_until_turned_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\ndomain = [\"figma.com\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[rules.off]\ndomain = [\"figma.com\"]\n")
+        .start();
 
     assert_eq!(activate_browser(&core, "com.apple.Safari"), Vec::new());
     assert_eq!(
-        status_of(&core, &socket, &wakes).website_checking,
+        core.status().website_checking,
         WebsiteChecking {
             state: OnOff::Off,
             from_config: false,
         }
     );
 
-    let (effects, _) = send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    let (effects, _) = core.send(Command::Websites(OnOff::On));
 
     assert!(
         effects.contains(&watch("com.apple.Safari", 1)),
@@ -3898,16 +2877,13 @@ fn website_checking_is_off_until_turned_on() {
 
 #[test]
 fn the_config_decides_website_checking_when_it_sets_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, wakes) = start(&socket);
+    let core = noon().config("websites = true\n").start();
 
-    let (_, response) = send(&core, &socket, &wakes, Command::Websites(OnOff::Off));
+    let (_, response) = core.send(Command::Websites(OnOff::Off));
 
     assert_eq!(refusal(response), ErrorCode::SetInConfig);
     assert_eq!(
-        status_of(&core, &socket, &wakes).website_checking,
+        core.status().website_checking,
         WebsiteChecking {
             state: OnOff::On,
             from_config: true,
@@ -3917,29 +2893,20 @@ fn the_config_decides_website_checking_when_it_sets_it() {
 
 #[test]
 fn turning_website_checking_on_without_accessibility_asks_for_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
     core.handle(Event::PermissionsChanged {
         accessibility: false,
         notifications: NotificationPermission::Granted,
     });
 
-    let (effects, _) = send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    let (effects, _) = core.send(Command::Websites(OnOff::On));
 
     assert_eq!(effects, vec![Effect::AskForAccessibility]);
 }
 
 #[test]
 fn settings_switch_website_checking_unless_the_config_sets_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule().start();
     let switch = |on, locked, command| SettingsSwitch {
         on,
         locked,
@@ -3959,8 +2926,8 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
         switch(true, false, Command::Websites(OnOff::Off))
     );
 
-    write_config(&socket, "websites = false\n");
-    exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("websites = false\n");
+    core.request(Request::Reload);
     assert_eq!(
         core.settings().website_checking,
         switch(false, true, Command::Websites(OnOff::On))
@@ -3969,15 +2936,8 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
 
 #[test]
 fn the_menu_shows_a_problem_line_while_any_problem_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes) = start(&socket);
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    let core = noon().config("websites = true\n").start();
+    core.handle(reported(false, Schedule::Off));
     let line = |title: &str, subtitle: Option<&str>| {
         Some(ProblemLine {
             title: title.to_owned(),
@@ -4009,10 +2969,7 @@ fn domain(name: &str) -> RuleIdentity {
 
 #[test]
 fn a_rule_from_the_tab_keeps_www_where_nothing_but_a_suffix_would_be_left() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late().config("websites = true\n").start();
     report(&core, true);
     activate_browser(&core, "com.apple.Safari");
     report_host(&core, 1, "www.com");
@@ -4031,15 +2988,13 @@ fn safari() -> RuleIdentity {
 
 #[test]
 fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_figma(&socket);
+    let core = on_figma().start();
 
-    let (effects, _) = send(&core, &socket, &wakes, add_rule(safari()));
+    let (effects, _) = core.send(add_rule(safari()));
     assert!(effects.contains(&Effect::StopWatching));
     assert_eq!(site_row(&core), None);
-    assert_eq!(status_of(&core, &socket, &wakes).host, None);
-    let (effects, _) = send(&core, &socket, &wakes, Command::RemoveRule(safari()));
+    assert_eq!(core.status().host, None);
+    let (effects, _) = core.send(Command::RemoveRule(safari()));
     assert!(effects.contains(&watch("com.apple.Safari", 2)));
 }
 
@@ -4059,10 +3014,7 @@ fn notifies(effects: &[Effect]) -> bool {
 
 #[test]
 fn a_problem_that_appears_on_its_own_is_announced_once() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon().config("websites = true\n").start();
 
     assert!(
         core.handle(permissions(false, NotificationPermission::Granted))
@@ -4077,7 +3029,7 @@ fn a_problem_that_appears_on_its_own_is_announced_once() {
             .contains(&accessibility_notice())
     );
 
-    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    let core = core.restart_at("2026-10-16T12:10:00+02:00");
     assert!(!notifies(
         &core.handle(permissions(false, NotificationPermission::Granted))
     ));
@@ -4085,9 +3037,7 @@ fn a_problem_that_appears_on_its_own_is_announced_once() {
 
 #[test]
 fn a_problem_the_user_causes_in_nightcap_is_not_announced() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes) = start(&socket);
+    let core = noon().start();
     core.handle(permissions(false, NotificationPermission::Granted));
 
     let effects = core.handle(Event::CommandChosen {
@@ -4102,10 +3052,9 @@ fn a_problem_the_user_causes_in_nightcap_is_not_announced() {
 
 #[test]
 fn a_config_broken_at_launch_is_announced() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\ndomian = [\"figma.com\"]\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\ndomian = [\"figma.com\"]\n")
+        .start();
 
     assert!(launch(&core).iter().any(|effect| matches!(
         effect,
@@ -4144,29 +3093,23 @@ fn a_run_from_before_versions_were_kept_counts_as_an_update() {
 
 #[test]
 fn a_first_run_has_nothing_new_to_tell() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start(&socket_in(&dir));
+    let core = noon().start();
 
     assert!(!notifies(&launch(&core)));
 }
 
 #[test]
 fn onboarding_runs_at_the_first_launch_and_not_again() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
     assert!(
         core.handle(Event::Launched)
             .contains(&Effect::ShowOnboarding { completed: 0 })
     );
     core.handle(Event::OnboardingFinished { websites: true });
-    assert_eq!(
-        status_of(&core, &socket, &wakes).website_checking.state,
-        OnOff::On
-    );
+    assert_eq!(core.status().website_checking.state, OnOff::On);
 
-    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    let core = core.restart_at("2026-10-16T12:10:00+02:00");
     assert!(
         !core
             .handle(Event::Launched)
@@ -4183,8 +3126,7 @@ fn shows_onboarding(effects: &[Effect]) -> bool {
 
 #[test]
 fn onboarding_asks_about_night_shift_starting_from_the_macs_values() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start(&socket_in(&dir));
+    let core = noon().start();
     report_night_shift(&core, Schedule::Off, 60);
 
     assert_eq!(
@@ -4205,8 +3147,7 @@ fn onboarding_asks_about_night_shift_starting_from_the_macs_values() {
 
 #[test]
 fn onboarding_offers_to_skip_night_shift_once_its_on_a_schedule() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start(&socket_in(&dir));
+    let core = noon().start();
     report_night_shift(&core, Schedule::SunsetToSunrise, 60);
 
     assert!(core.onboarding().night_shift.already_set_up);
@@ -4214,10 +3155,9 @@ fn onboarding_offers_to_skip_night_shift_once_its_on_a_schedule() {
 
 #[test]
 fn onboarding_leaves_out_what_the_config_sets() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n[night_shift]\nstrength = 40\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon()
+        .config("websites = true\n[night_shift]\nstrength = 40\n")
+        .start();
     report_night_shift(&core, Schedule::Off, 60);
 
     let steps = core.onboarding();
@@ -4229,13 +3169,9 @@ fn onboarding_leaves_out_what_the_config_sets() {
 
 #[test]
 fn a_config_that_sets_website_checking_and_night_shift_leaves_onboarding_nothing_to_ask() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n",
-    );
-    let (core, _wakes) = start(&socket);
+    let core = noon()
+        .config("websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n")
+        .start();
     report_night_shift(&core, Schedule::Off, 60);
 
     assert!(!shows_onboarding(&core.handle(Event::Launched)));
@@ -4243,10 +3179,7 @@ fn a_config_that_sets_website_checking_and_night_shift_leaves_onboarding_nothing
 
 #[test]
 fn a_config_that_sets_only_website_checking_still_leaves_night_shift_to_ask() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = false\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon().config("websites = false\n").start();
     report_night_shift(&core, Schedule::Off, 60);
 
     assert!(shows_onboarding(&core.handle(Event::Launched)));
@@ -4254,10 +3187,7 @@ fn a_config_that_sets_only_website_checking_still_leaves_night_shift_to_ask() {
 
 #[test]
 fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask_without_night_shift() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = false\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon().config("websites = false\n").start();
 
     assert!(
         !core
@@ -4270,10 +3200,10 @@ fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask_without_
 #[test]
 fn a_self_managed_release_still_asks_about_opening_at_login_when_the_config_sets_website_checking()
 {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = false\n");
-    let (core, _wakes) = start_as(&socket, Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .config("websites = false\n")
+        .start();
 
     assert!(
         core.handle(Event::Launched)
@@ -4283,20 +3213,15 @@ fn a_self_managed_release_still_asks_about_opening_at_login_when_the_config_sets
 
 #[test]
 fn the_status_reports_the_last_permission_change() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
     core.handle(Event::PermissionsChanged {
         accessibility: true,
         notifications: NotificationPermission::Denied,
     });
 
-    let Response::Ok(Payload::Status(status)) = query_status(&core, &socket, &wakes) else {
-        panic!("expected a status");
-    };
     assert_eq!(
-        status.permissions,
+        core.status().permissions,
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Denied,
@@ -4306,32 +3231,34 @@ fn the_status_reports_the_last_permission_change() {
 
 #[test]
 fn a_self_managed_release_starts_its_updater_at_launch_and_registers_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .start();
 
     assert_eq!(launch(&core), vec![Effect::StartUpdater]);
 }
 
 #[test]
 fn a_managed_install_leaves_starting_at_login_to_its_installer() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::Managed);
+    let core = noon()
+        .installed(Instance::Release, Install::Managed)
+        .start();
 
     assert_eq!(launch(&core), Vec::new());
 }
 
 #[test]
 fn a_dev_build_never_registers_a_login_item() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Dev, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Dev, Install::SelfManaged)
+        .start();
 
     assert_eq!(launch(&core), Vec::new());
 }
 
 #[test]
 fn saved_ad_hoc_rules_load_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = adhoc::Store::new(on_disk(&dir.path().join("nightcap")));
+    let store = adhoc::Store::new(in_memory());
     let rules = vec![
         (figma(), OnOff::Off),
         (
@@ -4347,40 +3274,33 @@ fn saved_ad_hoc_rules_load_back() {
 
 #[test]
 fn ad_hoc_rules_from_a_newer_build_are_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("rules.toml");
-    std::fs::write(
-        &path,
+    let files = holding(
+        File::Rules,
         "version = 3\n[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-    )
-    .unwrap();
+    );
 
     assert!(matches!(
-        adhoc::Store::new(on_disk(dir.path())).load(),
+        adhoc::Store::new(files).load(),
         Err(adhoc::AdHocError::Newer { version: 3, .. })
     ));
 }
 
 #[test]
 fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("rules.toml");
-    std::fs::write(
-        &path,
+    let files = holding(
+        File::Rules,
         "version = 1\nlabel = \"x\"\n[rules]\napp = [\"com.figma.Desktop\"]\nkeyword = []\n",
-    )
-    .unwrap();
+    );
 
     assert_eq!(
-        adhoc::Store::new(on_disk(dir.path())).load().unwrap(),
+        adhoc::Store::new(files).load().unwrap(),
         vec![(figma(), OnOff::Off)]
     );
 }
 
 #[test]
 fn saved_state_loads_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = Store::new(on_disk(&dir.path().join("nightcap")));
+    let store = Store::new(in_memory());
     let state = Persisted {
         layers: vec![
             layered(
@@ -4424,15 +3344,12 @@ fn saved_state_loads_back() {
 
 #[test]
 fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_disable() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    std::fs::write(
-        &path,
+    let files = holding(
+        File::State,
         r#"{"version":1,"manual_state":"off","snoozes":["app:com.figma.Desktop"],"timed_disable":"2026-10-16T22:00:00Z","websites":true,"onboarding":1}"#,
-    )
-    .unwrap();
+    );
 
-    let state = Store::new(on_disk(dir.path())).load();
+    let state = Store::new(files).load();
 
     assert_eq!(state.layers, Vec::new());
     assert!(state.websites);
@@ -4441,41 +3358,29 @@ fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_d
 
 #[test]
 fn missing_state_starts_fresh() {
-    let dir = tempfile::tempdir().unwrap();
-
-    assert_eq!(Store::new(on_disk(dir.path())).load(), Persisted::default());
+    assert_eq!(Store::new(in_memory()).load(), Persisted::default());
 }
 
 #[test]
 fn state_from_a_newer_build_starts_fresh() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    std::fs::write(&path, r#"{"version":2,"login_item_registered":true}"#).unwrap();
+    let files = holding(File::State, r#"{"version":2,"login_item_registered":true}"#);
 
-    assert_eq!(Store::new(on_disk(dir.path())).load(), Persisted::default());
+    assert_eq!(Store::new(files).load(), Persisted::default());
 }
 
 #[test]
 fn state_with_keys_this_build_doesnt_know_still_loads() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("state.json");
-    std::fs::write(
-        &path,
+    let files = holding(
+        File::State,
         r#"{"version":1,"login_item_registered":true,"websites":true}"#,
-    )
-    .unwrap();
+    );
 
-    assert!(Store::new(on_disk(dir.path())).load().websites);
+    assert!(Store::new(files).load().websites);
 }
 
 /// The check of `kind` in the status, if the core reports one.
-fn check_of(
-    core: &Core,
-    socket: &Path,
-    wakes: &mpsc::Receiver<()>,
-    kind: CheckKind,
-) -> Option<(CheckState, String)> {
-    status_of(core, socket, wakes)
+fn check_of(core: &Harness, kind: CheckKind) -> Option<(CheckState, String)> {
+    core.status()
         .checks
         .into_iter()
         .find(|check| check.kind == kind)
@@ -4495,18 +3400,16 @@ fn permissions(accessibility: bool, notifications: NotificationPermission) -> Ev
 
 #[test]
 fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
     core.handle(permissions(false, NotificationPermission::Granted));
 
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        check_of(&core, CheckKind::Accessibility),
         stands(CheckState::Off, "Not needed while website checking is off.")
     );
-    send(&core, &socket, &wakes, Command::Websites(OnOff::On));
+    core.send(Command::Websites(OnOff::On));
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        check_of(&core, CheckKind::Accessibility),
         stands(
             CheckState::Drifted,
             "Accessibility isn’t allowed, so website checking can’t read the front tab."
@@ -4514,55 +3417,46 @@ fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
     );
     core.handle(permissions(true, NotificationPermission::Granted));
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::Accessibility),
+        check_of(&core, CheckKind::Accessibility),
         stands(CheckState::Ok, "Accessibility is allowed.")
     );
 }
 
 #[test]
 fn notifications_switched_off_after_being_allowed_are_a_problem() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    let notifications = |core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>| {
-        check_of(core, socket, wakes, CheckKind::Notifications)
-    };
+    let core = noon().start();
+    let notifications = |core: &Harness| check_of(core, CheckKind::Notifications);
 
     core.handle(permissions(true, NotificationPermission::Denied));
     assert_eq!(
-        notifications(&core, &socket, &wakes),
+        notifications(&core),
         stands(CheckState::Off, "Notifications are off.")
     );
     core.handle(permissions(true, NotificationPermission::Granted));
-    assert_eq!(
-        notifications(&core, &socket, &wakes),
-        stands(CheckState::Ok, "Allowed.")
-    );
+    assert_eq!(notifications(&core), stands(CheckState::Ok, "Allowed."));
     core.handle(permissions(true, NotificationPermission::Denied));
     let drifted = stands(
         CheckState::Drifted,
         "Notifications were allowed, but they’re switched off in System Settings.",
     );
-    assert_eq!(notifications(&core, &socket, &wakes), drifted);
+    assert_eq!(notifications(&core), drifted);
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    let core = core.restart_at("2026-10-16T12:10:00+02:00");
     core.handle(permissions(true, NotificationPermission::Denied));
-    assert_eq!(notifications(&core, &socket, &wakes), drifted);
+    assert_eq!(notifications(&core), drifted);
 }
 
 #[test]
 fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    let config = |core: &Core| check_of(core, &socket, &wakes, CheckKind::ConfigFile);
+    let core = noon().start();
+    let config = |core: &Harness| check_of(core, CheckKind::ConfigFile);
 
     assert_eq!(config(&core), stands(CheckState::Off, "No config file."));
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    core.request(Request::Reload);
     assert_eq!(config(&core), stands(CheckState::Ok, "Valid, with 1 rule."));
-    write_config(&socket, "[rules.off]\ndomian = [\"figma.com\"]\n");
-    exchange(&core, &socket, &wakes, Request::Reload);
+    core.write_config("[rules.off]\ndomian = [\"figma.com\"]\n");
+    core.request(Request::Reload);
     let (state, text) = config(&core).unwrap();
     assert_eq!(state, CheckState::Broken);
     assert!(
@@ -4573,59 +3467,43 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
 
 #[test]
 fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::AdHocRules),
+        check_of(&core, CheckKind::AdHocRules),
         stands(CheckState::Ok, "No ad-hoc rules.")
     );
-    send(&core, &socket, &wakes, add_rule(figma()));
+    core.send(add_rule(figma()));
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::AdHocRules),
+        check_of(&core, CheckKind::AdHocRules),
         stands(CheckState::Ok, "1 ad-hoc rule.")
     );
 
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
-    std::fs::write(&rules_file, "version = 3\n").unwrap();
-    let (core, wakes) = start(&socket);
-    let (state, text) = check_of(&core, &socket, &wakes, CheckKind::AdHocRules).unwrap();
+    let core = noon().rules("version = 3\n").start();
+    let (state, text) = check_of(&core, CheckKind::AdHocRules).unwrap();
     assert_eq!(state, CheckState::Broken);
     assert!(text.starts_with("Ad-hoc rules are off: "), "{text}");
 }
 
 #[test]
 fn night_shift_missing_on_this_mac_is_broken() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
+    let core = noon().start();
 
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        check_of(&core, CheckKind::NightShift),
         stands(
             CheckState::Broken,
             "Night Shift isn’t available on this Mac."
         )
     );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: Schedule::Off,
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, Schedule::Off));
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        check_of(&core, CheckKind::NightShift),
         stands(CheckState::Ok, "Available, with no schedule.")
     );
-    core.handle(Event::StatusChanged {
-        enabled: false,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    core.handle(reported(false, custom_hours()));
     assert_eq!(
-        check_of(&core, &socket, &wakes, CheckKind::NightShift),
+        check_of(&core, CheckKind::NightShift),
         stands(
             CheckState::Ok,
             "Available, following its schedule: 22:00 to 07:00."
@@ -4650,10 +3528,7 @@ fn button(title: &str, fix: Fix) -> Option<FixButton> {
 
 #[test]
 fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "");
-    let (core, _wakes) = start(&socket);
+    let core = noon().config("").start();
     core.handle(Event::CommandChosen {
         command: Command::Websites(OnOff::On),
     });
@@ -4688,9 +3563,7 @@ fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
 
 #[test]
 fn settings_offer_to_allow_notifications_or_keep_them_off() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes) = start(&socket);
+    let core = noon().start();
     core.handle(permissions(true, NotificationPermission::Granted));
     core.handle(permissions(true, NotificationPermission::Denied));
 
@@ -4717,16 +3590,17 @@ fn settings_offer_to_allow_notifications_or_keep_them_off() {
     });
     assert_eq!(settings_check(&core, CheckKind::Notifications), kept_off);
 
-    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T12:10:00+02:00");
+    let core = core.restart_at("2026-10-16T12:10:00+02:00");
     core.handle(permissions(true, NotificationPermission::Denied));
     assert_eq!(settings_check(&core, CheckKind::Notifications), kept_off);
 }
 
-fn status(enabled: bool, schedule: Schedule, sun_schedule_set_aside: bool) -> Event {
+/// Night Shift as CoreBrightness reports it while macOS has sunset to sunrise set aside.
+fn reported_set_aside(enabled: bool, schedule: Schedule) -> Event {
     Event::StatusChanged {
         enabled,
         schedule,
-        sun_schedule_set_aside,
+        sun_schedule_set_aside: true,
     }
 }
 
@@ -4754,12 +3628,11 @@ fn set_aside() -> Option<SettingsCheck> {
 
 #[test]
 fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
     report_zurich_sun(&core);
-    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    core.handle(reported(true, Schedule::SunsetToSunrise));
 
-    let effects = core.handle(status(false, Schedule::Off, true));
+    let effects = core.handle(reported_set_aside(false, Schedule::Off));
     assert!(effects.contains(&Effect::Notify {
         title: "Sunset to sunrise needs Location Services".to_owned(),
         body: "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off.".to_owned(),
@@ -4774,7 +3647,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
         })
     );
 
-    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    core.handle(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(
         settings_check(&core, CheckKind::NightShift),
         night_shift_check(
@@ -4786,20 +3659,17 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
 
 #[test]
 fn nightcap_opening_with_sunset_to_sunrise_set_aside_shows_the_problem() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
 
-    core.handle(status(false, Schedule::Off, true));
+    core.handle(reported_set_aside(false, Schedule::Off));
 
     assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
 }
 
 #[test]
 fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
-    core.handle(status(false, Schedule::Off, true));
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    core.handle(reported_set_aside(false, Schedule::Off));
 
     core.handle(Event::FixChosen {
         fix: Fix::KeepScheduleOff,
@@ -4807,22 +3677,25 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
 
     let no_schedule = night_shift_check(CheckState::Ok, "Available, with no schedule.");
     assert_eq!(settings_check(&core, CheckKind::NightShift), no_schedule);
-    let (core, _socket, _wakes, _clock) = restart_at(&socket, "2026-10-16T01:45:00+02:00");
-    assert!(!notifies(&core.handle(status(false, Schedule::Off, true))));
+    let core = core.restart_at("2026-10-16T01:45:00+02:00");
+    assert!(!notifies(
+        &core.handle(reported_set_aside(false, Schedule::Off))
+    ));
     assert_eq!(settings_check(&core, CheckKind::NightShift), no_schedule);
 
-    core.handle(status(true, Schedule::SunsetToSunrise, false));
-    assert!(notifies(&core.handle(status(false, Schedule::Off, true))));
+    core.handle(reported(true, Schedule::SunsetToSunrise));
+    assert!(notifies(
+        &core.handle(reported_set_aside(false, Schedule::Off))
+    ));
     assert_eq!(settings_check(&core, CheckKind::NightShift), set_aside());
 }
 
 #[test]
 fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, _clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
-    core.handle(status(false, Schedule::Off, true));
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    core.handle(reported_set_aside(false, Schedule::Off));
 
-    core.handle(status(true, custom_hours(), true));
+    core.handle(reported_set_aside(true, custom_hours()));
 
     assert_eq!(
         settings_check(&core, CheckKind::NightShift),
@@ -4835,19 +3708,18 @@ fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
 
 #[test]
 fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes, clock) = start_at(&socket_in(&dir), "2026-10-16T01:40:00+02:00");
-    core.handle(status(true, Schedule::SunsetToSunrise, false));
+    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    core.handle(reported(true, Schedule::SunsetToSunrise));
     let following = night_shift_check(
         CheckState::Ok,
         "Available, following its schedule: sunset to sunrise.",
     );
 
-    clock.set(at("2026-10-16T01:49:00+02:00"));
+    core.set_clock("2026-10-16T01:49:00+02:00");
     assert!(!notifies(&core.handle(Event::TimerFired)));
     assert_eq!(settings_check(&core, CheckKind::NightShift), following);
 
-    clock.set(at("2026-10-16T01:50:00+02:00"));
+    core.set_clock("2026-10-16T01:50:00+02:00");
     assert!(core.handle(Event::TimerFired).contains(&Effect::Notify {
         title: "Nightcap can’t follow sunset to sunrise".to_owned(),
         body: "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them.".to_owned(),
@@ -4861,7 +3733,7 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
         )
     );
 
-    clock.set(at("2026-10-16T01:51:00+02:00"));
+    core.set_clock("2026-10-16T01:51:00+02:00");
     report_zurich_sun(&core);
     core.handle(Event::TimerFired);
     assert_eq!(settings_check(&core, CheckKind::NightShift), following);
@@ -4869,15 +3741,14 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
 
 #[test]
 fn settings_offer_to_reload_a_broken_config() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\ndomian = [\"figma.com\"]\n");
-    let (core, _wakes) = start(&socket);
+    let core = noon()
+        .config("[rules.off]\ndomian = [\"figma.com\"]\n")
+        .start();
 
     let broken = settings_check(&core, CheckKind::ConfigFile).unwrap();
     assert_eq!(broken.state, CheckState::Broken);
     assert_eq!(broken.restore, button("Reload", Fix::Reload));
-    write_config(&socket, "[rules.off]\ndomain = [\"figma.com\"]\n");
+    core.write_config("[rules.off]\ndomain = [\"figma.com\"]\n");
     core.handle(Event::FixChosen { fix: Fix::Reload });
     assert_eq!(
         settings_check(&core, CheckKind::ConfigFile),
@@ -4897,8 +3768,9 @@ fn login_item(item: LoginItem) -> Event {
 
 #[test]
 fn settings_switch_opening_at_login_in_a_self_managed_install() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .start();
     let switch = |on, command| {
         Some(SettingsSwitch {
             on,
@@ -4933,17 +3805,18 @@ fn settings_switch_opening_at_login_in_a_self_managed_install() {
 
 #[test]
 fn managed_installs_and_dev_builds_have_no_open_at_login_switch() {
-    let dir = tempfile::tempdir().unwrap();
-    let (managed, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::Managed);
+    let managed = noon()
+        .installed(Instance::Release, Install::Managed)
+        .start();
     managed.handle(login_item(LoginItem::NotRegistered));
     assert_eq!(managed.settings().open_at_login, None);
 
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (dev, wakes) = start_as(&socket, Instance::Dev, Install::SelfManaged);
+    let dev = noon()
+        .installed(Instance::Dev, Install::SelfManaged)
+        .start();
     dev.handle(login_item(LoginItem::NotRegistered));
     assert_eq!(dev.settings().open_at_login, None);
-    let (_, response) = send(&dev, &socket, &wakes, Command::OpenAtLogin(OnOff::On));
+    let (_, response) = dev.send(Command::OpenAtLogin(OnOff::On));
     assert_eq!(refusal(response), ErrorCode::NoLoginItem);
 }
 
@@ -5017,8 +3890,9 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
 
 #[test]
 fn opening_at_login_waiting_for_approval_offers_login_items() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .start();
     core.handle(Event::CommandChosen {
         command: Command::OpenAtLogin(OnOff::On),
     });
@@ -5043,8 +3917,9 @@ fn opening_at_login_waiting_for_approval_offers_login_items() {
 
 #[test]
 fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .start();
 
     core.handle(login_item(LoginItem::Enabled));
     core.handle(login_item(LoginItem::NotRegistered));
@@ -5056,8 +3931,9 @@ fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
 
 #[test]
 fn opening_at_login_removed_in_system_settings_is_announced() {
-    let dir = tempfile::tempdir().unwrap();
-    let (core, _wakes) = start_as(&socket_in(&dir), Instance::Release, Install::SelfManaged);
+    let core = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .start();
     core.handle(Event::CommandChosen {
         command: Command::OpenAtLogin(OnOff::On),
     });
@@ -5075,36 +3951,21 @@ fn opening_at_login_removed_in_system_settings_is_announced() {
 
 #[test]
 fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(
-        &socket,
-        "[rules.off]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n",
-    );
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n")
+        .start();
     let photos = RuleIdentity::App("com.apple.Photos".parse().unwrap());
-    send(&core, &socket, &wakes, add_rule(photos.clone()));
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: domain("youtube.com"),
-            says: OnOff::On,
-        },
-    );
+    core.send(add_rule(photos.clone()));
+    core.send(Command::AddRule {
+        identity: domain("youtube.com"),
+        says: OnOff::On,
+    });
     let figma_site = Place::Domain("figma.com".parse().unwrap());
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    core.send(set(
+        figma_site.clone(),
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
     let action = |title: &str, command| {
         Some(RuleAction {
             title: title.to_owned(),
@@ -5150,36 +4011,19 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
 
 #[test]
 fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
-    core.handle(Event::StatusChanged {
-        enabled: true,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    });
+    let core = on_by_the_schedule()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     let mail_app = Place::from(mail());
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(mail_app.clone(), OnOff::Off, Length::UntilScheduleTurns),
-    );
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(mail_app.clone(), OnOff::On, minutes(30)),
-    );
+    core.send(set(
+        mail_app.clone(),
+        OnOff::Off,
+        Length::UntilScheduleTurns,
+    ));
+    core.send(set(mail_app.clone(), OnOff::On, minutes(30)));
     // A snooze shows on its rule, and everywhere's own on the Night Shift item.
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(figma_app(), OnOff::On, minutes(30)),
-    );
-    send(&core, &socket, &wakes, Command::Off);
+    core.send(set(figma_app(), OnOff::On, minutes(30)));
+    core.send(Command::Off);
 
     assert_eq!(
         core.settings().for_now,
@@ -5196,15 +4040,16 @@ fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
 
 #[test]
 fn the_rules_tab_shows_where_the_config_is_and_copies_the_ad_hoc_rules_for_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    send(&core, &socket, &wakes, add_rule(figma()));
-    send(&core, &socket, &wakes, add_rule(domain("figma.com")));
+    let core = noon().start();
+    core.send(add_rule(figma()));
+    core.send(add_rule(domain("figma.com")));
 
     assert_eq!(
         core.settings().config_path,
-        config_beside(&socket).display().to_string()
+        etcetera::BaseStrategy::config_dir(&etcetera::base_strategy::Xdg::new().unwrap())
+            .join("nightcap/config.toml")
+            .display()
+            .to_string()
     );
     assert_eq!(
         core.export(ExportFormat::Nix),
@@ -5263,33 +4108,30 @@ fn mail_app() -> TourApp {
 }
 
 fn start_tour(core: &Core) -> Vec<Effect> {
-    core.handle(Event::TourStarted {
+    core.handle(tour_started())
+}
+
+/// The tour starts with its sample, its site and Mail as the example.
+fn tour_started() -> Event {
+    Event::TourStarted {
         sample: tour_sample(),
         site: Some(tour_site()),
         example: mail_app(),
-    })
+    }
 }
 
 fn report(core: &Core, enabled: bool) -> Vec<Effect> {
-    core.handle(Event::StatusChanged {
-        enabled,
-        schedule: custom_hours(),
-        sun_schedule_set_aside: false,
-    })
+    core.handle(reported(enabled, custom_hours()))
 }
 
-/// Starts at 20:00, with Night Shift off by the custom hours until 22:00.
-fn start_off_by_the_schedule(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T20:00:00+02:00");
-    report(&core, false);
-    (core, wakes, clock)
+/// At 20:00, with Night Shift off by the custom hours until 22:00.
+fn off_by_the_schedule() -> Scenario {
+    Scenario::at("2026-10-16T20:00:00+02:00").then(reported(false, custom_hours()))
 }
 
-/// Starts at 23:00, with Night Shift on by the custom hours until 07:00.
-fn start_on_by_the_schedule(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    let (core, wakes, clock) = start_at(socket, "2026-10-16T23:00:00+02:00");
-    report(&core, true);
-    (core, wakes, clock)
+/// At 23:00, with Night Shift on by the custom hours until 07:00.
+fn on_by_the_schedule() -> Scenario {
+    late().then(reported(true, custom_hours()))
 }
 
 /// Night Shift on for the tour, over the custom hours' off until 22:00.
@@ -5309,9 +4151,7 @@ fn on_for_the_tour() -> Decision {
 
 #[test]
 fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().start();
 
     assert_eq!(
         start_tour(&core),
@@ -5319,16 +4159,14 @@ fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour(
     );
     assert_eq!(report(&core, true), Vec::new());
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.decision, on_for_the_tour());
     assert_eq!(status.layers, Vec::new());
 }
 
 #[test]
 fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().start();
     start_tour(&core);
     report(&core, true);
 
@@ -5338,7 +4176,7 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
     );
     assert_eq!(report(&core, false), Vec::new());
 
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(
         status.decision.reasons,
         vec![Reason::Schedule {
@@ -5351,10 +4189,8 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
 
 #[test]
 fn the_tour_sets_aside_everywheres_hold_and_puts_it_back() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    send(&core, &socket, &wakes, Command::Off);
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
     report(&core, false);
 
     assert_eq!(
@@ -5368,7 +4204,7 @@ fn the_tour_sets_aside_everywheres_hold_and_puts_it_back() {
     );
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -5379,15 +4215,8 @@ fn the_tour_sets_aside_everywheres_hold_and_puts_it_back() {
 
 #[test]
 fn the_tour_sets_aside_everywheres_timer_and_puts_it_back_with_its_end() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(60)),
-    );
+    let core = on_by_the_schedule().start();
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(60)));
     report(&core, false);
 
     assert_eq!(
@@ -5411,31 +4240,23 @@ fn the_tour_sets_aside_everywheres_timer_and_puts_it_back_with_its_end() {
     );
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).decision.reasons[0],
+        core.status().decision.reasons[0],
         Reason::Timer(layer(OnOff::Off, Some("2026-10-17T00:00:00+02:00")))
     );
 }
 
 #[test]
 fn while_the_tour_stands_in_everywheres_row_offers_no_way_back_to_the_schedule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().start();
     start_tour(&core);
     report(&core, true);
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
-    );
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(Place::Everywhere, OnOff::Off, minutes(30)),
-    );
+    core.send(set(
+        Place::Everywhere,
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
+    core.send(set(Place::Everywhere, OnOff::Off, minutes(30)));
 
     // With nothing else to offer, the row is left out.
     assert!(
@@ -5446,31 +4267,27 @@ fn while_the_tour_stands_in_everywheres_row_offers_no_way_back_to_the_schedule()
 
 #[test]
 fn while_the_tour_stands_in_a_tap_off_and_on_returns_to_the_tours_on() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().start();
     start_tour(&core);
     report(&core, true);
 
-    let (effects, _) = send(&core, &socket, &wakes, Command::Toggle);
+    let (effects, _) = core.send(Command::Toggle);
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     report(&core, false);
-    let (effects, response) = send(&core, &socket, &wakes, Command::Toggle);
+    let (effects, response) = core.send(Command::Toggle);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(response, Response::Ok(Payload::Decision(on_for_the_tour())));
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_tour_started_with_night_shift_on_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
 
     assert_eq!(start_tour(&core), Vec::new());
     assert!(matches!(
-        status_of(&core, &socket, &wakes).decision.reasons[..],
+        core.status().decision.reasons[..],
         [Reason::Schedule { .. }]
     ));
     assert_eq!(core.handle(Event::TourEnded), Vec::new());
@@ -5478,13 +4295,11 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
 
 #[test]
 fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     assert_eq!(activate(&core, SAMPLE), Vec::new());
 
-    let (effects, response) = send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    let (effects, response) = core.send(add_rule(sample_rule().identity));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
@@ -5504,11 +4319,9 @@ fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front(
 
 #[test]
 fn outside_a_tour_the_sample_matches_no_rule() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
-    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    core.send(add_rule(sample_rule().identity));
     activate(&core, "com.apple.mail");
     core.handle(Event::TourEnded);
 
@@ -5517,31 +4330,22 @@ fn outside_a_tour_the_sample_matches_no_rule() {
 
 #[test]
 fn removing_the_samples_rule_mid_tour_drops_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     activate(&core, SAMPLE);
-    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    core.send(add_rule(sample_rule().identity));
     report(&core, false);
 
-    let (effects, response) = send(
-        &core,
-        &socket,
-        &wakes,
-        Command::RemoveRule(sample_rule().identity),
-    );
+    let (effects, response) = core.send(Command::RemoveRule(sample_rule().identity));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
-    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
+    assert_eq!(core.status().rules, Vec::new());
 }
 
 #[test]
 fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     core.handle(Event::AppActivated {
         bundle_id: Some(SAMPLE.to_owned()),
@@ -5555,7 +4359,7 @@ fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
         add_rule(sample_rule().identity)
     );
 
-    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    core.send(add_rule(sample_rule().identity));
 
     let row = app_row(&core).unwrap();
     assert_eq!(row.title, "Turn On in Tour Sample");
@@ -5568,29 +4372,22 @@ fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
 
 #[test]
 fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     let site = RuleIdentity::Domain("choco.me".parse().unwrap());
     for identity in [sample_rule().identity, site.clone()] {
-        let (_, response) = send(&core, &socket, &wakes, add_rule(identity));
+        let (_, response) = core.send(add_rule(identity));
         assert!(matches!(response, Response::Ok(_)), "{response:?}");
     }
-    let (_, response) = send(
-        &core,
-        &socket,
-        &wakes,
-        set(
-            Place::App(SAMPLE.parse().unwrap()),
-            OnOff::On,
-            Length::UntilScheduleTurns,
-        ),
-    );
+    let (_, response) = core.send(set(
+        Place::App(SAMPLE.parse().unwrap()),
+        OnOff::On,
+        Length::UntilScheduleTurns,
+    ));
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
+        core.status().rules,
         vec![
             sample_rule(),
             Rule {
@@ -5602,107 +4399,82 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
     );
     assert!(core.settings().rules.is_empty());
     assert!(!core.export(ExportFormat::Toml).contains(SAMPLE));
-    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
-    let kept = std::fs::read_to_string(rules_file).unwrap_or_default();
+    let kept = core.file(File::Rules).unwrap_or_default();
     assert!(
         !kept.contains(SAMPLE) && !kept.contains("choco.me"),
         "{kept}"
     );
-    let saved = std::fs::read_to_string(dir.path().join("state.json")).unwrap();
+    let saved = core.file(File::State).unwrap();
     assert!(!saved.contains(SAMPLE), "{saved}");
 
     core.handle(Event::TourEnded);
-    let status = status_of(&core, &socket, &wakes);
+    let status = core.status();
     assert_eq!(status.rules, Vec::new());
     assert_eq!(status.layers, Vec::new());
 }
 
 #[test]
 fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     report(&core, true);
     start_tour(&core);
 
-    send(&core, &socket, &wakes, add_rule(figma()));
+    core.send(add_rule(figma()));
 
-    assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
-        vec![app_rule("com.figma.Desktop")]
-    );
+    assert_eq!(core.status().rules, vec![app_rule("com.figma.Desktop")]);
     core.handle(Event::TourEnded);
-    assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
-        vec![app_rule("com.figma.Desktop")]
-    );
+    assert_eq!(core.status().rules, vec![app_rule("com.figma.Desktop")]);
 }
 
 #[test]
 fn a_config_rule_reloaded_mid_tour_replaces_the_tours_rule_for_its_app() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
-    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
-    write_config(&socket, &format!("[rules.on]\napp = [\"{SAMPLE}\"]\n"));
+    core.send(add_rule(sample_rule().identity));
+    core.write_config(&format!("[rules.on]\napp = [\"{SAMPLE}\"]\n"));
 
-    exchange(&core, &socket, &wakes, Request::Reload);
+    core.request(Request::Reload);
 
     let config_rule = Rule {
         source: RuleSource::Config,
         says: OnOff::On,
         ..sample_rule()
     };
-    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![config_rule]);
-    let (_, response) = send(
-        &core,
-        &socket,
-        &wakes,
-        Command::RemoveRule(sample_rule().identity),
-    );
+    assert_eq!(core.status().rules, vec![config_rule]);
+    let (_, response) = core.send(Command::RemoveRule(sample_rule().identity));
     assert_eq!(refusal(response), ErrorCode::ConfigRule);
 }
 
 #[test]
 fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
-    send(&core, &socket, &wakes, add_rule(mail.clone()));
+    core.send(add_rule(mail.clone()));
     start_tour(&core);
 
-    send(&core, &socket, &wakes, Command::RemoveRule(mail.clone()));
-    assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
-    let kept = adhoc::Store::new(on_disk(dir.path()));
-    assert_eq!(kept.load().unwrap(), vec![(mail.clone(), OnOff::Off)]);
+    core.send(Command::RemoveRule(mail.clone()));
+    assert_eq!(core.status().rules, Vec::new());
+    assert_eq!(kept_ad_hoc(&core), vec![(mail.clone(), OnOff::Off)]);
     core.handle(Event::TourEnded);
 
-    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![ad_hoc(mail)]);
+    assert_eq!(core.status().rules, vec![ad_hoc(mail)]);
 }
 
 #[test]
 fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
-    send(&core, &socket, &wakes, add_rule(mail.clone()));
+    core.send(add_rule(mail.clone()));
     start_tour(&core);
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        Command::AddRule {
-            identity: mail.clone(),
-            says: OnOff::On,
-        },
-    );
+    core.send(Command::AddRule {
+        identity: mail.clone(),
+        says: OnOff::On,
+    });
     assert_eq!(
-        status_of(&core, &socket, &wakes).rules,
+        core.status().rules,
         vec![Rule {
             says: OnOff::On,
             ..ad_hoc(mail.clone())
@@ -5711,38 +4483,35 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
     assert!(core.export(ExportFormat::Toml).contains("[rules.off]"));
     core.handle(Event::TourEnded);
 
-    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![ad_hoc(mail)]);
+    assert_eq!(core.status().rules, vec![ad_hoc(mail)]);
 }
 
 #[test]
 fn snoozes_and_the_switch_mid_tour_last_only_while_it_runs() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
-    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    let core = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
     report(&core, true);
     start_tour(&core);
 
     let figma = Place::App("com.figma.Desktop".parse().unwrap());
-    send(&core, &socket, &wakes, set(figma, OnOff::On, minutes(30)));
-    send(&core, &socket, &wakes, Command::Off);
-    assert_eq!(status_of(&core, &socket, &wakes).layers.len(), 2);
+    core.send(set(figma, OnOff::On, minutes(30)));
+    core.send(Command::Off);
+    assert_eq!(core.status().layers.len(), 2);
     core.handle(Event::TourEnded);
 
-    assert_eq!(status_of(&core, &socket, &wakes).layers, Vec::new());
+    assert_eq!(core.status().layers, Vec::new());
 }
 
 #[test]
 fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (crashed, wakes, _clock) = start_on_by_the_schedule(&socket);
-    send(&crashed, &socket, &wakes, Command::Off);
+    let crashed = on_by_the_schedule().start();
+    crashed.send(Command::Off);
     report(&crashed, false);
     start_tour(&crashed);
     report(&crashed, true);
 
-    let (core, socket, wakes, _clock) = restart_at(&socket, "2026-10-16T23:10:00+02:00");
+    let core = crashed.restart_at("2026-10-16T23:10:00+02:00");
     let effects = report(&core, true);
 
     assert_eq!(
@@ -5755,7 +4524,7 @@ fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_i
         ]
     );
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -5766,9 +4535,7 @@ fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_i
 
 #[test]
 fn quitting_mid_tour_ends_it() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().start();
     start_tour(&core);
     report(&core, true);
 
@@ -5780,10 +4547,8 @@ fn quitting_mid_tour_ends_it() {
 
 #[test]
 fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    send(&core, &socket, &wakes, Command::Off);
+    let core = on_by_the_schedule().start();
+    core.send(Command::Off);
     report(&core, false);
     start_tour(&core);
     report(&core, true);
@@ -5792,7 +4557,7 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
     core.handle(Event::TourEnded);
 
     assert_eq!(
-        status_of(&core, &socket, &wakes).layers,
+        core.status().layers,
         vec![layered(
             Place::Everywhere,
             Some(layer(OnOff::Off, None)),
@@ -5857,9 +4622,7 @@ fn sample_place() -> Place {
 
 #[test]
 fn the_tour_reports_nothing_before_it_starts_or_once_it_ends() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     assert_eq!(core.tour(), None);
 
     start_tour(&core);
@@ -5874,9 +4637,7 @@ fn the_tour_reports_nothing_before_it_starts_or_once_it_ends() {
 
 #[test]
 fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     assert_eq!(tour_facts(&core).sample, away());
 
@@ -5911,9 +4672,7 @@ fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
 
 #[test]
 fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     bring(&core, &tour_sample());
     choose(&core, add_rule(sample_rule().identity));
@@ -5942,9 +4701,7 @@ fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
 
 #[test]
 fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     bring(&core, &tour_sample());
     choose(&core, add_rule(sample_rule().identity));
@@ -5952,7 +4709,7 @@ fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts()
     bring(&core, &mail_app());
     assert!(tour_facts(&core).sample.snoozed);
 
-    clock.set(at("2026-10-16T23:30:00+02:00"));
+    core.set_clock("2026-10-16T23:30:00+02:00");
     core.handle(Event::TimerFired);
 
     assert_eq!(
@@ -5966,12 +4723,10 @@ fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts()
 
 #[test]
 fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
 
-    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    core.send(add_rule(sample_rule().identity));
     assert_eq!(
         tour_facts(&core).sample,
         TourPlace {
@@ -5979,12 +4734,7 @@ fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
             ..away()
         }
     );
-    send(
-        &core,
-        &socket,
-        &wakes,
-        set(sample_place(), OnOff::On, Length::UntilScheduleTurns),
-    );
+    core.send(set(sample_place(), OnOff::On, Length::UntilScheduleTurns));
 
     assert_eq!(
         tour_facts(&core).sample,
@@ -5996,21 +4746,18 @@ fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
     );
 }
 
-/// Starts at 23:00 with Night Shift on by the custom hours and website checking on, then
-/// starts the tour and brings Safari to the front.
-fn start_tour_in_safari(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<ManualClock>) {
-    write_config(socket, "websites = true\n");
-    let (core, wakes, clock) = start_on_by_the_schedule(socket);
-    start_tour(&core);
-    activate_browser(&core, "com.apple.Safari");
-    (core, wakes, clock)
+/// At 23:00 with Night Shift on by the custom hours and website checking on, the tour started
+/// and Safari in front.
+fn tour_in_safari() -> Scenario {
+    on_by_the_schedule()
+        .config("websites = true\n")
+        .then(tour_started())
+        .then(activate_browser_event("com.apple.Safari"))
 }
 
 #[test]
 fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_tour_in_safari(&socket);
+    let core = tour_in_safari().start();
     assert_eq!(tour_facts(&core).site, Some(away()));
     let in_front = TourPlace {
         in_front: true,
@@ -6028,9 +4775,7 @@ fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
 
 #[test]
 fn the_sites_own_rule_shows_in_its_facts_and_a_tap_changes_only_the_switch() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_tour_in_safari(&socket);
+    let core = tour_in_safari().start();
     report_host(&core, 1, "www.nightcap.choco.me");
     let always = choice_titled(&site_row(&core).unwrap(), "Always");
     assert_eq!(always.command, add_rule(domain(SITE)));
@@ -6059,9 +4804,7 @@ fn the_sites_own_rule_shows_in_its_facts_and_a_tap_changes_only_the_switch() {
 
 #[test]
 fn a_tour_without_a_site_step_reports_no_site() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    let core = on_by_the_schedule().start();
 
     core.handle(Event::TourStarted {
         sample: tour_sample(),
@@ -6076,9 +4819,7 @@ fn a_tour_without_a_site_step_reports_no_site() {
 
 #[test]
 fn the_tour_stands_in_as_night_shift_was_when_it_started_whatever_the_switch_does() {
-    let dir = tempfile::tempdir().unwrap();
-    let off = socket_in(&dir);
-    let (core, _wakes, _clock) = start_off_by_the_schedule(&off);
+    let core = off_by_the_schedule().start();
     start_tour(&core);
     report(&core, true);
     assert!(tour_facts(&core).stands_in);
@@ -6088,9 +4829,7 @@ fn the_tour_stands_in_as_night_shift_was_when_it_started_whatever_the_switch_doe
     assert!(tapped.stands_in);
     assert!(!tapped.everywhere_on);
 
-    let dir = tempfile::tempdir().unwrap();
-    let on = socket_in(&dir);
-    let (core, _wakes, _clock) = start_on_by_the_schedule(&on);
+    let core = on_by_the_schedule().start();
     start_tour(&core);
     assert!(!tour_facts(&core).stands_in);
     choose(&core, Command::Toggle);
@@ -6121,10 +4860,7 @@ fn the_tours_titles_are_the_menus() {
 
 #[test]
 fn each_title_the_tour_quotes_is_where_the_menu_shows_it_in_the_situation_its_step_describes() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    write_config(&socket, "websites = true\n");
-    let (core, _wakes, _clock) = start_off_by_the_schedule(&socket);
+    let core = off_by_the_schedule().config("websites = true\n").start();
     start_tour(&core);
     report(&core, true);
     let titles = core.tour().unwrap().titles;
