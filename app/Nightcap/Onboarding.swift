@@ -461,10 +461,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                         ? option(
                             title, detail + " Notifications are switched off for Nightcap in System Settings.",
                             button: Look.button("Open Notification Settings…", .regular) {
-                                let pane =
-                                    "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
-                                    + "?id=\(Bundle.main.bundleIdentifier!)"
-                                NSWorkspace.shared.open(URL(string: pane)!)
+                                NSWorkspace.shared.open(Mac.notificationSettings)
                             })
                         : option(title, detail, ticked: wantsNotifications) { [weak self] in
                             self?.wantsNotifications = $0

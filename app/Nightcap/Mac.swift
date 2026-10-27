@@ -69,6 +69,11 @@ final class Mac: NSObject {
         nightShift = NightShiftAdapter { [weak self] status in self?.reportNightShift(status) }
     }
 
+    /// Nightcap's page in System Settings › Notifications.
+    static let notificationSettings = URL(
+        string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+            + "?id=\(Bundle.main.bundleIdentifier!)")!
+
     /// Whether Sparkle runs, which the launch's effects decide.
     var updaterRunning: Bool { updater != nil }
 
@@ -452,10 +457,7 @@ final class Mac: NSObject {
         Task {
             await reportSystemState()
             guard notifications == .notRequested else {
-                let pane =
-                    "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
-                    + "?id=\(Bundle.main.bundleIdentifier!)"
-                NSWorkspace.shared.open(URL(string: pane)!)
+                NSWorkspace.shared.open(Self.notificationSettings)
                 return
             }
             askForNotifications()
