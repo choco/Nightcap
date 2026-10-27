@@ -10,9 +10,10 @@ use clap::{Parser, Subcommand};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, CheckState, ErrorReply, Hello, HelloMessage, HelloReply, Install, Instance,
-    Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Place, PlaceLayers, Query,
-    Reason, Request, Response, Rule, RuleIdentity, Schedule, Status, TimeOfDay,
+    self as protocol, BundleId, CheckState, Decision, Domain, ErrorReply, Hello, HelloMessage,
+    HelloReply, Install, Instance, Layer, Length, NightShift, NotificationPermission, OnOff,
+    Payload, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity, Schedule,
+    Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -102,10 +103,10 @@ struct Change {
 struct Where {
     /// An app, by its bundle ID, e.g. com.figma.Desktop.
     #[arg(long, group = "where")]
-    app: Option<String>,
+    app: Option<BundleId>,
     /// A site and its subdomains, e.g. figma.com.
     #[arg(long, group = "where")]
-    domain: Option<String>,
+    domain: Option<Domain>,
 }
 
 impl Where {
@@ -176,17 +177,13 @@ enum RulesAction {
     /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com, that turns Night Shift
     /// off there, or on with --on. It replaces your own rule for the same app or site.
     Add {
-        #[arg(value_parser = parse_identity)]
         identity: RuleIdentity,
         /// Keep Night Shift on there, even by day.
         #[arg(long)]
         on: bool,
     },
     /// Remove an ad-hoc rule; a config rule changes only in the config.
-    Remove {
-        #[arg(value_parser = parse_identity)]
-        identity: RuleIdentity,
-    },
+    Remove { identity: RuleIdentity },
     /// Print the ad-hoc rules, ready to paste into the config.
     Export {
         #[arg(long, value_enum)]
@@ -204,10 +201,6 @@ enum Switch {
 enum Format {
     Nix,
     Toml,
-}
-
-fn parse_identity(text: &str) -> Result<RuleIdentity, String> {
-    RuleIdentity::try_from(text.to_owned())
 }
 
 /// A length such as 30m, 1h or 1h30m, longer than zero.
@@ -350,20 +343,32 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
         return Err(unexpected_reply());
     };
     let zone = TimeZone::system();
-    // The decision is the front's, so a change to a place that doesn't decide says what it set.
-    if let protocol::Command::Set {
-        place,
-        state,
-        length,
-    } = &command
-        && *place != decision.place
-    {
-        println!("Set {place} {state} {}.", length_text(length, &zone));
+    if let Some(line) = set_elsewhere(&command, &decision, &zone) {
+        println!("{line}");
     }
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
     println!("Night Shift {}", decision.describe(&zone));
     Ok(())
+}
+
+/// What a `Set` to a place that doesn't decide says it set: the decision is the front's.
+fn set_elsewhere(
+    command: &protocol::Command,
+    decision: &Decision,
+    zone: &TimeZone,
+) -> Option<String> {
+    match command {
+        protocol::Command::Set {
+            place,
+            state,
+            length,
+        } if *place != decision.place => Some(format!(
+            "Set {place} {state} {}.",
+            length_text(length, zone)
+        )),
+        _ => None,
+    }
 }
 
 /// A mistake in what was asked, said before reaching Nightcap: exit 2, as Nightcap's own
@@ -711,7 +716,7 @@ mod tests {
         assert_eq!(
             sends(&["on", "--app", "com.figma.Desktop", "--until-schedule"]),
             set(
-                Place::App("com.figma.Desktop".to_owned()),
+                Place::App("com.figma.Desktop".parse().unwrap()),
                 OnOff::On,
                 Length::UntilScheduleTurns
             )
@@ -719,7 +724,7 @@ mod tests {
         assert_eq!(
             sends(&["on", "--domain", "figma.com", "--for", "1h"]),
             set(
-                Place::Domain("figma.com".to_owned()),
+                Place::Domain("figma.com".parse().unwrap()),
                 OnOff::On,
                 Length::For(SignedDuration::from_hours(1))
             )
@@ -727,6 +732,30 @@ mod tests {
         assert!(sends(&["on", "--app", "com.figma.Desktop"]).is_err());
         assert!(sends(&["on", "--for", "1h", "--until-schedule"]).is_err());
         assert!(sends(&["on", "--app", "a", "--domain", "b", "--for", "1h"]).is_err());
+        assert!(sends(&["on", "--app", "com.figma.Desktop ", "--for", "1h"]).is_err());
+        assert!(sends(&["on", "--domain", "figma.com/file", "--for", "1h"]).is_err());
+    }
+
+    #[test]
+    fn a_change_where_the_decision_is_says_only_the_decision_in_any_spelling() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let decided_at = |place: &str| Decision {
+            state: Some(OnOff::On),
+            place: serde_json::from_str(place).unwrap(),
+            reasons: Vec::new(),
+        };
+        let figma = decided_at(r#"{"app":"com.figma.Desktop"}"#);
+        let site = decided_at(r#"{"domain":"www.figma.com"}"#);
+        let change = |args: &[&str]| sends(args).unwrap();
+
+        let app = change(&["on", "--app", "com.figma.desktop", "--for", "1h"]);
+        assert_eq!(set_elsewhere(&app, &figma, &zone), None);
+        let domain = change(&["on", "--domain", "WWW.Figma.com", "--for", "1h"]);
+        assert_eq!(set_elsewhere(&domain, &site, &zone), None);
+        assert_eq!(
+            set_elsewhere(&domain, &figma, &zone),
+            Some("Set domain:www.figma.com on for 1h.".to_owned())
+        );
     }
 
     #[test]

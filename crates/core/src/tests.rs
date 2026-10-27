@@ -138,7 +138,7 @@ fn write_config(socket: &Path, contents: &str) {
 
 fn app_rule(bundle_id: &str) -> Rule {
     Rule {
-        identity: RuleIdentity::App(bundle_id.to_owned()),
+        identity: RuleIdentity::App(bundle_id.parse().unwrap()),
         source: RuleSource::Config,
         says: OnOff::Off,
     }
@@ -199,7 +199,7 @@ fn rules_of(core: &Core, socket: &Path, wakes: &mpsc::Receiver<()>) -> Vec<Rule>
 }
 
 fn figma() -> RuleIdentity {
-    RuleIdentity::App("com.figma.Desktop".to_owned())
+    RuleIdentity::App("com.figma.Desktop".parse().unwrap())
 }
 
 fn activate(core: &Core, bundle_id: &str) -> Vec<Effect> {
@@ -242,7 +242,7 @@ fn grant_accessibility(core: &Core) {
 
 fn domain_rule(domain: &str) -> Rule {
     Rule {
-        identity: RuleIdentity::Domain(domain.to_owned()),
+        identity: RuleIdentity::Domain(domain.parse().unwrap()),
         source: RuleSource::Config,
         says: OnOff::Off,
     }
@@ -340,6 +340,21 @@ fn exchange(
     wakes: &mpsc::Receiver<()>,
     request: Request,
 ) -> (Vec<Effect>, Response) {
+    exchange_line(
+        core,
+        socket,
+        wakes,
+        serde_json::to_string(&request).unwrap(),
+    )
+}
+
+/// Sends one line as the request, which the IPC thread passes on for a tick.
+fn exchange_line(
+    core: &Core,
+    socket: &Path,
+    wakes: &mpsc::Receiver<()>,
+    line: String,
+) -> (Vec<Effect>, Response) {
     let socket = socket.to_owned();
     let client = thread::spawn(move || {
         let mut client = Client::connect(&socket);
@@ -347,7 +362,7 @@ fn exchange(
             client.hello(nightcap_protocol::PROTOCOL_VERSION),
             HelloReply::Hello(Hello::current())
         );
-        client.send(&serde_json::to_string(&request).unwrap());
+        client.send(&line);
         client.receive::<Response>()
     });
     wakes
@@ -1308,7 +1323,7 @@ fn lengths_that_cant_be_are_refused() {
         ),
         set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
         set(
-            Place::App("com.figma.Desktop".to_owned()),
+            Place::App("com.figma.Desktop".parse().unwrap()),
             OnOff::Off,
             Length::UntilTurnedBack,
         ),
@@ -1773,7 +1788,7 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_chan
 }
 
 fn figma_app() -> Place {
-    Place::App("com.figma.Desktop".to_owned())
+    Place::App("com.figma.Desktop".parse().unwrap())
 }
 
 #[test]
@@ -2043,7 +2058,7 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
         name: Some("Figma".to_owned()),
         is_browser: false,
     });
-    let figma = Place::App("com.figma.Desktop".to_owned());
+    let figma = Place::App("com.figma.Desktop".parse().unwrap());
     send(
         &core,
         &socket,
@@ -2574,29 +2589,27 @@ fn refusal(response: Response) -> ErrorCode {
 }
 
 #[test]
-fn an_added_domain_is_normalized_and_a_bad_identity_refused() {
+fn an_added_domain_is_normalized_and_a_bad_identity_refused_before_the_core() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes) = start(&socket);
+    let add = |identity: &str| {
+        format!(r#"{{"command":{{"add_rule":{{"identity":"{identity}","says":"off"}}}}}}"#)
+    };
 
-    send(
-        &core,
-        &socket,
-        &wakes,
-        add_rule(RuleIdentity::Domain("Figma.COM".to_owned())),
-    );
+    exchange_line(&core, &socket, &wakes, add("domain:Figma.COM"));
 
     assert_eq!(
         rules_of(&core, &socket, &wakes),
-        vec![ad_hoc(RuleIdentity::Domain("figma.com".to_owned()))]
+        vec![ad_hoc(RuleIdentity::Domain("figma.com".parse().unwrap()))]
     );
-    for bad in [
-        RuleIdentity::Domain("https://figma.com".to_owned()),
-        RuleIdentity::App("com.figma.Desktop/".to_owned()),
-    ] {
-        let (_, response) = send(&core, &socket, &wakes, add_rule(bad));
-        assert_eq!(refusal(response), ErrorCode::BadIdentity);
+    for bad in ["domain:https://figma.com", "app:com.figma.Desktop/", "app:"] {
+        let mut client = Client::connect(&socket);
+        client.hello(nightcap_protocol::PROTOCOL_VERSION);
+        client.send(&add(bad));
+        assert_eq!(refusal(client.receive()), ErrorCode::BadRequest, "{bad}");
     }
+    assert!(wakes.try_recv().is_err());
 }
 
 #[test]
@@ -2652,6 +2665,46 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
 }
 
 #[test]
+fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
+    let invalid = "version = 2\n[rules.off]\napp = [\"com.figma.Desktop \"]\n";
+    std::fs::write(&rules_file, invalid).unwrap();
+    let (core, wakes) = start(&socket);
+
+    let status = status_of(&core, &socket, &wakes);
+
+    assert!(
+        status
+            .ad_hoc_error
+            .is_some_and(|error| error.contains("\"com.figma.Desktop \" isn't a bundle ID")),
+    );
+    assert_eq!(status.rules, Vec::new());
+    assert_eq!(std::fs::read_to_string(&rules_file).unwrap(), invalid);
+}
+
+#[test]
+fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+        sun_schedule_set_aside: false,
+    });
+
+    activate(&core, "unity.Team Cherry.Hollow Knight");
+
+    assert_eq!(status_of(&core, &socket, &wakes).frontmost_app, None);
+    let app_rows = core.menu().entries.into_iter().filter(|entry| {
+        matches!(entry, MenuEntry::Row { row } if matches!(row.image, RowImage::App { .. }))
+    });
+    assert_eq!(app_rows.count(), 0);
+}
+
+#[test]
 fn the_rules_query_lists_every_rule_with_its_source() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
@@ -2662,14 +2715,14 @@ fn the_rules_query_lists_every_rule_with_its_source() {
         &core,
         &socket,
         &wakes,
-        add_rule(RuleIdentity::Domain("figma.com".to_owned())),
+        add_rule(RuleIdentity::Domain("figma.com".parse().unwrap())),
     );
 
     assert_eq!(
         rules_of(&core, &socket, &wakes),
         vec![
             app_rule("com.figma.Desktop"),
-            ad_hoc(RuleIdentity::Domain("figma.com".to_owned())),
+            ad_hoc(RuleIdentity::Domain("figma.com".parse().unwrap())),
         ]
     );
 }
@@ -2689,7 +2742,7 @@ fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
         schedule: custom_hours(),
         sun_schedule_set_aside: false,
     });
-    let safari_app = Place::App("com.apple.Safari".to_owned());
+    let safari_app = Place::App("com.apple.Safari".parse().unwrap());
 
     assert_eq!(
         activate_browser(&core, "com.apple.Safari"),
@@ -2709,7 +2762,7 @@ fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
         &socket,
         &wakes,
         Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".to_owned()),
+            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
             says: OnOff::On,
         },
     );
@@ -2721,7 +2774,7 @@ fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_figma(&socket);
-    let figma_site = Place::Domain("figma.com".to_owned());
+    let figma_site = Place::Domain("figma.com".parse().unwrap());
 
     let (effects, _) = send(
         &core,
@@ -2775,7 +2828,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
 }
 
 fn mail() -> RuleIdentity {
-    RuleIdentity::App("com.apple.mail".to_owned())
+    RuleIdentity::App("com.apple.mail".parse().unwrap())
 }
 
 #[test]
@@ -2832,7 +2885,7 @@ fn start_in_books_at_noon(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestC
 }
 
 fn books() -> RuleIdentity {
-    RuleIdentity::App("com.apple.iBooksX".to_owned())
+    RuleIdentity::App("com.apple.iBooksX".parse().unwrap())
 }
 
 #[test]
@@ -2926,7 +2979,7 @@ fn export_writes_both_lists() {
         &socket,
         &wakes,
         Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".to_owned()),
+            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
             says: OnOff::On,
         },
     );
@@ -2961,7 +3014,7 @@ fn rules_are_listed_by_what_they_say() {
         vec![
             app_rule("com.figma.Desktop"),
             on(books()),
-            on(RuleIdentity::Domain("youtube.com".to_owned())),
+            on(RuleIdentity::Domain("youtube.com".parse().unwrap())),
         ]
     );
 }
@@ -2984,6 +3037,15 @@ fn a_config_that_cant_be_is_refused() {
         ("[menu]\nlengths = [\"45m\", \"forever\"]\n", "menu.lengths"),
         ("[menu]\nlengths = [\"30s\"]\n", "menu.lengths"),
         ("[menu]\nlengths = []\n", "menu.lengths"),
+        (
+            "[rules.off]\napp = [\"com.figma.Desktop \"]\n",
+            "\"com.figma.Desktop \" isn't a bundle ID",
+        ),
+        ("[rules.on]\napp = [\"\"]\n", "\"\" isn't a bundle ID"),
+        (
+            "[rules.off]\ndomain = [\"https://figma.com\"]\n",
+            "\"https://figma.com\" isn't a domain",
+        ),
     ] {
         write_config(&socket, config);
         let (_, response) = exchange(&core, &socket, &wakes, Request::Reload);
@@ -3594,7 +3656,7 @@ fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
         is_browser: true,
     });
     report_host(&core, 1, "example.com");
-    let example = Place::Domain("example.com".to_owned());
+    let example = Place::Domain("example.com".parse().unwrap());
 
     send(
         &core,
@@ -3615,7 +3677,7 @@ fn the_site_row_snoozes_a_config_rule() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_figma(&socket);
-    let figma_site = Place::Domain("figma.com".to_owned());
+    let figma_site = Place::Domain("figma.com".parse().unwrap());
 
     let row = site_row(&core).unwrap();
     assert_eq!(
@@ -3854,7 +3916,7 @@ fn the_menu_shows_a_problem_line_while_any_problem_exists() {
 }
 
 fn domain(name: &str) -> RuleIdentity {
-    RuleIdentity::Domain(name.to_owned())
+    RuleIdentity::Domain(name.parse().unwrap())
 }
 
 #[test]
@@ -3876,7 +3938,7 @@ fn a_rule_from_the_tab_keeps_www_where_nothing_but_a_suffix_would_be_left() {
 }
 
 fn safari() -> RuleIdentity {
-    RuleIdentity::App("com.apple.Safari".to_owned())
+    RuleIdentity::App("com.apple.Safari".parse().unwrap())
 }
 
 #[test]
@@ -4350,7 +4412,10 @@ fn saved_ad_hoc_rules_load_back() {
     let store = adhoc::Store::new(dir.path().join("nightcap").join("rules.toml"));
     let rules = vec![
         (figma(), OnOff::Off),
-        (RuleIdentity::Domain("youtube.com".to_owned()), OnOff::On),
+        (
+            RuleIdentity::Domain("youtube.com".parse().unwrap()),
+            OnOff::On,
+        ),
     ];
 
     store.save(&rules).unwrap();
@@ -5114,7 +5179,7 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
         schedule: custom_hours(),
         sun_schedule_set_aside: false,
     });
-    let photos = RuleIdentity::App("com.apple.Photos".to_owned());
+    let photos = RuleIdentity::App("com.apple.Photos".parse().unwrap());
     send(&core, &socket, &wakes, add_rule(photos.clone()));
     send(
         &core,
@@ -5125,7 +5190,7 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
             says: OnOff::On,
         },
     );
-    let figma_site = Place::Domain("figma.com".to_owned());
+    let figma_site = Place::Domain("figma.com".parse().unwrap());
     send(
         &core,
         &socket,
@@ -5259,7 +5324,7 @@ const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
 
 fn sample_rule() -> Rule {
     Rule {
-        identity: RuleIdentity::App(SAMPLE.to_owned()),
+        identity: RuleIdentity::App(SAMPLE.parse().unwrap()),
         source: RuleSource::Tour,
         says: OnOff::Off,
     }
@@ -5490,7 +5555,7 @@ fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front(
         response,
         Response::Ok(Payload::Decision(Decision {
             state: Some(OnOff::Off),
-            place: Place::App(SAMPLE.to_owned()),
+            place: Place::App(SAMPLE.parse().unwrap()),
             reasons: vec![Reason::Rule(sample_rule())],
         }))
     );
@@ -5571,7 +5636,7 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
     start_tour(&core);
-    let site = RuleIdentity::Domain("choco.me".to_owned());
+    let site = RuleIdentity::Domain("choco.me".parse().unwrap());
     for identity in [sample_rule().identity, site.clone()] {
         let (_, response) = send(&core, &socket, &wakes, add_rule(identity));
         assert!(matches!(response, Response::Ok(_)), "{response:?}");
@@ -5581,7 +5646,7 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
         &socket,
         &wakes,
         set(
-            Place::App(SAMPLE.to_owned()),
+            Place::App(SAMPLE.parse().unwrap()),
             OnOff::On,
             Length::UntilScheduleTurns,
         ),
@@ -5643,7 +5708,7 @@ fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    let mail = RuleIdentity::App("com.apple.mail".to_owned());
+    let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
     send(&core, &socket, &wakes, add_rule(mail.clone()));
     start_tour(&core);
 
@@ -5661,7 +5726,7 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
     let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    let mail = RuleIdentity::App("com.apple.mail".to_owned());
+    let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
     send(&core, &socket, &wakes, add_rule(mail.clone()));
     start_tour(&core);
 
@@ -5696,7 +5761,7 @@ fn snoozes_and_the_switch_mid_tour_last_only_while_it_runs() {
     report(&core, true);
     start_tour(&core);
 
-    let figma = Place::App("com.figma.Desktop".to_owned());
+    let figma = Place::App("com.figma.Desktop".parse().unwrap());
     send(&core, &socket, &wakes, set(figma, OnOff::On, minutes(30)));
     send(&core, &socket, &wakes, Command::Off);
     assert_eq!(status_of(&core, &socket, &wakes).layers.len(), 2);

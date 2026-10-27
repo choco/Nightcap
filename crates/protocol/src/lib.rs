@@ -5,11 +5,14 @@
 //! [`Request`] and receives one [`Response`].
 
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::str::FromStr;
 
+use idna::AsciiDenyList;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
 pub const PROTOCOL_VERSION: u32 = 2;
@@ -149,8 +152,8 @@ pub enum Command {
 #[serde(rename_all = "snake_case")]
 pub enum Place {
     Everywhere,
-    App(String),
-    Domain(String),
+    App(BundleId),
+    Domain(Domain),
 }
 
 /// `everywhere`, `app:com.figma.Desktop` or `domain:figma.com`.
@@ -323,12 +326,11 @@ impl fmt::Display for Rule {
 }
 
 /// A rule's kind plus its target, written `app:com.figma.Desktop` or `domain:figma.com`.
-/// Bundle IDs compare case-insensitively; domains are lowercase ASCII, IDNs as punycode.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(into = "String", try_from = "String")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(into = "String")]
 pub enum RuleIdentity {
-    App(String),
-    Domain(String),
+    App(BundleId),
+    Domain(Domain),
 }
 
 impl fmt::Display for RuleIdentity {
@@ -346,20 +348,164 @@ impl From<RuleIdentity> for String {
     }
 }
 
-impl TryFrom<String> for RuleIdentity {
-    type Error = String;
+impl FromStr for RuleIdentity {
+    type Err = IdentityError;
 
-    fn try_from(identity: String) -> Result<Self, Self::Error> {
-        match identity.split_once(':') {
-            Some(("app", bundle_id)) if !bundle_id.is_empty() => {
-                Ok(Self::App(bundle_id.to_owned()))
-            }
-            Some(("domain", domain)) if !domain.is_empty() => Ok(Self::Domain(domain.to_owned())),
-            _ => Err(format!(
-                "{identity} isn't a rule identity like app:com.figma.Desktop or domain:figma.com"
-            )),
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        match text.split_once(':') {
+            Some(("app", bundle_id)) => Ok(Self::App(bundle_id.parse()?)),
+            Some(("domain", domain)) => Ok(Self::Domain(domain.parse()?)),
+            _ => Err(IdentityError::RuleIdentity(text.to_owned())),
         }
     }
+}
+
+impl<'de> Deserialize<'de> for RuleIdentity {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer)
+    }
+}
+
+/// An app's bundle ID, such as `com.figma.Desktop`: letters, digits, hyphens and periods. It
+/// keeps its spelling, and compares and hashes in any case.
+#[derive(Debug, Clone, Serialize)]
+#[serde(transparent)]
+pub struct BundleId(String);
+
+impl BundleId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq for BundleId {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(&other.0)
+    }
+}
+
+impl Eq for BundleId {}
+
+impl Hash for BundleId {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for byte in self.0.bytes() {
+            state.write_u8(byte.to_ascii_lowercase());
+        }
+        // Ends as `str`'s hash does, so no bundle ID's hash is a prefix of a longer one's.
+        state.write_u8(0xff);
+    }
+}
+
+impl fmt::Display for BundleId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl From<BundleId> for String {
+    fn from(bundle_id: BundleId) -> Self {
+        bundle_id.0
+    }
+}
+
+impl FromStr for BundleId {
+    type Err = IdentityError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let valid = !text.is_empty()
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.');
+        if valid {
+            Ok(Self(text.to_owned()))
+        } else {
+            Err(IdentityError::BundleId(text.to_owned()))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BundleId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer)
+    }
+}
+
+/// A domain in the one form rules compare: lowercase ASCII, IDNs as punycode, no trailing dot
+/// (ADR-0006). It's made only by normalizing what was written.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[serde(transparent)]
+pub struct Domain(String);
+
+impl Domain {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// The domain one label up, as figma.com is to www.figma.com, or None for a top-level one.
+    pub fn parent(&self) -> Option<Self> {
+        self.0
+            .split_once('.')
+            .map(|(_, parent)| Self(parent.to_owned()))
+    }
+}
+
+impl fmt::Display for Domain {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl From<Domain> for String {
+    fn from(domain: Domain) -> Self {
+        domain.0
+    }
+}
+
+/// `text` as a bare domain; anything else is an error: a URL, a host with a port, a wildcard,
+/// an empty label.
+impl FromStr for Domain {
+    type Err = IdentityError;
+
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        let bare = text.strip_suffix('.').unwrap_or(text);
+        idna::domain_to_ascii_cow(bare.as_bytes(), AsciiDenyList::URL)
+            .ok()
+            .filter(|ascii| !ascii.contains('*') && ascii.split('.').all(|label| !label.is_empty()))
+            .map(|ascii| Self(ascii.into_owned()))
+            .ok_or_else(|| IdentityError::Domain(text.to_owned()))
+    }
+}
+
+impl<'de> Deserialize<'de> for Domain {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        parsed(deserializer)
+    }
+}
+
+/// Why text doesn't name an app, a domain or a rule. A domain's message quotes it, so the core
+/// never logs one (ADR-0009).
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum IdentityError {
+    #[error(
+        "{0:?} isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods"
+    )]
+    BundleId(String),
+    #[error("{0:?} isn't a domain like figma.com: no scheme, path, port or wildcard")]
+    Domain(String),
+    #[error("{0} isn't a rule identity like app:com.figma.Desktop or domain:figma.com")]
+    RuleIdentity(String),
+}
+
+/// Reads a value written as a string through its `FromStr`.
+fn parsed<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: FromStr,
+    T::Err: fmt::Display,
+{
+    String::deserialize(deserializer)?
+        .parse()
+        .map_err(de::Error::custom)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -398,7 +544,7 @@ pub struct Status {
     /// None while the schedule, or the sun times it needs, aren't known.
     pub scheduled_state: Option<OnOff>,
     pub next_transition: Option<Timestamp>,
-    /// The frontmost app's bundle ID, when it has one.
+    /// The frontmost app's bundle ID, when it has one a rule could name.
     pub frontmost_app: Option<String>,
     /// Whether the frontmost browser's host is being watched (ADR-0012).
     pub watching: bool,
@@ -551,8 +697,6 @@ pub enum ErrorCode {
     InvalidConfig,
     /// The install doesn't update itself: its installer does, or it's a dev build.
     NoUpdater,
-    /// The identity isn't one a rule can have, such as a domain with a path.
-    BadIdentity,
     /// The rule comes from the config, so only the config can change it.
     ConfigRule,
     NoSuchRule,
@@ -637,7 +781,7 @@ mod tests {
                     from_config: false,
                 },
                 layers: vec![PlaceLayers {
-                    place: Place::App("com.figma.Desktop".to_owned()),
+                    place: Place::App("com.figma.Desktop".parse().unwrap()),
                     hold: None,
                     timer: Some(Layer {
                         state: OnOff::On,
@@ -677,7 +821,7 @@ mod tests {
         );
         assert_eq!(
             json(&Request::Command(Command::Set {
-                place: Place::Domain("figma.com".to_owned()),
+                place: Place::Domain("figma.com".parse().unwrap()),
                 state: OnOff::On,
                 length: Length::UntilScheduleTurns,
             })),
@@ -685,7 +829,7 @@ mod tests {
         );
         assert_eq!(
             json(&Request::Command(Command::Reset(Place::App(
-                "com.figma.Desktop".to_owned()
+                "com.figma.Desktop".parse().unwrap()
             )))),
             r#"{"command":{"reset":{"app":"com.figma.Desktop"}}}"#
         );
@@ -706,7 +850,7 @@ mod tests {
         assert_eq!(
             json(&Payload::Decision(Decision {
                 state: Some(OnOff::On),
-                place: Place::App("com.figma.Desktop".to_owned()),
+                place: Place::App("com.figma.Desktop".parse().unwrap()),
                 reasons: vec![
                     Reason::Hold(Layer {
                         state: OnOff::On,
@@ -714,7 +858,7 @@ mod tests {
                         with: Some(Place::Everywhere),
                     }),
                     Reason::Rule(Rule {
-                        identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+                        identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
                         source: RuleSource::Config,
                         says: OnOff::Off,
                     }),
@@ -726,7 +870,7 @@ mod tests {
 
     #[test]
     fn rule_messages_match_the_documented_wire_format() {
-        let figma = RuleIdentity::Domain("figma.com".to_owned());
+        let figma = RuleIdentity::Domain("figma.com".parse().unwrap());
         assert_eq!(
             json(&Request::Command(Command::AddRule {
                 identity: figma.clone(),
@@ -765,20 +909,95 @@ mod tests {
     fn rule_identities_read_back_as_written() {
         let identity: RuleIdentity = serde_json::from_str(r#""app:com.figma.Desktop""#).unwrap();
 
-        assert_eq!(identity, RuleIdentity::App("com.figma.Desktop".to_owned()));
+        assert_eq!(
+            identity,
+            RuleIdentity::App("com.figma.Desktop".parse().unwrap())
+        );
         let identity: RuleIdentity = serde_json::from_str(r#""domain:figma.com""#).unwrap();
-        assert_eq!(identity, RuleIdentity::Domain("figma.com".to_owned()));
+        assert_eq!(identity, RuleIdentity::Domain("figma.com".parse().unwrap()));
         assert_eq!(json(&identity), r#""domain:figma.com""#);
         assert!(serde_json::from_str::<RuleIdentity>(r#""figma""#).is_err());
+    }
+
+    #[test]
+    fn bundle_ids_keep_their_spelling_and_compare_in_any_case() {
+        let written: BundleId = "com.figma.Desktop".parse().unwrap();
+        let lowercase: BundleId = "com.figma.desktop".parse().unwrap();
+        let hash = |bundle_id: &BundleId| {
+            let mut hasher = std::hash::DefaultHasher::new();
+            bundle_id.hash(&mut hasher);
+            hasher.finish()
+        };
+
+        assert_eq!(written, lowercase);
+        assert_eq!(hash(&written), hash(&lowercase));
+        assert_eq!(written.to_string(), "com.figma.Desktop");
+        assert_eq!(json(&written), r#""com.figma.Desktop""#);
+        assert_eq!(
+            Place::App(written.clone()),
+            serde_json::from_str(r#"{"app":"com.figma.desktop"}"#).unwrap()
+        );
+        for bad in [
+            "",
+            "com.figma.Desktop ",
+            "com.figma.Desktop/",
+            "com.foo_bar",
+        ] {
+            assert_eq!(
+                bad.parse::<BundleId>(),
+                Err(IdentityError::BundleId(bad.to_owned()))
+            );
+        }
+    }
+
+    #[test]
+    fn domains_are_made_only_by_normalizing() {
+        let domain = |text: &str| text.parse::<Domain>().map(String::from);
+
+        assert_eq!(domain("WWW.Figma.COM."), Ok("www.figma.com".to_owned()));
+        assert_eq!(domain("bücher.ch"), Ok("xn--bcher-kva.ch".to_owned()));
+        for bad in [
+            "",
+            "https://figma.com",
+            "figma.com:443",
+            "*.figma.com",
+            "figma..com",
+        ] {
+            assert_eq!(domain(bad), Err(IdentityError::Domain(bad.to_owned())));
+        }
+        assert_eq!(
+            serde_json::from_str::<Place>(r#"{"domain":"Figma.COM"}"#).unwrap(),
+            Place::Domain("figma.com".parse().unwrap())
+        );
+        assert!(serde_json::from_str::<Place>(r#"{"domain":"figma.com/x"}"#).is_err());
+        let www: Domain = "www.figma.com".parse().unwrap();
+        assert_eq!(www.parent(), Some("figma.com".parse().unwrap()));
+        assert_eq!("com".parse::<Domain>().unwrap().parent(), None);
+    }
+
+    #[test]
+    fn a_rule_identity_names_what_it_cant_be() {
+        assert_eq!(
+            "app:com.figma.Desktop ".parse::<RuleIdentity>(),
+            Err(IdentityError::BundleId("com.figma.Desktop ".to_owned()))
+        );
+        assert_eq!(
+            "domain:https://figma.com".parse::<RuleIdentity>(),
+            Err(IdentityError::Domain("https://figma.com".to_owned()))
+        );
+        assert_eq!(
+            "figma".parse::<RuleIdentity>(),
+            Err(IdentityError::RuleIdentity("figma".to_owned()))
+        );
     }
 
     #[test]
     fn decisions_describe_themselves_after_night_shift() {
         let zone = TimeZone::get("Europe/Zurich").unwrap();
         let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
-        let figma_app = || Place::App("com.figma.Desktop".to_owned());
+        let figma_app = || Place::App("com.figma.Desktop".parse().unwrap());
         let figma = Rule {
-            identity: RuleIdentity::App("com.figma.Desktop".to_owned()),
+            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
             source: RuleSource::Config,
             says: OnOff::Off,
         };

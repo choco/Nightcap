@@ -2,17 +2,19 @@
 //! says something, and why (ADR-0018, ADR-0006).
 
 use jiff::Timestamp;
-use nightcap_protocol::{Decision, OnOff, Place, PlaceLayers, Reason, Rule, RuleIdentity};
+use nightcap_protocol::{
+    BundleId, Decision, Domain, OnOff, Place, PlaceLayers, Reason, Rule, RuleIdentity,
+};
 
-use crate::domain;
+use crate::domain::{self, Host};
 
 /// What rules match against.
 #[derive(Default)]
 pub(crate) struct Context {
-    /// The frontmost app's bundle ID, when it has one.
-    pub app: Option<String>,
-    /// The frontmost browser's host, normalized, while it's watched and known.
-    pub host: Option<String>,
+    /// The frontmost app's bundle ID, when it has one a rule could name.
+    pub app: Option<BundleId>,
+    /// The frontmost browser's host, while it's watched and known.
+    pub host: Option<Host>,
 }
 
 pub(crate) struct Inputs<'a> {
@@ -47,7 +49,7 @@ pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
 /// The places in front, most specific first: the domains covering the host, longest first,
 /// then the app, then everywhere.
 pub(crate) fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
-    let mut domains: Vec<String> = Vec::new();
+    let mut domains: Vec<Domain> = Vec::new();
     if let Some(host) = &inputs.context.host {
         let ruled = inputs.rules.iter().filter_map(|rule| match &rule.identity {
             RuleIdentity::Domain(domain) => Some(domain),
@@ -65,7 +67,10 @@ pub(crate) fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
                 domains.push(domain.clone());
             }
         }
-        domains.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        domains.sort_by(|a, b| {
+            let length = |domain: &Domain| domain.as_str().len();
+            length(b).cmp(&length(a)).then_with(|| a.cmp(b))
+        });
     }
     domains
         .into_iter()
@@ -78,10 +83,7 @@ pub(crate) fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
 /// What a place holds, top first: its timer, its hold, then its rule, or for everywhere the
 /// tour and the schedule. A place with none of them says nothing.
 pub(crate) fn layers_of(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
-    let layers = inputs
-        .layers
-        .iter()
-        .find(|layers| same_place(&layers.place, place));
+    let layers = inputs.layers.iter().find(|layers| layers.place == *place);
     let mut reasons: Vec<Reason> = layers
         .into_iter()
         .flat_map(|layers| {
@@ -106,7 +108,7 @@ pub(crate) fn layers_of(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
             if let Some(rule) = inputs
                 .rules
                 .iter()
-                .find(|rule| same_place(&Place::from(rule.identity.clone()), place))
+                .find(|rule| Place::from(rule.identity.clone()) == *place)
             {
                 reasons.push(Reason::Rule(rule.clone()));
             }
@@ -125,17 +127,6 @@ pub(crate) fn says(reason: &Reason) -> OnOff {
     }
 }
 
-/// Places are the same when they name the same app, bundle IDs in any case, or the same
-/// domain.
-pub(crate) fn same_place(a: &Place, b: &Place) -> bool {
-    match (a, b) {
-        (Place::Everywhere, Place::Everywhere) => true,
-        (Place::App(a), Place::App(b)) => a.eq_ignore_ascii_case(b),
-        (Place::Domain(a), Place::Domain(b)) => a == b,
-        _ => false,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use nightcap_protocol::{Layer, RuleSource};
@@ -148,7 +139,7 @@ mod tests {
 
     fn app_rule(bundle_id: &str, says: OnOff) -> Rule {
         Rule {
-            identity: RuleIdentity::App(bundle_id.to_owned()),
+            identity: RuleIdentity::App(bundle_id.parse().unwrap()),
             source: RuleSource::Config,
             says,
         }
@@ -156,7 +147,7 @@ mod tests {
 
     fn domain_rule(domain: &str, says: OnOff) -> Rule {
         Rule {
-            identity: RuleIdentity::Domain(domain.to_owned()),
+            identity: RuleIdentity::Domain(domain.parse().unwrap()),
             source: RuleSource::Config,
             says,
         }
@@ -171,7 +162,7 @@ mod tests {
     }
 
     fn app(bundle_id: &str) -> Place {
-        Place::App(bundle_id.to_owned())
+        Place::App(bundle_id.parse().unwrap())
     }
 
     /// What the engine is given, everything left out being nothing: no app or host in front,
@@ -190,8 +181,8 @@ mod tests {
     impl Given {
         fn decide(&self) -> Decision {
             let context = Context {
-                app: self.app.map(str::to_owned),
-                host: self.host.map(str::to_owned),
+                app: self.app.map(|app| app.parse().unwrap()),
+                host: self.host.map(|host| Host::new(host).unwrap()),
             };
             decide(&Inputs {
                 context: &context,
@@ -329,7 +320,10 @@ mod tests {
 
         let decision = decide_on("www.youtube.com");
         assert_eq!(decision.state, Some(OnOff::On));
-        assert_eq!(decision.place, Place::Domain("youtube.com".to_owned()));
+        assert_eq!(
+            decision.place,
+            Place::Domain("youtube.com".parse().unwrap())
+        );
         let decision = decide_on("apple.com");
         assert_eq!(decision.state, Some(OnOff::Off));
         assert_eq!(decision.place, app("com.apple.Safari"));
@@ -353,12 +347,12 @@ mod tests {
 
         assert_eq!(
             decide_on("docs.google.com").place,
-            Place::Domain("docs.google.com".to_owned())
+            Place::Domain("docs.google.com".parse().unwrap())
         );
         assert_eq!(decide_on("docs.google.com").state, Some(OnOff::On));
         assert_eq!(
             decide_on("mail.google.com").place,
-            Place::Domain("google.com".to_owned())
+            Place::Domain("google.com".parse().unwrap())
         );
         assert_eq!(decide_on("mail.google.com").state, Some(OnOff::Off));
     }
@@ -370,7 +364,7 @@ mod tests {
             host: Some("a.docs.google.com"),
             rules: vec![domain_rule("google.com", OnOff::Off)],
             layers: vec![PlaceLayers {
-                place: Place::Domain("docs.google.com".to_owned()),
+                place: Place::Domain("docs.google.com".parse().unwrap()),
                 hold: None,
                 timer: Some(layer(OnOff::On, Some("2026-10-16T22:00:00Z"))),
             }],
@@ -380,7 +374,10 @@ mod tests {
         .decide();
 
         assert_eq!(decision.state, Some(OnOff::On));
-        assert_eq!(decision.place, Place::Domain("docs.google.com".to_owned()));
+        assert_eq!(
+            decision.place,
+            Place::Domain("docs.google.com".parse().unwrap())
+        );
     }
 
     #[test]

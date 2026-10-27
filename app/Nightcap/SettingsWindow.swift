@@ -467,9 +467,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         panel.accessoryView = Look.padded(says, top: 8, bottom: 8)
         panel.isAccessoryViewDisclosed = true
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier else {
-                return
-            }
+            guard response == .OK, let url = panel.url, let bundleId = Bundle(url: url)?.bundleIdentifier,
+                isBundleId(text: bundleId)
+            else { return }
             self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
         }
     }

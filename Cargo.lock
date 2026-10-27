@@ -610,7 +610,6 @@ name = "nightcap-core"
 version = "1.2.0"
 dependencies = [
  "etcetera",
- "idna",
  "jiff",
  "nightcap-protocol",
  "serde",
@@ -628,6 +627,7 @@ dependencies = [
 name = "nightcap-protocol"
 version = "1.2.0"
 dependencies = [
+ "idna",
  "jiff",
  "serde",
  "serde_json",

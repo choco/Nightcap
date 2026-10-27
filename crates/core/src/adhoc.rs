@@ -6,10 +6,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use nightcap_protocol::{ExportFormat, OnOff, RuleIdentity};
+use nightcap_protocol::{ExportFormat, IdentityError, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
-
-use crate::domain;
 
 /// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
@@ -84,13 +82,18 @@ impl Store {
         let earlier = RuleLists { app, domain };
         let mut rules = Vec::new();
         for (says, lists) in [(OnOff::Off, earlier), (OnOff::Off, off), (OnOff::On, on)] {
-            for bundle_id in lists.app {
-                rules.push((RuleIdentity::App(bundle_id), says));
-            }
-            for entry in lists.domain {
-                let domain = domain::normalize(&entry)
-                    .ok_or_else(|| format!("{}: {entry:?} isn't a domain", self.path.display()))?;
-                rules.push((RuleIdentity::Domain(domain), says));
+            let apps = lists
+                .app
+                .iter()
+                .map(|entry| entry.parse().map(RuleIdentity::App));
+            let domains = lists
+                .domain
+                .iter()
+                .map(|entry| entry.parse().map(RuleIdentity::Domain));
+            for identity in apps.chain(domains) {
+                let identity = identity
+                    .map_err(|error: IdentityError| format!("{}: {error}", self.path.display()))?;
+                rules.push((identity, says));
             }
         }
         Ok(rules)
@@ -162,8 +165,8 @@ impl From<&[(RuleIdentity, OnOff)]> for Rules {
                 OnOff::On => &mut lists.on,
             };
             match identity {
-                RuleIdentity::App(bundle_id) => list.app.push(bundle_id.clone()),
-                RuleIdentity::Domain(domain) => list.domain.push(domain.clone()),
+                RuleIdentity::App(bundle_id) => list.app.push(bundle_id.to_string()),
+                RuleIdentity::Domain(domain) => list.domain.push(domain.to_string()),
             }
         }
         lists

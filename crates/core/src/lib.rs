@@ -21,14 +21,15 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install,
-    Instance, Layer, Length, NightShift, NotificationPermission, OnOff, Payload, Permissions,
-    Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity, RuleSource, Schedule,
-    Status, TimeOfDay, WebsiteChecking,
+    BundleId, Check, CheckKind, CheckState, Command, Decision, Domain, ErrorCode, ErrorReply,
+    ExportFormat, Install, Instance, Layer, Length, NightShift, NotificationPermission, OnOff,
+    Payload, Permissions, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity,
+    RuleSource, Schedule, Status, TimeOfDay, WebsiteChecking,
 };
 
 use config::NightShiftConfig;
-use engine::{Context, Inputs, same_place};
+use domain::Host;
+use engine::{Context, Inputs};
 use schedule::{SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
@@ -94,17 +95,31 @@ pub enum OnOff {
     Off,
 }
 
+// The shell sees bundle IDs and domains as strings. One it sends that isn't valid fails to lift,
+// which stops the app, so the shell checks any it didn't get from the core.
+uniffi::custom_type!(BundleId, String, {
+    remote,
+    lower: |bundle_id| bundle_id.into(),
+    try_lift: |text| Ok(text.parse()?),
+});
+
+uniffi::custom_type!(Domain, String, {
+    remote,
+    lower: |domain| domain.into(),
+    try_lift: |text| Ok(text.parse()?),
+});
+
 #[uniffi::remote(Enum)]
 pub enum RuleIdentity {
-    App(String),
-    Domain(String),
+    App(BundleId),
+    Domain(Domain),
 }
 
 #[uniffi::remote(Enum)]
 pub enum Place {
     Everywhere,
-    App(String),
-    Domain(String),
+    App(BundleId),
+    Domain(Domain),
 }
 
 #[uniffi::remote(Enum)]
@@ -233,7 +248,14 @@ pub struct RuleAction {
 /// The domain a domain rule would have for what the user typed, or None when it isn't one.
 #[uniffi::export]
 pub fn normalize_domain(text: String) -> Option<String> {
-    domain::normalize(text.trim())
+    text.trim().parse::<Domain>().ok().map(String::from)
+}
+
+/// Whether an app rule can name this bundle ID: letters, digits, hyphens and periods. A
+/// command naming any other stops the app as it reaches the core.
+#[uniffi::export]
+pub fn is_bundle_id(text: String) -> bool {
+    text.parse::<BundleId>().is_ok()
 }
 
 /// A check as Settings shows it, with what can be done about it.
@@ -957,6 +979,13 @@ impl Core {
                 is_browser,
             } => {
                 tracing::debug!("frontmost app: {bundle_id:?}, browser: {is_browser}");
+                // An app whose bundle ID no rule could name counts as having none.
+                let bundle_id = bundle_id.and_then(|bundle_id| {
+                    bundle_id
+                        .parse()
+                        .inspect_err(|error| tracing::debug!("{error}; it counts as having none"))
+                        .ok()
+                });
                 let mut state = self.state();
                 state.context.app = bundle_id;
                 state.app_name = name;
@@ -969,7 +998,7 @@ impl Core {
                 match &mut state.watch {
                     Some(watch) if watch.generation == generation => {
                         watch.reported = true;
-                        state.context.host = host.as_deref().and_then(domain::normalize);
+                        state.context.host = host.as_deref().and_then(Host::new);
                         tracing::debug!("host reported for watch {generation}");
                     }
                     _ => tracing::debug!("dropped a host from stale watch {generation}"),
@@ -1417,7 +1446,10 @@ impl Core {
                 state: on,
                 length,
             } => state.set(place, *on, *length, self.clock.now()),
-            Command::Reset(place) => state.reset(place),
+            Command::Reset(place) => {
+                state.reset(place);
+                Ok(())
+            }
             Command::AddRule { identity, says } => self.add_rule(&mut state, identity, *says),
             Command::RemoveRule(identity) => self.remove_rule(&mut state, identity),
             Command::OpenAtLogin(chosen) => {
@@ -1608,7 +1640,7 @@ impl Core {
                     reported: false,
                 });
                 effects.push(Effect::WatchBrowser {
-                    bundle_id,
+                    bundle_id: bundle_id.into(),
                     generation,
                 });
             }
@@ -1627,9 +1659,7 @@ impl Core {
         let mut state = self.state();
         let config = state.config_rules.clone();
         let outside_config = |(identity, _): &(RuleIdentity, OnOff)| {
-            !config
-                .iter()
-                .any(|rule| same_rule(&rule.identity, identity))
+            !config.iter().any(|rule| rule.identity == *identity)
         };
         let before = state.ad_hoc.len();
         state.ad_hoc.retain(outside_config);
@@ -1659,12 +1689,7 @@ impl Core {
         identity: &RuleIdentity,
         says: OnOff,
     ) -> Result<(), ErrorReply> {
-        let identity = normalize_identity(identity)?;
-        if let Some(rule) = state
-            .rules
-            .iter()
-            .find(|rule| same_rule(&rule.identity, &identity))
-        {
+        if let Some(rule) = state.rules.iter().find(|rule| rule.identity == *identity) {
             if rule.says == says {
                 return Ok(());
             }
@@ -1678,24 +1703,17 @@ impl Core {
                 ));
             }
         }
-        let kept = state
-            .ad_hoc
-            .iter()
-            .any(|(kept, _)| same_rule(kept, &identity));
+        let kept = state.ad_hoc.iter().any(|(kept, _)| kept == identity);
         // A rule added during the tour is the tour's, which nothing keeps past it, and a change to
         // one of the user's own lasts only while it runs (ADR-0016).
         if !kept && let Some(tour) = &mut state.tour {
-            tracing::info!("tour rule {}: {says}", loggable(&identity));
-            tour.rules.retain(|(rule, _)| !same_rule(rule, &identity));
+            tracing::info!("tour rule {}: {says}", loggable(identity));
+            tour.rules.retain(|(rule, _)| rule != identity);
             tour.rules.push((identity.clone(), says));
         } else {
             state.check_ad_hoc_rules_on()?;
             let before = state.ad_hoc.clone();
-            match state
-                .ad_hoc
-                .iter_mut()
-                .find(|(kept, _)| same_rule(kept, &identity))
-            {
+            match state.ad_hoc.iter_mut().find(|(kept, _)| kept == identity) {
                 Some((_, kept_says)) => *kept_says = says,
                 None => state.ad_hoc.push((identity.clone(), says)),
             }
@@ -1708,36 +1726,28 @@ impl Core {
                     format!("couldn't save rules.toml: {error}"),
                 ));
             }
-            tracing::info!("ad-hoc rule {}: {says}", loggable(&identity));
+            tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
         }
-        state.clear_layers(&Place::from(identity));
+        state.clear_layers(&Place::from(identity.clone()));
         state.lay_out_rules();
         Ok(())
     }
 
     fn remove_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
-        let identity = normalize_identity(identity)?;
         let place = Place::from(identity.clone());
         if let Some(tour) = &mut state.tour
-            && let Some(index) = tour
-                .rules
-                .iter()
-                .position(|(rule, _)| same_rule(rule, &identity))
+            && let Some(index) = tour.rules.iter().position(|(rule, _)| rule == identity)
         {
             tour.rules.remove(index);
             state.clear_layers(&place);
             state.lay_out_rules();
             return Ok(());
         }
-        let Some(index) = state
-            .ad_hoc
-            .iter()
-            .position(|(kept, _)| same_rule(kept, &identity))
-        else {
+        let Some(index) = state.ad_hoc.iter().position(|(kept, _)| kept == identity) else {
             if state
                 .config_rules
                 .iter()
-                .any(|rule| same_rule(&rule.identity, &identity))
+                .any(|rule| rule.identity == *identity)
             {
                 return Err(refused(
                     ErrorCode::ConfigRule,
@@ -1760,7 +1770,7 @@ impl Core {
                 format!("couldn't save rules.toml: {error}"),
             ));
         }
-        tracing::info!("removed an ad-hoc rule: {}", loggable(&identity));
+        tracing::info!("removed an ad-hoc rule: {}", loggable(identity));
         state.clear_layers(&place);
         state.lay_out_rules();
         Ok(())
@@ -1856,9 +1866,13 @@ impl Core {
                 .scheduled_state(state.applied_until)
                 .map(on_off),
             next_transition: state.timeline.next_transition(state.applied_until),
-            frontmost_app: state.context.app.clone(),
+            frontmost_app: state.context.app.clone().map(String::from),
             watching: state.watch.is_some(),
-            host: state.context.host.clone(),
+            host: state
+                .context
+                .host
+                .as_ref()
+                .map(|host| host.as_str().to_owned()),
             rules: state.rules.clone(),
             config_error: state.config_error.clone(),
             ad_hoc_error: state.ad_hoc_error.clone(),
@@ -1899,7 +1913,7 @@ enum Session {
 
 /// The browser being watched, and whether its first read under this generation has arrived.
 struct Watch {
-    bundle_id: String,
+    bundle_id: BundleId,
     generation: u64,
     reported: bool,
 }
@@ -1961,11 +1975,10 @@ impl State {
     /// Takes off `place`'s hold if an external change put it there beside `partner`'s.
     fn drop_hold_with(&mut self, place: &Place, partner: &Place) {
         if let Some(layers) = self.layers_at_mut(place)
-            && layers.hold.as_ref().is_some_and(|hold| {
-                hold.with
-                    .as_ref()
-                    .is_some_and(|with| same_place(with, partner))
-            })
+            && layers
+                .hold
+                .as_ref()
+                .is_some_and(|hold| hold.with.as_ref().is_some_and(|with| with == partner))
         {
             layers.hold = None;
         }
@@ -1981,7 +1994,6 @@ impl State {
         length: Length,
         now: Timestamp,
     ) -> Result<(), ErrorReply> {
-        let place = normalize_place(place)?;
         let layer = |until| Layer {
             state,
             until,
@@ -1998,53 +2010,47 @@ impl State {
                 let until = now.checked_add(duration).map_err(|_| {
                     refused(ErrorCode::BadRequest, format!("{duration:#} is too long"))
                 })?;
-                self.layers_mut(&place).timer = Some(layer(Some(until)));
+                self.layers_mut(place).timer = Some(layer(Some(until)));
             }
             Length::Until(until) => {
                 if until <= now {
                     return Err(refused(ErrorCode::BadRequest, "that time has passed"));
                 }
-                self.layers_mut(&place).timer = Some(layer(Some(until)));
+                self.layers_mut(place).timer = Some(layer(Some(until)));
             }
             Length::UntilScheduleTurns => {
                 let until = self.next_turn(state).ok_or_else(|| {
                     refused(ErrorCode::BadRequest, "there's no schedule to wait for")
                 })?;
-                let layers = self.layers_mut(&place);
+                let layers = self.layers_mut(place);
                 layers.timer = None;
                 layers.hold = Some(layer(Some(until)));
             }
             Length::UntilTurnedBack => {
-                if place != Place::Everywhere {
+                if *place != Place::Everywhere {
                     return Err(refused(
                         ErrorCode::BadRequest,
                         "only everywhere holds until turned back: for good in an app or on a site is a rule",
                     ));
                 }
-                let layers = self.layers_mut(&place);
+                let layers = self.layers_mut(place);
                 layers.timer = None;
                 layers.hold = Some(layer(None));
             }
         }
-        tracing::info!("{} {state} {length:?}", loggable_place(&place));
+        tracing::info!("{} {state} {length:?}", loggable_place(place));
         Ok(())
     }
 
     /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the
     /// schedule.
-    fn reset(&mut self, place: &Place) -> Result<(), ErrorReply> {
-        let place = normalize_place(place)?;
-        self.clear_layers(&place);
-        tracing::info!("reset {}", loggable_place(&place));
-        Ok(())
+    fn reset(&mut self, place: &Place) {
+        self.clear_layers(place);
+        tracing::info!("reset {}", loggable_place(place));
     }
 
     fn clear_layers(&mut self, place: &Place) {
-        let Some(index) = self
-            .layers
-            .iter()
-            .position(|layers| same_place(&layers.place, place))
-        else {
+        let Some(index) = self.layers.iter().position(|layers| layers.place == *place) else {
             return;
         };
         let removed = self.layers.remove(index);
@@ -2396,13 +2402,13 @@ impl State {
                 capitalized(&here)
             },
             site: match place {
-                Place::Domain(domain) => Some(domain.clone()),
+                Place::Domain(domain) => Some(domain.to_string()),
                 _ => None,
             },
             subtitle: self.stack(place),
             image: match place {
                 Place::App(bundle_id) => RowImage::App {
-                    bundle_id: bundle_id.clone(),
+                    bundle_id: bundle_id.to_string(),
                 },
                 Place::Domain(_) | Place::Everywhere => RowImage::Site,
             },
@@ -2850,14 +2856,9 @@ impl State {
             RuleIdentity::App(bundle_id) => self
                 .app_name
                 .clone()
-                .filter(|_| {
-                    self.context
-                        .app
-                        .as_deref()
-                        .is_some_and(|front| front.eq_ignore_ascii_case(bundle_id))
-                })
-                .unwrap_or_else(|| bundle_id.clone()),
-            RuleIdentity::Domain(domain) => domain.clone(),
+                .filter(|_| self.context.app.as_ref() == Some(bundle_id))
+                .unwrap_or_else(|| bundle_id.to_string()),
+            RuleIdentity::Domain(domain) => domain.to_string(),
         }
     }
 
@@ -2996,7 +2997,7 @@ impl State {
     /// after it, or, for a place that isn't in front, everywhere.
     fn places_from(&self, place: &Place) -> Vec<Place> {
         let in_front = engine::in_front(&self.inputs());
-        match in_front.iter().position(|front| same_place(front, place)) {
+        match in_front.iter().position(|front| front == place) {
             Some(index) => in_front.into_iter().skip(index).collect(),
             None => vec![place.clone(), Place::Everywhere],
         }
@@ -3035,28 +3036,20 @@ impl State {
     fn rule_at(&self, place: &Place) -> Option<&Rule> {
         self.rules
             .iter()
-            .find(|rule| same_place(&Place::from(rule.identity.clone()), place))
+            .find(|rule| Place::from(rule.identity.clone()) == *place)
     }
 
     fn layers_at(&self, place: &Place) -> Option<&PlaceLayers> {
-        self.layers
-            .iter()
-            .find(|layers| same_place(&layers.place, place))
+        self.layers.iter().find(|layers| layers.place == *place)
     }
 
     fn layers_at_mut(&mut self, place: &Place) -> Option<&mut PlaceLayers> {
-        self.layers
-            .iter_mut()
-            .find(|layers| same_place(&layers.place, place))
+        self.layers.iter_mut().find(|layers| layers.place == *place)
     }
 
     /// A place's layers, made empty if it had none; `tidy` drops it again if it stays empty.
     fn layers_mut(&mut self, place: &Place) -> &mut PlaceLayers {
-        match self
-            .layers
-            .iter()
-            .position(|layers| same_place(&layers.place, place))
-        {
+        match self.layers.iter().position(|layers| layers.place == *place) {
             #[expect(clippy::indexing_slicing, reason = "the place's layers are at `index`")]
             Some(index) => &mut self.layers[index],
             None => self.layers.push_mut(PlaceLayers {
@@ -3078,13 +3071,13 @@ impl State {
         let host = self
             .context
             .host
-            .as_deref()
+            .as_ref()
             .filter(|_| self.website_checking())?;
         Some(
             engine::in_front(&self.inputs())
                 .into_iter()
                 .find(|place| matches!(place, Place::Domain(_)))
-                .unwrap_or_else(|| Place::Domain(domain::of_tab(host))),
+                .unwrap_or_else(|| Place::Domain(host.tab_domain())),
         )
     }
 
@@ -3165,14 +3158,6 @@ fn place_identity(place: &Place) -> Option<RuleIdentity> {
     }
 }
 
-/// `place` as layers keep it, checked as a rule identity is.
-fn normalize_place(place: &Place) -> Result<Place, ErrorReply> {
-    match place_identity(place) {
-        None => Ok(Place::Everywhere),
-        Some(identity) => normalize_identity(&identity).map(Place::from),
-    }
-}
-
 /// A place as the log may show it: a domain is named by its kind only (ADR-0009).
 fn loggable_place(place: &Place) -> String {
     match place_identity(place) {
@@ -3206,36 +3191,6 @@ fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
     ErrorReply {
         code,
         message: message.into(),
-    }
-}
-
-/// `identity` as rules keep it: a bundle ID is letters, digits, hyphens and periods, and a
-/// domain is bare and normalized (ADR-0006).
-fn normalize_identity(identity: &RuleIdentity) -> Result<RuleIdentity, ErrorReply> {
-    let normalized = match identity {
-        RuleIdentity::App(bundle_id) => (!bundle_id.is_empty()
-            && bundle_id
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '.'))
-        .then(|| identity.clone()),
-        RuleIdentity::Domain(domain) => domain::normalize(domain).map(RuleIdentity::Domain),
-    };
-    normalized.ok_or_else(|| {
-        refused(
-            ErrorCode::BadIdentity,
-            format!(
-                "{identity} isn't a rule identity like app:com.figma.Desktop or domain:figma.com"
-            ),
-        )
-    })
-}
-
-/// Rules with the same identity are the same rule; bundle IDs compare case-insensitively.
-fn same_rule(a: &RuleIdentity, b: &RuleIdentity) -> bool {
-    match (a, b) {
-        (RuleIdentity::App(a), RuleIdentity::App(b)) => a.eq_ignore_ascii_case(b),
-        (RuleIdentity::Domain(a), RuleIdentity::Domain(b)) => a == b,
-        _ => false,
     }
 }
 

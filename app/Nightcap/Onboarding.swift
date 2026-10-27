@@ -684,7 +684,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         panel.message = "Choose an app that needs true colour."
         panel.beginSheetModal(for: window) { [weak self] response in
             guard let self, response == .OK, let url = panel.url,
-                let bundleId = Bundle(url: url)?.bundleIdentifier
+                let bundleId = Bundle(url: url)?.bundleIdentifier, isBundleId(text: bundleId)
             else { return }
             if !apps.contains(where: { $0.id == bundleId }),
                 let item = GridItem(app: bundleId, kind: "Chosen by you", ruled: nil)

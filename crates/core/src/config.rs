@@ -5,10 +5,10 @@ use std::io::ErrorKind;
 use std::path::Path;
 
 use jiff::SignedDuration;
-use nightcap_protocol::{OnOff, Rule, RuleIdentity, RuleSource, Schedule, TimeOfDay};
+use nightcap_protocol::{
+    IdentityError, OnOff, Rule, RuleIdentity, RuleSource, Schedule, TimeOfDay,
+};
 use serde::{Deserialize, Serialize};
-
-use crate::domain;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -111,27 +111,22 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
     }
     let mut rules: Vec<Rule> = Vec::new();
     for (says, lists) in [(OnOff::Off, &file.rules.off), (OnOff::On, &file.rules.on)] {
+        let apps = lists
+            .app
+            .iter()
+            .map(|entry| entry.parse().map(RuleIdentity::App));
         let domains = lists
             .domain
             .iter()
-            .map(|entry| {
-                domain::normalize(entry).ok_or_else(|| {
-                    in_file(format!(
-                        "{entry:?} isn't a domain like figma.com: no scheme, path, port or wildcard"
-                    ))
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let identities = lists
-            .app
-            .iter()
-            .cloned()
-            .map(RuleIdentity::App)
-            .chain(domains.into_iter().map(RuleIdentity::Domain));
+            .map(|entry| entry.parse().map(RuleIdentity::Domain));
+        let identities = apps
+            .chain(domains)
+            .collect::<Result<Vec<_>, IdentityError>>()
+            .map_err(|error| in_file(error.to_string()))?;
         for identity in identities {
             if let Some(other) = rules
                 .iter()
-                .find(|rule| same_identity(&rule.identity, &identity) && rule.says != says)
+                .find(|rule| rule.identity == identity && rule.says != says)
             {
                 return Err(in_file(format!(
                     "{} is in both rules.off and rules.on: an app or domain has one rule",
@@ -176,15 +171,6 @@ fn length(text: &str) -> Option<SignedDuration> {
         && length.as_secs() % 60 == 0
         && length.subsec_nanos() == 0)
         .then_some(length)
-}
-
-/// Bundle IDs compare in any case, domains as they're normalized.
-fn same_identity(a: &RuleIdentity, b: &RuleIdentity) -> bool {
-    match (a, b) {
-        (RuleIdentity::App(a), RuleIdentity::App(b)) => a.eq_ignore_ascii_case(b),
-        (RuleIdentity::Domain(a), RuleIdentity::Domain(b)) => a == b,
-        _ => false,
-    }
 }
 
 fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, String> {
