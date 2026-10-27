@@ -42,7 +42,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 		<figure
 			ref={desk}
 			className={styles.desk}
-			aria-label="A Mac running Nightcap: Night Shift is off while Figma is in front, and on in Mail"
+			aria-label="A Mac running Nightcap: Night Shift is off in Figma, by your config’s rule, and at youtube.com in Safari, by your rule, and on in Mail, following the schedule"
 		>
 			{/* The screen is drawn, and hidden from assistive technology, all but the dock's buttons. */}
 			<div className={styles.screen}>
