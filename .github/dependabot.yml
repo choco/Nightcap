@@ -8,3 +8,19 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: nix
+    directory: /
+    schedule:
+      interval: weekly
+  # The site uses pnpm. Its pnpm-workspace.yaml takes only versions two weeks old, transitive ones
+  # too, and CI's frozen install rejects a lockfile holding a younger one.
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
