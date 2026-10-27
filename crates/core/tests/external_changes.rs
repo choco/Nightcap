@@ -10,26 +10,27 @@
 mod common;
 
 use nightcap_core::{Effect, Event, Fact, Outcome, Scenario, Staged};
-use nightcap_protocol::{Command, Layer, Length, OnOff, Place, Schedule, TimeOfDay};
+use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    activate, at, custom_hours, figma, figma_app, forced, late, layer, layered, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, report, reported, send, set, status,
+    activate, adopted, at, custom_hours, figma, figma_app, forced, late, minutes, noon,
+    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, status,
+    until, until_turn, yours,
 };
 
 #[test]
-fn an_external_change_holds_everywhere_until_the_schedule_turns_it_back() {
+fn an_external_change_sets_everywhere_until_the_schedule_turns_it_back() {
     let staged = off_by_the_schedule().stage().unwrap();
 
     let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(effects, Vec::new());
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![adopted(
             Place::Everywhere,
-            Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-            None
+            OnOff::On,
+            Some("2026-10-17T07:00:00+02:00")
         )]
     );
 }
@@ -43,15 +44,15 @@ fn an_external_change_back_takes_off_what_the_switch_held() {
     let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn an_edited_schedule_ends_the_holds_waiting_on_it() {
+fn an_edited_schedule_ends_the_rules_waiting_on_its_turn() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(
         &staged,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
     );
     staged.report(reported(false, custom_hours()));
 
@@ -70,11 +71,11 @@ fn an_edited_schedule_ends_the_holds_waiting_on_it() {
         .effects;
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
+fn an_edited_schedule_keeps_rules_until_a_time_and_with_no_end() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
@@ -82,12 +83,15 @@ fn an_edited_schedule_keeps_timers_and_holds_with_no_end() {
     staged.report(reported(true, Schedule::SunsetToSunrise));
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            Some(layer(OnOff::On, Some("2026-10-16T23:30:00+02:00")))
-        )]
+        resettable(&staged),
+        vec![
+            yours(
+                Place::Everywhere,
+                OnOff::On,
+                until("2026-10-16T23:30:00+02:00")
+            ),
+            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+        ]
     );
 }
 
@@ -96,7 +100,7 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(
         &staged,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
     );
 
     staged.set_now(at("2026-10-16T21:59:00+02:00"));
@@ -108,8 +112,8 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
             at: at("2026-10-17T07:00:00+02:00").into()
         }]
     );
+    assert_eq!(resettable(&staged), Vec::new());
     let status = status(&staged);
-    assert_eq!(status.layers, Vec::new());
     assert_eq!(status.scheduled_state, Some(OnOff::On));
 }
 
@@ -145,7 +149,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_extern
     let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -163,7 +167,7 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_chan
     let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -185,34 +189,30 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
         }
     );
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![adopted(
             figma_app(),
-            Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-            None
+            OnOff::On,
+            Some("2026-10-17T07:00:00+02:00")
         )]
     );
 }
 
 #[test]
-fn with_no_schedule_an_external_change_holds_until_turned_back() {
+fn with_no_schedule_an_external_change_lasts_until_turned_back() {
     let staged = noon().stage().unwrap();
     staged.report(reported(false, Schedule::Off));
 
     staged.report(reported(true, Schedule::Off));
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::On, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![adopted(Place::Everywhere, OnOff::On, None)]
     );
 }
 
 #[test]
-fn flipping_back_from_outside_takes_off_both_linked_holds() {
+fn flipping_back_from_outside_takes_off_both_linked_rules() {
     let staged = noon()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -234,30 +234,23 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
             }],
         }
     );
-    let morning = Some(at("2026-10-17T07:00:00+02:00"));
-    let linked = |with| {
-        Some(Layer {
-            state: OnOff::On,
-            until: morning,
-            with: Some(with),
-        })
-    };
+    let morning = Some("2026-10-17T07:00:00+02:00");
     assert_eq!(
-        status(&staged).layers,
+        resettable(&staged),
         vec![
-            layered(figma_app(), linked(Place::Everywhere), None),
-            layered(Place::Everywhere, linked(figma_app()), None),
+            adopted(figma_app(), OnOff::On, morning),
+            adopted(Place::Everywhere, OnOff::On, morning),
         ]
     );
 
     staged.report(reported(false, custom_hours()));
 
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(activate(&staged, "com.apple.mail"), Vec::new());
 }
 
 #[test]
-fn a_hold_set_over_a_linked_one_leaves_its_partner_unlinked() {
+fn a_rule_set_over_a_linked_one_leaves_its_partner_unlinked() {
     let staged = noon()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -268,24 +261,27 @@ fn a_hold_set_over_a_linked_one_leaves_its_partner_unlinked() {
 
     send(
         &staged,
-        set(figma_app(), OnOff::Off, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::Off, Lasting::UntilScheduleTurns),
     );
 
+    let everywheres = adopted(
+        Place::Everywhere,
+        OnOff::On,
+        Some("2026-10-17T07:00:00+02:00"),
+    );
     assert_eq!(
-        status(&staged).layers,
+        resettable(&staged),
         vec![
-            layered(
+            yours(
                 figma_app(),
-                Some(layer(OnOff::Off, Some("2026-10-16T22:00:00+02:00"))),
-                None
+                OnOff::Off,
+                until_turn("2026-10-16T22:00:00+02:00")
             ),
-            layered(
-                Place::Everywhere,
-                Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-                None
-            ),
+            everywheres.clone(),
         ]
     );
+    send(&staged, Command::Reset(figma_app()));
+    assert_eq!(resettable(&staged), vec![everywheres]);
 }
 
 /// Starts at 23:00 with Night Shift on by the custom hours, then turns it off for an hour.
@@ -319,7 +315,7 @@ fn status_callbacks_while_another_user_is_active_are_ignored() {
     let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -333,9 +329,9 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
         staged.report(Fact::SessionChanged { active: true }).effects,
         Vec::new()
     );
-    // The shell's fresh read: still off, as the timer left it.
+    // The shell's fresh read: still off, as the rule until a time left it.
     let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }

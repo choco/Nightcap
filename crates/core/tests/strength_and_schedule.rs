@@ -11,12 +11,12 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, ErrorCode, OnOff, Payload, Place, Request, Response, Schedule, TimeOfDay,
+    Command, ErrorCode, Length, OnOff, Payload, Place, Request, Response, Schedule, TimeOfDay,
 };
 
 use common::{
-    at, custom_hours, late, launch, layer, layered, noon, refusal, report_night_shift, reported,
-    send, status,
+    at, custom_hours, late, launch, noon, refusal, report_night_shift, reported, resettable, send,
+    status, yours,
 };
 
 /// Night Shift reported off with no schedule, at a strength of 60.
@@ -116,12 +116,8 @@ fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::On, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::On, Length::Indefinite)]
     );
 }
 

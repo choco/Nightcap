@@ -120,15 +120,15 @@ pub enum Command {
     Off,
     /// The switch, the other way from what everywhere says now.
     Toggle,
-    /// Puts Night Shift on or off at a place for a length: a timer for a time or until a
-    /// time, a hold otherwise. For good is everywhere's alone; an app's or site's is a rule.
+    /// Sets a rule of the user's at a place, saying on or off for a length (ADR-0018). An
+    /// indefinite one is everywhere's alone: an app's or site's is added with `AddRule`.
     Set {
         place: Place,
         state: OnOff,
-        length: Length,
+        length: Lasting,
     },
-    /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the
-    /// schedule.
+    /// Takes off a place's temporary rules, which puts back its indefinite rule, and for
+    /// everywhere its indefinite one too, which puts back the schedule.
     Reset(Place),
     /// Adds an ad-hoc rule, replacing the user's own rule for the same app or domain (ADR-0006).
     AddRule { identity: RuleIdentity, says: OnOff },
@@ -175,38 +175,19 @@ impl From<RuleIdentity> for Place {
     }
 }
 
-/// How long a change lasts (ADR-0018).
+/// How long a rule that `Set` asks for lasts (ADR-0018).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Length {
-    /// A timer for this long.
+pub enum Lasting {
+    /// This long from now.
     For(SignedDuration),
-    /// A timer until this moment.
+    /// Until this moment.
     Until(Timestamp),
-    /// A hold until the schedule next turns Night Shift the other way: when it ends for an on,
-    /// when it starts for an off.
+    /// Until the schedule next turns Night Shift the other way: when it ends for an on, when it
+    /// starts for an off.
     UntilScheduleTurns,
-    /// A hold with no end, everywhere's alone.
-    UntilTurnedBack,
-}
-
-/// A hold or a timer: on or off at a place until a time, or a hold with no end.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Layer {
-    pub state: OnOff,
-    pub until: Option<Timestamp>,
-    /// The place an external change held the same way at once; turning either back takes off
-    /// both (ADR-0018).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub with: Option<Place>,
-}
-
-/// A place's hold and timer, the timer over the hold.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlaceLayers {
-    pub place: Place,
-    pub hold: Option<Layer>,
-    pub timer: Option<Layer>,
+    /// Until it's taken off.
+    Indefinite,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,7 +225,7 @@ pub enum Payload {
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
-/// decides it, and the layers that place rests on, top first (ADR-0018).
+/// decides it, and what that place rests on, its shortest rule first (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     /// None while everywhere decides and the schedule isn't known yet.
@@ -253,12 +234,10 @@ pub struct Decision {
     pub reasons: Vec<Reason>,
 }
 
-/// One layer a decision rests on.
+/// One thing a decision rests on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
-    Timer(Layer),
-    Hold(Layer),
     Rule(Rule),
     /// Night Shift on for the tour, which stands in for the schedule while it runs (ADR-0016).
     Tour,
@@ -269,15 +248,57 @@ pub enum Reason {
     },
 }
 
+/// A change to Night Shift: a place, what it says there, how long it lasts and who set it
+/// (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rule {
-    pub identity: RuleIdentity,
-    pub source: RuleSource,
-    /// Night Shift off, or on, while the rule matches (ADR-0006).
+    pub place: Place,
+    /// Night Shift off, or on, while the place is in front (ADR-0006).
     pub says: OnOff,
+    pub length: Length,
+    pub set_by: SetBy,
 }
 
-/// A rule's kind plus its target, written `app:com.figma.Desktop` or `domain:figma.com`.
+/// How long a rule lasts (ADR-0018). At one place, the shortest decides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Length {
+    /// Until it's taken off.
+    Indefinite,
+    /// Until the schedule next turns Night Shift the other way: when it ends for an on, when it
+    /// starts for an off. None while the schedule has no turn to wait for, as with no schedule.
+    UntilScheduleTurns { until: Option<Timestamp> },
+    /// Until a time.
+    Until { until: Timestamp },
+}
+
+impl Length {
+    /// When a rule of this length ends, if it has an end.
+    pub fn end(&self) -> Option<Timestamp> {
+        match self {
+            Self::Indefinite => None,
+            Self::UntilScheduleTurns { until } => *until,
+            Self::Until { until } => Some(*until),
+        }
+    }
+}
+
+/// Who set a rule (ADR-0018).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SetBy {
+    /// The config, whose rules are indefinite, at an app or a site (ADR-0007).
+    Config,
+    /// The user, from the menu, Settings or the CLI.
+    You,
+    /// The user during the tour, kept only while it runs (ADR-0016).
+    Tour,
+    /// An external change, which Nightcap adopted.
+    OutsideChange,
+}
+
+/// The app or the site an indefinite rule is at, written `app:com.figma.Desktop` or
+/// `domain:figma.com`: each has one at most (ADR-0006).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(into = "String")]
 pub enum RuleIdentity {
@@ -460,15 +481,6 @@ where
         .map_err(de::Error::custom)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuleSource {
-    Config,
-    AdHoc,
-    /// Added during the tour, and kept only while it runs (ADR-0016).
-    Tour,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Status {
     pub version: String,
@@ -492,14 +504,13 @@ pub struct Status {
     pub watching: bool,
     /// The watched browser's host, once known.
     pub host: Option<String>,
+    /// Every rule at every place.
     pub rules: Vec<Rule>,
     /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
     pub config_error: Option<String>,
     /// Why `rules.toml` can't be used; ad-hoc rules are then off.
     pub ad_hoc_error: Option<String>,
     pub website_checking: WebsiteChecking,
-    /// Every place with a hold or a timer.
-    pub layers: Vec<PlaceLayers>,
     pub permissions: Permissions,
     pub checks: Vec<Check>,
 }
@@ -839,22 +850,20 @@ mod tests {
                 frontmost_app: Some("com.apple.Safari".to_owned()),
                 watching: true,
                 host: Some("www.figma.com".to_owned()),
-                rules: Vec::new(),
+                rules: vec![Rule {
+                    place: Place::App("com.figma.Desktop".parse().unwrap()),
+                    says: OnOff::On,
+                    length: Length::Until {
+                        until: "2026-10-16T19:30:00Z".parse().unwrap(),
+                    },
+                    set_by: SetBy::You,
+                }],
                 config_error: None,
                 ad_hoc_error: None,
                 website_checking: WebsiteChecking {
                     state: OnOff::On,
                     from_config: false,
                 },
-                layers: vec![PlaceLayers {
-                    place: Place::App("com.figma.Desktop".parse().unwrap()),
-                    hold: None,
-                    timer: Some(Layer {
-                        state: OnOff::On,
-                        until: Some("2026-10-16T19:30:00Z".parse().unwrap()),
-                        with: None,
-                    }),
-                }],
                 permissions: Permissions {
                     accessibility: true,
                     notifications: NotificationPermission::NotRequested,
@@ -864,7 +873,7 @@ mod tests {
                     state: CheckState::Drifted,
                 }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[{"place":{"app":"com.figma.Desktop"},"hold":null,"timer":{"state":"on","until":"2026-10-16T19:30:00Z"}}],"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}]}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[{"place":{"app":"com.figma.Desktop"},"says":"on","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"you"}],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}]}}}"#
         );
     }
 
@@ -987,7 +996,7 @@ mod tests {
             json(&Request::Command(Command::Set {
                 place: Place::Everywhere,
                 state: OnOff::Off,
-                length: Length::For(SignedDuration::from_mins(90)),
+                length: Lasting::For(SignedDuration::from_mins(90)),
             })),
             r#"{"command":{"set":{"place":"everywhere","state":"off","length":{"for":"PT1H30M"}}}}"#
         );
@@ -995,9 +1004,17 @@ mod tests {
             json(&Request::Command(Command::Set {
                 place: Place::Domain("figma.com".parse().unwrap()),
                 state: OnOff::On,
-                length: Length::UntilScheduleTurns,
+                length: Lasting::UntilScheduleTurns,
             })),
             r#"{"command":{"set":{"place":{"domain":"figma.com"},"state":"on","length":"until_schedule_turns"}}}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::Set {
+                place: Place::Everywhere,
+                state: OnOff::Off,
+                length: Lasting::Indefinite,
+            })),
+            r#"{"command":{"set":{"place":"everywhere","state":"off","length":"indefinite"}}}"#
         );
         assert_eq!(
             json(&Request::Command(Command::Reset(Place::App(
@@ -1024,19 +1041,23 @@ mod tests {
                 state: Some(OnOff::On),
                 place: Place::App("com.figma.Desktop".parse().unwrap()),
                 reasons: vec![
-                    Reason::Hold(Layer {
-                        state: OnOff::On,
-                        until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
-                        with: Some(Place::Everywhere),
+                    Reason::Rule(Rule {
+                        place: Place::App("com.figma.Desktop".parse().unwrap()),
+                        says: OnOff::On,
+                        length: Length::UntilScheduleTurns {
+                            until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
+                        },
+                        set_by: SetBy::OutsideChange,
                     }),
                     Reason::Rule(Rule {
-                        identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-                        source: RuleSource::Config,
+                        place: Place::App("com.figma.Desktop".parse().unwrap()),
                         says: OnOff::Off,
+                        length: Length::Indefinite,
+                        set_by: SetBy::Config,
                     }),
                 ],
             })),
-            r#"{"decision":{"state":"on","place":{"app":"com.figma.Desktop"},"reasons":[{"hold":{"state":"on","until":"2026-10-16T05:50:47Z","with":"everywhere"}},{"rule":{"identity":"app:com.figma.Desktop","source":"config","says":"off"}}]}}"#
+            r#"{"decision":{"state":"on","place":{"app":"com.figma.Desktop"},"reasons":[{"rule":{"place":{"app":"com.figma.Desktop"},"says":"on","length":{"until_schedule_turns":{"until":"2026-10-16T05:50:47Z"}},"set_by":"outside_change"}},{"rule":{"place":{"app":"com.figma.Desktop"},"says":"off","length":"indefinite","set_by":"config"}}]}}"#
         );
     }
 
@@ -1064,12 +1085,29 @@ mod tests {
             r#"{"query":{"export":"nix"}}"#
         );
         assert_eq!(
-            json(&Response::Ok(Payload::Rules(vec![Rule {
-                identity: figma,
-                source: RuleSource::AdHoc,
-                says: OnOff::Off,
-            }]))),
-            r#"{"ok":{"rules":[{"identity":"domain:figma.com","source":"ad_hoc","says":"off"}]}}"#
+            json(&Response::Ok(Payload::Rules(vec![
+                Rule {
+                    place: Place::from(figma),
+                    says: OnOff::Off,
+                    length: Length::Indefinite,
+                    set_by: SetBy::You,
+                },
+                Rule {
+                    place: Place::Everywhere,
+                    says: OnOff::On,
+                    length: Length::UntilScheduleTurns { until: None },
+                    set_by: SetBy::OutsideChange,
+                },
+                Rule {
+                    place: Place::Everywhere,
+                    says: OnOff::Off,
+                    length: Length::Until {
+                        until: "2026-10-16T19:30:00Z".parse().unwrap(),
+                    },
+                    set_by: SetBy::Tour,
+                },
+            ]))),
+            r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you"},{"place":"everywhere","says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"tour"}]}}"#
         );
         assert_eq!(
             json(&Response::Ok(Payload::Export("{ }".to_owned()))),

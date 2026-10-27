@@ -12,7 +12,7 @@ use nightcap_core::{
     Effect, Fact, MenuEntry, MenuIcon, MenuItem, NightShiftItem, PlaceRow, ProblemLine, RowImage,
     RowItem, Scenario, Staged,
 };
-use nightcap_protocol::{Command, Length, NotificationPermission, OnOff, Place, Schedule};
+use nightcap_protocol::{Command, Lasting, NotificationPermission, OnOff, Place, Schedule};
 
 use common::{
     activate, activate_browser, add_rule, app_row, at, choice_titled, custom_hours, domain,
@@ -168,7 +168,7 @@ fn everywheres_row_has_every_length_but_the_switchs() {
                         title: "Until 22:00".to_owned(),
                         subtitle: Some("When the schedule starts".to_owned()),
                         enabled: true,
-                        command: off(Length::UntilScheduleTurns),
+                        command: off(Lasting::UntilScheduleTurns),
                     },
                 },
             ],
@@ -348,7 +348,7 @@ fn undoing_is_offered_where_it_goes_the_right_way_and_a_rule_of_yours_can_always
     let staged = forced();
     send(
         &staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
     assert_eq!(
         app_row(&staged).unwrap().items[0],
@@ -382,7 +382,7 @@ fn lengths_that_come_to_the_same_as_undoing_are_left_out() {
     let staged = forced();
     send(
         &staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     assert_eq!(
@@ -534,7 +534,7 @@ fn the_site_row_snoozes_a_config_rule() {
     let until_morning = choice_titled(&row, "Until 07:00").command;
     assert_eq!(
         until_morning,
-        set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns)
+        set(figma_site.clone(), OnOff::On, Lasting::UntilScheduleTurns)
     );
     send(&staged, until_morning);
     let row = site_row(&staged).unwrap();

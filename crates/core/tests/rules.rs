@@ -6,15 +6,15 @@ mod common;
 use nightcap_core::{Effect, Event, Fact, File, MenuEntry, RowImage};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
-    FileError, Length, OnOff, Payload, Place, Reason, Request, Response, Rule, RuleIdentity,
-    RuleSource,
+    FileError, Lasting, Length, OnOff, Payload, Place, Reason, Request, Response, Rule,
+    RuleIdentity, SetBy,
 };
 
 use common::{
     activate, activate_event, ad_hoc, add_rule, app_row, app_rule, at, books, choice_titled,
     custom_hours, domain_rule, figma, figma_app, forced, in_books_at_noon, kept_ad_hoc, late,
-    launch, layer, mail, minutes, noon, on_by_the_schedule, refusal, reported, rules, send, set,
-    status,
+    launch, mail, minutes, noon, on_by_the_schedule, refusal, reported, resettable, rules, send,
+    set, status, until_turn, yours,
 };
 
 #[test]
@@ -80,7 +80,7 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
     };
     assert!(message.contains("apps"), "{message}");
     let status = status(&staged);
-    assert_eq!(status.rules, Vec::new());
+    assert_eq!(rules(&staged), Vec::new());
     assert!(
         status
             .config_error
@@ -129,7 +129,7 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         )
     );
     let status = status(&staged);
-    assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
+    assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
     assert_eq!(status.config_error, Some(error.message));
 }
 
@@ -139,7 +139,7 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
 
     let (effects, response) = send(
         &staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
@@ -149,7 +149,11 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
             state: Some(OnOff::On),
             place: figma_app(),
             reasons: vec![
-                Reason::Hold(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
+                Reason::Rule(yours(
+                    figma_app(),
+                    OnOff::On,
+                    until_turn("2026-10-17T07:00:00+02:00")
+                )),
                 Reason::Rule(app_rule("com.figma.Desktop")),
             ],
         }))
@@ -167,7 +171,7 @@ fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
     let status = status(&staged);
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(status.decision.place, figma_app());
 }
 
@@ -176,7 +180,7 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
     let staged = forced();
     send(
         &staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
     staged.report(reported(true, custom_hours()));
 
@@ -190,7 +194,7 @@ fn reset_puts_a_snoozed_rule_back_early() {
     let staged = forced();
     send(
         &staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     let (_, response) = send(&staged, Command::Reset(figma_app()));
@@ -203,7 +207,7 @@ fn reset_puts_a_snoozed_rule_back_early() {
             reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
         }))
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -223,7 +227,7 @@ fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
             reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
         }))
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -233,7 +237,7 @@ fn domains_in_the_config_are_normalized_and_checked() {
         .stage()
         .unwrap();
 
-    assert_eq!(status(&staged).rules, vec![domain_rule("xn--bcher-kva.de")]);
+    assert_eq!(rules(&staged), vec![domain_rule("xn--bcher-kva.de")]);
     for entry in [
         "https://figma.com",
         "figma.com/files",
@@ -319,7 +323,7 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
             .ad_hoc_error
             .is_some_and(|error| error.contains("\"com.figma.Desktop \" isn't a bundle ID")),
     );
-    assert_eq!(status.rules, Vec::new());
+    assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(invalid));
 }
 
@@ -410,16 +414,14 @@ fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() 
         },
     );
 
-    let status = status(&staged);
     assert_eq!(
-        status.rules,
+        rules(&staged),
         vec![Rule {
-            identity: mail(),
-            source: RuleSource::AdHoc,
             says: OnOff::On,
+            ..ad_hoc(mail())
         }]
     );
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -442,7 +444,7 @@ fn adding_your_rule_again_from_settings_ends_its_snooze_and_leaves_rules_toml_as
             .contains(&Effect::SetNightShift { enabled: false })
     );
     assert_eq!(answer.unwrap().place, Place::from(mail()));
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(written));
 }
 
@@ -511,12 +513,13 @@ fn rules_are_listed_by_what_they_say() {
     let staged = noon().config("[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\ndomain = [\"youtube.com\"]\n").stage().unwrap();
 
     let on = |identity| Rule {
-        identity,
-        source: RuleSource::Config,
+        place: Place::from(identity),
         says: OnOff::On,
+        length: Length::Indefinite,
+        set_by: SetBy::Config,
     };
     assert_eq!(
-        status(&staged).rules,
+        rules(&staged),
         vec![
             app_rule("com.figma.Desktop"),
             on(books()),

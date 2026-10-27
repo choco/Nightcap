@@ -144,8 +144,8 @@ impl Inner {
         })
     }
 
-    /// Applies every schedule transition that came due since the last turn, and ends the
-    /// timers and holds that ran out.
+    /// Applies every schedule transition that came due since the last turn, and ends the rules
+    /// that ran out.
     fn catch_up(&mut self) {
         let now = self.clock.now();
         if now <= self.facts.applied_until {
@@ -172,8 +172,8 @@ impl Inner {
         self.facts.applied_until = now;
     }
 
-    /// Keeps the shell's one wakeup at the next schedule transition or the end of a timer or
-    /// hold, whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
+    /// Keeps the shell's one wakeup at the next schedule transition or the end of a rule,
+    /// whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
     /// times, which CoreBrightness can take a minute or two after login to work out, so the
     /// wakeup comes at the next whole minute instead: the shell reads them again before each.
     fn reschedule(&mut self, effects: &mut Vec<Effect>) {
@@ -200,12 +200,7 @@ impl Inner {
                 + SignedDuration::from_mins(1)
         });
         let look = self.places.look(&self.facts.world(now));
-        let ends = look
-            .layers
-            .iter()
-            .flat_map(|layers| [&layers.hold, &layers.timer])
-            .flatten()
-            .filter_map(|layer| layer.until);
+        let ends = look.rules.iter().filter_map(|(rule, _)| rule.length.end());
         let next = transition.or(retry).into_iter().chain(ends).min();
         if next != self.reconciling.wakeup {
             self.reconciling.wakeup = next;

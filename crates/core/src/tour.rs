@@ -4,12 +4,14 @@
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    BundleId, Command, Domain, Length, NightShift, OnOff, Place, Reason, RuleIdentity,
+    BundleId, Command, Domain, Lasting, NightShift, OnOff, Place, Reason, RuleIdentity,
 };
 
 use crate::rows::{MenuItem, PlaceRow, RowItem, Rows};
 use crate::rules::domain::Host;
-use crate::rules::places::{Context, Kept, Look, Places, Refusal, Stack, World};
+use crate::rules::places::{
+    Context, Kept, Look, PlaceLook, Places, Refusal, World, is_app_or_site_rule,
+};
 use crate::rules::schedule::{SunTimes, Timeline};
 use crate::server::state::Inner;
 use crate::storage::config;
@@ -54,7 +56,7 @@ pub struct TourPlace {
     pub in_front: bool,
     /// What its rule says, if it has one.
     pub rule: Option<OnOff>,
-    /// Its place's top layer says the other way from its rule.
+    /// Its place's shortest rule says the other way from its indefinite one.
     pub snoozed: bool,
 }
 
@@ -107,14 +109,14 @@ impl Tour {
 
     /// What the steps follow in this look, and the titles they quote.
     pub(crate) fn report(&self, look: &Look<'_>) -> TourSnapshot {
-        let place = |identity: RuleIdentity, front: Option<&Stack>| {
+        let place = |identity: RuleIdentity, front: Option<&PlaceLook>| {
+            let place = Place::from(identity);
             let rule = look
                 .rules
                 .iter()
-                .find(|(rule, _)| rule.identity == identity);
-            let place = Place::from(identity);
+                .find(|(rule, _)| rule.place == place && is_app_or_site_rule(rule));
             TourPlace {
-                in_front: front.is_some_and(|stack| stack.place == place),
+                in_front: front.is_some_and(|at| at.place == place),
                 rule: rule.map(|(rule, _)| rule.says),
                 snoozed: rule.is_some_and(|(_, snooze)| snooze.is_some()),
             }
@@ -188,7 +190,7 @@ pub(crate) fn titles(sample: &TourApp, site: Option<&TourSite>, example: &TourAp
         matches!(
             command,
             Command::Set {
-                length: Length::For(_),
+                length: Lasting::For(_),
                 ..
             }
         )

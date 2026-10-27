@@ -1,16 +1,18 @@
 #![cfg(debug_assertions)]
-//! The switch, and how long a change lasts: holds, timers and their lengths.
+//! The switch, and how long a rule lasts: indefinitely, until the schedule turns or until a time.
 
 mod common;
 
 use nightcap_core::{Effect, Fact};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, Length, OnOff, Payload, Place, Reason, Response, Schedule,
+    Command, Decision, ErrorCode, Lasting, Length, OnOff, Payload, Place, Reason, Response, Rule,
+    Schedule,
 };
 
 use common::{
-    activate, app_rule, at, custom_hours, figma_app, forced, late, layer, layered, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, refusal, report, reported, send, set, status,
+    activate, adopted, app_rule, at, custom_hours, figma_app, forced, late, minutes, noon,
+    off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable, send, set,
+    until, until_turn, yours,
 };
 
 /// The answer to a command that leaves Night Shift on at 23:00 by the custom hours.
@@ -38,13 +40,13 @@ fn a_command_while_night_shift_is_unavailable_is_refused() {
     assert_eq!(error.code, ErrorCode::NightShiftUnavailable);
 }
 
-/// Everywhere held `state` until the user turns it back, over no schedule.
-fn held(state: OnOff) -> Response {
+/// Everywhere set by `rule`, with no end, over no schedule.
+fn everywhere_by(rule: Rule) -> Response {
     Response::Ok(Payload::Decision(Decision {
-        state: Some(state),
+        state: Some(rule.says),
         place: Place::Everywhere,
         reasons: vec![
-            Reason::Hold(layer(state, None)),
+            Reason::Rule(rule),
             Reason::Schedule {
                 state: OnOff::Off,
                 until: None,
@@ -73,13 +75,16 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
     let (effects, response) = send(&staged, Command::On);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert_eq!(response, held(OnOff::On));
+    assert_eq!(
+        response,
+        everywhere_by(yours(Place::Everywhere, OnOff::On, Length::Indefinite))
+    );
 }
 
 #[test]
-fn off_takes_off_everywheres_hold_where_that_is_enough() {
+fn off_takes_off_everywheres_rule_where_that_is_enough() {
     let staged = noon().stage().unwrap();
-    // Found on with no schedule, which the core takes as the user's own on.
+    // Found on with no schedule, which the core adopts as an external change.
     staged.report(reported(true, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::Off);
@@ -96,7 +101,10 @@ fn on_while_everywhere_says_on_writes_nothing() {
     let (effects, response) = send(&staged, Command::On);
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(response, held(OnOff::On));
+    assert_eq!(
+        response,
+        everywhere_by(adopted(Place::Everywhere, OnOff::On, None))
+    );
 }
 
 #[test]
@@ -120,22 +128,22 @@ fn two_flips_leave_nothing_behind() {
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn on_while_the_schedule_says_on_holds_nothing() {
+fn on_while_the_schedule_says_on_sets_nothing() {
     let staged = on_by_the_schedule().stage().unwrap();
 
     let (effects, response) = send(&staged, Command::On);
 
     assert_eq!(effects, Vec::new());
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
+fn an_indefinite_rule_outlasts_sunrise_and_sunset() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
     staged.report(reported(true, custom_hours()));
@@ -147,21 +155,17 @@ fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::On, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::On, Length::Indefinite)]
     );
 }
 
 #[test]
-fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
+fn a_rule_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(
         &staged,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     staged.set_now(at("2026-10-17T08:00:00+02:00"));
@@ -173,11 +177,11 @@ fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
             at: at("2026-10-17T22:00:00+02:00").into()
         }]
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn a_timer_gives_back_what_was_under_it() {
+fn a_rule_until_a_time_gives_back_what_was_under_it() {
     let staged = on_by_the_schedule().stage().unwrap();
 
     let (effects, _) = send(&staged, set(Place::Everywhere, OnOff::Off, minutes(30)));
@@ -202,11 +206,11 @@ fn a_timer_gives_back_what_was_under_it() {
             },
         ]
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn a_new_timer_replaces_the_places_timer_and_keeps_its_hold() {
+fn a_new_rule_until_a_time_replaces_the_places_and_keeps_its_longer_one() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
@@ -214,12 +218,15 @@ fn a_new_timer_replaces_the_places_timer_and_keeps_its_hold() {
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(120)));
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            Some(layer(OnOff::On, Some("2026-10-17T01:00:00+02:00")))
-        )]
+        resettable(&staged),
+        vec![
+            yours(
+                Place::Everywhere,
+                OnOff::On,
+                until("2026-10-17T01:00:00+02:00")
+            ),
+            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+        ]
     );
 }
 
@@ -229,55 +236,55 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
 
     send(
         &staged,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
     );
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             Place::Everywhere,
-            Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-            None
+            OnOff::On,
+            until_turn("2026-10-17T07:00:00+02:00")
         )]
     );
 
     staged.set_now(at("2026-10-16T23:00:00+02:00"));
     send(
         &staged,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
     );
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             Place::Everywhere,
-            Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
-            None
+            OnOff::Off,
+            until_turn("2026-10-17T22:00:00+02:00")
         )]
     );
 }
 
 #[test]
-fn a_new_hold_replaces_the_places_hold_and_ends_its_timer() {
+fn until_the_schedule_turns_replaces_everywheres_indefinite_rule_and_ends_its_shorter_one() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
 
     send(
         &staged,
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
     );
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             Place::Everywhere,
-            Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
-            None
+            OnOff::Off,
+            until_turn("2026-10-17T22:00:00+02:00")
         )]
     );
 }
 
 #[test]
-fn until_a_picked_time_is_a_timer_that_ends_then() {
+fn until_a_picked_time_is_a_rule_that_ends_then() {
     let staged = on_by_the_schedule().stage().unwrap();
 
     let (effects, _) = send(
@@ -285,7 +292,7 @@ fn until_a_picked_time_is_a_timer_that_ends_then() {
         set(
             Place::Everywhere,
             OnOff::Off,
-            Length::Until(at("2026-10-17T00:15:00+02:00")),
+            Lasting::Until(at("2026-10-17T00:15:00+02:00")),
         ),
     );
 
@@ -293,11 +300,11 @@ fn until_a_picked_time_is_a_timer_that_ends_then() {
         at: at("2026-10-17T00:15:00+02:00").into()
     }));
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             Place::Everywhere,
-            None,
-            Some(layer(OnOff::Off, Some("2026-10-17T00:15:00+02:00")))
+            OnOff::Off,
+            until("2026-10-17T00:15:00+02:00")
         )]
     );
 }
@@ -312,13 +319,13 @@ fn lengths_that_cant_be_are_refused() {
         set(
             Place::Everywhere,
             OnOff::Off,
-            Length::Until(at("2026-10-16T22:00:00+02:00")),
+            Lasting::Until(at("2026-10-16T22:00:00+02:00")),
         ),
-        set(Place::Everywhere, OnOff::Off, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
         set(
             Place::App("com.figma.Desktop".parse().unwrap()),
             OnOff::Off,
-            Length::UntilTurnedBack,
+            Lasting::Indefinite,
         ),
     ] {
         let (effects, response) = send(&staged, command.clone());
@@ -343,25 +350,21 @@ fn in_front_of_a_rule_the_switch_changes_everywhere_and_the_rule_keeps_its_say()
         }))
     );
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)]
     );
     assert_eq!(activate(&staged, "com.apple.Terminal"), Vec::new());
 }
 
 #[test]
-fn the_switch_first_takes_off_everywheres_layers_that_say_otherwise() {
+fn the_switch_first_takes_off_everywheres_rules_that_say_otherwise() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
 
     let (_, response) = send(&staged, Command::On);
 
     assert_eq!(response, following_the_custom_hours_until_morning());
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

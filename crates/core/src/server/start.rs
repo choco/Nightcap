@@ -101,7 +101,8 @@ impl Inner {
                 config_websites: config.websites,
             },
             places: Places::new(Kept {
-                layers: persisted.layers.clone(),
+                rules: persisted.rules.clone(),
+                linked: persisted.linked.clone(),
                 ad_hoc,
             }),
             strength: None,

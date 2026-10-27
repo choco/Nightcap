@@ -8,7 +8,9 @@ use std::time::Duration;
 use nightcap_core::{Effect, Fact, Scenario};
 use nightcap_protocol::{NightShift, OnOff, Schedule, TimeOfDay};
 
-use common::{at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, status};
+use common::{
+    at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, resettable, status,
+};
 
 #[test]
 fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
@@ -113,9 +115,8 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    let status = status(&staged);
-    assert_eq!(status.scheduled_state, Some(OnOff::On));
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(status(&staged).scheduled_state, Some(OnOff::On));
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

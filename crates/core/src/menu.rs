@@ -6,7 +6,7 @@ use nightcap_protocol::{Command, Decision, NightShift, OnOff, Place, Reason};
 
 use crate::ProblemLine;
 use crate::rows::{PlaceRow, Rows, capitalized, clock_time, here, until_text, whose};
-use crate::rules::places::Stack;
+use crate::rules::places::{PlaceLook, is_app_or_site_rule};
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 
@@ -84,13 +84,13 @@ impl Menu {
         if let Some(row) = rows.everywhere() {
             entries.push(MenuEntry::Row { row });
         }
-        let front: Vec<&Stack> = look.app.iter().chain(&look.site).collect();
+        let front: Vec<&PlaceLook> = look.app.iter().chain(&look.site).collect();
         if !front.is_empty() {
             entries.push(MenuEntry::Separator);
         }
-        for stack in front {
+        for at in front {
             entries.push(MenuEntry::Row {
-                row: rows.place(stack),
+                row: rows.place(at),
             });
         }
         Menu {
@@ -130,12 +130,14 @@ impl Inner {
             place => format!(" {}", here(place, &self.facts.context)),
         };
         let text = match top {
-            Reason::Timer(layer) | Reason::Hold(layer) => format!(
+            Reason::Rule(rule) if is_app_or_site_rule(rule) => {
+                format!("{}{at}: {}", rule.says, whose(rule))
+            }
+            Reason::Rule(rule) => format!(
                 "{}{at} {}",
-                layer.state,
-                until_text(layer.until, layer.state, &self.facts.timeline.zone)
+                rule.says,
+                until_text(rule.length.end(), rule.says, &self.facts.timeline.zone)
             ),
-            Reason::Rule(rule) => format!("{}{at}: {}", rule.says, whose(rule)),
             Reason::Tour => "on for the tour".to_owned(),
             Reason::Schedule { until, .. } => match (until, self.facts.timeline.schedule) {
                 (Some(until), _) => {

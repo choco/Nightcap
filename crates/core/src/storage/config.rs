@@ -5,9 +5,7 @@ use std::path::PathBuf;
 use std::{fmt, io};
 
 use jiff::SignedDuration;
-use nightcap_protocol::{
-    IdentityError, OnOff, Rule, RuleIdentity, RuleSource, Schedule, TimeOfDay,
-};
+use nightcap_protocol::{IdentityError, OnOff, RuleIdentity, Schedule, TimeOfDay};
 use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
@@ -53,7 +51,8 @@ pub(crate) struct NightShiftConfig {
 }
 
 pub(crate) struct Config {
-    pub rules: Vec<Rule>,
+    /// The indefinite rules the config sets, at apps and sites, with what each says.
+    pub rules: Vec<(RuleIdentity, OnOff)>,
     pub websites: Option<bool>,
     pub night_shift: NightShiftConfig,
     pub lengths: Vec<SignedDuration>,
@@ -214,7 +213,7 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
     if let Some(unsaid) = file.rules.app.as_ref().or(file.rules.domain.as_ref()) {
         return Err(Spanned::new(unsaid.span(), Problem::UnsaidRules));
     }
-    let mut rules: Vec<Rule> = Vec::new();
+    let mut rules: Vec<(RuleIdentity, OnOff)> = Vec::new();
     for (says, lists) in [(OnOff::Off, &file.rules.off), (OnOff::On, &file.rules.on)] {
         let apps = lists
             .app
@@ -227,17 +226,13 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
         for (entry, identity) in apps.chain(domains) {
             let at = |problem| Spanned::new(entry.span(), problem);
             let identity = identity.map_err(|error| at(Problem::Entry(error)))?;
-            if let Some(other) = rules
+            if let Some((other, _)) = rules
                 .iter()
-                .find(|rule| rule.identity == identity && rule.says != says)
+                .find(|(other, said)| *other == identity && *said != says)
             {
-                return Err(at(Problem::BothWays(other.identity.clone())));
+                return Err(at(Problem::BothWays(other.clone())));
             }
-            rules.push(Rule {
-                identity,
-                source: RuleSource::Config,
-                says,
-            });
+            rules.push((identity, says));
         }
     }
     let night_shift = night_shift(file.night_shift)?;

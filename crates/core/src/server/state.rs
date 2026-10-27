@@ -51,7 +51,7 @@ pub(crate) struct Inner {
     pub(crate) saved: Persisted,
 }
 
-/// What the place stack reads but doesn't own, lent to it as a `World` for each call.
+/// What the places read but don't own, lent to them as a `World` for each call.
 pub(crate) struct Facts {
     pub(crate) night_shift: NightShift,
     pub(crate) timeline: Timeline,
@@ -85,7 +85,8 @@ impl Inner {
     /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
         Persisted {
-            layers: self.places.kept().layers.clone(),
+            rules: self.places.kept().rules.clone(),
+            linked: self.places.kept().linked.clone(),
             websites: self.facts.websites,
             onboarding: self.onboarding,
             notifications_wanted: self.grants.notifications_wanted,

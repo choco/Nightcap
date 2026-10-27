@@ -4,25 +4,25 @@
 mod common;
 
 use nightcap_core::{Effect, Staged};
-use nightcap_protocol::{Command, Length, OnOff, Place};
+use nightcap_protocol::{Command, Lasting, OnOff, Place};
 
 use common::{
-    accessibility_granted, activate, activate_browser, activate_event, at, books, custom_hours,
-    figma_app, forced, in_books_at_noon, late, launch, layer, layered, minutes, on_by_the_schedule,
-    reported, send, set, status, watch,
+    accessibility_granted, activate, activate_browser, activate_event, adopted, at, books,
+    custom_hours, figma_app, forced, in_books_at_noon, late, launch, minutes, on_by_the_schedule,
+    reported, resettable, send, set, status, until, until_turn, watch, yours,
 };
 
 /// Snoozes the Figma rule until 07:00, then turns Night Shift off everywhere for an hour.
 fn snooze_figma_and_break(staged: &Staged) {
     send(
         staged,
-        set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
     send(staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
 }
 
 #[test]
-fn holds_and_timers_survive_a_restart() {
+fn temporary_rules_survive_a_restart() {
     let staged = forced();
     snooze_figma_and_break(&staged);
 
@@ -35,35 +35,35 @@ fn holds_and_timers_survive_a_restart() {
         }]
     );
     assert_eq!(
-        status(&staged).layers,
+        resettable(&staged),
         vec![
-            layered(
+            yours(
                 figma_app(),
-                Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-                None
+                OnOff::On,
+                until_turn("2026-10-17T07:00:00+02:00")
             ),
-            layered(
+            yours(
                 Place::Everywhere,
-                None,
-                Some(layer(OnOff::Off, Some("2026-10-17T00:00:00+02:00")))
+                OnOff::Off,
+                until("2026-10-17T00:00:00+02:00")
             ),
         ]
     );
 }
 
 #[test]
-fn holds_and_timers_that_ended_while_nightcap_was_stopped_are_dropped_on_start() {
+fn rules_that_ended_while_nightcap_was_stopped_are_dropped_on_start() {
     let staged = forced();
     snooze_figma_and_break(&staged);
 
-    // Past both the timer's end and the 07:00 schedule transition.
+    // Past both the rule's end and the 07:00 schedule transition.
     let staged = staged.restart_at(at("2026-10-17T08:00:00+02:00"));
 
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn on_the_way_out_only_everywheres_hold_still_applies() {
+fn on_the_way_out_only_everywheres_rules_short_of_one_until_a_time_still_apply() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     staged.report(reported(false, custom_hours()));
@@ -145,7 +145,7 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
             },
         ]
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -158,11 +158,11 @@ fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
     staged.report(reported(false, custom_hours()));
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![adopted(
             Place::Everywhere,
-            Some(layer(OnOff::Off, Some("2026-10-17T22:00:00+02:00"))),
-            None
+            OnOff::Off,
+            Some("2026-10-17T22:00:00+02:00")
         )]
     );
 }
@@ -186,7 +186,7 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
             },
         ]
     );
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

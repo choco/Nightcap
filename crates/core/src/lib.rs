@@ -23,7 +23,7 @@ pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
-pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
+pub use settings::{RuleAction, Settings, SettingsForNow, SettingsRule, SettingsSwitch};
 pub use setup::checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,

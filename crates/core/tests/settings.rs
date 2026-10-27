@@ -10,12 +10,12 @@ mod common;
 
 use jiff::SignedDuration;
 use nightcap_core::{
-    Event, Fact, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsLayers,
+    Event, Fact, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsForNow,
     SettingsRule, SettingsSwitch, Staged, UiCommand, normalize_domain,
 };
 use nightcap_protocol::{
     AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
-    ExportFormat, FileError, Length, NightShiftDetail, NotificationPermission, OnOff, Place,
+    ExportFormat, FileError, Lasting, NightShiftDetail, NotificationPermission, OnOff, Place,
     Request, RuleIdentity, Schedule,
 };
 
@@ -557,7 +557,7 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
     let figma_site = Place::Domain("figma.com".parse().unwrap());
     send(
         &staged,
-        set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_site.clone(), OnOff::On, Lasting::UntilScheduleTurns),
     );
     let action = |title: &str, command| {
         Some(RuleAction {
@@ -603,7 +603,7 @@ fn the_rules_tab_lists_every_rule_with_what_can_be_done_about_it() {
 }
 
 #[test]
-fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
+fn the_rules_tab_lists_what_temporary_rules_set_where_no_indefinite_one_does() {
     let staged = on_by_the_schedule()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -611,7 +611,7 @@ fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
     let mail_app = Place::from(mail());
     send(
         &staged,
-        set(mail_app.clone(), OnOff::Off, Length::UntilScheduleTurns),
+        set(mail_app.clone(), OnOff::Off, Lasting::UntilScheduleTurns),
     );
     send(&staged, set(mail_app.clone(), OnOff::On, minutes(30)));
     // A snooze shows on its rule, and everywhere's own on the Night Shift item.
@@ -620,7 +620,7 @@ fn the_rules_tab_lists_what_holds_for_now_where_no_rule_does() {
 
     assert_eq!(
         staged.core().settings().for_now,
-        vec![SettingsLayers {
+        vec![SettingsForNow {
             place: mail_app.clone(),
             label: "Night Shift on until 23:30, then off until 22:00".to_owned(),
             action: RuleAction {

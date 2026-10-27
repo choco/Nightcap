@@ -206,8 +206,8 @@ mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, ErrorCode, Install, Instance, Layer, Length, OnOff, Place, PlaceLayers,
-        RuleIdentity, Schedule, TimeOfDay,
+        Command, ErrorCode, Install, Instance, Lasting, Length, OnOff, Place, Rule, RuleIdentity,
+        Schedule, SetBy, TimeOfDay,
     };
 
     use super::{Disk, File, Files, Owned, Paths};
@@ -299,7 +299,7 @@ mod tests {
         let snooze = Command::Set {
             place: Place::from(mail.clone()),
             state: OnOff::Off,
-            length: Length::For(jiff::SignedDuration::from_mins(30)),
+            length: Lasting::For(jiff::SignedDuration::from_mins(30)),
         };
         inner.choose(snooze).1.unwrap();
         std::fs::create_dir(dir.path().join("rules.toml")).unwrap();
@@ -311,17 +311,15 @@ mod tests {
 
         assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
         let status = inner.status();
-        assert_eq!(status.rules, Vec::new());
         assert_eq!(
-            status.layers,
-            vec![PlaceLayers {
+            status.rules,
+            vec![Rule {
                 place: Place::from(mail),
-                hold: None,
-                timer: Some(Layer {
-                    state: OnOff::Off,
-                    until: Some("2026-10-16T23:30:00+02:00".parse().unwrap()),
-                    with: None,
-                }),
+                says: OnOff::Off,
+                length: Length::Until {
+                    until: "2026-10-16T23:30:00+02:00".parse().unwrap(),
+                },
+                set_by: SetBy::You,
             }]
         );
     }

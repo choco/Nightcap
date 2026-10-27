@@ -5,12 +5,12 @@ mod common;
 
 use nightcap_core::Fact;
 use nightcap_protocol::{
-    Command, Decision, NightShift, NotificationPermission, OnOff, Payload, Permissions, Place,
-    Reason, Response, RuleIdentity, Schedule,
+    Command, Decision, Length, NightShift, NotificationPermission, OnOff, Payload, Permissions,
+    Place, Reason, Response, RuleIdentity, Schedule,
 };
 
 use common::{
-    ad_hoc, add_rule, app_rule, at, layer, noon, on_by_the_schedule, reported, rules, send, status,
+    ad_hoc, add_rule, app_rule, at, noon, on_by_the_schedule, reported, rules, send, status, yours,
 };
 
 #[test]
@@ -44,7 +44,7 @@ fn a_command_answers_with_the_resulting_decision() {
             state: Some(OnOff::Off),
             place: Place::Everywhere,
             reasons: vec![
-                Reason::Hold(layer(OnOff::Off, None)),
+                Reason::Rule(yours(Place::Everywhere, OnOff::Off, Length::Indefinite)),
                 Reason::Schedule {
                     state: OnOff::On,
                     until: Some(at("2026-10-17T07:00:00+02:00")),

@@ -7,7 +7,7 @@ use std::time::SystemTime;
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind, CheckState,
-    Command, ConfigFileDetail, Domain, ErrorCode, ErrorReply, ExportFormat, FileError, Length,
+    Command, ConfigFileDetail, Domain, ErrorCode, ErrorReply, ExportFormat, FileError, Lasting,
     NightShiftDetail, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail, Place,
     RuleIdentity, Schedule, TimeOfDay,
 };
@@ -205,11 +205,11 @@ pub enum Place {
 }
 
 #[uniffi::remote(Enum)]
-pub enum Length {
+pub enum Lasting {
     For(SignedDuration),
     Until(Timestamp),
     UntilScheduleTurns,
-    UntilTurnedBack,
+    Indefinite,
 }
 
 #[uniffi::remote(Enum)]
@@ -220,7 +220,7 @@ pub enum Command {
     Set {
         place: Place,
         state: OnOff,
-        length: Length,
+        length: Lasting,
     },
     Reset(Place),
     AddRule {

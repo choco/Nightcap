@@ -429,7 +429,6 @@ mod tests {
                     state: OnOff::Off,
                     from_config: false,
                 },
-                layers: Vec::new(),
                 permissions: Permissions {
                     accessibility: false,
                     notifications: NotificationPermission::NotRequested,

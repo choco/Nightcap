@@ -4,7 +4,7 @@
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, Rule, RuleIdentity,
+    Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, RuleIdentity,
 };
 
 use crate::rules::places::{Places, Refusal};
@@ -189,7 +189,7 @@ impl Inner {
     /// Takes the config's rules, dropping the ad-hoc rules it now has, which have graduated
     /// (ADR-0007), from `rules.toml` too. The config wins over them whether or not the file can
     /// be written, and the next load drops them again.
-    pub(crate) fn graduate(&mut self, rules: Vec<Rule>) {
+    pub(crate) fn graduate(&mut self, rules: Vec<(RuleIdentity, OnOff)>) {
         let before = self.places.kept().ad_hoc.len();
         self.places.set_config(rules);
         let graduated = before - self.places.kept().ad_hoc.len();
@@ -285,7 +285,8 @@ pub(crate) struct Loaded {
     pub(crate) config_error: Option<ConfigError>,
     /// Whether the config file existed when it was last loaded.
     pub(crate) config_found: bool,
-    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
+    /// The lengths a change can be picked for, from the config or else 30 minutes, 1 hour and
+    /// 2 hours.
     pub(crate) lengths: Vec<SignedDuration>,
     pub(crate) config_night_shift: NightShiftConfig,
     pub(crate) applied_from_config: NightShiftConfig,
@@ -300,7 +301,7 @@ impl From<Refusal> for ErrorReply {
             | Refusal::TooLong(_)
             | Refusal::Passed
             | Refusal::NoSchedule
-            | Refusal::ForGoodIsARule => ErrorCode::BadRequest,
+            | Refusal::IndefiniteIsAdded => ErrorCode::BadRequest,
             Refusal::ConfigSays { .. } | Refusal::ConfigRule(_) => ErrorCode::ConfigRule,
             Refusal::NoSuchRule(_) => ErrorCode::NoSuchRule,
         };

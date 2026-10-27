@@ -5,9 +5,10 @@
 use std::path::Path;
 
 use jiff::Timestamp;
-use nightcap_protocol::{Command, Layer, OnOff, Place, Rule, RuleIdentity, RuleSource};
+use nightcap_protocol::{Command, OnOff, Place, Rule, RuleIdentity, SetBy};
 
-use crate::rows::{layer_text, until_text};
+use crate::rows::{rules_text, until_text};
+use crate::rules::places::{is_app_or_site_rule, place_identity};
 use crate::server::state::Inner;
 use crate::{LoginItem, SettingsCheck};
 
@@ -22,16 +23,16 @@ pub struct Settings {
     pub checks: Vec<SettingsCheck>,
     /// Where the config is read from, whether or not it exists.
     pub config_path: String,
-    /// Every rule: the config's, then the ad-hoc ones.
+    /// The apps' and sites' indefinite rules: the config's, then the ad-hoc ones.
     pub rules: Vec<SettingsRule>,
-    /// The apps and sites Night Shift is on or off in for now, with no rule of their own: a
+    /// The apps and sites Night Shift is on or off in for now, by temporary rules alone: a
     /// snoozed rule shows on its own row, and everywhere's on the menu's Night Shift item.
-    pub for_now: Vec<SettingsLayers>,
+    pub for_now: Vec<SettingsForNow>,
 }
 
-/// An app's or site's temporary on or off as the Rules tab lists it, with ending it.
+/// An app's or site's temporary rules as the Rules tab lists them, with ending them.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct SettingsLayers {
+pub struct SettingsForNow {
     pub place: Place,
     /// "Night Shift off until 20:00".
     pub label: String,
@@ -81,32 +82,21 @@ impl Settings {
             rules: look
                 .rules
                 .iter()
+                .filter(|(rule, _)| is_app_or_site_rule(rule))
                 .filter_map(|(rule, snooze)| inner.settings_rule(rule, *snooze))
                 .collect(),
-            for_now: look
-                .layers
-                .iter()
-                .filter(|layers| {
-                    layers.place != Place::Everywhere
-                        && !look
-                            .rules
-                            .iter()
-                            .any(|(rule, _)| Place::from(rule.identity.clone()) == layers.place)
-                })
-                .map(|layers| SettingsLayers {
-                    place: layers.place.clone(),
+            for_now: for_now(&look.rules)
+                .into_iter()
+                .map(|(place, rules)| SettingsForNow {
                     label: format!(
                         "Night Shift {}",
-                        layer_text(
-                            layers.timer.as_ref(),
-                            layers.hold.as_ref(),
-                            &inner.facts.timeline.zone
-                        )
+                        rules_text(&rules, &inner.facts.timeline.zone)
                     ),
                     action: RuleAction {
                         title: "End".to_owned(),
-                        command: Command::Reset(layers.place.clone()),
+                        command: Command::Reset(place.clone()),
                     },
+                    place,
                 })
                 .collect(),
             // Registered but waiting for approval counts as on; its check explains the rest.
@@ -131,26 +121,25 @@ impl Inner {
     /// A rule's row in the Rules tab: a snooze can be put back, an ad-hoc rule removed, and a
     /// config rule changed only in the config (ADR-0006). The tour's rules have none
     /// (ADR-0016).
-    fn settings_rule(&self, rule: &Rule, snooze: Option<&Layer>) -> Option<SettingsRule> {
-        let identity = rule.identity.clone();
-        let place = Place::from(identity.clone());
+    fn settings_rule(&self, rule: &Rule, snooze: Option<&Rule>) -> Option<SettingsRule> {
+        let identity = place_identity(&rule.place)?;
         let action = |title: &str, command| {
             Some(RuleAction {
                 title: title.to_owned(),
                 command,
             })
         };
-        let (label, action) = match (snooze, rule.source) {
-            (_, RuleSource::Tour) => return None,
-            (Some(layer), _) => (
+        let (label, action) = match (snooze, rule.set_by) {
+            (_, SetBy::Tour | SetBy::OutsideChange) => return None,
+            (Some(snooze), _) => (
                 format!(
                     "Snoozed {}",
-                    until_text(layer.until, layer.state, &self.facts.timeline.zone)
+                    until_text(snooze.length.end(), snooze.says, &self.facts.timeline.zone)
                 ),
-                action("Put Back", Command::Reset(place)),
+                action("Put Back", Command::Reset(rule.place.clone())),
             ),
-            (None, RuleSource::Config) => ("From your config".to_owned(), None),
-            (None, RuleSource::AdHoc) => (
+            (None, SetBy::Config) => ("From your config".to_owned(), None),
+            (None, SetBy::You) => (
                 "Ad-hoc".to_owned(),
                 action("Remove", Command::RemoveRule(identity.clone())),
             ),
@@ -163,4 +152,23 @@ impl Inner {
             action,
         })
     }
+}
+
+/// The apps and sites with temporary rules and no indefinite one, each with its rules, shortest
+/// first, in the order the places got their first.
+fn for_now(rules: &[(&Rule, Option<&Rule>)]) -> Vec<(Place, Vec<Rule>)> {
+    let mut places: Vec<(Place, Vec<Rule>)> = Vec::new();
+    for (rule, _) in rules {
+        let ruled = rules
+            .iter()
+            .any(|(other, _)| other.place == rule.place && is_app_or_site_rule(other));
+        if rule.place == Place::Everywhere || ruled {
+            continue;
+        }
+        match places.iter_mut().find(|(place, _)| *place == rule.place) {
+            Some((_, kept)) => kept.push((*rule).clone()),
+            None => places.push((rule.place.clone(), vec![(*rule).clone()])),
+        }
+    }
+    places
 }

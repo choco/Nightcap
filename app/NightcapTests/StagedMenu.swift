@@ -84,7 +84,7 @@ func lengths(_ lengths: [String]) -> String {
 let figmaApp = Place.app("com.figma.Desktop")
 let mailApp = Place.app("com.apple.mail")
 
-func minutes(_ count: Int64) -> Length {
+func minutes(_ count: Int64) -> Lasting {
     .for(count * 60)
 }
 

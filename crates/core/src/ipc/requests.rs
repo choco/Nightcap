@@ -88,7 +88,6 @@ impl Inner {
                 state: OnOff::from(facts.website_checking()),
                 from_config: facts.config_websites.is_some(),
             },
-            layers: look.layers.to_vec(),
             permissions: Permissions {
                 accessibility: self.grants.accessibility == Some(true),
                 notifications: self.grants.notifications,

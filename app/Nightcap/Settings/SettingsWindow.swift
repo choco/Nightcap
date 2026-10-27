@@ -360,7 +360,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// An app's or site's temporary on or off: its icon and name, until when, and ending it.
-    private func forNowRow(_ layers: SettingsLayers) -> NSView {
+    private func forNowRow(_ layers: SettingsForNow) -> NSView {
         let identity: RuleIdentity
         switch layers.place {
         case .app(let bundleId): identity = .app(bundleId)

@@ -14,24 +14,29 @@ use nightcap_core::{
     TourFacts, TourPlace, TourSite, TourTitles, UiCommand, tour_titles,
 };
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ExportFormat, Length, OnOff, Payload, Place, Reason, Request,
-    Response, Rule, RuleIdentity, RuleSource,
+    Command, Decision, ErrorCode, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason,
+    Request, Response, Rule, RuleIdentity, SetBy,
 };
 
 use common::{
     activate, activate_browser, activate_browser_event, ad_hoc, add_rule, app_row, app_rule, at,
-    choice_titled, domain, everywhere_row, figma, figma_app, kept_ad_hoc, late, layer, layered,
-    mail, minutes, off_by_the_schedule, on_by_the_schedule, refusal, report, report_host, send,
-    set, site_row, status, titles,
+    choice_titled, domain, everywhere_row, figma, figma_app, kept_ad_hoc, late, mail, minutes,
+    off_by_the_schedule, on_by_the_schedule, refusal, report, report_host, resettable, rules, send,
+    set, site_row, status, titles, until, yours,
 };
 
 const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
 
+fn sample() -> RuleIdentity {
+    RuleIdentity::App(SAMPLE.parse().unwrap())
+}
+
 fn sample_rule() -> Rule {
     Rule {
-        identity: RuleIdentity::App(SAMPLE.parse().unwrap()),
-        source: RuleSource::Tour,
+        place: Place::from(sample()),
         says: OnOff::Off,
+        length: Length::Indefinite,
+        set_by: SetBy::Tour,
     }
 }
 
@@ -99,7 +104,7 @@ fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour(
 
     let status = status(&staged);
     assert_eq!(status.decision, on_for_the_tour());
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -122,11 +127,11 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
             until: Some(at("2026-10-16T22:00:00+02:00")),
         }]
     );
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
-fn the_tour_sets_aside_everywheres_hold_and_puts_it_back() {
+fn the_tour_sets_aside_everywheres_indefinite_rule_and_puts_it_back() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     report(&staged, false);
@@ -142,17 +147,13 @@ fn the_tour_sets_aside_everywheres_hold_and_puts_it_back() {
     );
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)]
     );
 }
 
 #[test]
-fn the_tour_sets_aside_everywheres_timer_and_puts_it_back_with_its_end() {
+fn the_tour_sets_aside_everywheres_rule_until_a_time_and_puts_it_back_with_its_end() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
     report(&staged, false);
@@ -179,7 +180,11 @@ fn the_tour_sets_aside_everywheres_timer_and_puts_it_back_with_its_end() {
 
     assert_eq!(
         status(&staged).decision.reasons[0],
-        Reason::Timer(layer(OnOff::Off, Some("2026-10-17T00:00:00+02:00")))
+        Reason::Rule(yours(
+            Place::Everywhere,
+            OnOff::Off,
+            until("2026-10-17T00:00:00+02:00")
+        ))
     );
 }
 
@@ -191,7 +196,7 @@ fn while_the_tour_stands_in_everywheres_row_offers_no_way_back_to_the_schedule()
 
     send(
         &staged,
-        set(Place::Everywhere, OnOff::On, Length::UntilScheduleTurns),
+        set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
     );
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(30)));
 
@@ -215,7 +220,7 @@ fn while_the_tour_stands_in_a_tap_off_and_on_returns_to_the_tours_on() {
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(response, Response::Ok(Payload::Decision(on_for_the_tour())));
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -236,7 +241,7 @@ fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front(
     start_tour(&staged);
     assert_eq!(activate(&staged, SAMPLE), Vec::new());
 
-    let (effects, response) = send(&staged, add_rule(sample_rule().identity));
+    let (effects, response) = send(&staged, add_rule(sample()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
@@ -258,7 +263,7 @@ fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front(
 fn outside_a_tour_the_sample_matches_no_rule() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
-    send(&staged, add_rule(sample_rule().identity));
+    send(&staged, add_rule(sample()));
     activate(&staged, "com.apple.mail");
     staged.send_ui(UiCommand::EndTour);
 
@@ -270,14 +275,14 @@ fn removing_the_samples_rule_mid_tour_drops_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     activate(&staged, SAMPLE);
-    send(&staged, add_rule(sample_rule().identity));
+    send(&staged, add_rule(sample()));
     report(&staged, false);
 
-    let (effects, response) = send(&staged, Command::RemoveRule(sample_rule().identity));
+    let (effects, response) = send(&staged, Command::RemoveRule(sample()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
-    assert_eq!(status(&staged).rules, Vec::new());
+    assert_eq!(rules(&staged), Vec::new());
 }
 
 #[test]
@@ -291,19 +296,16 @@ fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
     });
     let row = app_row(&staged).unwrap();
     assert_eq!(row.title, "Turn Off in Tour Sample");
-    assert_eq!(
-        choice_titled(&row, "Always").command,
-        add_rule(sample_rule().identity)
-    );
+    assert_eq!(choice_titled(&row, "Always").command, add_rule(sample()));
 
-    send(&staged, add_rule(sample_rule().identity));
+    send(&staged, add_rule(sample()));
 
     let row = app_row(&staged).unwrap();
     assert_eq!(row.title, "Turn On in Tour Sample");
     assert_eq!(row.subtitle.as_deref(), Some("Always off: the tour’s rule"));
     assert_eq!(
         choice_titled(&row, "Remove Your Rule").command,
-        Command::RemoveRule(sample_rule().identity)
+        Command::RemoveRule(sample())
     );
 }
 
@@ -312,7 +314,7 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     let site = RuleIdentity::Domain("choco.me".parse().unwrap());
-    for identity in [sample_rule().identity, site.clone()] {
+    for identity in [sample(), site.clone()] {
         let (_, response) = send(&staged, add_rule(identity));
         assert!(matches!(response, Response::Ok(_)), "{response:?}");
     }
@@ -321,19 +323,18 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
         set(
             Place::App(SAMPLE.parse().unwrap()),
             OnOff::On,
-            Length::UntilScheduleTurns,
+            Lasting::UntilScheduleTurns,
         ),
     );
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
 
     assert_eq!(
-        status(&staged).rules,
+        rules(&staged),
         vec![
             sample_rule(),
             Rule {
-                identity: site,
-                source: RuleSource::Tour,
-                says: OnOff::Off,
+                place: Place::from(site),
+                ..sample_rule()
             },
         ]
     );
@@ -348,9 +349,8 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
     assert!(!saved.contains(SAMPLE), "{saved}");
 
     staged.send_ui(UiCommand::EndTour);
-    let status = status(&staged);
-    assert_eq!(status.rules, Vec::new());
-    assert_eq!(status.layers, Vec::new());
+    assert_eq!(rules(&staged), Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -364,9 +364,9 @@ fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
 
     send(&staged, add_rule(figma()));
 
-    assert_eq!(status(&staged).rules, vec![app_rule("com.figma.Desktop")]);
+    assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
     staged.send_ui(UiCommand::EndTour);
-    assert_eq!(status(&staged).rules, vec![app_rule("com.figma.Desktop")]);
+    assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
 }
 
 #[test]
@@ -380,15 +380,15 @@ fn adding_the_rule_a_snoozed_app_has_mid_tour_ends_the_snooze_only_while_it_runs
     start_tour(&staged);
 
     send(&staged, add_rule(figma()));
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
     staged.send_ui(UiCommand::EndTour);
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             figma_app(),
-            None,
-            Some(layer(OnOff::On, Some("2026-10-16T23:30:00+02:00")))
+            OnOff::On,
+            until("2026-10-16T23:30:00+02:00")
         )]
     );
 }
@@ -397,18 +397,18 @@ fn adding_the_rule_a_snoozed_app_has_mid_tour_ends_the_snooze_only_while_it_runs
 fn a_config_rule_reloaded_mid_tour_replaces_the_tours_rule_for_its_app() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
-    send(&staged, add_rule(sample_rule().identity));
+    send(&staged, add_rule(sample()));
     staged.write_config(Some(format!("[rules.on]\napp = [\"{SAMPLE}\"]\n").as_str()));
 
     staged.request(Request::Reload);
 
     let config_rule = Rule {
-        source: RuleSource::Config,
         says: OnOff::On,
+        set_by: SetBy::Config,
         ..sample_rule()
     };
-    assert_eq!(status(&staged).rules, vec![config_rule]);
-    let (_, response) = send(&staged, Command::RemoveRule(sample_rule().identity));
+    assert_eq!(rules(&staged), vec![config_rule]);
+    let (_, response) = send(&staged, Command::RemoveRule(sample()));
     assert_eq!(refusal(response), ErrorCode::ConfigRule);
 }
 
@@ -420,11 +420,11 @@ fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     start_tour(&staged);
 
     send(&staged, Command::RemoveRule(mail.clone()));
-    assert_eq!(status(&staged).rules, Vec::new());
+    assert_eq!(rules(&staged), Vec::new());
     assert_eq!(kept_ad_hoc(&staged), vec![ad_hoc(mail.clone())]);
     staged.send_ui(UiCommand::EndTour);
 
-    assert_eq!(status(&staged).rules, vec![ad_hoc(mail)]);
+    assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
 }
 
 #[test]
@@ -442,7 +442,7 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
         },
     );
     assert_eq!(
-        status(&staged).rules,
+        rules(&staged),
         vec![Rule {
             says: OnOff::On,
             ..ad_hoc(mail.clone())
@@ -456,7 +456,7 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
     );
     staged.send_ui(UiCommand::EndTour);
 
-    assert_eq!(status(&staged).rules, vec![ad_hoc(mail)]);
+    assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
 }
 
 #[test]
@@ -471,10 +471,10 @@ fn snoozes_and_the_switch_mid_tour_last_only_while_it_runs() {
     let figma = Place::App("com.figma.Desktop".parse().unwrap());
     send(&staged, set(figma, OnOff::On, minutes(30)));
     send(&staged, Command::Off);
-    assert_eq!(status(&staged).layers.len(), 2);
+    assert_eq!(resettable(&staged).len(), 2);
     staged.send_ui(UiCommand::EndTour);
 
-    assert_eq!(status(&staged).layers, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]
@@ -498,12 +498,8 @@ fn a_restart_after_a_crash_mid_tour_puts_night_shift_back_where_the_tour_found_i
         ]
     );
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)]
     );
 }
 
@@ -531,12 +527,8 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
     staged.send_ui(UiCommand::EndTour);
 
     assert_eq!(
-        status(&staged).layers,
-        vec![layered(
-            Place::Everywhere,
-            Some(layer(OnOff::Off, None)),
-            None
-        )]
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)]
     );
 }
 
@@ -586,7 +578,7 @@ fn snoozes(command: &Command) -> bool {
     matches!(
         command,
         Command::Set {
-            length: Length::For(_),
+            length: Lasting::For(_),
             ..
         }
     )
@@ -651,7 +643,7 @@ fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     bring(&staged, &tour_sample());
-    choose(&staged, add_rule(sample_rule().identity));
+    choose(&staged, add_rule(sample()));
 
     let snooze = item_sending(&app_row(&staged).unwrap(), snoozes);
     choose(&staged, snooze.command);
@@ -680,7 +672,7 @@ fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts()
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     bring(&staged, &tour_sample());
-    choose(&staged, add_rule(sample_rule().identity));
+    choose(&staged, add_rule(sample()));
     choose(&staged, set(sample_place(), OnOff::On, minutes(30)));
     bring(&staged, &mail_app());
     assert!(tour_facts(&staged).sample.snoozed);
@@ -702,7 +694,7 @@ fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
 
-    send(&staged, add_rule(sample_rule().identity));
+    send(&staged, add_rule(sample()));
     assert_eq!(
         tour_facts(&staged).sample,
         TourPlace {
@@ -712,7 +704,7 @@ fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
     );
     send(
         &staged,
-        set(sample_place(), OnOff::On, Length::UntilScheduleTurns),
+        set(sample_place(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     assert_eq!(
@@ -859,10 +851,7 @@ fn each_title_the_tour_quotes_is_where_the_menu_shows_it_in_the_situation_its_st
     let rule_for = |identity: RuleIdentity| move |command: &Command| matches!(command, Command::AddRule { identity: ruled, .. } if *ruled == identity);
 
     bring(&staged, &tour_sample());
-    let (shown, always) = quoted(
-        &app_row(&staged).unwrap(),
-        &rule_for(sample_rule().identity),
-    );
+    let (shown, always) = quoted(&app_row(&staged).unwrap(), &rule_for(sample()));
     assert_eq!(shown, titles.add_sample_rule);
     choose(&staged, always);
     let row = app_row(&staged).unwrap();

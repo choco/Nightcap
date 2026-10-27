@@ -3,11 +3,9 @@
 
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
-use nightcap_protocol::{
-    Command, Layer, Length, OnOff, Place, Reason, Rule, RuleIdentity, RuleSource,
-};
+use nightcap_protocol::{Command, Lasting, OnOff, Place, Reason, Rule, RuleIdentity, SetBy};
 
-use crate::rules::places::{Context, Look, Stack, World, place_identity};
+use crate::rules::places::{Context, Look, PlaceLook, World, place_identity};
 use crate::rules::schedule::CheckedSchedule;
 
 /// A place row: everywhere's under the Night Shift item, then the front app's and site's.
@@ -67,7 +65,7 @@ pub struct MenuItem {
 pub(crate) struct Rows<'a> {
     pub look: &'a Look<'a>,
     pub world: &'a World<'a>,
-    /// The menu's preset lengths.
+    /// The lengths a change can be picked for.
     pub lengths: &'a [SignedDuration],
 }
 
@@ -81,24 +79,21 @@ impl Rows<'_> {
         let place = &everywhere.place;
         let state = everywhere.gives.other();
         let mut items = Vec::new();
-        // While the tour stands in, what's under everywhere's layers is the tour's on, which the
+        // While the tour stands in, what's under everywhere's rules is the tour's on, which the
         // switch gives back; the schedule isn't there to go back to.
         let schedule_says_so = matches!(
             everywhere.base,
             Some(Reason::Schedule { state: scheduled, until: Some(_) }) if scheduled == state
         );
-        if schedule_says_so
-            && (everywhere.timer.is_some() || everywhere.hold.is_some())
-            && look.after_switch.is_some()
-        {
+        if schedule_says_so && !everywhere.rules.is_empty() && !look.after_switch.is_empty() {
             items.push(choice(
                 "Back to the Schedule",
                 Command::Reset(place.clone()),
             ));
         }
         let mut lengths = Vec::new();
-        if everywhere.after_timer != Some(state) {
-            lengths.extend(self.timers(place, state, "Turn {} Everywhere"));
+        if everywhere.after_until != Some(state) {
+            lengths.extend(self.picks(place, state, "Turn {} Everywhere"));
         }
         if everywhere.after_reset != Some(state)
             && let Some(until) = self.next_turn(state)
@@ -132,18 +127,18 @@ impl Rows<'_> {
     }
 
     /// The row for an app or site in front (ADR-0018): that place alone, with undoing first:
-    /// putting its rule back where that goes the right way, and removing a rule of the user's;
-    /// then its lengths, then for good, which is a rule.
-    pub(crate) fn place(&self, stack: &Stack) -> PlaceRow {
+    /// putting its indefinite rule back where that goes the right way, and removing a rule of
+    /// the user's; then its lengths, then indefinitely, which is a rule.
+    pub(crate) fn place(&self, at: &PlaceLook) -> PlaceRow {
         let context = self.world.context;
-        let place = &stack.place;
-        let state = stack.gives.other();
-        let rule = rule_of(stack);
+        let place = &at.place;
+        let state = at.gives.other();
+        let rule = rule_of(at);
         let mut items = Vec::new();
-        let below = stack.after_reset;
-        if (stack.timer.is_some() || stack.hold.is_some()) && below == Some(state) {
+        let below = at.after_reset;
+        if !at.rules.is_empty() && below == Some(state) {
             // A site follows its browser where the browser has its own say.
-            let title = match (rule, &stack.inherits) {
+            let title = match (rule, &at.inherits) {
                 (Some(_), _) => "Put the Rule Back".to_owned(),
                 (None, Some((Place::App(bundle_id), _))) => format!(
                     "Like the Rest of {}",
@@ -156,17 +151,15 @@ impl Rows<'_> {
         // Removing a rule is the user's to do whenever they like, even where nothing on screen
         // would change.
         if let Some(rule) = rule
-            && rule.source != RuleSource::Config
+            && rule.set_by != SetBy::Config
+            && let Some(identity) = place_identity(&rule.place)
         {
-            items.push(choice(
-                "Remove Your Rule",
-                Command::RemoveRule(rule.identity.clone()),
-            ));
+            items.push(choice("Remove Your Rule", Command::RemoveRule(identity)));
         }
         let mut lengths = Vec::new();
-        if stack.after_timer != Some(state) {
+        if at.after_until != Some(state) {
             let title = format!("Turn {{}} {}", here(place, context));
-            lengths.extend(self.timers(place, state, &title));
+            lengths.extend(self.picks(place, state, &title));
         }
         if below != Some(state)
             && let Some(until) = self.next_turn(state)
@@ -175,15 +168,17 @@ impl Rows<'_> {
         }
         let always = match rule {
             Some(rule) if rule.says == state => None,
-            Some(rule) if rule.source == RuleSource::Config => Some(MenuItem {
-                title: "Always".to_owned(),
-                subtitle: Some("Your config decides".to_owned()),
-                enabled: false,
-                command: Command::AddRule {
-                    identity: rule.identity.clone(),
-                    says: state,
-                },
-            }),
+            Some(rule) if rule.set_by == SetBy::Config => {
+                place_identity(&rule.place).map(|identity| MenuItem {
+                    title: "Always".to_owned(),
+                    subtitle: Some("Your config decides".to_owned()),
+                    enabled: false,
+                    command: Command::AddRule {
+                        identity,
+                        says: state,
+                    },
+                })
+            }
             _ => place_identity(place).map(|identity| MenuItem {
                 title: "Always".to_owned(),
                 subtitle: None,
@@ -223,7 +218,7 @@ impl Rows<'_> {
                 Place::Domain(domain) => Some(domain.to_string()),
                 _ => None,
             },
-            subtitle: self.stack_text(stack),
+            subtitle: self.place_text(at),
             image: match place {
                 Place::App(bundle_id) => RowImage::App {
                     bundle_id: bundle_id.to_string(),
@@ -241,9 +236,9 @@ impl Rows<'_> {
             .next_turn(self.world.applied_until, state)
     }
 
-    /// The menu's lengths for a place, then Custom…, whose window `title` names, with `{}` for
-    /// on or off.
-    fn timers(&self, place: &Place, state: OnOff, title: &str) -> Vec<RowItem> {
+    /// The lengths a change can be picked for at a place, then Custom…, whose window `title`
+    /// names, with `{}` for on or off.
+    fn picks(&self, place: &Place, state: OnOff, title: &str) -> Vec<RowItem> {
         let mut items: Vec<_> = self
             .lengths
             .iter()
@@ -253,7 +248,7 @@ impl Rows<'_> {
                     Command::Set {
                         place: place.clone(),
                         state,
-                        length: Length::For(*duration),
+                        length: Lasting::For(*duration),
                     },
                 )
             })
@@ -295,25 +290,20 @@ impl Rows<'_> {
                 command: Command::Set {
                     place: place.clone(),
                     state,
-                    length: Length::UntilScheduleTurns,
+                    length: Lasting::UntilScheduleTurns,
                 },
             },
         }
     }
 
-    /// What a place holds, top down, for its row: "On until 07:00, then your config’s rule".
-    fn stack_text(&self, stack: &Stack) -> Option<String> {
-        let mut parts: Vec<String> = (stack.timer.is_some() || stack.hold.is_some())
-            .then(|| {
-                layer_text(
-                    stack.timer.as_ref(),
-                    stack.hold.as_ref(),
-                    &self.world.timeline.zone,
-                )
-            })
+    /// What a place's rules say, shortest first, for its row: "On until 07:00, then your
+    /// config’s rule".
+    fn place_text(&self, at: &PlaceLook) -> Option<String> {
+        let mut parts: Vec<String> = (!at.rules.is_empty())
+            .then(|| rules_text(&at.rules, &self.world.timeline.zone))
             .into_iter()
             .collect();
-        match rule_of(stack) {
+        match rule_of(at) {
             Some(rule) if parts.is_empty() => {
                 parts.push(format!("always {}: {}", rule.says, whose(rule)));
             }
@@ -324,16 +314,15 @@ impl Rows<'_> {
     }
 }
 
-/// A place's timer and hold, top down: "on until 23:30, then off until 07:00".
-pub(crate) fn layer_text(timer: Option<&Layer>, hold: Option<&Layer>, zone: &TimeZone) -> String {
-    [timer, hold]
-        .into_iter()
-        .flatten()
-        .map(|layer| {
+/// A place's rules, shortest first: "on until 23:30, then off until 07:00".
+pub(crate) fn rules_text(rules: &[Rule], zone: &TimeZone) -> String {
+    rules
+        .iter()
+        .map(|rule| {
             format!(
                 "{} {}",
-                layer.state,
-                until_text(layer.until, layer.state, zone)
+                rule.says,
+                until_text(rule.length.end(), rule.says, zone)
             )
         })
         .collect::<Vec<_>>()
@@ -377,11 +366,13 @@ pub(crate) fn name_in_front(identity: &RuleIdentity, context: &Context) -> Strin
     }
 }
 
+/// Whose an app's or site's indefinite rule is.
 pub(crate) fn whose(rule: &Rule) -> &'static str {
-    match rule.source {
-        RuleSource::Config => "your config’s rule",
-        RuleSource::AdHoc => "your rule",
-        RuleSource::Tour => "the tour’s rule",
+    match rule.set_by {
+        SetBy::Config => "your config’s rule",
+        SetBy::You => "your rule",
+        SetBy::Tour => "the tour’s rule",
+        SetBy::OutsideChange => "the outside change’s rule",
     }
 }
 
@@ -420,9 +411,9 @@ fn length_title(duration: SignedDuration) -> String {
     }
 }
 
-/// The rule at a place's base, which for everywhere is none.
-fn rule_of(stack: &Stack) -> Option<&Rule> {
-    match &stack.base {
+/// An app's or site's indefinite rule, which a reset leaves; everywhere has none.
+fn rule_of(at: &PlaceLook) -> Option<&Rule> {
+    match &at.base {
         Some(Reason::Rule(rule)) => Some(rule),
         _ => None,
     }

@@ -6,10 +6,11 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, FileError, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, RuleSource, Schedule, TimeOfDay,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy, TimeOfDay,
 };
 
 use crate::rows::capitalized;
+use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
@@ -217,10 +218,10 @@ impl Inner {
     /// Everything Nightcap depends on, compared with what the user set up.
     pub(crate) fn checks(&self, now: Timestamp) -> Vec<Check> {
         let look = self.places.look(&self.facts.world(now));
-        let rules_from = |source| {
+        let rules_from = |set_by| {
             look.rules
                 .iter()
-                .filter(|(rule, _)| rule.source == source)
+                .filter(|(rule, _)| is_app_or_site_rule(rule) && rule.set_by == set_by)
                 .count()
         };
         let sun_times_waited = self
@@ -275,7 +276,7 @@ impl Inner {
             match (&self.loaded.config_error, self.loaded.config_found) {
                 (Some(error), _) => ConfigFileDetail::Error(error.into()),
                 (None, true) => ConfigFileDetail::Valid {
-                    rules: rules_from(RuleSource::Config),
+                    rules: rules_from(SetBy::Config),
                 },
                 (None, false) => ConfigFileDetail::Missing,
             },
@@ -283,7 +284,7 @@ impl Inner {
         found.push(CheckDetail::AdHocRules(match &self.loaded.ad_hoc_error {
             Some(error) => AdHocRulesDetail::Off(error.into()),
             None => AdHocRulesDetail::On {
-                rules: rules_from(RuleSource::AdHoc),
+                rules: rules_from(SetBy::You),
             },
         }));
         found

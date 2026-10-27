@@ -146,8 +146,8 @@ pub enum Effect {
 #[derive(Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Event {
     /// Night Shift switched outside Nightcap, taken as flipping what the user sees (ADR-0018):
-    /// `place` holds `state` until `until`, or until turned back, snoozing its rule, if one
-    /// decided.
+    /// `place` has a rule saying `state` until the schedule turns, at `until` if it has a turn,
+    /// snoozing its indefinite rule, if one decided.
     Adopted {
         place: Place,
         snoozed: Option<RuleIdentity>,

@@ -8,7 +8,7 @@ Night Shift's strength and schedule belong to macOS: System Settings shows them 
 - Nightcap writes them only when the user asks it to: onboarding's Night Shift steps, the menu's strength slider, a command such as `nightcap strength`, or the config. Nothing writes them on its own: no rule, schedule transition or check, and Nightcap never puts back a value the user changed elsewhere.
 - The config can set either, under `[night_shift]`. A value from the config takes effect when it changes: at launch and on reload, Nightcap compares each with the value it last applied from the config, kept in `state.json`, and writes only those that differ. A change made since, in System Settings or Nightcap's menu, stands until the config's value changes again. A value the config leaves out stays whatever macOS has.
 - Nightcap keeps no copy of what macOS has, only of what it last applied from the config. It reads both values back from macOS: the schedule from the status callback, and the strength by asking, since a strength change triggers no callback.
-- A schedule Nightcap writes arrives as an edited schedule, which ends every hold waiting on the schedule (ADR-0018), as an edit in System Settings does.
+- A schedule Nightcap writes arrives as an edited schedule, which ends every rule waiting on the schedule's next turn (ADR-0018), as an edit in System Settings does.
 - The core sends the writes as effects, `SetSchedule { schedule }` and `SetStrength { value }`, answering the commands `SetSchedule(schedule)` and `Strength(value)`.
 
 ## Consequences

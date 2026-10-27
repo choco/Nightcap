@@ -66,14 +66,14 @@ Post one notification when a problem appears, unless the user caused it.
 Nightcap's menu-bar icon: filled while Night Shift is on, an outline while it's off, and an outline with a “z”, forced off, while an app or site keeps it off with everywhere on. Dimmed while Night Shift is unavailable.
 
 **Night Shift item**:
-The menu's first item, after any problem line: Night Shift, checked while it's on everywhere, in the moon's look, with what decides the screen under it. Choosing it, or tapping the shortcut, is the switch.
+The menu's first item, after any problem line: Night Shift, checked while it's on everywhere, in the moon's look, with what decides the screen under it, such as “Off in Figma: your config’s rule”, “Following the schedule until 07:00” or “No schedule”. Choosing it, or tapping the shortcut, is the switch.
 _Avoid_: status line
 
 **Problem line**:
 The menu's line while any problem exists, counting them; it opens Settings where the problem is.
 
 **Place row**:
-A menu item with a submenu for one place: everywhere's under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. Each turns its place the other way for a length or until a time picked with Custom…, and, as they apply, offers Always, Remove Your Rule, Put the Rule Back, Like Everywhere Else (Like the Rest of Safari, say, for a site whose browser has a say of its own) or Back to the Schedule. Its time until the schedule next turns it back names that moment under it: sunrise or sunset, or when the schedule ends or starts. An app's or site's row with nothing to offer is greyed with what its place says; everywhere's is left out.
+A menu item with a submenu for one place: everywhere's, Turn On or Turn Off, under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. Each turns its place the other way for each of the lengths, until a time picked with Custom… in a small window of its own, and until the schedule next turns it back, shown as the time, “Until 07:00”, with the moment under it: “At sunrise”, “At sunset”, “When the schedule ends” or “When the schedule starts”, and left out without a schedule. As they apply, an app's or site's row offers Always, its indefinite rule, greyed under a config rule with “Your config decides”; Remove Your Rule; Put the Rule Back; and Like Everywhere Else, or Like the Rest of Safari, say, for a site whose browser has a say of its own. Everywhere's offers Back to the Schedule while a rule keeps it from what the schedule says, and nothing the switch would do anyway. An app's or site's row with nothing to offer is greyed with what its place says; everywhere's is left out.
 _Avoid_: rule toggle
 
 **Site icon**:

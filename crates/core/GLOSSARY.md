@@ -29,42 +29,46 @@ _Avoid_: temperature, warmth
 
 ### Changes
 
-**Place**:
-Where a change applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule, a hold or a timer that covers the tab, else the tab's own domain.
+**Rule**:
+A change to Night Shift: a place, what it says there, a length and who set it. At one place, the shortest rule decides.
+_Avoid_: layer
 
-**Layer**:
-One of what a place holds, from the bottom: its rule, or the schedule for everywhere; a hold; a timer. A place says what its top layer says, and an app or site without one says nothing. In the protocol, `Layer` is a hold's or a timer's state and end, and `PlaceLayers` a place's hold and timer.
+**Place**:
+Where a rule applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule that covers the tab, else the tab's own domain.
 
 **Deciding place**:
-The most specific place in front that says something: the site, then the app, then everywhere, which always does. What it says is what Night Shift does.
+The most specific place in front that says something: the site, then the app, then everywhere, which always does once the schedule is known. What it says is what Night Shift does.
 
 **Length**:
-How long a change lasts: for a time, until a picked time, until the schedule next turns it back, or until the user turns it back.
+How long a rule lasts: indefinitely, until the schedule next turns it back, or until a time, picked or a length from now. A place has one rule of each length at most.
 _Avoid_: duration
 
-**Timer**:
-A place's on or off until a time, which then gives back what was under it.
-_Avoid_: timed disable, pause
+**Temporary rule**:
+A rule until the schedule next turns it back or until a time, which gives back what was under it when it ends.
+_Avoid_: timer, hold, timed disable, manual state
 
-**Hold**:
-A place's on or off until the schedule next turns it back, or, for everywhere, until the user turns it back.
-_Avoid_: manual state
+**Set by**:
+Who set a rule: the config, the user, the tour, or an external change Nightcap adopted.
+
+**Snooze**:
+A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends.
+_Avoid_: pause, override
 
 **Switch**:
-Everywhere's on and off: the Night Shift item, the shortcut's tap, `nightcap on`, `off` and `toggle`. It takes off everywhere's layers that say otherwise, and if the schedule still does, holds the new state until the user turns it back.
+Everywhere's on and off: the Night Shift item, the shortcut's tap, `nightcap on`, `off` and `toggle`. It takes off everywhere's rules that say otherwise, shortest first, and if the schedule still says otherwise, sets an indefinite one.
 _Avoid_: toggle, as a noun
 
 **Reset**:
-Taking off a place's hold and timer, which puts its rule back or, for everywhere, the schedule.
+Taking off a place's temporary rules, which puts back its indefinite rule, and for everywhere its indefinite one too, which puts back the schedule.
 
 **External change**:
 Night Shift switched outside Nightcap, in Control Center or System Settings.
 
 **Adoption**:
-Taking an external change as flipping what the user sees: it takes off what the deciding place says, and holds the other state over a rule or the schedule until the schedule next turns it back.
+Taking an external change as flipping what the user sees: it takes off what the deciding place says, and sets the other state over an indefinite rule or the schedule until the schedule next turns it back.
 
 **Tour stand-in**:
-A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules and every place's hold and timer as the tour found them (ADR-0016).
+A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules as the tour found them (ADR-0016).
 
 ### Rules
 
@@ -72,10 +76,10 @@ A tour started with Night Shift off has it on for the tour's length, in place of
 The frontmost app and the host: what rules match against.
 
 **App rule**:
-Says Night Shift is off, or on, while an app is frontmost.
+A rule at an app, which applies while the app is frontmost.
 
 **Domain rule**:
-Says Night Shift is off, or on, on a domain and all its subdomains. Where several cover a host, the longest decides.
+A rule at a site: a domain and all its subdomains. Where several cover a host, the longest decides.
 _Avoid_: subdomain rule, exact-host rule
 
 **Host**:
@@ -96,18 +100,18 @@ Nightcap reading one browser's host while it's in front, which website checking 
 The browsers Nightcap knows how to watch.
 
 **Rule identity**:
-A rule's kind plus its target, e.g. `app:com.figma.Desktop`. Rules with the same identity are the same rule, so an app or domain has one rule at most, whatever it says.
+An app's or a domain's indefinite rule's kind plus its target, e.g. `app:com.figma.Desktop`. Indefinite rules with the same identity are the same rule, so an app or domain has one at most, whatever it says.
 
 **Config rule**:
-A rule declared in the config file, which the user or their installer writes. Read-only at runtime.
+An indefinite rule at an app or a site, declared in the config file, which the user or their installer writes. Read-only at runtime, short of a snooze.
 _Avoid_: Nix rule, static rule
 
 **Ad-hoc rule**:
-A rule added at runtime and kept by Nightcap until it graduates.
+An indefinite rule at an app or a site the user added at runtime, kept by Nightcap until it graduates.
 _Avoid_: runtime rule, dynamic rule
 
 **Tour rule**:
-A rule the user adds while the tour runs, held in memory only until it ends: `status` shows it, but Settings, the saved state and exports never do.
+An indefinite rule at an app or a site the user adds while the tour runs, kept in memory only until it ends: `status` shows it, but Settings, the saved state and exports never do.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, whatever either says, at which point Nightcap drops its own copy.
@@ -119,20 +123,16 @@ The ad-hoc rules not yet in the config, written out ready to paste into it.
 **Reload**:
 Reading the config again, which is the only way a change to it takes effect.
 
-**Snooze**:
-A timer or hold on a rule's place that says the other way, for a time or until the schedule next turns it back, or, with no schedule, until the user turns it back. The rule waits underneath and comes back when it ends.
-_Avoid_: pause, override
-
 ### Deciding
 
 **Force**:
-Night Shift held other than macOS would have it, by a rule, a hold or a timer. Nightcap releases every force on a clean exit (ADR-0008).
+Night Shift held other than macOS would have it, by a rule. Nightcap releases every force on a clean exit (ADR-0008).
 
 **Decision**:
-What Night Shift should be for the current context, the place that decides it, and the layers it rests on.
+What Night Shift should be for the current context, the place that decides it, and what it rests on: that place's rules, shortest first, then for everywhere the tour stand-in or the schedule.
 
 **Reason**:
-One layer behind a decision: a rule, a hold, a timer, the schedule or the tour.
+One thing behind a decision: a rule, the tour stand-in or the schedule.
 
 **Wanted state**:
 What Night Shift should be right now: what the deciding place says.
@@ -145,7 +145,7 @@ The running Nightcap app, as the CLI sees it: the only writer of Night Shift, re
 _Avoid_: server, service
 
 **Command**:
-A request to change something, such as the switch, a timer on a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
+A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
 
 **Status**:
-The daemon's report of its decision and everything behind it: the context, rules, each place's layers, grants and problems.
+The daemon's report of its decision and everything behind it: the context, every rule, grants and problems.

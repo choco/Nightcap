@@ -1,10 +1,10 @@
 # Persist runtime state; release every force on a clean exit
 
-Nightcap restarts at every update and at login, and, under a LaunchAgent, after a crash. Each restart would drop the user's runtime intent: the holds and timers they set on each place. Separately, a stopping app can't tell a restart from being removed; if it leaves a force in place and never comes back, Night Shift stays where Nightcap held it.
+Nightcap restarts at every update and at login, and, under a LaunchAgent, after a crash. Each restart would drop the user's runtime intent: the temporary rules they set at each place, and the switch. Separately, a stopping app can't tell a restart from being removed; if it leaves a force in place and never comes back, Night Shift stays where Nightcap held it.
 
 ## Decision
 
-`$XDG_STATE_HOME/nightcap/state.json` holds each place's hold and timer with its end (ADR-0018), and the Night Shift state Nightcap was holding. On start, the core drops what has ended and decides again. Night Shift found where the last run left it, held before a crash or released on a clean exit, is Nightcap's own doing, not an external change. On quit or SIGTERM, the shell asks the core to release every force, a rule's off or on as much as a hold or a timer, and to write the file.
+`$XDG_STATE_HOME/nightcap/state.json` holds every rule but the apps' and sites' indefinite ones, which the config and `rules.toml` keep, each with its end and who set it (ADR-0018), and the Night Shift state Nightcap was holding. On start, the core drops what has ended and decides again. Night Shift found where the last run left it, held before a crash or released on a clean exit, is Nightcap's own doing, not an external change. On quit or SIGTERM, the shell asks the core to release every force, an app's rule's off or on as much as a temporary rule's, and to write the file.
 
 ## Consequences
 
@@ -13,5 +13,5 @@ Nightcap restarts at every update and at login, and, under a LaunchAgent, after 
 
 ## Rejected alternatives
 
-- **Persist nothing, or only the timers**: updates and reboots lose the user's intent.
+- **Persist nothing, or only the rules until a time**: updates and reboots lose the user's intent.
 - **Skip the release on exit**: the daemon can't tell a restart from being removed.

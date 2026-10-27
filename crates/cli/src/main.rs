@@ -9,7 +9,8 @@ use clap::Parser;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, Decision, ErrorReply, Instance, Length, OnOff, Payload, Place, Query, Request,
+    self as protocol, Decision, ErrorReply, Instance, Lasting, OnOff, Payload, Place, Query,
+    Request,
 };
 
 use args::{Change, Cli, Command, Format, RulesAction, Switch};
@@ -19,9 +20,9 @@ use client::request;
 fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Command, String> {
     let place = change.place.place();
     let length = match (change.length, change.until, change.until_schedule) {
-        (Some(length), _, _) => Length::For(length),
-        (None, Some(time), _) => Length::Until(next_occurrence(time, now)?),
-        (None, None, true) => Length::UntilScheduleTurns,
+        (Some(length), _, _) => Lasting::For(length),
+        (None, Some(time), _) => Lasting::Until(next_occurrence(time, now)?),
+        (None, None, true) => Lasting::UntilScheduleTurns,
         (None, None, false) if place == Place::Everywhere => {
             return Ok(match state {
                 OnOff::On => protocol::Command::On,
@@ -129,7 +130,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             };
             println!(
                 "Reloaded the config. Rules: {}",
-                wording::rules(&status.rules)
+                wording::rules(&wording::app_and_site_rules(&status.rules))
             );
             return Ok(());
         }
@@ -229,6 +230,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             else {
                 return Err(unexpected_reply());
             };
+            let rules = wording::app_and_site_rules(&rules);
             if json {
                 println!(
                     "{}",
@@ -264,8 +266,11 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             else {
                 return Err(unexpected_reply());
             };
-            let before = rules.iter().find(|rule| rule.identity == identity);
-            let done = wording::rule_added(&identity, says, before);
+            let place = Place::from(identity.clone());
+            let before = wording::app_and_site_rules(&rules)
+                .into_iter()
+                .find(|rule| rule.place == place);
+            let done = wording::rule_added(&identity, says, before.as_ref());
             (protocol::Command::AddRule { identity, says }, done)
         }
         RulesAction::Remove { identity } => {
@@ -308,7 +313,7 @@ mod tests {
         }
     }
 
-    fn set(place: Place, state: OnOff, length: Length) -> Result<protocol::Command, String> {
+    fn set(place: Place, state: OnOff, length: Lasting) -> Result<protocol::Command, String> {
         Ok(protocol::Command::Set {
             place,
             state,
@@ -325,7 +330,7 @@ mod tests {
             set(
                 Place::Everywhere,
                 OnOff::Off,
-                Length::For(SignedDuration::from_mins(45))
+                Lasting::For(SignedDuration::from_mins(45))
             )
         );
         assert_eq!(
@@ -333,7 +338,7 @@ mod tests {
             set(
                 Place::App("com.figma.Desktop".parse().unwrap()),
                 OnOff::On,
-                Length::UntilScheduleTurns
+                Lasting::UntilScheduleTurns
             )
         );
         assert_eq!(
@@ -341,7 +346,7 @@ mod tests {
             set(
                 Place::Domain("figma.com".parse().unwrap()),
                 OnOff::On,
-                Length::For(SignedDuration::from_hours(1))
+                Lasting::For(SignedDuration::from_hours(1))
             )
         );
         assert!(sends(&["on", "--app", "com.figma.Desktop"]).is_err());
@@ -378,7 +383,7 @@ mod tests {
         let until = |time: &str| {
             sends(&["off", "--until", time]).map(|command| match command {
                 protocol::Command::Set {
-                    length: Length::Until(end),
+                    length: Lasting::Until(end),
                     ..
                 } => end,
                 other => panic!("expected a time, got {other:?}"),

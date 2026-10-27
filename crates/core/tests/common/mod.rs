@@ -17,9 +17,8 @@ use nightcap_core::{
     Scenario, SettingsCheck, Staged,
 };
 use nightcap_protocol::{
-    CheckKind, Command, ErrorCode, Layer, Length, NotificationPermission, OnOff, Payload, Place,
-    PlaceLayers, Query, Request, Response, Rule, RuleIdentity, RuleSource, Schedule, Status,
-    TimeOfDay,
+    CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload, Place,
+    Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, Status, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -103,8 +102,24 @@ pub(crate) fn status(staged: &Staged) -> Status {
     *status
 }
 
-/// Every rule, as `nightcap rules` lists them.
+/// The apps' and sites' indefinite rules, as `nightcap rules` lists them.
 pub(crate) fn rules(staged: &Staged) -> Vec<Rule> {
+    every_rule(staged)
+        .into_iter()
+        .filter(|rule| rule.place != Place::Everywhere && rule.length == Length::Indefinite)
+        .collect()
+}
+
+/// Every rule a reset takes off: the temporary ones, and everywhere's indefinite one.
+pub(crate) fn resettable(staged: &Staged) -> Vec<Rule> {
+    every_rule(staged)
+        .into_iter()
+        .filter(|rule| rule.place == Place::Everywhere || rule.length != Length::Indefinite)
+        .collect()
+}
+
+/// Every rule at every place.
+pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
     let (_, response) = staged.request(Request::Query(Query::Rules));
     let Response::Ok(Payload::Rules(rules)) = response else {
         panic!("expected rules, got {response:?}");
@@ -272,27 +287,67 @@ pub(crate) fn figma_app() -> Place {
     Place::App("com.figma.Desktop".parse().unwrap())
 }
 
+/// A config rule for an app that says off.
 pub(crate) fn app_rule(bundle_id: &str) -> Rule {
     Rule {
-        identity: RuleIdentity::App(bundle_id.parse().unwrap()),
-        source: RuleSource::Config,
+        place: Place::App(bundle_id.parse().unwrap()),
         says: OnOff::Off,
+        length: Length::Indefinite,
+        set_by: SetBy::Config,
     }
 }
 
+/// A config rule for a site that says off.
 pub(crate) fn domain_rule(domain: &str) -> Rule {
     Rule {
-        identity: RuleIdentity::Domain(domain.parse().unwrap()),
-        source: RuleSource::Config,
+        place: Place::Domain(domain.parse().unwrap()),
         says: OnOff::Off,
+        length: Length::Indefinite,
+        set_by: SetBy::Config,
     }
 }
 
+/// An ad-hoc rule that says off.
 pub(crate) fn ad_hoc(identity: RuleIdentity) -> Rule {
     Rule {
-        identity,
-        source: RuleSource::AdHoc,
+        place: Place::from(identity),
         says: OnOff::Off,
+        length: Length::Indefinite,
+        set_by: SetBy::You,
+    }
+}
+
+/// A rule of the user's.
+pub(crate) fn yours(place: Place, says: OnOff, length: Length) -> Rule {
+    Rule {
+        place,
+        says,
+        length,
+        set_by: SetBy::You,
+    }
+}
+
+/// A rule an external change set, until the schedule turns at `until`, if it has a turn.
+pub(crate) fn adopted(place: Place, says: OnOff, until: Option<&str>) -> Rule {
+    Rule {
+        place,
+        says,
+        length: Length::UntilScheduleTurns {
+            until: until.map(at),
+        },
+        set_by: SetBy::OutsideChange,
+    }
+}
+
+/// Until `instant`.
+pub(crate) fn until(instant: &str) -> Length {
+    Length::Until { until: at(instant) }
+}
+
+/// Until the schedule turns, at `instant`.
+pub(crate) fn until_turn(instant: &str) -> Length {
+    Length::UntilScheduleTurns {
+        until: Some(at(instant)),
     }
 }
 
@@ -304,7 +359,7 @@ pub(crate) fn add_rule(identity: RuleIdentity) -> Command {
     }
 }
 
-pub(crate) fn set(place: Place, state: OnOff, length: Length) -> Command {
+pub(crate) fn set(place: Place, state: OnOff, length: Lasting) -> Command {
     Command::Set {
         place,
         state,
@@ -312,21 +367,8 @@ pub(crate) fn set(place: Place, state: OnOff, length: Length) -> Command {
     }
 }
 
-pub(crate) fn minutes(count: i64) -> Length {
-    Length::For(SignedDuration::from_mins(count))
-}
-
-pub(crate) fn layer(state: OnOff, until: Option<&str>) -> Layer {
-    Layer {
-        state,
-        until: until.map(at),
-        with: None,
-    }
-}
-
-/// A place's layers as the status lists them.
-pub(crate) fn layered(place: Place, hold: Option<Layer>, timer: Option<Layer>) -> PlaceLayers {
-    PlaceLayers { place, hold, timer }
+pub(crate) fn minutes(count: i64) -> Lasting {
+    Lasting::For(SignedDuration::from_mins(count))
 }
 
 /// The menu's place rows, top down.

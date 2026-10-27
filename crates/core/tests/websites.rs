@@ -10,14 +10,14 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, ErrorCode, Length, NotificationPermission, OnOff, Place, Reason, RuleIdentity,
+    Command, ErrorCode, Lasting, NotificationPermission, OnOff, Place, Reason, RuleIdentity,
     WebsiteChecking,
 };
 
 use common::{
     accessibility_granted, activate, activate_browser, add_rule, custom_hours, domain_rule, late,
-    layer, layered, noon, on_by_the_schedule, on_figma, refusal, report_host, reported, send, set,
-    site_row, status, watch, with_figma_domain,
+    noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send, set,
+    site_row, status, until_turn, watch, with_figma_domain, yours,
 };
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
@@ -143,7 +143,7 @@ fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
     );
     let (effects, _) = send(
         &staged,
-        set(safari_app.clone(), OnOff::On, Length::UntilScheduleTurns),
+        set(safari_app.clone(), OnOff::On, Lasting::UntilScheduleTurns),
     );
     assert!(effects.contains(&watch("com.apple.Safari", 1)));
     let (effects, _) = send(&staged, Command::Reset(safari_app));
@@ -165,17 +165,17 @@ fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
 
     let (effects, _) = send(
         &staged,
-        set(figma_site.clone(), OnOff::On, Length::UntilScheduleTurns),
+        set(figma_site.clone(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     let status = status(&staged);
     assert_eq!(
-        status.layers,
-        vec![layered(
+        resettable(&staged),
+        vec![yours(
             figma_site,
-            Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
-            None
+            OnOff::On,
+            until_turn("2026-10-17T07:00:00+02:00")
         )]
     );
     assert!(status.watching);

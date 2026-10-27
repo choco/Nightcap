@@ -5,9 +5,9 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, ConfigFileDetail, Decision,
-    FileError, Install, Layer, Length, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, Place, PlaceLayers, Reason, Rule, RuleIdentity,
-    RuleSource, Schedule, Status, TimeOfDay,
+    FileError, Install, Lasting, Length, NightShift, NightShiftDetail, NotificationPermission,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule, RuleIdentity, Schedule,
+    SetBy, Status, TimeOfDay,
 };
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
@@ -24,15 +24,13 @@ pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
         place => format!(" at {place}"),
     };
     let mut description = match top {
-        Reason::Timer(layer) | Reason::Hold(layer) => {
-            format!("{}{at}{}", layer.state, until(layer.until, layer.state))
-        }
-        Reason::Rule(rule) => format!(
+        Reason::Rule(rule) if is_app_or_site_rule(rule) => format!(
             "{} by the {} rule for {}",
             rule.says,
-            source(rule.source),
-            rule.identity
+            source(rule.set_by),
+            rule.place
         ),
+        Reason::Rule(rule) => format!("{}{at}{}", rule.says, until(rule.length.end(), rule.says)),
         Reason::Tour => "on for the tour".to_owned(),
         Reason::Schedule { .. } => "following the schedule".to_owned(),
     };
@@ -41,11 +39,15 @@ pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
         .iter()
         .skip(1)
         .find_map(|reason| match reason {
-            Reason::Rule(rule) if Some(rule.says) != decision.state => Some(rule),
+            Reason::Rule(rule)
+                if is_app_or_site_rule(rule) && Some(rule.says) != decision.state =>
+            {
+                Some(rule)
+            }
             _ => None,
         });
     if let Some(rule) = snoozed {
-        description.push_str(&format!(", its {} rule snoozed", source(rule.source)));
+        description.push_str(&format!(", its {} rule snoozed", source(rule.set_by)));
     }
     description
 }
@@ -54,10 +56,24 @@ pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
 pub(crate) fn rule(rule: &Rule) -> String {
     format!(
         "{} ({} rule, {})",
-        rule.identity,
-        source(rule.source),
+        rule.place,
+        source(rule.set_by),
         rule.says
     )
+}
+
+/// The apps' and sites' indefinite rules, the ones `nightcap rules` lists: the config's, the
+/// user's and the tour's.
+pub(crate) fn app_and_site_rules(rules: &[Rule]) -> Vec<Rule> {
+    rules
+        .iter()
+        .filter(|rule| is_app_or_site_rule(rule))
+        .cloned()
+        .collect()
+}
+
+fn is_app_or_site_rule(rule: &Rule) -> bool {
+    rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }
 
 /// What adding a rule for `identity` that says `says` did, given the rule Nightcap had for the
@@ -68,20 +84,21 @@ pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, before: Option<&R
         None => format!("Added {identity}, which turns Night Shift {says}."),
         Some(rule) if rule.says == says => format!(
             "The {} rule for {identity} already turns Night Shift {says}.",
-            source(rule.source)
+            source(rule.set_by)
         ),
         Some(rule) => format!(
             "Changed the {} rule for {identity} to turn Night Shift {says}.",
-            source(rule.source)
+            source(rule.set_by)
         ),
     }
 }
 
-fn source(source: RuleSource) -> &'static str {
-    match source {
-        RuleSource::Config => "config",
-        RuleSource::AdHoc => "ad-hoc",
-        RuleSource::Tour => "tour",
+fn source(set_by: SetBy) -> &'static str {
+    match set_by {
+        SetBy::Config => "config",
+        SetBy::You => "ad-hoc",
+        SetBy::Tour => "tour",
+        SetBy::OutsideChange => "adopted",
     }
 }
 
@@ -223,12 +240,12 @@ fn from_config<T: PartialEq + Copy>(
 }
 
 /// How long a change lasts, as `on` and `off` were told.
-pub(crate) fn length_text(length: &Length, zone: &TimeZone) -> String {
+pub(crate) fn length_text(length: &Lasting, zone: &TimeZone) -> String {
     match length {
-        Length::For(duration) => format!("for {duration:#}"),
-        Length::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
-        Length::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
-        Length::UntilTurnedBack => "until you turn it back".to_owned(),
+        Lasting::For(duration) => format!("for {duration:#}"),
+        Lasting::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+        Lasting::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
+        Lasting::Indefinite => "until you turn it back".to_owned(),
     }
 }
 
@@ -262,7 +279,7 @@ pub(crate) fn print_status(status: &Status) {
     };
     println!("Nightcap {}, {install}", status.version);
     let decided = decision(&status.decision, &TimeZone::system());
-    // A decision on a layer or a rule starts with the state it asks for, which needs saying again
+    // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
         status.decision.reasons.first(),
@@ -303,7 +320,7 @@ pub(crate) fn print_status(status: &Status) {
         "Frontmost app: {}{host}",
         status.frontmost_app.as_deref().unwrap_or("unknown")
     );
-    println!("Rules: {}", rules(&status.rules));
+    println!("Rules: {}", rules(&app_and_site_rules(&status.rules)));
     let website_checking = status.website_checking;
     println!(
         "Website checking: {}{}",
@@ -314,8 +331,8 @@ pub(crate) fn print_status(status: &Status) {
             ""
         }
     );
-    for layers in &status.layers {
-        println!("{}", layered(layers));
+    for line in places_rules(&status.rules) {
+        println!("{line}");
     }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
@@ -345,22 +362,30 @@ pub(crate) fn rules(rules: &[Rule]) -> String {
     rules.iter().map(rule).collect::<Vec<_>>().join(", ")
 }
 
-/// A place's timer and hold, top first: "app:com.figma.Desktop: on until 07:00".
-fn layered(layers: &PlaceLayers) -> String {
-    let layer = |layer: &Layer| match layer.until {
-        Some(end) => format!("{}{}", layer.state, until(Some(end))),
-        None => format!("{} until you turn it {}", layer.state, layer.state.other()),
-    };
-    let parts: Vec<_> = [&layers.timer, &layers.hold]
+/// Each place's rules but an app's or site's indefinite one, shortest first, a line per place:
+/// "app:com.figma.Desktop: on until 07:00".
+fn places_rules(rules: &[Rule]) -> Vec<String> {
+    let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
+    for rule in rules.iter().filter(|rule| !is_app_or_site_rule(rule)) {
+        let part = match rule.length.end() {
+            Some(end) => format!("{}{}", rule.says, until(Some(end))),
+            None => format!("{} until you turn it {}", rule.says, rule.says.other()),
+        };
+        match places.iter_mut().find(|(place, _)| **place == rule.place) {
+            Some((_, parts)) => parts.push(part),
+            None => places.push((&rule.place, vec![part])),
+        }
+    }
+    places
         .into_iter()
-        .flatten()
-        .map(layer)
-        .collect();
-    let place = match &layers.place {
-        Place::Everywhere => "Everywhere".to_owned(),
-        place => place.to_string(),
-    };
-    format!("{place}: {}", parts.join(", then "))
+        .map(|(place, parts)| {
+            let place = match place {
+                Place::Everywhere => "Everywhere".to_owned(),
+                place => place.to_string(),
+            };
+            format!("{place}: {}", parts.join(", then "))
+        })
+        .collect()
 }
 
 /// " until 22:00" in local time, or nothing when no schedule transition is coming.
@@ -379,24 +404,28 @@ fn time_of_day(time: TimeOfDay) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nightcap_protocol::Layer;
-
     use super::*;
+
+    fn indefinite(place: &str, says: OnOff, set_by: SetBy) -> Rule {
+        Rule {
+            place: Place::from(place.parse::<RuleIdentity>().unwrap()),
+            says,
+            length: Length::Indefinite,
+            set_by,
+        }
+    }
 
     #[test]
     fn decisions_read_after_night_shift() {
         let zone = TimeZone::get("Europe/Zurich").unwrap();
         let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
         let figma_app = || Place::App("com.figma.Desktop".parse().unwrap());
-        let figma = Rule {
-            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-            source: RuleSource::Config,
-            says: OnOff::Off,
-        };
-        let layer = |state, until| Layer {
-            state,
-            until,
-            with: None,
+        let figma = indefinite("app:com.figma.Desktop", OnOff::Off, SetBy::Config);
+        let yours = |place, says, length| Rule {
+            place,
+            says,
+            length,
+            set_by: SetBy::You,
         };
         let described = |state, place, reasons| {
             decision(
@@ -414,7 +443,13 @@ mod tests {
                 OnOff::Off,
                 Place::Everywhere,
                 vec![
-                    Reason::Timer(layer(OnOff::Off, Some(at("2026-10-16T22:00:00Z")))),
+                    Reason::Rule(yours(
+                        Place::Everywhere,
+                        OnOff::Off,
+                        Length::Until {
+                            until: at("2026-10-16T22:00:00Z")
+                        }
+                    )),
                     Reason::Schedule {
                         state: OnOff::On,
                         until: None
@@ -427,7 +462,11 @@ mod tests {
             described(
                 OnOff::Off,
                 Place::Everywhere,
-                vec![Reason::Hold(layer(OnOff::Off, None))]
+                vec![Reason::Rule(yours(
+                    Place::Everywhere,
+                    OnOff::Off,
+                    Length::Indefinite
+                ))]
             ),
             "off until you turn it on"
         );
@@ -436,7 +475,13 @@ mod tests {
                 OnOff::On,
                 figma_app(),
                 vec![
-                    Reason::Hold(layer(OnOff::On, Some(at("2026-10-17T05:00:00Z")))),
+                    Reason::Rule(yours(
+                        figma_app(),
+                        OnOff::On,
+                        Length::UntilScheduleTurns {
+                            until: Some(at("2026-10-17T05:00:00Z"))
+                        }
+                    )),
                     Reason::Rule(figma.clone()),
                 ]
             ),
@@ -450,11 +495,11 @@ mod tests {
             described(
                 OnOff::On,
                 Place::Domain("figma.com".parse().unwrap()),
-                vec![Reason::Rule(Rule {
-                    identity: RuleIdentity::Domain("figma.com".parse().unwrap()),
-                    source: RuleSource::AdHoc,
-                    says: OnOff::On,
-                })]
+                vec![Reason::Rule(indefinite(
+                    "domain:figma.com",
+                    OnOff::On,
+                    SetBy::You
+                ))]
             ),
             "on by the ad-hoc rule for domain:figma.com"
         );
@@ -488,26 +533,20 @@ mod tests {
 
     #[test]
     fn a_rule_reads_with_its_source_and_what_it_says() {
-        let worded = |identity: &str, source, says| {
-            rule(&Rule {
-                identity: identity.parse().unwrap(),
-                source,
-                says,
-            })
-        };
+        let worded = |place: &str, set_by, says| rule(&indefinite(place, says, set_by));
 
         assert_eq!(
-            worded("app:com.figma.Desktop", RuleSource::Config, OnOff::Off),
+            worded("app:com.figma.Desktop", SetBy::Config, OnOff::Off),
             "app:com.figma.Desktop (config rule, off)"
         );
         assert_eq!(
-            worded("domain:figma.com", RuleSource::AdHoc, OnOff::On),
+            worded("domain:figma.com", SetBy::You, OnOff::On),
             "domain:figma.com (ad-hoc rule, on)"
         );
         assert_eq!(
             worded(
                 "app:io.github.choco.nightcap.TourSample",
-                RuleSource::Tour,
+                SetBy::Tour,
                 OnOff::Off
             ),
             "app:io.github.choco.nightcap.TourSample (tour rule, off)"
@@ -679,38 +718,22 @@ mod tests {
     #[test]
     fn adding_a_rule_says_whether_it_was_added_changed_or_already_there() {
         let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
-        let there = |source, says| Rule {
-            identity: "app:com.figma.desktop".parse().unwrap(),
-            source,
-            says,
-        };
+        let there = |set_by, says| indefinite("app:com.figma.desktop", says, set_by);
 
         assert_eq!(
             rule_added(&figma, OnOff::Off, None),
             "Added app:com.figma.Desktop, which turns Night Shift off."
         );
         assert_eq!(
-            rule_added(
-                &figma,
-                OnOff::Off,
-                Some(&there(RuleSource::Config, OnOff::Off))
-            ),
+            rule_added(&figma, OnOff::Off, Some(&there(SetBy::Config, OnOff::Off))),
             "The config rule for app:com.figma.Desktop already turns Night Shift off."
         );
         assert_eq!(
-            rule_added(
-                &figma,
-                OnOff::On,
-                Some(&there(RuleSource::AdHoc, OnOff::On))
-            ),
+            rule_added(&figma, OnOff::On, Some(&there(SetBy::You, OnOff::On))),
             "The ad-hoc rule for app:com.figma.Desktop already turns Night Shift on."
         );
         assert_eq!(
-            rule_added(
-                &figma,
-                OnOff::On,
-                Some(&there(RuleSource::AdHoc, OnOff::Off))
-            ),
+            rule_added(&figma, OnOff::On, Some(&there(SetBy::You, OnOff::Off))),
             "Changed the ad-hoc rule for app:com.figma.Desktop to turn Night Shift on."
         );
     }
@@ -718,7 +741,7 @@ mod tests {
     #[test]
     fn needs_attention_lists_each_problem_as_the_status_carries_it() {
         let status: Status = serde_json::from_str(
-            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[],"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}]}"#,
+            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}]}"#,
         )
         .unwrap();
 
