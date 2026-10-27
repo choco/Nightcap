@@ -85,9 +85,9 @@ pub(crate) mod tests {
     use nightcap_protocol::{Command, Install, Instance, OnOff, RuleIdentity, Schedule, TimeOfDay};
 
     use super::Listener;
+    use crate::scenario::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
-    use crate::staging::ManualClock;
     use crate::storage::file::{Memory, Paths};
     use crate::{Core, Effect, Fact, MenuIcon, Outcome};
 

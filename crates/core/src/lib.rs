@@ -10,11 +10,11 @@ mod menu;
 mod onboarding;
 mod rows;
 mod rules;
+#[cfg(any(test, debug_assertions))]
+mod scenario;
 mod server;
 mod settings;
 mod setup;
-#[cfg(any(test, debug_assertions))]
-mod staging;
 mod storage;
 mod tour;
 
@@ -30,7 +30,7 @@ pub use tour::{
 };
 
 #[cfg(any(test, debug_assertions))]
-pub use staging::{Scenario, ScenarioError, Staged, Step};
+pub use scenario::{Scenario, ScenarioError, Staged, Step};
 #[cfg(any(test, debug_assertions))]
 pub use storage::file::File;
 
@@ -64,7 +64,7 @@ enum Runs {
     Thread(Mailbox),
     /// As each arrives, on the caller's thread: a staged core.
     #[cfg(any(test, debug_assertions))]
-    Inline(Arc<staging::Inline>),
+    Inline(Arc<scenario::Inline>),
 }
 
 impl fmt::Debug for Core {
