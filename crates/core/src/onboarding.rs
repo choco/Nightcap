@@ -90,12 +90,13 @@ impl State {
         }
     }
 
-    /// The user went through onboarding, choosing whether to check websites.
+    /// The user went through onboarding, choosing whether to check websites, which it asks
+    /// only where the config doesn't set it.
     pub(crate) fn onboarding_finished(&mut self, websites: bool) {
+        tracing::info!("onboarding finished");
         self.onboarding = ONBOARDING;
-        if self.facts.config_websites.is_none() {
-            tracing::info!("onboarding finished; website checking {websites}");
-            self.facts.websites = websites;
+        if let Err(refusal) = self.set_websites(websites) {
+            tracing::debug!("the config keeps website checking: {:?}", refusal.code);
         }
     }
 }

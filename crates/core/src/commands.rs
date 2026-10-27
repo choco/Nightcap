@@ -229,7 +229,8 @@ impl Core {
 }
 
 impl State {
-    fn set_websites(&mut self, on: bool) -> Result<(), ErrorReply> {
+    /// Website checking as the user chose it, unless the config sets it (ADR-0012).
+    pub(crate) fn set_websites(&mut self, on: bool) -> Result<(), ErrorReply> {
         if self.facts.config_websites.is_some() {
             return Err(refused(
                 ErrorCode::SetInConfig,

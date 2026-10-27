@@ -4,7 +4,7 @@
 mod common;
 
 use nightcap_core::{Effect, Event, OnboardingNightShift, OnboardingSteps};
-use nightcap_protocol::{Install, Instance, OnOff, Schedule};
+use nightcap_protocol::{Install, Instance, OnOff, Request, Schedule};
 
 use common::{at, noon, report_night_shift, status};
 
@@ -31,6 +31,23 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
             .iter()
             .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
     );
+}
+
+#[test]
+fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
+    let staged = noon().config("websites = false\n").stage().unwrap();
+
+    staged
+        .core()
+        .handle(Event::OnboardingFinished { websites: true });
+
+    let checking = status(&staged).website_checking;
+    assert_eq!(checking.state, OnOff::Off);
+    assert!(checking.from_config);
+    let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
+    staged.write_config(None);
+    staged.request(Request::Reload);
+    assert_eq!(status(&staged).website_checking.state, OnOff::Off);
 }
 
 fn shows_onboarding(effects: &[Effect]) -> bool {
