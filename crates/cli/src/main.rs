@@ -1,3 +1,5 @@
+mod wording;
+
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -348,7 +350,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     }
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
-    println!("Night Shift {}", decision.describe(&zone));
+    println!("Night Shift {}", wording::decision(&decision, &zone));
     Ok(())
 }
 
@@ -396,7 +398,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
                 println!("No rules.");
             } else {
                 for rule in &rules {
-                    println!("{rule}");
+                    println!("{}", wording::rule(rule));
                 }
             }
             return Ok(());
@@ -429,7 +431,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
     };
     println!(
         "{done} Night Shift {}.",
-        decision.describe(&TimeZone::system())
+        wording::decision(&decision, &TimeZone::system())
     );
     Ok(())
 }
@@ -499,7 +501,7 @@ fn print_status(status: &Status) {
         NotificationPermission::Granted => "granted",
     };
     println!("Nightcap {}, {install}", status.version);
-    let decided = status.decision.describe(&TimeZone::system());
+    let decided = wording::decision(&status.decision, &TimeZone::system());
     // A decision on a layer or a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
@@ -586,7 +588,7 @@ fn rules(rules: &[Rule]) -> String {
     }
     rules
         .iter()
-        .map(ToString::to_string)
+        .map(wording::rule)
         .collect::<Vec<_>>()
         .join(", ")
 }

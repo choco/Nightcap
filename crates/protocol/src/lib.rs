@@ -10,7 +10,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use idna::AsciiDenyList;
-use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
@@ -254,42 +253,6 @@ pub struct Decision {
     pub reasons: Vec<Reason>,
 }
 
-impl Decision {
-    /// What the core decided and why, as it reads after "Night Shift", with times in `zone`.
-    pub fn describe(&self, zone: &TimeZone) -> String {
-        let until = |end: Option<Timestamp>, state: OnOff| match end {
-            Some(end) => format!(" until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
-            None => format!(" until you turn it {}", state.other()),
-        };
-        let Some(top) = self.reasons.first() else {
-            return "left alone".to_owned();
-        };
-        let at = match &self.place {
-            Place::Everywhere => String::new(),
-            place => format!(" at {place}"),
-        };
-        let mut description = match top {
-            Reason::Timer(layer) | Reason::Hold(layer) => {
-                format!("{}{at}{}", layer.state, until(layer.until, layer.state))
-            }
-            Reason::Rule(rule) => format!(
-                "{} by the {} rule for {}",
-                rule.says, rule.source, rule.identity
-            ),
-            Reason::Tour => "on for the tour".to_owned(),
-            Reason::Schedule { .. } => "following the schedule".to_owned(),
-        };
-        let snoozed = self.reasons.iter().skip(1).find_map(|reason| match reason {
-            Reason::Rule(rule) if Some(rule.says) != self.state => Some(rule),
-            _ => None,
-        });
-        if let Some(rule) = snoozed {
-            description.push_str(&format!(", its {} rule snoozed", rule.source));
-        }
-        description
-    }
-}
-
 /// One layer a decision rests on.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -312,17 +275,6 @@ pub struct Rule {
     pub source: RuleSource,
     /// Night Shift off, or on, while the rule matches (ADR-0006).
     pub says: OnOff,
-}
-
-/// `app:com.figma.Desktop (config rule, off)`.
-impl fmt::Display for Rule {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "{} ({} rule, {})",
-            self.identity, self.source, self.says
-        )
-    }
 }
 
 /// A rule's kind plus its target, written `app:com.figma.Desktop` or `domain:figma.com`.
@@ -515,16 +467,6 @@ pub enum RuleSource {
     AdHoc,
     /// Added during the tour, and kept only while it runs (ADR-0016).
     Tour,
-}
-
-impl fmt::Display for RuleSource {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Config => "config",
-            Self::AdHoc => "ad-hoc",
-            Self::Tour => "tour",
-        })
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -994,89 +936,6 @@ mod tests {
         assert_eq!(
             "figma".parse::<RuleIdentity>(),
             Err(IdentityError::RuleIdentity("figma".to_owned()))
-        );
-    }
-
-    #[test]
-    fn decisions_describe_themselves_after_night_shift() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
-        let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
-        let figma_app = || Place::App("com.figma.Desktop".parse().unwrap());
-        let figma = Rule {
-            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-            source: RuleSource::Config,
-            says: OnOff::Off,
-        };
-        let layer = |state, until| Layer {
-            state,
-            until,
-            with: None,
-        };
-        let described = |state, place, reasons| {
-            Decision {
-                state: Some(state),
-                place,
-                reasons,
-            }
-            .describe(&zone)
-        };
-
-        assert_eq!(
-            described(
-                OnOff::Off,
-                Place::Everywhere,
-                vec![
-                    Reason::Timer(layer(OnOff::Off, Some(at("2026-10-16T22:00:00Z")))),
-                    Reason::Schedule {
-                        state: OnOff::On,
-                        until: None
-                    },
-                ]
-            ),
-            "off until 00:00"
-        );
-        assert_eq!(
-            described(
-                OnOff::Off,
-                Place::Everywhere,
-                vec![Reason::Hold(layer(OnOff::Off, None))]
-            ),
-            "off until you turn it on"
-        );
-        assert_eq!(
-            described(
-                OnOff::On,
-                figma_app(),
-                vec![
-                    Reason::Hold(layer(OnOff::On, Some(at("2026-10-17T05:00:00Z")))),
-                    Reason::Rule(figma.clone()),
-                ]
-            ),
-            "on at app:com.figma.Desktop until 07:00, its config rule snoozed"
-        );
-        assert_eq!(
-            described(OnOff::Off, figma_app(), vec![Reason::Rule(figma)]),
-            "off by the config rule for app:com.figma.Desktop"
-        );
-        assert_eq!(
-            described(
-                OnOff::On,
-                Place::Everywhere,
-                vec![Reason::Schedule {
-                    state: OnOff::On,
-                    until: None
-                }]
-            ),
-            "following the schedule"
-        );
-        assert_eq!(
-            Decision {
-                state: None,
-                place: Place::Everywhere,
-                reasons: Vec::new(),
-            }
-            .describe(&zone),
-            "left alone"
         );
     }
 
