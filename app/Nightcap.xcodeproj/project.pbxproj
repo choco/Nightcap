@@ -52,7 +52,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Notifications/Notice.swift,
-				OnboardingFlow.swift,
+				Onboarding/OnboardingFlow.swift,
 			);
 			target = 4E1C0A00000000000000002C /* NightcapTests */;
 		};
