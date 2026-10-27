@@ -58,6 +58,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var appItems: [RuleIdentity: GridItem]
     /// A redraw for arriving icons is on its way.
     private var redrawing = false
+    /// The sites page was drawn last, so redrawing it asks for no icons.
+    private var showingSites = false
     private var closedByUser = false
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
@@ -185,6 +187,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func draw() {
         if stage == nil { build() }
         guard let stage, let pageArea else { return }
+        // The suggestions are the same for everyone, so asking for their icons tells the sites
+        // nothing about the user's browsing (ADR-0019).
+        let sites = flow.step == .websites && flow.page == .sites
+        if sites && !showingSites { icons.ask(Self.suggestedSites.map(\.host)) }
+        showingSites = sites
         stage.strength = flow.strength
         stage.show(scene)
         pageArea.subviews.forEach { $0.removeFromSuperview() }
@@ -458,9 +465,6 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 ])
             ]
         case .sites:
-            // The suggestions are the same for everyone, so asking for their icons tells the
-            // sites nothing about the user's browsing (ADR-0019).
-            icons.ask(Self.suggestedSites.map(\.host))
             return [grid(flow.sites, siteItems)]
         }
     }
