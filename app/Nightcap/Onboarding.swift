@@ -94,7 +94,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 site: site.name, host: site.host, icon: icons.icon(for: site.host), ruled: ruled[.domain(site.host)])
         }
     }
-    private var index = 0
+    /// Where onboarding is among `steps`, which can shrink under it: allowing notifications drops
+    /// the last things where there's no login item to offer, and onboarding moves on to Ready.
+    private var index: Int {
+        get { min(position, steps.count - 1) }
+        set { position = newValue }
+    }
+    private var position = 0
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
     /// Someone who already uses Night Shift chose to look over its settings.
