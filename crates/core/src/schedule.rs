@@ -3,7 +3,7 @@
 
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
-use nightcap_protocol::{Schedule, TimeOfDay};
+use nightcap_protocol::{OnOff, Schedule, TimeOfDay};
 
 /// The schedule placed in time, from what the shell reports.
 pub(crate) struct Timeline {
@@ -153,6 +153,16 @@ impl Timeline {
                     .min()
             }
         }
+    }
+
+    /// When the schedule next turns Night Shift away from `state` after `after`: sunrise ends
+    /// an on, sunset an off. None without a schedule.
+    pub(crate) fn next_turn(&self, after: Timestamp, state: OnOff) -> Option<Timestamp> {
+        let first = self.next_transition(after)?;
+        if self.scheduled_state(first).map(OnOff::from) != Some(state) {
+            return Some(first);
+        }
+        self.next_transition(first)
     }
 }
 
