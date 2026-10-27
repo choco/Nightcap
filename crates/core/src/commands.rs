@@ -12,7 +12,7 @@ use crate::config::{ConfigError, NightShiftConfig};
 use crate::places::{Places, Refusal};
 use crate::schedule::CheckedSchedule;
 use crate::state::State;
-use crate::{Core, Effect, config};
+use crate::{Core, Effect, LoginItem, config};
 
 impl Core {
     /// Runs a command the user chose in the menu or Settings, which answers as the CLI's would.
@@ -81,10 +81,14 @@ impl Core {
             Command::OpenAtLogin(chosen) => {
                 if self.updates_itself() {
                     state.grants.open_at_login = *chosen == OnOff::On;
-                    effects.push(match chosen {
-                        OnOff::On => Effect::RegisterLoginItem,
-                        OnOff::Off => Effect::UnregisterLoginItem,
-                    });
+                    match chosen {
+                        OnOff::On => effects.push(Effect::RegisterLoginItem),
+                        // An item waiting for approval would still ask for it.
+                        OnOff::Off if state.grants.login_item != Some(LoginItem::NotRegistered) => {
+                            effects.push(Effect::UnregisterLoginItem);
+                        }
+                        OnOff::Off => {}
+                    }
                     Ok(())
                 } else {
                     Err(refused(

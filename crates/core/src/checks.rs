@@ -98,24 +98,17 @@ impl Core {
     /// Carries out a fix the user chose in Settings; the shell carries out its own.
     pub(crate) fn run_fix(&self, state: &mut State, fix: Fix) -> Vec<Effect> {
         let mut effects = Vec::new();
-        match fix {
-            Fix::StopCheckingWebsites => {
-                if let Err(error) =
-                    self.run_command(state, &Command::Websites(OnOff::Off), &mut effects)
-                {
-                    tracing::warn!("a fix was refused: {:?}", error.code);
-                }
+        let mut run = |state: &mut State, command| {
+            if let Err(error) = self.run_command(state, &command, &mut effects) {
+                tracing::warn!("a fix was refused: {:?}", error.code);
             }
+        };
+        match fix {
+            Fix::StopCheckingWebsites => run(state, Command::Websites(OnOff::Off)),
+            Fix::DontOpenAtLogin => run(state, Command::OpenAtLogin(OnOff::Off)),
             Fix::KeepNotificationsOff => state.grants.notifications_wanted = false,
             Fix::KeepScheduleOff => state.grants.schedule_off_accepted = true,
             Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
-            Fix::DontOpenAtLogin => {
-                state.grants.open_at_login = false;
-                // An item waiting for approval would still ask for it.
-                if state.grants.login_item != Some(LoginItem::NotRegistered) {
-                    effects.push(Effect::UnregisterLoginItem);
-                }
-            }
             // An invalid config shows in its check again.
             Fix::Reload => _ = self.reload(state, &mut effects),
             Fix::AskForAccessibility

@@ -240,6 +240,27 @@ fn opening_at_login_waiting_for_approval_offers_login_items() {
 }
 
 #[test]
+fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
+    let staged = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .stage()
+        .unwrap();
+    staged.core().handle(Event::CommandChosen {
+        command: Command::OpenAtLogin(OnOff::On),
+    });
+    staged.core().handle(login_item(LoginItem::NotRegistered));
+
+    let (effects, outcome) = staged.choose(&Command::OpenAtLogin(OnOff::Off));
+
+    assert_eq!(effects, Vec::new());
+    assert!(outcome.is_ok());
+    assert_eq!(
+        settings_check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),
+        Some(CheckState::Off)
+    );
+}
+
+#[test]
 fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
     let staged = noon()
         .installed(Instance::Release, Install::SelfManaged)
