@@ -46,21 +46,21 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    BundleId, CheckKind, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install, Instance,
+    BundleId, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install, Instance,
     NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Request, Response,
     Rule, RuleIdentity, Schedule, Status, WebsiteChecking,
 };
 
-use config::NightShiftConfig;
 use domain::Host;
 #[cfg(not(any(test, debug_assertions)))]
 use file::File;
 use file::{Disk, Files, Paths};
 use onboarding::ONBOARDING;
-use places::{Context, Places, Refusal, World};
+use places::{Places, Refusal};
 use rows::{name_in_front, until_text};
-use schedule::{CheckedSchedule, SunTimes, Timeline};
+use schedule::{CheckedSchedule, SunTimes};
 use start::{Clock, Setup, SystemClock, install_of, instance_of, zone_of};
+use state::{Facts, State};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
@@ -91,94 +91,6 @@ impl fmt::Debug for Core {
             .field("install", &self.install)
             .field("socket", &self.socket)
             .finish_non_exhaustive()
-    }
-}
-
-/// What the core believes about the system, as last reported by the shell, plus what it
-/// keeps across restarts.
-struct State {
-    facts: Facts,
-    places: Places,
-    strength: Option<u8>,
-    config_error: Option<config::ConfigError>,
-    /// Whether the config file existed when it was last loaded.
-    config_found: bool,
-    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
-    lengths: Vec<SignedDuration>,
-    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
-    ad_hoc_error: Option<adhoc::AdHocError>,
-    onboarding: u32,
-    config_night_shift: NightShiftConfig,
-    applied_from_config: NightShiftConfig,
-    /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
-    /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
-    keep_on_with_schedule_off: bool,
-    /// Whether the frontmost app is in the shell's browser list.
-    is_browser: bool,
-    watch: Option<Watch>,
-    /// The generation of the last watch started.
-    generation: u64,
-    /// The write the shell was last asked for, until a status callback reports the result.
-    pending_write: Option<bool>,
-    unreported: Option<Unreported>,
-    session: Session,
-    /// Where the last run left Night Shift, which the first status callback will show.
-    left_by_last_run: Option<OnOff>,
-    /// The wakeup the shell was last asked for.
-    wakeup: Option<Timestamp>,
-    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
-    sun_times_awaited_since: Option<Timestamp>,
-    /// macOS has sunset to sunrise set aside, and the schedule is off.
-    schedule_set_aside: bool,
-    /// See `state::Persisted::schedule_off_accepted`.
-    schedule_off_accepted: bool,
-    /// None until the shell first reports it.
-    accessibility: Option<bool>,
-    notifications: NotificationPermission,
-    /// See `state::Persisted::notifications_wanted`.
-    notifications_wanted: bool,
-    /// See `state::Persisted::announced`.
-    announced: Vec<CheckKind>,
-    /// None until the shell first reports it.
-    login_item: Option<LoginItem>,
-    /// See `state::Persisted::open_at_login`.
-    open_at_login: bool,
-    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
-    opens_itself_at_login: bool,
-    /// See `state::Persisted::last_version`.
-    last_version: Option<String>,
-    /// What the running tour's steps follow, while one runs (ADR-0016).
-    tour: Option<tour::Tour>,
-    /// What was last written to `state.json`.
-    saved: state::Persisted,
-}
-
-/// What the place stack reads but doesn't own, lent to it as a `World` for each call.
-struct Facts {
-    night_shift: NightShift,
-    timeline: Timeline,
-    context: Context,
-    /// Every schedule transition up to here has been applied.
-    applied_until: Timestamp,
-    /// Website checking as the user chose it; `websites` in the config wins (ADR-0012).
-    websites: bool,
-    config_websites: Option<bool>,
-}
-
-impl Facts {
-    fn world(&self, now: Timestamp) -> World<'_> {
-        World {
-            context: &self.context,
-            timeline: &self.timeline,
-            applied_until: self.applied_until,
-            now,
-            observed: OnOff::from(self.night_shift == NightShift::On),
-            website_checking: self.website_checking(),
-        }
-    }
-
-    fn website_checking(&self) -> bool {
-        self.config_websites.unwrap_or(self.websites)
     }
 }
 
@@ -984,18 +896,6 @@ impl Core {
         Ok(())
     }
 
-    /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).
-    fn save(&self, state: &mut State) {
-        let snapshot = state.snapshot(self.clock.now());
-        if snapshot == state.saved {
-            return;
-        }
-        match self.store.save(&snapshot) {
-            Ok(()) => state.saved = snapshot,
-            Err(error) => tracing::warn!("couldn't save the state: {error}"),
-        }
-    }
-
     /// Keeps the shell's one wakeup at the next schedule transition or the end of a timer or
     /// hold, whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
     /// times, which CoreBrightness can take a minute or two after login to work out, so the
@@ -1151,28 +1051,6 @@ struct Watch {
 }
 
 impl State {
-    /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
-    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
-    fn snapshot(&self, now: Timestamp) -> state::Persisted {
-        state::Persisted {
-            layers: self.places.kept().layers.clone(),
-            websites: self.facts.websites,
-            onboarding: self.onboarding,
-            notifications_wanted: self.notifications_wanted,
-            open_at_login: self.open_at_login,
-            announced: self.announced.clone(),
-            night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)
-                .map(OnOff::from),
-            until: self
-                .facts
-                .timeline
-                .next_transition(self.facts.applied_until),
-            applied_from_config: self.applied_from_config,
-            schedule_off_accepted: self.schedule_off_accepted,
-            last_version: self.last_version.clone(),
-        }
-    }
-
     /// Writes the config's strength and schedule where they changed since last applied, once
     /// Night Shift, and for the strength its value, is known (ADR-0014).
     fn apply_config_night_shift(&mut self, effects: &mut Vec<Effect>) {

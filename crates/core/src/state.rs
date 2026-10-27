@@ -1,17 +1,147 @@
-//! Runtime state that survives restarts, in `$XDG_STATE_HOME/<instance>/state.json`
-//! (ADR-0008). Readers tolerate unknown keys, so only a breaking change bumps the version.
+//! What the core believes about the system, and what of it survives restarts, in
+//! `$XDG_STATE_HOME/<instance>/state.json` (ADR-0008). Readers tolerate unknown keys, so only a
+//! breaking change bumps the version.
 
 use std::io;
 use std::sync::Arc;
 
-use jiff::Timestamp;
-use nightcap_protocol::{CheckKind, OnOff, PlaceLayers};
+use jiff::{SignedDuration, Timestamp};
+use nightcap_protocol::{CheckKind, NightShift, NotificationPermission, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
+use crate::places::{Context, Places, World};
+use crate::schedule::Timeline;
+use crate::{Core, LoginItem, Session, Unreported, Watch, adhoc, config, tour, wanted};
 
 const VERSION: u32 = 1;
+
+/// What the core believes about the system, as last reported by the shell, plus what it
+/// keeps across restarts.
+pub(crate) struct State {
+    pub(crate) facts: Facts,
+    pub(crate) places: Places,
+    pub(crate) strength: Option<u8>,
+    pub(crate) config_error: Option<config::ConfigError>,
+    /// Whether the config file existed when it was last loaded.
+    pub(crate) config_found: bool,
+    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
+    pub(crate) lengths: Vec<SignedDuration>,
+    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
+    pub(crate) ad_hoc_error: Option<adhoc::AdHocError>,
+    pub(crate) onboarding: u32,
+    pub(crate) config_night_shift: NightShiftConfig,
+    pub(crate) applied_from_config: NightShiftConfig,
+    /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
+    /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
+    pub(crate) keep_on_with_schedule_off: bool,
+    /// Whether the frontmost app is in the shell's browser list.
+    pub(crate) is_browser: bool,
+    pub(crate) watch: Option<Watch>,
+    /// The generation of the last watch started.
+    pub(crate) generation: u64,
+    /// The write the shell was last asked for, until a status callback reports the result.
+    pub(crate) pending_write: Option<bool>,
+    pub(crate) unreported: Option<Unreported>,
+    pub(crate) session: Session,
+    /// Where the last run left Night Shift, which the first status callback will show.
+    pub(crate) left_by_last_run: Option<OnOff>,
+    /// The wakeup the shell was last asked for.
+    pub(crate) wakeup: Option<Timestamp>,
+    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
+    pub(crate) sun_times_awaited_since: Option<Timestamp>,
+    /// macOS has sunset to sunrise set aside, and the schedule is off.
+    pub(crate) schedule_set_aside: bool,
+    /// See `Persisted::schedule_off_accepted`.
+    pub(crate) schedule_off_accepted: bool,
+    /// None until the shell first reports it.
+    pub(crate) accessibility: Option<bool>,
+    pub(crate) notifications: NotificationPermission,
+    /// See `Persisted::notifications_wanted`.
+    pub(crate) notifications_wanted: bool,
+    /// See `Persisted::announced`.
+    pub(crate) announced: Vec<CheckKind>,
+    /// None until the shell first reports it.
+    pub(crate) login_item: Option<LoginItem>,
+    /// See `Persisted::open_at_login`.
+    pub(crate) open_at_login: bool,
+    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
+    pub(crate) opens_itself_at_login: bool,
+    /// See `Persisted::last_version`.
+    pub(crate) last_version: Option<String>,
+    /// What the running tour's steps follow, while one runs (ADR-0016).
+    pub(crate) tour: Option<tour::Tour>,
+    /// What was last written to `state.json`.
+    pub(crate) saved: Persisted,
+}
+
+/// What the place stack reads but doesn't own, lent to it as a `World` for each call.
+pub(crate) struct Facts {
+    pub(crate) night_shift: NightShift,
+    pub(crate) timeline: Timeline,
+    pub(crate) context: Context,
+    /// Every schedule transition up to here has been applied.
+    pub(crate) applied_until: Timestamp,
+    /// Website checking as the user chose it; `websites` in the config wins (ADR-0012).
+    pub(crate) websites: bool,
+    pub(crate) config_websites: Option<bool>,
+}
+
+impl Facts {
+    pub(crate) fn world(&self, now: Timestamp) -> World<'_> {
+        World {
+            context: &self.context,
+            timeline: &self.timeline,
+            applied_until: self.applied_until,
+            now,
+            observed: OnOff::from(self.night_shift == NightShift::On),
+            website_checking: self.website_checking(),
+        }
+    }
+
+    pub(crate) fn website_checking(&self) -> bool {
+        self.config_websites.unwrap_or(self.websites)
+    }
+}
+
+impl State {
+    /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
+    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
+    fn snapshot(&self, now: Timestamp) -> Persisted {
+        Persisted {
+            layers: self.places.kept().layers.clone(),
+            websites: self.facts.websites,
+            onboarding: self.onboarding,
+            notifications_wanted: self.notifications_wanted,
+            open_at_login: self.open_at_login,
+            announced: self.announced.clone(),
+            night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)
+                .map(OnOff::from),
+            until: self
+                .facts
+                .timeline
+                .next_transition(self.facts.applied_until),
+            applied_from_config: self.applied_from_config,
+            schedule_off_accepted: self.schedule_off_accepted,
+            last_version: self.last_version.clone(),
+        }
+    }
+}
+
+impl Core {
+    /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).
+    pub(crate) fn save(&self, state: &mut State) {
+        let snapshot = state.snapshot(self.clock.now());
+        if snapshot == state.saved {
+            return;
+        }
+        match self.store.save(&snapshot) {
+            Ok(()) => state.saved = snapshot,
+            Err(error) => tracing::warn!("couldn't save the state: {error}"),
+        }
+    }
+}
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
