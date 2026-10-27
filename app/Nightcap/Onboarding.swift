@@ -234,12 +234,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window.alphaValue = 0
         window.orderFront(nil)
         // The frame view, so the traffic lights come out too.
-        guard let view = window.contentView?.superview else { return nil }
-        view.layoutSubtreeIfNeeded()
-        view.displayIfNeeded()
-        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:])
+        return window.contentView?.superview?.png()
     }
     #endif
 

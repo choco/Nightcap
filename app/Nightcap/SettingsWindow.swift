@@ -117,12 +117,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         window.alphaValue = 0
         animates = false
         show(tab)
-        guard let view = window.contentView else { return nil }
-        view.layoutSubtreeIfNeeded()
-        view.displayIfNeeded()
-        guard let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return nil }
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:])
+        return window.contentView?.png()
     }
     #endif
 

@@ -166,14 +166,9 @@ enum Snapshot {
                 content.view.frame = backdrop.bounds
                 backdrop.addSubview(content.view)
                 backdrop.appearance = NSApp.appearance
-                backdrop.layoutSubtreeIfNeeded()
-                guard let bitmap = backdrop.bitmapImageRepForCachingDisplay(in: backdrop.bounds) else {
-                    fatalError("couldn't render the pointer")
-                }
-                backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
-                try! bitmap.representation(using: .png, properties: [:])!
-                    .write(
-                        to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
+                guard let png = backdrop.png() else { fatalError("couldn't render the pointer") }
+                try! png.write(
+                    to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
             }
         }
         for icon in [MenuIcon.on, .off, .forcedOff] {
@@ -216,6 +211,17 @@ enum Snapshot {
         warning.draw(in: NSRect(x: 0, y: 0, width: warning.size.width * 3, height: warning.size.height * 3))
         NSGraphicsContext.restoreGraphicsState()
         return bitmap.representation(using: .png, properties: [:])!
+    }
+}
+
+extension NSView {
+    /// The view as a PNG, laid out and drawn as it stands.
+    func png() -> Data? {
+        layoutSubtreeIfNeeded()
+        displayIfNeeded()
+        guard let bitmap = bitmapImageRepForCachingDisplay(in: bounds) else { return nil }
+        cacheDisplay(in: bounds, to: bitmap)
+        return bitmap.representation(using: .png, properties: [:])
     }
 }
 #endif

@@ -568,10 +568,7 @@ final class Tour {
         content.frame = backdrop.bounds
         backdrop.addSubview(content)
         backdrop.appearance = NSApp.appearance
-        backdrop.layoutSubtreeIfNeeded()
-        guard let bitmap = backdrop.bitmapImageRepForCachingDisplay(in: backdrop.bounds) else { return nil }
-        backdrop.cacheDisplay(in: backdrop.bounds, to: bitmap)
-        return bitmap.representation(using: .png, properties: [:])
+        return backdrop.png()
     }
     #endif
 }
