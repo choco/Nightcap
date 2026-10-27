@@ -5,59 +5,47 @@ import NightcapCore
 
 /// Dev builds only: with `NIGHTCAP_SNAPSHOT` set to a folder, Nightcap renders the settings
 /// window's tabs, onboarding's steps, the tour's panel and the pointer to the moon, light and
-/// dark, from the mockups' scenarios into that folder, then quits.
+/// dark, from the mockups' scenarios into that folder, then quits. Settings and onboarding draw
+/// cores staged in memory, brought to each scenario by their own code.
 enum Snapshot {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
-        let settings = Settings(
-            websiteChecking: SettingsSwitch(on: true, locked: false, command: .websites(.off)),
-            openAtLogin: SettingsSwitch(on: true, locked: false, command: .openAtLogin(.off)),
-            checks: [
-                SettingsCheck(
-                    kind: .nightShift, state: .ok,
-                    text: "Available, following its schedule: sunset to sunrise.", restore: nil, accept: nil),
-                SettingsCheck(
-                    kind: .accessibility, state: .drifted,
-                    text: "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                    restore: FixButton(title: "Allow…", fix: .askForAccessibility),
-                    accept: FixButton(title: "Stop Checking Websites", fix: .stopCheckingWebsites)),
-                SettingsCheck(
-                    kind: .notifications, state: .drifted,
-                    text: "Notifications were allowed, but they’re switched off in System Settings.",
-                    restore: FixButton(title: "Allow Notifications…", fix: .allowNotifications),
-                    accept: FixButton(title: "Keep Notifications Off", fix: .keepNotificationsOff)),
-                SettingsCheck(
-                    kind: .configFile, state: .broken,
-                    text: "The config file is invalid: line 4: unknown field `domian`.",
-                    restore: FixButton(title: "Reload", fix: .reload), accept: nil),
-                SettingsCheck(kind: .adHocRules, state: .ok, text: "2 ad-hoc rules.", restore: nil, accept: nil),
-            ],
-            configPath: "\(NSHomeDirectory())/.config/nightcap/config.toml",
-            rules: [
-                SettingsRule(
-                    identity: .app("com.figma.Desktop"), says: .off, label: "From your config", snoozed: false,
-                    action: nil),
-                SettingsRule(
-                    identity: .domain("figma.com"), says: .off, label: "Snoozed until 07:12", snoozed: true,
-                    action: RuleAction(title: "Put Back", command: .reset(.domain("figma.com")))),
-                SettingsRule(
-                    identity: .app("com.apple.Photos"), says: .off, label: "Ad-hoc", snoozed: false,
-                    action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.Photos")))),
-                SettingsRule(
-                    identity: .app("com.apple.iBooksX"), says: .on, label: "Ad-hoc", snoozed: false,
-                    action: RuleAction(title: "Remove", command: .removeRule(.app("com.apple.iBooksX")))),
-            ],
-            forNow: [
-                SettingsLayers(
-                    place: .app("com.apple.mail"), label: "Night Shift off until 22:00",
-                    action: RuleAction(title: "End", command: .reset(.app("com.apple.mail"))))
-            ])
+        let today = { (hour: Int, minute: Int) in
+            Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date())!
+        }
+        let rules = """
+            [rules.off]
+            app = ["com.figma.Desktop"]
+            domain = ["figma.com"]
+            """
+        let sunrise = Calendar.current.date(byAdding: .day, value: 1, to: today(7, 12))!
+        // A self-managed release in the evening, whose config broke after its rules loaded: the
+        // reload keeps them, beside the check that says why.
+        let settingsCore = try! Core.staged(
+            scenario: Scenario(
+                now: today(21, 0), timeZone: TimeZone.current.identifier, bundleWritable: true, config: rules,
+                steps: [
+                    .event(.statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false)),
+                    .event(.permissionsChanged(accessibility: false, notifications: .granted)),
+                    .event(.permissionsChanged(accessibility: false, notifications: .denied)),
+                    .event(.loginItemChanged(item: .enabled)),
+                    .event(.onboardingFinished(websites: true)),
+                    .event(.commandChosen(command: .addRule(identity: .app("com.apple.Photos"), says: .off))),
+                    .event(.commandChosen(command: .addRule(identity: .app("com.apple.iBooksX"), says: .on))),
+                    .event(
+                        .commandChosen(command: .set(place: .domain("figma.com"), state: .on, length: .until(sunrise)))),
+                    .event(
+                        .commandChosen(
+                            command: .set(place: .app("com.apple.mail"), state: .off, length: .until(today(22, 0))))),
+                    .config(rules + "\ndomian = [\"figma.com\"]"),
+                    .event(.fixChosen(fix: .reload)),
+                ]))
         // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
         let icons = SiteIcons(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
-            current: { settings }, icons: icons, choose: { _ in }, perform: { _ in }, checkForUpdates: {},
-            export: { _ in "" }, takeTour: {}, onClose: {})
+            current: { settingsCore.settings() }, icons: icons, choose: { _ in }, perform: { _ in },
+            checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)
             for tab in SettingsWindow.Tab.allCases {
@@ -66,30 +54,27 @@ enum Snapshot {
                 try! png.write(to: url)
             }
         }
-        let setUp = OnboardingNightShift(
-            askStrength: true, askSchedule: true, alreadySetUp: false, strength: 60, schedule: .off)
-        let steps = { (nightShift: OnboardingNightShift) in
-            Onboarding(
-                steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
-                rules: {
-                    [
-                        SettingsRule(
-                            identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
-                            action: nil)
-                    ]
-                },
+        // A self-managed release that doesn't open at login yet, with Photos' rule in its config.
+        let steps = { (schedule: Schedule) in
+            let core = try! Core.staged(
+                scenario: Scenario(
+                    now: Date(), timeZone: TimeZone.current.identifier, bundleWritable: true,
+                    config: "[rules.off]\napp = [\"com.apple.Photos\"]",
+                    steps: [
+                        .event(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
+                        .event(.strengthChanged(value: 60)),
+                        .event(.loginItemChanged(item: .notRegistered)),
+                    ]))
+            return Onboarding(
+                steps: core.onboarding(),
+                rules: { core.settings().rules },
                 icons: icons,
-                sun: Sun(
-                    sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
-                    sunrise: Calendar.current.date(bySettingHour: 7, minute: 52, second: 0, of: Date())!),
+                sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
                 notifications: { .notRequested }, askForNotifications: {}, onFinish: { _ in })
         }
-        let newUser = steps(setUp)
-        var alreadySetUp = setUp
-        alreadySetUp.alreadySetUp = true
-        alreadySetUp.schedule = .sunsetToSunrise
-        let nightShiftUser = steps(alreadySetUp)
+        let newUser = steps(.off)
+        let nightShiftUser = steps(.sunsetToSunrise)
         let states: [(String, Onboarding, OnboardingFlow.Step, OnboardingFlow.WebsitesPage, Bool)] = [
             ("already-set-up", nightShiftUser, .alreadySetUp, .ask, false),
             ("review", nightShiftUser, .strength, .ask, true),
