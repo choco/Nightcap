@@ -1,4 +1,4 @@
-//! The rule engine: what Night Shift should be, from the most specific place in front that
+//! The place stack: what Night Shift should be, from the most specific place in front that
 //! says something, and why (ADR-0018, ADR-0006).
 
 use jiff::Timestamp;

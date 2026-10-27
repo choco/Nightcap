@@ -5,10 +5,10 @@ uniffi::setup_scaffolding!();
 mod adhoc;
 mod config;
 mod domain;
-mod engine;
 mod file;
 mod ipc;
 mod logging;
+mod places;
 mod schedule;
 mod state;
 
@@ -30,7 +30,7 @@ use nightcap_protocol::{
 
 use config::NightShiftConfig;
 use domain::Host;
-use engine::{Context, Inputs};
+use places::{Context, Inputs};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
@@ -2971,7 +2971,7 @@ impl State {
     }
 
     fn decide(&self) -> Decision {
-        engine::decide(&self.inputs())
+        places::decide(&self.inputs())
     }
 
     /// What the rule engine sees. On the way out, only everywhere's hold still applies: macOS
@@ -2995,9 +2995,9 @@ impl State {
 
     /// What a place itself says, or None when it has no layer.
     fn says(&self, place: &Place) -> Option<OnOff> {
-        engine::layers_of(&self.inputs(), place)
+        places::layers_of(&self.inputs(), place)
             .first()
-            .map(engine::says)
+            .map(places::says)
     }
 
     /// What everywhere says under its hold and timer: the tour standing in, or the schedule.
@@ -3019,7 +3019,7 @@ impl State {
     /// domain that says nothing, and no other domain is in front then, so the app and
     /// everywhere follow it.
     fn places_from(&self, place: &Place) -> Vec<Place> {
-        let in_front = engine::in_front(&self.inputs());
+        let in_front = places::in_front(&self.inputs());
         match in_front.iter().position(|front| front == place) {
             Some(index) => in_front.into_iter().skip(index).collect(),
             None if self.site_in_front().as_ref() == Some(place) => {
@@ -3051,10 +3051,10 @@ impl State {
             .iter()
             .enumerate()
             .find_map(|(index, each)| {
-                engine::layers_of(&inputs, each)
+                places::layers_of(&inputs, each)
                     .iter()
                     .find(|reason| !(index == 0 && matches!(reason, Reason::Timer(_))))
-                    .map(engine::says)
+                    .map(places::says)
             })
     }
 
@@ -3100,7 +3100,7 @@ impl State {
             .as_ref()
             .filter(|_| self.website_checking())?;
         Some(
-            engine::in_front(&self.inputs())
+            places::in_front(&self.inputs())
                 .into_iter()
                 .find(|place| matches!(place, Place::Domain(_)))
                 .unwrap_or_else(|| Place::Domain(host.tab_domain())),
