@@ -20,6 +20,7 @@ The layout is the one in the Rust Book's chapter 11.3, Test Organization:
 - **Unit tests** go in a `#[cfg(test)] mod tests` at the foot of the file they test, with `use super::*`.
 - **Integration tests** go in `<crate>/tests/<area>.rs`, one file per area, and exercise the crate through its public interface.
   - Shared helpers go in `tests/common/mod.rs`. A `tests/common.rs` would be compiled and run as a test crate of its own.
+  - `clippy.toml`'s test allowances cover `#[test]` functions and `#[cfg(test)]` modules, but not an integration test's helper functions. A file whose helpers unwrap gets a file-level `#![expect(clippy::unwrap_used, reason = "…")]`. `common` takes `#![allow(dead_code, reason = "…")]`, because each test crate uses only some of its helpers, so an `expect` there would fail.
   - `src/` holds the code and its inline unit tests.
 - **Reaching past the production interface:** when integration tests need more than production exposes (an in-memory adapter, a clock to move, a way in that skips I/O), give the crate a small public surface for them under `cfg(any(test, debug_assertions))`, and start each test file that uses it with `#![cfg(debug_assertions)]`.
 - **Fixtures:** describe the situation with one value, such as a scenario a test starts from, rather than with a builder of many setters.
