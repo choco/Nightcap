@@ -202,3 +202,62 @@ impl From<&[(RuleIdentity, OnOff)]> for Rules {
         lists
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+    use crate::file::{Memory, Paths};
+
+    /// Files in memory, with `rules.toml` holding `text`.
+    fn holding(text: Option<&str>) -> Arc<Memory> {
+        let files = Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap"))));
+        files.put(file::File::Rules, text.map(Vec::from));
+        files
+    }
+
+    fn figma() -> RuleIdentity {
+        RuleIdentity::App("com.figma.Desktop".parse().unwrap())
+    }
+
+    #[test]
+    fn saved_ad_hoc_rules_load_back() {
+        let store = Store::new(holding(None));
+        let rules = vec![
+            (figma(), OnOff::Off),
+            (
+                RuleIdentity::Domain("youtube.com".parse().unwrap()),
+                OnOff::On,
+            ),
+        ];
+
+        store.save(&rules).unwrap();
+
+        assert_eq!(store.load().unwrap(), rules);
+    }
+
+    #[test]
+    fn ad_hoc_rules_from_a_newer_build_are_refused() {
+        let files = holding(Some(
+            "version = 3\n[rules.off]\napp = [\"com.figma.Desktop\"]\n",
+        ));
+
+        assert!(matches!(
+            Store::new(files).load(),
+            Err(AdHocError::Newer { version: 3, .. })
+        ));
+    }
+
+    #[test]
+    fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
+        let files = holding(Some(
+            "version = 1\nlabel = \"x\"\n[rules]\napp = [\"com.figma.Desktop\"]\nkeyword = []\n",
+        ));
+
+        assert_eq!(
+            Store::new(files).load().unwrap(),
+            vec![(figma(), OnOff::Off)]
+        );
+    }
+}

@@ -9,10 +9,8 @@ use nightcap_protocol::{
     WebsiteChecking,
 };
 
-use crate::config::NightShiftConfig;
 use crate::file::{File, Files, Memory, Paths};
 use crate::harness::Harness;
-use crate::state::{Persisted, Store};
 use crate::{
     Core, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon, MenuItem, MenuPath,
     NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine, RowImage,
@@ -57,13 +55,6 @@ fn custom_hours() -> Schedule {
 /// Files in memory, for the stores alone.
 fn in_memory() -> Arc<Memory> {
     Arc::new(Memory::new(Paths::xdg(Instance::Release).unwrap()))
-}
-
-/// Files in memory with `text` in `file`.
-fn holding(file: File, text: &str) -> Arc<Memory> {
-    let files = in_memory();
-    files.put(file, Some(text.as_bytes().to_owned()));
-    files
 }
 
 /// The ad-hoc rules `rules.toml` keeps, as the next start would load them.
@@ -3344,128 +3335,6 @@ fn a_dev_build_never_registers_a_login_item() {
         .start();
 
     assert_eq!(launch(&core), Vec::new());
-}
-
-#[test]
-fn saved_ad_hoc_rules_load_back() {
-    let store = adhoc::Store::new(in_memory());
-    let rules = vec![
-        (figma(), OnOff::Off),
-        (
-            RuleIdentity::Domain("youtube.com".parse().unwrap()),
-            OnOff::On,
-        ),
-    ];
-
-    store.save(&rules).unwrap();
-
-    assert_eq!(store.load().unwrap(), rules);
-}
-
-#[test]
-fn ad_hoc_rules_from_a_newer_build_are_refused() {
-    let files = holding(
-        File::Rules,
-        "version = 3\n[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-    );
-
-    assert!(matches!(
-        adhoc::Store::new(files).load(),
-        Err(adhoc::AdHocError::Newer { version: 3, .. })
-    ));
-}
-
-#[test]
-fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
-    let files = holding(
-        File::Rules,
-        "version = 1\nlabel = \"x\"\n[rules]\napp = [\"com.figma.Desktop\"]\nkeyword = []\n",
-    );
-
-    assert_eq!(
-        adhoc::Store::new(files).load().unwrap(),
-        vec![(figma(), OnOff::Off)]
-    );
-}
-
-#[test]
-fn saved_state_loads_back() {
-    let store = Store::new(in_memory());
-    let state = Persisted {
-        layers: vec![
-            layered(
-                figma_app(),
-                Some(Layer {
-                    state: OnOff::On,
-                    until: Some(at("2026-10-17T07:00:00+02:00")),
-                    with: Some(Place::Everywhere),
-                }),
-                None,
-            ),
-            layered(
-                Place::Everywhere,
-                Some(Layer {
-                    state: OnOff::On,
-                    until: Some(at("2026-10-17T07:00:00+02:00")),
-                    with: Some(figma_app()),
-                }),
-                Some(layer(OnOff::Off, Some("2026-10-17T00:00:00+02:00"))),
-            ),
-        ],
-        websites: true,
-        onboarding: 1,
-        notifications_wanted: true,
-        open_at_login: true,
-        announced: vec![CheckKind::Accessibility],
-        night_shift: Some(OnOff::Off),
-        until: Some(at("2026-10-17T07:00:00+02:00")),
-        applied_from_config: NightShiftConfig {
-            strength: Some(40),
-            schedule: Some(custom_hours()),
-        },
-        schedule_off_accepted: true,
-        last_version: Some("1.0.0".to_owned()),
-    };
-
-    store.save(&state).unwrap();
-
-    assert_eq!(store.load(), state);
-}
-
-#[test]
-fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_disable() {
-    let files = holding(
-        File::State,
-        r#"{"version":1,"manual_state":"off","snoozes":["app:com.figma.Desktop"],"timed_disable":"2026-10-16T22:00:00Z","websites":true,"onboarding":1}"#,
-    );
-
-    let state = Store::new(files).load();
-
-    assert_eq!(state.layers, Vec::new());
-    assert!(state.websites);
-    assert_eq!(state.onboarding, 1);
-}
-
-#[test]
-fn missing_state_starts_fresh() {
-    assert_eq!(Store::new(in_memory()).load(), Persisted::default());
-}
-
-#[test]
-fn state_from_a_newer_build_starts_fresh() {
-    let files = holding(File::State, r#"{"version":2,"login_item_registered":true}"#);
-
-    assert_eq!(Store::new(files).load(), Persisted::default());
-}
-
-#[test]
-fn state_with_keys_this_build_doesnt_know_still_loads() {
-    let files = holding(
-        File::State,
-        r#"{"version":1,"login_item_registered":true,"websites":true}"#,
-    );
-
-    assert!(Store::new(files).load().websites);
 }
 
 /// The check of `kind` in the status, if the core reports one.

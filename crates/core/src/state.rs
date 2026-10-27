@@ -123,3 +123,110 @@ impl Store {
             .write(Owned::State, &serde_json::to_vec_pretty(&file)?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use nightcap_protocol::{Layer, Place, Schedule, TimeOfDay};
+
+    use super::*;
+    use crate::file::{Memory, Paths};
+
+    /// Files in memory, with `state.json` holding `text`.
+    fn holding(text: Option<&str>) -> Arc<Memory> {
+        let files = Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap"))));
+        files.put(file::File::State, text.map(Vec::from));
+        files
+    }
+
+    fn at(instant: &str) -> Timestamp {
+        instant.parse().unwrap()
+    }
+
+    #[test]
+    fn saved_state_loads_back() {
+        let store = Store::new(holding(None));
+        let figma = Place::App("com.figma.Desktop".parse().unwrap());
+        let linked = |with| Layer {
+            state: OnOff::On,
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+            with: Some(with),
+        };
+        let state = Persisted {
+            layers: vec![
+                PlaceLayers {
+                    place: figma.clone(),
+                    hold: Some(linked(Place::Everywhere)),
+                    timer: None,
+                },
+                PlaceLayers {
+                    place: Place::Everywhere,
+                    hold: Some(linked(figma)),
+                    timer: Some(Layer {
+                        state: OnOff::Off,
+                        until: Some(at("2026-10-17T00:00:00+02:00")),
+                        with: None,
+                    }),
+                },
+            ],
+            websites: true,
+            onboarding: 1,
+            notifications_wanted: true,
+            open_at_login: true,
+            announced: vec![CheckKind::Accessibility],
+            night_shift: Some(OnOff::Off),
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+            applied_from_config: NightShiftConfig {
+                strength: Some(40),
+                schedule: Some(Schedule::Custom {
+                    from: TimeOfDay {
+                        hour: 22,
+                        minute: 0,
+                    },
+                    to: TimeOfDay { hour: 7, minute: 0 },
+                }),
+            },
+            schedule_off_accepted: true,
+            last_version: Some("1.0.0".to_owned()),
+        };
+
+        store.save(&state).unwrap();
+
+        assert_eq!(store.load(), state);
+    }
+
+    #[test]
+    fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_disable() {
+        let files = holding(Some(
+            r#"{"version":1,"manual_state":"off","snoozes":["app:com.figma.Desktop"],"timed_disable":"2026-10-16T22:00:00Z","websites":true,"onboarding":1}"#,
+        ));
+
+        let state = Store::new(files).load();
+
+        assert_eq!(state.layers, Vec::new());
+        assert!(state.websites);
+        assert_eq!(state.onboarding, 1);
+    }
+
+    #[test]
+    fn missing_state_starts_fresh() {
+        assert_eq!(Store::new(holding(None)).load(), Persisted::default());
+    }
+
+    #[test]
+    fn state_from_a_newer_build_starts_fresh() {
+        let files = holding(Some(r#"{"version":2,"login_item_registered":true}"#));
+
+        assert_eq!(Store::new(files).load(), Persisted::default());
+    }
+
+    #[test]
+    fn state_with_keys_this_build_doesnt_know_still_loads() {
+        let files = holding(Some(
+            r#"{"version":1,"login_item_registered":true,"websites":true}"#,
+        ));
+
+        assert!(Store::new(files).load().websites);
+    }
+}
