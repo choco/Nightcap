@@ -6,13 +6,13 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use nightcap_protocol::{Install, Instance, NightShift, OnOff};
 
-use crate::checks::Grants;
 use crate::commands::Loaded;
 use crate::rules::places::{Context, Places, World};
 use crate::rules::schedule::Timeline;
 use crate::server::start::Clock;
 use crate::server::turn::{Reconciling, wanted};
 use crate::server::watch::Watching;
+use crate::setup::grants::Grants;
 use crate::storage::ad_hoc_rules;
 use crate::storage::file::Files;
 use crate::storage::saved_state::{Persisted, Store};

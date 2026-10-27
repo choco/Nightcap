@@ -2,7 +2,6 @@
 
 uniffi::setup_scaffolding!();
 
-mod checks;
 mod commands;
 mod ipc;
 mod logging;
@@ -12,6 +11,7 @@ mod rows;
 mod rules;
 mod server;
 mod settings;
+mod setup;
 mod shell;
 #[cfg(any(test, debug_assertions))]
 mod staging;
@@ -19,12 +19,12 @@ mod status;
 mod storage;
 mod tour;
 
-pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
+pub use setup::checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use shell::{CoreError, is_bundle_id, normalize_domain};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,

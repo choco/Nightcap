@@ -8,13 +8,13 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
 
-use crate::checks::Grants;
 use crate::commands::Loaded;
 use crate::rules::places::{Context, Kept, Places};
 use crate::rules::schedule::{SunTimes, Timeline};
 use crate::server::state::{Facts, Inner};
 use crate::server::turn::Reconciling;
 use crate::server::watch::Watching;
+use crate::setup::grants::Grants;
 use crate::storage::config::{self, NightShiftConfig};
 use crate::storage::file::Files;
 use crate::storage::{ad_hoc_rules, saved_state};
