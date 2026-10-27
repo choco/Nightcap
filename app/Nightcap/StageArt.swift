@@ -468,7 +468,7 @@ final class StrengthArt: NSView {
         }
         caption = Drawn(NSSize(width: screen.width, height: 16)) { bounds in
             Paint.text(
-                "Evening: Night Shift, \(Paint.warmth(warmth()).lowercased())", .systemFont(ofSize: 11),
+                "Evening: Night Shift, \(Onboarding.warmth(warmth()).lowercased())", .systemFont(ofSize: 11),
                 .nightcapSecondary, centredAt: NSPoint(x: bounds.midX, y: 8))
         }
         super.init(frame: NSRect(x: 0, y: 0, width: screen.width * 2 + 78, height: 162))
@@ -685,10 +685,6 @@ enum Paint {
 
     static func alpha(for strength: UInt8) -> CGFloat {
         0.08 + 0.34 * CGFloat(strength) / 100
-    }
-
-    static func warmth(_ strength: UInt8) -> String {
-        strength < 34 ? "A little warm" : strength < 67 ? "Warm" : "Very warm"
     }
 
     static func rounded(_ rect: NSRect, _ radius: CGFloat, _ fill: NSColor, stroke: NSColor? = nil) {

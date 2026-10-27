@@ -832,7 +832,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     /// The strength in words, since System Settings shows no number either.
-    private static func warmth(_ strength: UInt8) -> String {
+    static func warmth(_ strength: UInt8) -> String {
         strength < 34 ? "A little warm" : strength < 67 ? "Warm" : "Very warm"
     }
 
