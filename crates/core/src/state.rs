@@ -10,6 +10,7 @@ use nightcap_protocol::{CheckKind, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::config::NightShiftConfig;
+use crate::file::write_whole;
 
 const VERSION: u32 = 1;
 
@@ -113,19 +114,11 @@ impl Store {
         }
     }
 
-    /// Writes beside the file and renames over it, so a crash never leaves half a file.
     pub(crate) fn save(&self, state: &Persisted) -> io::Result<()> {
-        let folder = self
-            .path
-            .parent()
-            .ok_or_else(|| io::Error::other(format!("{} has no folder", self.path.display())))?;
-        fs::create_dir_all(folder)?;
         let file = File {
             version: VERSION,
             state: state.clone(),
         };
-        let partial = self.path.with_extension("json.partial");
-        fs::write(&partial, serde_json::to_vec_pretty(&file)?)?;
-        fs::rename(&partial, &self.path)
+        write_whole(&self.path, &serde_json::to_vec_pretty(&file)?)
     }
 }

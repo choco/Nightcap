@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use nightcap_protocol::{ExportFormat, IdentityError, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
+use crate::file::write_whole_synced;
+
 /// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
 
@@ -137,24 +139,16 @@ impl Store {
         Ok(rules)
     }
 
-    /// Writes beside the file and renames over it, so a crash never leaves half a file.
     pub(crate) fn save(&self, rules: &[(RuleIdentity, OnOff)]) -> io::Result<()> {
         let file = File {
             version: VERSION,
             rules: Rules::from(rules),
         };
         let text = toml::to_string(&file).map_err(io::Error::other)?;
-        let folder = self
-            .path
-            .parent()
-            .ok_or_else(|| io::Error::other(format!("{} has no folder", self.path.display())))?;
-        fs::create_dir_all(folder)?;
-        let partial = self.path.with_extension("toml.partial");
-        fs::write(
-            &partial,
-            format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}"),
-        )?;
-        fs::rename(&partial, &self.path)
+        write_whole_synced(
+            &self.path,
+            format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}").as_bytes(),
+        )
     }
 }
 

@@ -6,6 +6,7 @@ mod adhoc;
 mod config;
 mod domain;
 mod engine;
+mod file;
 mod ipc;
 mod logging;
 mod schedule;
