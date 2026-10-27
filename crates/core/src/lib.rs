@@ -12,6 +12,7 @@ mod places;
 mod rows;
 mod schedule;
 mod state;
+mod tour;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -391,6 +392,80 @@ pub struct MenuItem {
     pub command: Command,
 }
 
+/// An app the tour names: its bundle ID, which a rule names it by, and its name, which the menu
+/// calls it by.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourApp {
+    pub bundle_id: BundleId,
+    pub name: String,
+}
+
+/// The site the tour opens for its site step, and the browser it opens it in.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourSite {
+    pub domain: Domain,
+    pub browser: BundleId,
+}
+
+/// What a running tour's steps follow, and the titles they quote (ADR-0016).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourSnapshot {
+    pub facts: TourFacts,
+    pub titles: TourTitles,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourFacts {
+    /// The tour stands in for the schedule with Night Shift on: it was off as the tour started.
+    pub stands_in: bool,
+    /// Night Shift on everywhere, as the Night Shift item's check shows it: the switch's side.
+    pub everywhere_on: bool,
+    pub sample: TourPlace,
+    /// None where the tour has no site step.
+    pub site: Option<TourPlace>,
+}
+
+/// The tour sample or the site, as its step follows it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourPlace {
+    /// The sample is the front app, or the site is the one in the front tab (ADR-0017).
+    pub in_front: bool,
+    /// What its rule says, if it has one.
+    pub rule: Option<OnOff>,
+    /// Its place's top layer says the other way from its rule.
+    pub snoozed: bool,
+}
+
+/// A menu item as the tour quotes it: the place row it's in, then the item.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MenuPath {
+    pub row: String,
+    pub item: String,
+}
+
+/// The menu's titles that the tour's steps quote, as `menu()` shows them in the situation each
+/// step describes.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourTitles {
+    /// Always, in the sample's row with the sample in front and no rule.
+    pub add_sample_rule: MenuPath,
+    /// The sample's row while its rule holds, whose lengths snooze the rule.
+    pub snooze_sample: String,
+    /// What ends the rule's snooze, in the sample's row.
+    pub put_sample_rule_back: MenuPath,
+    /// Always, in the site's row with its browser in front on it.
+    pub add_site_rule: Option<MenuPath>,
+    /// Always, in the example's row with it in front and Night Shift off: a rule that says on.
+    pub add_example_rule: MenuPath,
+}
+
+/// The titles the tour's steps quote, for its sample, its site and the app it gives as an
+/// example, which `Core::tour` reports too.
+#[uniffi::export]
+pub fn tour_titles(sample: TourApp, site: Option<TourSite>, example: TourApp) -> TourTitles {
+    tour::titles(&sample, site.as_ref(), &example)
+}
+
 /// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
 #[uniffi::export(foreign)]
 pub trait Waker: Send + Sync {
@@ -450,8 +525,13 @@ pub enum Event {
     OnboardingFinished {
         websites: bool,
     },
-    /// The tour started (ADR-0016).
-    TourStarted,
+    /// The tour started (ADR-0016), with its sample, the site where it has a site step, and
+    /// the app its steps give as an example of a rule that says on.
+    TourStarted {
+        sample: TourApp,
+        site: Option<TourSite>,
+        example: TourApp,
+    },
     /// The tour ended, or the user ended it.
     TourEnded,
     /// The user chose one of the core's fixes in Settings.
@@ -662,6 +742,8 @@ struct State {
     opens_itself_at_login: bool,
     /// See `state::Persisted::last_version`.
     last_version: Option<String>,
+    /// What the running tour's steps follow, while one runs (ADR-0016).
+    tour: Option<tour::Tour>,
     /// What was last written to `state.json`.
     saved: state::Persisted,
 }
@@ -940,6 +1022,13 @@ impl Core {
         }
     }
 
+    /// What the tour's steps follow and the titles they quote, or None while no tour runs.
+    pub fn tour(&self) -> Option<TourSnapshot> {
+        let state = self.state();
+        let tour = state.tour.as_ref()?;
+        Some(tour.report(&state.places.look(&state.facts.world(self.clock.now()))))
+    }
+
     #[expect(
         clippy::expect_used,
         reason = "panics abort (ADR-0002), so none can poison the lock"
@@ -1126,12 +1215,17 @@ impl Core {
                 }
                 Vec::new()
             }
-            Event::TourStarted => {
+            Event::TourStarted {
+                sample,
+                site,
+                example,
+            } => {
                 let stands_in = state.facts.night_shift == NightShift::Off;
                 if !state.places.start_tour(stands_in) {
                     tracing::warn!("a tour started while one runs; keeping the first");
                     return Vec::new();
                 }
+                state.tour = Some(tour::Tour::new(&sample, site.as_ref(), &example));
                 tracing::info!(
                     "tour started{}",
                     if stands_in {
@@ -1145,6 +1239,7 @@ impl Core {
             Event::TourEnded => {
                 let now = self.clock.now();
                 state.places.end_tour(now);
+                state.tour = None;
                 Vec::new()
             }
             Event::FixChosen { fix } => {
@@ -1240,6 +1335,7 @@ impl Core {
                 // behind (ADR-0008), nor Night Shift on for a tour (ADR-0016).
                 let now = self.clock.now();
                 state.places.release(now);
+                state.tour = None;
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
                 }
@@ -1336,6 +1432,7 @@ impl Core {
                 opens_itself_at_login: setup.install == Install::SelfManaged
                     && setup.instance == Instance::Release,
                 last_version: persisted.last_version.clone(),
+                tour: None,
                 saved: persisted,
             }),
         };

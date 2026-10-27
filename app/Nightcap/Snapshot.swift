@@ -115,8 +115,8 @@ enum Snapshot {
         let tour = Tour(
             standsIn: true, shortcut: KeyboardShortcuts.Shortcut(.n, modifiers: [.control, .option, .command]),
             browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
-            press: {}, release: {}, begin: {}, onEnd: { _ in })
-        let sample = Tour.sampleApp
+            press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
+        let sample = Tour.sample.bundleId
         struct TourState {
             let name: String
             let step: Tour.Step

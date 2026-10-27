@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             browser: tourBrowser(core.settings()),
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
-            begin: { mac.handle(.tourStarted) },
+            begin: { mac.handle($0) },
             onEnd: { [weak self] begun in
                 guard let self else { return }
                 self.tour = nil

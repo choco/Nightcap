@@ -19,9 +19,10 @@ use crate::config::NightShiftConfig;
 use crate::state::{Persisted, Store};
 use crate::{
     Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
-    MenuItem, NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine,
-    RowImage, RowItem, RuleAction, SettingsCheck, SettingsLayers, SettingsRule, SettingsSwitch,
-    Setup, Waker, normalize_domain,
+    MenuItem, MenuPath, NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow,
+    ProblemLine, RowImage, RowItem, RuleAction, SettingsCheck, SettingsLayers, SettingsRule,
+    SettingsSwitch, Setup, TourApp, TourFacts, TourPlace, TourSite, TourTitles, Waker,
+    normalize_domain, tour_titles,
 };
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
@@ -5484,8 +5485,36 @@ fn sample_rule() -> Rule {
     }
 }
 
+const SITE: &str = "nightcap.choco.me";
+
+fn tour_sample() -> TourApp {
+    TourApp {
+        bundle_id: SAMPLE.parse().unwrap(),
+        name: "Tour Sample".to_owned(),
+    }
+}
+
+fn tour_site() -> TourSite {
+    TourSite {
+        domain: SITE.parse().unwrap(),
+        browser: "com.apple.Safari".parse().unwrap(),
+    }
+}
+
+/// The app the tour's steps give as an example of a rule that says on.
+fn mail_app() -> TourApp {
+    TourApp {
+        bundle_id: "com.apple.mail".parse().unwrap(),
+        name: "Mail".to_owned(),
+    }
+}
+
 fn start_tour(core: &Core) -> Vec<Effect> {
-    core.handle(Event::TourStarted)
+    core.handle(Event::TourStarted {
+        sample: tour_sample(),
+        site: Some(tour_site()),
+        example: mail_app(),
+    })
 }
 
 fn report(core: &Core, enabled: bool) -> Vec<Effect> {
@@ -6017,4 +6046,367 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
             None
         )]
     );
+}
+
+// What the tour's steps follow and the titles they quote (ADR-0016).
+
+/// The tour's facts, whose switch is always the Night Shift item's.
+fn tour_facts(core: &Core) -> TourFacts {
+    let facts = core.tour().expect("a tour runs").facts;
+    assert_eq!(facts.everywhere_on, core.menu().night_shift.on);
+    facts
+}
+
+fn away() -> TourPlace {
+    TourPlace {
+        in_front: false,
+        rule: None,
+        snoozed: false,
+    }
+}
+
+fn bring(core: &Core, app: &TourApp) -> Vec<Effect> {
+    core.handle(Event::AppActivated {
+        bundle_id: Some(app.bundle_id.to_string()),
+        name: Some(app.name.clone()),
+        is_browser: false,
+    })
+}
+
+fn choose(core: &Core, command: Command) -> Vec<Effect> {
+    core.handle(Event::CommandChosen { command })
+}
+
+/// The row's item that sends a command `wanted` picks out, which it must have.
+fn item_sending(row: &PlaceRow, wanted: impl Fn(&Command) -> bool) -> MenuItem {
+    row.items
+        .iter()
+        .find_map(|item| match item {
+            RowItem::Choice { item } if wanted(&item.command) => Some(item.clone()),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("no such item in {:?}", titles(row)))
+}
+
+fn snoozes(command: &Command) -> bool {
+    matches!(
+        command,
+        Command::Set {
+            length: Length::For(_),
+            ..
+        }
+    )
+}
+
+fn sample_place() -> Place {
+    Place::App(SAMPLE.parse().unwrap())
+}
+
+#[test]
+fn the_tour_reports_nothing_before_it_starts_or_once_it_ends() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    assert_eq!(core.tour(), None);
+
+    start_tour(&core);
+    assert!(core.tour().is_some());
+    core.handle(Event::TourEnded);
+    assert_eq!(core.tour(), None);
+
+    start_tour(&core);
+    core.handle(Event::Terminating);
+    assert_eq!(core.tour(), None);
+}
+
+#[test]
+fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    assert_eq!(tour_facts(&core).sample, away());
+
+    bring(&core, &tour_sample());
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            in_front: true,
+            ..away()
+        }
+    );
+    let always = choice_titled(&app_row(&core).unwrap(), "Always");
+    choose(&core, always.command);
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            in_front: true,
+            rule: Some(OnOff::Off),
+            snoozed: false,
+        }
+    );
+    bring(&core, &mail_app());
+
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            rule: Some(OnOff::Off),
+            ..away()
+        }
+    );
+}
+
+#[test]
+fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    bring(&core, &tour_sample());
+    choose(&core, add_rule(sample_rule().identity));
+
+    let snooze = item_sending(&app_row(&core).unwrap(), snoozes);
+    choose(&core, snooze.command);
+    let snoozed = TourPlace {
+        in_front: true,
+        rule: Some(OnOff::Off),
+        snoozed: true,
+    };
+    assert_eq!(tour_facts(&core).sample, snoozed);
+    let back = item_sending(&app_row(&core).unwrap(), |command| {
+        *command == Command::Reset(sample_place())
+    });
+    choose(&core, back.command);
+
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            snoozed: false,
+            ..snoozed
+        }
+    );
+}
+
+#[test]
+fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    bring(&core, &tour_sample());
+    choose(&core, add_rule(sample_rule().identity));
+    choose(&core, set(sample_place(), OnOff::On, minutes(30)));
+    bring(&core, &mail_app());
+    assert!(tour_facts(&core).sample.snoozed);
+
+    clock.set("2026-10-16T23:30:00+02:00");
+    core.handle(Event::TimerFired);
+
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            rule: Some(OnOff::Off),
+            ..away()
+        }
+    );
+}
+
+#[test]
+fn a_rule_and_a_snooze_for_the_sample_from_the_cli_show_in_its_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+
+    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            rule: Some(OnOff::Off),
+            ..away()
+        }
+    );
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(sample_place(), OnOff::On, Length::UntilScheduleTurns),
+    );
+
+    assert_eq!(
+        tour_facts(&core).sample,
+        TourPlace {
+            rule: Some(OnOff::Off),
+            snoozed: true,
+            ..away()
+        }
+    );
+}
+
+/// Starts at 23:00 with Night Shift on by the custom hours and website checking on, then
+/// starts the tour and brings Safari to the front.
+fn start_tour_in_safari(socket: &Path) -> (Core, mpsc::Receiver<()>, Arc<TestClock>) {
+    write_config(socket, "websites = true\n");
+    let (core, wakes, clock) = start_on_by_the_schedule(socket);
+    start_tour(&core);
+    activate_browser(&core, "com.apple.Safari");
+    (core, wakes, clock)
+}
+
+#[test]
+fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_tour_in_safari(&socket);
+    assert_eq!(tour_facts(&core).site, Some(away()));
+    let in_front = TourPlace {
+        in_front: true,
+        ..away()
+    };
+
+    report_host(&core, 1, SITE);
+    assert_eq!(tour_facts(&core).site, Some(in_front.clone()));
+    report_host(&core, 1, "www.nightcap.choco.me");
+    assert_eq!(tour_facts(&core).site, Some(in_front));
+    report_host(&core, 1, "example.com");
+    assert_eq!(tour_facts(&core).site, Some(away()));
+    assert_eq!(tour_facts(&core).sample, away());
+}
+
+#[test]
+fn the_sites_own_rule_shows_in_its_facts_and_a_tap_changes_only_the_switch() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_tour_in_safari(&socket);
+    report_host(&core, 1, "www.nightcap.choco.me");
+    let always = choice_titled(&site_row(&core).unwrap(), "Always");
+    assert_eq!(always.command, add_rule(domain(SITE)));
+    choose(&core, always.command);
+    let ruled = tour_facts(&core);
+    assert_eq!(
+        ruled.site,
+        Some(TourPlace {
+            in_front: true,
+            rule: Some(OnOff::Off),
+            snoozed: false,
+        })
+    );
+    assert!(ruled.everywhere_on);
+
+    choose(&core, Command::Toggle);
+
+    assert_eq!(
+        tour_facts(&core),
+        TourFacts {
+            everywhere_on: false,
+            ..ruled
+        }
+    );
+}
+
+#[test]
+fn a_tour_without_a_site_step_reports_no_site() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&socket);
+
+    core.handle(Event::TourStarted {
+        sample: tour_sample(),
+        site: None,
+        example: mail_app(),
+    });
+
+    let tour = core.tour().unwrap();
+    assert_eq!(tour.facts.site, None);
+    assert_eq!(tour.titles.add_site_rule, None);
+}
+
+#[test]
+fn the_tour_stands_in_as_night_shift_was_when_it_started_whatever_the_switch_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let off = socket_in(&dir);
+    let (core, _wakes, _clock) = start_off_by_the_schedule(&off);
+    start_tour(&core);
+    report(&core, true);
+    assert!(tour_facts(&core).stands_in);
+    choose(&core, Command::Toggle);
+    report(&core, false);
+    let tapped = tour_facts(&core);
+    assert!(tapped.stands_in);
+    assert!(!tapped.everywhere_on);
+
+    let dir = tempfile::tempdir().unwrap();
+    let on = socket_in(&dir);
+    let (core, _wakes, _clock) = start_on_by_the_schedule(&on);
+    start_tour(&core);
+    assert!(!tour_facts(&core).stands_in);
+    choose(&core, Command::Toggle);
+    report(&core, false);
+    let tapped = tour_facts(&core);
+    assert!(!tapped.stands_in);
+    assert!(!tapped.everywhere_on);
+}
+
+#[test]
+fn the_tours_titles_are_the_menus() {
+    let path = |row: &str, item: &str| MenuPath {
+        row: row.to_owned(),
+        item: item.to_owned(),
+    };
+
+    assert_eq!(
+        tour_titles(tour_sample(), Some(tour_site()), mail_app()),
+        TourTitles {
+            add_sample_rule: path("Turn Off in Tour Sample", "Always"),
+            snooze_sample: "Turn On in Tour Sample".to_owned(),
+            put_sample_rule_back: path("Turn Off in Tour Sample", "Put the Rule Back"),
+            add_site_rule: Some(path("Turn Off at This Site", "Always")),
+            add_example_rule: path("Turn On in Mail", "Always"),
+        }
+    );
+}
+
+#[test]
+fn each_title_the_tour_quotes_is_where_the_menu_shows_it_in_the_situation_its_step_describes() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "websites = true\n");
+    let (core, _wakes, _clock) = start_off_by_the_schedule(&socket);
+    start_tour(&core);
+    report(&core, true);
+    let titles = core.tour().unwrap().titles;
+    let quoted = |row: &PlaceRow, wanted: &dyn Fn(&Command) -> bool| {
+        let item = item_sending(row, wanted);
+        (
+            MenuPath {
+                row: row.title.clone(),
+                item: item.title,
+            },
+            item.command,
+        )
+    };
+    let rule_for = |identity: RuleIdentity| move |command: &Command| matches!(command, Command::AddRule { identity: ruled, .. } if *ruled == identity);
+
+    bring(&core, &tour_sample());
+    let (shown, always) = quoted(&app_row(&core).unwrap(), &rule_for(sample_rule().identity));
+    assert_eq!(shown, titles.add_sample_rule);
+    choose(&core, always);
+    let row = app_row(&core).unwrap();
+    assert_eq!(row.title, titles.snooze_sample);
+    choose(&core, item_sending(&row, snoozes).command);
+    let (shown, _) = quoted(&app_row(&core).unwrap(), &|command| {
+        *command == Command::Reset(sample_place())
+    });
+    assert_eq!(shown, titles.put_sample_rule_back);
+
+    activate_browser(&core, "com.apple.Safari");
+    report_host(&core, 1, SITE);
+    let (shown, _) = quoted(&site_row(&core).unwrap(), &rule_for(domain(SITE)));
+    assert_eq!(Some(shown), titles.add_site_rule);
+
+    choose(&core, Command::Off);
+    report(&core, false);
+    bring(&core, &mail_app());
+    let (shown, _) = quoted(&app_row(&core).unwrap(), &rule_for(mail()));
+    assert_eq!(shown, titles.add_example_rule);
 }

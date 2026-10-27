@@ -24,8 +24,14 @@ final class Tour {
         case tap, hold
     }
 
-    /// The sample app's ID, which its rule names.
-    static let sampleApp = Bundle.main.bundleIdentifier! + ".tour-sample"
+    /// Tour Sample.app, beside the CLI in Nightcap's bundle.
+    private static let sampleURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Tour Sample.app")
+    /// The sample, by the ID its rule names and the name the menu calls it by.
+    static let sample = TourApp(
+        bundleId: Bundle(url: sampleURL)!.bundleIdentifier!,
+        name: FileManager.default.displayName(atPath: sampleURL.path))
+    /// The app the steps give as an example of a rule that says on.
+    static let example = TourApp(bundleId: "com.apple.mail", name: "Mail")
     private static let site = URL(string: "https://nightcap.choco.me")!
     private static let width: CGFloat = 330
     private static let padding: CGFloat = 16
@@ -63,19 +69,19 @@ final class Tour {
     private var terminations: NSObjectProtocol?
     private let press: () -> Void
     private let release: () -> Void
-    private let begin: () -> Void
+    private let begin: (_ started: Event) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
-    /// `press` and `release` work the shortcut as its keys would, for the keycaps; `begin` runs
-    /// as the user continues from the first step, and `onEnd` once the tour is over. Without
-    /// `browser`, the tour has no site step.
+    /// `press` and `release` work the shortcut as its keys would, for the keycaps; `begin` hands
+    /// the core the tour's start as the user continues from the first step, and `onEnd` runs
+    /// once the tour is over. Without `browser`, the tour has no site step.
     init(
         standsIn: Bool,
         shortcut: KeyboardShortcuts.Shortcut?,
         browser: Browser?,
         press: @escaping () -> Void,
         release: @escaping () -> Void,
-        begin: @escaping () -> Void,
+        begin: @escaping (_ started: Event) -> Void,
         onEnd: @escaping (_ begun: Bool) -> Void
     ) {
         self.standsIn = standsIn
@@ -129,7 +135,7 @@ final class Tour {
         front = bundleId
         guard left else { return }
         switch step {
-        case .rule where was == Self.sampleApp && ruled: returned = true
+        case .rule where was == Self.sample.bundleId && ruled: returned = true
         case .rule, .snooze, .site: break
         default: return
         }
@@ -143,7 +149,7 @@ final class Tour {
         let lifted = self.forced && !forced
         let back = !self.forced && forced
         self.forced = forced
-        if back, step == .snooze, snoozed, front == Self.sampleApp {
+        if back, step == .snooze, snoozed, front == Self.sample.bundleId {
             snoozed = false
             ruleBack = true
             draw()
@@ -157,13 +163,13 @@ final class Tour {
     /// it. A rule added or removed takes the snooze with it.
     func chose(_ command: Command) {
         switch command {
-        case .addRule(.app(let bundleId), let says) where bundleId == Self.sampleApp:
+        case .addRule(.app(let bundleId), let says) where bundleId == Self.sample.bundleId:
             rule = says
             snoozed = false
-        case .removeRule(.app(let bundleId)) where bundleId == Self.sampleApp:
+        case .removeRule(.app(let bundleId)) where bundleId == Self.sample.bundleId:
             rule = nil
             snoozed = false
-        case .set(.app(let bundleId), .on, _) where bundleId == Self.sampleApp && step == .snooze && ruled:
+        case .set(.app(let bundleId), .on, _) where bundleId == Self.sample.bundleId && step == .snooze && ruled:
             snoozed = true
         case .addRule(.domain, _) where step == .site: siteRuled = true
         case .removeRule(.domain) where step == .site: siteRuled = false
@@ -217,7 +223,8 @@ final class Tour {
     private func advance() {
         if step == .moon, !begun {
             begun = true
-            begin()
+            let site = browser.map { TourSite(domain: Self.site.host()!, browser: $0.bundleId) }
+            begin(.tourStarted(sample: Self.sample, site: site, example: Self.example))
         }
         let hadSample = usesSample
         index += 1
@@ -246,13 +253,13 @@ final class Tour {
                 "And it comes back",
                 "Leave the sample and Night Shift returns, as warm as before. Every rule works this way."
             )
-        case .rule where ruled && front == Self.sampleApp:
+        case .rule where ruled && front == Self.sample.bundleId:
             return (
                 "That’s true colour",
                 "Night Shift is off while the sample is in front, and the moon shows a “z”. "
                     + "Now click another window, or the desktop."
             )
-        case .rule where front == Self.sampleApp:
+        case .rule where front == Self.sample.bundleId:
             return (
                 "Give it a rule", "Click the moon to open the menu, then choose “Turn Off in Tour Sample” › “Always”."
             )
@@ -265,7 +272,7 @@ final class Tour {
                     + "Rules work the other way too: "
                     + "while Night Shift is off, “Turn On in Mail” › “Always” keeps it on in Mail."
             )
-        case .snooze where snoozed && front == Self.sampleApp:
+        case .snooze where snoozed && front == Self.sample.bundleId:
             return (
                 "That’s a snooze",
                 "Night Shift is back in the sample until the time you chose, then the rule returns by itself. "
@@ -276,7 +283,7 @@ final class Tour {
                 "Put the rule back",
                 "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Put the Rule Back”."
             )
-        case .snooze where !ruled && front == Self.sampleApp:
+        case .snooze where !ruled && front == Self.sample.bundleId:
             return (
                 "Snoozing needs a rule",
                 "Choose “Turn Off in Tour Sample” › “Always” to give the sample its rule again."
@@ -286,7 +293,7 @@ final class Tour {
                 "Snoozing needs a rule",
                 "Bring Tour Sample back to the front, then choose “Turn Off in Tour Sample” › “Always”."
             )
-        case .snooze where front == Self.sampleApp:
+        case .snooze where front == Self.sample.bundleId:
             return (
                 "Snooze it",
                 "The rule keeps Night Shift off here. "
@@ -519,11 +526,10 @@ final class Tour {
     /// front app as the menu opens, which a window of Nightcap's wouldn't (macOS 27 hands the
     /// focus on as a status item's own app opens its menu).
     private func openSample() {
-        let url = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Tour Sample.app")
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.addsToRecentItems = false
         let log = self.log
-        NSWorkspace.shared.openApplication(at: url, configuration: configuration) { _, error in
+        NSWorkspace.shared.openApplication(at: Self.sampleURL, configuration: configuration) { _, error in
             if let error {
                 log.error("couldn't open the tour's sample: \(error.localizedDescription, privacy: .public)")
             }
@@ -534,7 +540,7 @@ final class Tour {
         ) { [weak self] notification in
             let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             MainActor.assumeIsolated {
-                guard let self, app?.bundleIdentifier == Self.sampleApp, self.usesSample else { return }
+                guard let self, app?.bundleIdentifier == Self.sample.bundleId, self.usesSample else { return }
                 self.openSample()
             }
         }
@@ -543,7 +549,7 @@ final class Tour {
     private func closeSample() {
         if let terminations { NSWorkspace.shared.notificationCenter.removeObserver(terminations) }
         terminations = nil
-        for app in NSRunningApplication.runningApplications(withBundleIdentifier: Self.sampleApp) {
+        for app in NSRunningApplication.runningApplications(withBundleIdentifier: Self.sample.bundleId) {
             app.terminate()
         }
     }
