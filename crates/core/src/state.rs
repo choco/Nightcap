@@ -27,11 +27,12 @@ pub(crate) struct State {
     pub(crate) facts: Facts,
     pub(crate) places: Places,
     pub(crate) strength: Option<u8>,
-    pub(crate) loaded: Loaded,
-    pub(crate) onboarding: u32,
     pub(crate) reconciling: Reconciling,
     pub(crate) watching: Watching,
     pub(crate) grants: Grants,
+    pub(crate) loaded: Loaded,
+    /// See `Persisted::onboarding`.
+    pub(crate) onboarding: u32,
     /// See `Persisted::last_version`.
     pub(crate) last_version: Option<String>,
     /// What the running tour's steps follow, while one runs (ADR-0016).
