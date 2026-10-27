@@ -170,12 +170,17 @@ final class Tour {
         if let before = self.report?.facts, let after = report?.facts { follow(from: before, to: after) }
         self.report = report
         self.moon = moon
+        guard reported else { return }
         if shown != drawn {
             draw()
         } else if step == .peek {
             update()
         }
     }
+
+    /// Whether the step can be drawn: every step after the first follows the core's report,
+    /// which arrives once the core has decided the tour's start.
+    private var reported: Bool { step == .moon || report != nil }
 
     /// Records what the step at hand saw happen between two reports.
     private func follow(from before: TourFacts, to after: TourFacts) {
@@ -241,7 +246,7 @@ final class Tour {
         log.info("tour at step \(String(describing: self.step), privacy: .public)")
         if step == .rule { openSample() }
         if step == .site { NSWorkspace.shared.open(Self.siteURL) }
-        draw()
+        if reported { draw() }
     }
 
     private var stepLabel: String {

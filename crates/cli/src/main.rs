@@ -18,7 +18,7 @@ use nightcap_protocol::{
     Status, TimeOfDay,
 };
 
-/// How long the daemon may take to answer, including its main thread's tick.
+/// How long the daemon may take to answer, including the core's turn at a command.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Parser)]

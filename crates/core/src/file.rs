@@ -206,8 +206,8 @@ mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, ErrorCode, Install, Instance, Layer, Length, OnOff, Payload, Place, PlaceLayers,
-        Response, RuleIdentity, Schedule, TimeOfDay,
+        Command, ErrorCode, Install, Instance, Layer, Length, OnOff, Place, PlaceLayers,
+        RuleIdentity, Schedule, TimeOfDay,
     };
 
     use super::{Disk, File, Files, Owned, Paths};
@@ -310,9 +310,7 @@ mod tests {
         });
 
         assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
-        let Response::Ok(Payload::Status(status)) = inner.status() else {
-            panic!("expected a status");
-        };
+        let status = inner.status();
         assert_eq!(status.rules, Vec::new());
         assert_eq!(
             status.layers,

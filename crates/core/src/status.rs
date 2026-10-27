@@ -1,14 +1,15 @@
-//! The CLI's requests (ADR-0010), which the IPC thread queues for the next tick: commands,
-//! status, the rules, an export, an update check and a reload.
+//! The CLI's requests (ADR-0010): commands, an update check and a reload, which the socket's
+//! thread puts into the core's mailbox, and the status, the rules and an export, which it answers
+//! from the snapshot.
 
 use nightcap_protocol::{
-    ErrorCode, ErrorReply, Instance, OnOff, Payload, Permissions, Query, Request, Response,
-    Schedule, Status, WebsiteChecking,
+    ErrorCode, ErrorReply, Instance, OnOff, Payload, Permissions, Request, Response, Schedule,
+    Status, WebsiteChecking,
 };
 
-use crate::commands::refused;
+use crate::server::Snapshot;
 use crate::state::Inner;
-use crate::{Effect, Outcome, adhoc};
+use crate::{Effect, Outcome};
 
 impl Inner {
     /// Answers a CLI request in a turn of its own. A problem it causes isn't announced: the CLI
@@ -25,25 +26,8 @@ impl Inner {
                 Ok(decision) => Response::Ok(Payload::Decision(decision)),
                 Err(error) => Response::Error(error),
             },
-            Request::Query(Query::Status) => self.status(),
-            Request::Query(Query::Rules) => {
-                let look = self.places.look(&self.facts.world(self.clock.now()));
-                Response::Ok(Payload::Rules(
-                    look.rules
-                        .into_iter()
-                        .map(|(rule, _)| rule.clone())
-                        .collect(),
-                ))
-            }
-            Request::Query(Query::Export(format)) => {
-                match adhoc::export(&self.places.kept().ad_hoc, *format) {
-                    Ok(text) => Response::Ok(Payload::Export(text)),
-                    Err(error) => Response::Error(refused(
-                        ErrorCode::Internal,
-                        format!("couldn't write the rules as TOML: {error}"),
-                    )),
-                }
-            }
+            // The socket's thread answers queries from the snapshot, which says the same.
+            Request::Query(query) => Snapshot::of(self).answer(query),
             Request::Update => {
                 if self.manages_itself {
                     tracing::info!("checking for updates");
@@ -62,16 +46,17 @@ impl Inner {
                 })
             }
             Request::Reload => match self.reload(effects) {
-                Ok(()) => self.status(),
+                Ok(()) => Response::Ok(Payload::Status(Box::new(self.status()))),
                 Err(error) => Response::Error(error),
             },
         }
     }
 
-    pub(crate) fn status(&self) -> Response {
+    /// The CLI's report: the decision and everything behind it.
+    pub(crate) fn status(&self) -> Status {
         let facts = &self.facts;
         let look = self.places.look(&facts.world(self.clock.now()));
-        Response::Ok(Payload::Status(Box::new(Status {
+        Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: self.install,
             night_shift: facts.night_shift,
@@ -109,6 +94,6 @@ impl Inner {
                 notifications: self.grants.notifications,
             },
             checks: self.checks(self.clock.now()),
-        })))
+        }
     }
 }

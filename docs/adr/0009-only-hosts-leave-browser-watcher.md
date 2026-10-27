@@ -4,9 +4,9 @@ The browser watcher sees every URL the user visits; that stream amounts to a bro
 
 ## Decision
 
-The browser watcher passes only the host to the main thread and the core. A host is logged only when it changed the force, and is formatted as private, so the system log redacts it unless you're debugging. A host that matches nothing is logged at debug level at most. Nightcap reaches the network only for the daily appcast check of a self-managed install (ADR-0011) and for sites' icons (ADR-0019), which it never logs.
+The browser watcher passes only the host to the main thread and the core. A host is logged only as Night Shift changes while it's in front, and is formatted as private, so the system log redacts it unless you're debugging. A host that matches nothing is logged at debug level at most. Nightcap reaches the network only for the daily appcast check of a self-managed install (ADR-0011) and for sites' icons (ADR-0019), which it never logs.
 
-`tracing-oslog` formats every message as public, so the core never logs a host or a domain-rule target: it names domain reasons by kind and source only, e.g. "domain rule (config)". The shell logs the host and the matched domain with `privacy: .private`, and only when an effect changed Night Shift.
+`tracing-oslog` formats every message as public, so the core never logs a host or a domain-rule target: it names domain reasons by kind and source only, e.g. "domain rule (config)". The shell logs the host with `privacy: .private`, and only as it carries out a change to Night Shift while a browser is watched: no sender sees which input an effect answers (ADR-0002).
 
 ## Rejected alternatives
 

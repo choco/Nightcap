@@ -16,6 +16,7 @@ mod places;
 mod react;
 mod rows;
 mod schedule;
+mod server;
 mod settings;
 mod shell;
 #[cfg(any(test, debug_assertions))]
@@ -31,10 +32,10 @@ pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
+pub use server::Listener;
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
 pub use shell::{
-    CoreError, Effect, Event, Fact, LoginItem, Outcome, UiCommand, Waker, is_bundle_id,
-    normalize_domain,
+    CoreError, Effect, Event, Fact, LoginItem, Outcome, UiCommand, is_bundle_id, normalize_domain,
 };
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
@@ -46,21 +47,35 @@ pub use file::File;
 pub use staging::{Scenario, ScenarioError, Staged, Step};
 
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::os::unix::net::UnixListener;
+use std::sync::{Arc, mpsc};
 
 use nightcap_protocol::{Command, ExportFormat};
 
-#[cfg(not(any(test, debug_assertions)))]
-use file::File;
 use file::{Disk, Paths};
-use react::{Input, react};
+use react::Input;
+#[cfg(any(test, debug_assertions))]
+use react::react;
+use server::{Mail, Mailbox, Published, Snapshot};
 use start::{Setup, SystemClock, install_of, instance_of, zone_of};
 use state::Inner;
 
+/// The core, a server on its own thread (ADR-0002): facts and commands go into its mailbox and
+/// return at once, its listener hears each one's outcome, and the reads answer from the snapshot
+/// it publishes after each.
 #[derive(uniffi::Object)]
 pub struct Core {
-    requests: Mutex<mpsc::Receiver<ipc::Pending>>,
-    inner: Mutex<Inner>,
+    published: Arc<Published>,
+    runs: Runs,
+}
+
+/// Where a core decides its inputs.
+enum Runs {
+    /// On the core's own thread, which takes them from its mailbox.
+    Thread(Mailbox),
+    /// As each arrives, on the caller's thread: a staged core.
+    #[cfg(any(test, debug_assertions))]
+    Inline(Arc<staging::Inline>),
 }
 
 impl fmt::Debug for Core {
@@ -74,58 +89,77 @@ impl Core {
     /// Starts the core for the app with this bundle ID, which picks the instance: its
     /// subsystem for logging and its socket. Fails if that instance is already running.
     /// `bundle_writable` says whether the user can replace the app bundle, which makes it a
-    /// self-managed install. `time_zone` is the system's IANA time zone ID.
+    /// self-managed install. `time_zone` is the system's IANA time zone ID. `listener` hears
+    /// the outcome of every fact and command, on the core's thread.
     #[uniffi::constructor]
-    pub fn new(
+    pub fn start(
         bundle_id: String,
         bundle_writable: bool,
         time_zone: String,
-        waker: Arc<dyn Waker>,
+        listener: Arc<dyn Listener>,
     ) -> Result<Arc<Self>, CoreError> {
         let instance = instance_of(&bundle_id)?;
         logging::init(&bundle_id);
-        let socket = instance.socket_path().map_err(|error| CoreError::Io {
+        let path = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
         let files = Disk(Paths::xdg(instance)?);
         let zone = zone_of(&time_zone)?;
         let install = install_of(bundle_writable);
         // Before any file is read, so a second instance stops here.
-        let requests = ipc::serve(&socket, waker)?;
+        let socket = ipc::bind(&path)?;
         let inner = Inner::start(Setup {
             instance,
             install,
-            socket: Some(socket),
+            socket: Some(path),
             files: Arc::new(files),
             clock: Arc::new(SystemClock),
             zone,
         });
+        let core = Self::run(inner, Some(socket), listener)?;
         tracing::info!(
             "core {} listening, {install:?} install",
             env!("CARGO_PKG_VERSION")
         );
-        Ok(Arc::new(Self::serving(inner, requests)))
+        Ok(Arc::new(core))
     }
 
     /// Something macOS observed.
-    pub fn report(&self, fact: Fact) -> Outcome {
-        react(&mut self.inner(), Input::Fact(fact))
+    pub fn report(&self, fact: Fact) {
+        self.post(Input::Fact(fact));
     }
 
     /// A command from the menu-bar UI, which hears of a refusal as an event.
-    pub fn send(&self, command: Command) -> Outcome {
-        react(&mut self.inner(), Input::Command(command))
+    pub fn send(&self, command: Command) {
+        self.post(Input::Command(command));
     }
 
     /// A command only the menu-bar UI sends.
-    pub fn send_ui(&self, command: UiCommand) -> Outcome {
-        react(&mut self.inner(), Input::UiCommand(command))
+    pub fn send_ui(&self, command: UiCommand) {
+        self.post(Input::UiCommand(command));
     }
 
-    /// Releases every force as the app quits (ADR-0008), with what the shell must carry out
-    /// before it exits.
+    /// Releases every force as the app quits (ADR-0008), once everything before it is decided,
+    /// and returns what the shell must carry out before it exits. The core decides nothing
+    /// after.
     pub fn stop(&self) -> Outcome {
-        react(&mut self.inner(), Input::Terminating)
+        match &self.runs {
+            Runs::Thread(mailbox) => {
+                let (reply, released) = mpsc::channel();
+                match mailbox.post(Mail::Stop { reply }) {
+                    Ok(()) => released.recv().unwrap_or_else(|_| {
+                        tracing::error!("the core's thread ended before releasing every force");
+                        Outcome::default()
+                    }),
+                    Err(error) => {
+                        tracing::warn!("asked to stop again: {error}");
+                        Outcome::default()
+                    }
+                }
+            }
+            #[cfg(any(test, debug_assertions))]
+            Runs::Inline(inline) => inline.decide(|inner| react(inner, Input::Terminating)),
+        }
     }
 
     /// The ad-hoc rules, written for the config (ADR-0007).
@@ -134,66 +168,55 @@ impl Core {
         reason = "TOML refuses only shapes the rule lists never have, and the shell's call can't fail"
     )]
     pub fn export(&self, format: ExportFormat) -> String {
-        adhoc::export(&self.inner().places.kept().ad_hoc, format).expect("rules always serialize")
+        adhoc::export(&self.published.latest().ad_hoc, format).expect("rules always serialize")
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {
-        OnboardingSteps::new(&self.inner())
+        self.published.latest().onboarding.clone()
     }
 
     pub fn settings(&self) -> Settings {
-        let inner = self.inner();
-        Settings::new(&inner, inner.clock.now(), &inner.files.path(File::Config))
+        self.published.latest().settings.clone()
     }
 
     pub fn menu(&self) -> Menu {
-        let inner = self.inner();
-        Menu::new(&inner, inner.clock.now())
+        self.published.latest().menu.clone()
     }
 
     /// What the tour's steps follow and the titles they quote, or None while no tour runs.
     pub fn tour(&self) -> Option<TourSnapshot> {
-        let inner = self.inner();
-        let tour = inner.tour.as_ref()?;
-        Some(tour.report(&inner.places.look(&inner.facts.world(inner.clock.now()))))
-    }
-
-    /// Answers the CLI's requests waiting since the last tick, each in a turn of its own.
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    pub fn tick(&self) -> Outcome {
-        let requests = self
-            .requests
-            .lock()
-            .expect("no panic happens while it's held");
-        let mut inner = self.inner();
-        let mut outcome = Outcome::default();
-        for pending in requests.try_iter() {
-            let (answered, response) = inner.answer(&pending.request);
-            pending.reply(response);
-            outcome.effects.extend(answered.effects);
-            outcome.events.extend(answered.events);
-        }
-        outcome
+        self.published.latest().tour.clone()
     }
 }
 
 impl Core {
-    /// A core deciding from `inner`, answering the requests the IPC thread queues on each tick.
-    pub(crate) fn serving(inner: Inner, requests: mpsc::Receiver<ipc::Pending>) -> Self {
-        Self {
-            requests: Mutex::new(requests),
-            inner: Mutex::new(inner),
+    /// A core deciding from `inner` on its own thread, which tells `listener` each outcome, with
+    /// `socket`'s thread putting the CLI's requests into its mailbox.
+    pub(crate) fn run(
+        inner: Inner,
+        socket: Option<UnixListener>,
+        listener: Arc<dyn Listener>,
+    ) -> Result<Self, CoreError> {
+        let published = Arc::new(Published::new(Snapshot::of(&inner)));
+        let mailbox = server::spawn(inner, published.clone(), listener)?;
+        if let Some(socket) = socket {
+            ipc::serve(socket, mailbox.clone(), published.clone())?;
         }
+        Ok(Self {
+            published,
+            runs: Runs::Thread(mailbox),
+        })
     }
 
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    pub(crate) fn inner(&self) -> MutexGuard<'_, Inner> {
-        self.inner.lock().expect("no panic happens while it's held")
+    fn post(&self, input: Input) {
+        match &self.runs {
+            Runs::Thread(mailbox) => {
+                if let Err(error) = mailbox.post(Mail::Input(input)) {
+                    tracing::warn!("dropped an input: {error}");
+                }
+            }
+            #[cfg(any(test, debug_assertions))]
+            Runs::Inline(inline) => _ = inline.decide(|inner| react(inner, input)),
+        }
     }
 }

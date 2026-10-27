@@ -13,6 +13,8 @@ const ONBOARDING: u32 = 1;
 /// What onboarding asks, pulled like the menu: the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OnboardingSteps {
+    /// Done for this version: the user went through it, or the config answered all it asks.
+    pub finished: bool,
     pub night_shift: OnboardingNightShift,
     /// Website checking as the config sets it, which answers its step for good.
     pub websites_from_config: Option<bool>,
@@ -38,6 +40,7 @@ impl OnboardingSteps {
     /// What onboarding asks, as `inner` has it.
     pub(crate) fn new(inner: &Inner) -> Self {
         OnboardingSteps {
+            finished: inner.onboarding >= ONBOARDING,
             night_shift: inner.onboarding_night_shift(),
             websites_from_config: inner.facts.config_websites,
             opens_at_login: inner

@@ -44,7 +44,7 @@ struct Notice: Equatable {
         }
     }
 
-    private init(title: String, body: String, opens: URL? = nil) {
+    init(title: String, body: String, opens: URL? = nil) {
         self.title = title
         self.body = body
         self.opens = opens

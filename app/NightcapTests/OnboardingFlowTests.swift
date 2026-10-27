@@ -40,7 +40,7 @@ private func onboarding(
         rules: { core.settings().rules }, accessibilityGranted: { true }, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
-            _ = core.send(command: command)
+            core.send(command: command)
         },
         notifications: notifications, askForNotifications: {}, onFinish: onFinish)
 }

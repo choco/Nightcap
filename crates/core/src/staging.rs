@@ -1,8 +1,10 @@
-//! Cores staged in memory, for tests and the dev build's snapshots: no socket, no IPC thread
-//! and no disk. A scene is the files' text and what happens after, and the core gets there by
-//! its own code. Release builds have none of this, so the app there can't stage a core.
+//! Cores staged in memory, for tests and the dev build's snapshots: no thread of their own, no
+//! socket and no disk. Each decides an input on the caller's thread before it returns. A scene is
+//! the files' text and what happens after, and the core gets there by its own code. Release
+//! builds have none of this, so the app there can't stage a core.
 
-use std::sync::{Arc, Mutex, MutexGuard, mpsc};
+use std::fmt;
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -11,11 +13,11 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::file::{File, Memory, Paths};
-use crate::ipc::Pending;
 use crate::react::{Input, react};
+use crate::server::{Published, Snapshot};
 use crate::start::{Clock, Setup, install_of, instance_of, zone_of};
 use crate::state::Inner;
-use crate::{Core, Fact, Outcome, UiCommand};
+use crate::{Core, Fact, Outcome, Runs, UiCommand};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in
 /// their own formats, then what happens, in order.
@@ -89,7 +91,8 @@ pub enum ScenarioError {
 #[uniffi::export]
 impl Core {
     /// A core staged in memory from `scenario`, which answers nothing over a socket and
-    /// touches no file. Dev builds only.
+    /// touches no file. It decides each fact and command before `report` or `send` returns,
+    /// and tells no one their outcomes. Dev builds only.
     #[uniffi::constructor]
     pub fn staged(scenario: Scenario) -> Result<Arc<Self>, ScenarioError> {
         Ok(scenario.stage()?.core)
@@ -199,17 +202,44 @@ impl Scenario {
     }
 }
 
-/// A staged core with what it runs on in reach: its files, its clock, and the requests the IPC
-/// thread would queue. The crate's integration tests drive it, and read each input's outcome.
+/// A staged core with what it runs on in reach: its files and its clock. The crate's
+/// integration tests drive it, and read each input's outcome, as `react` decides it.
 #[derive(Debug)]
 pub struct Staged {
     core: Arc<Core>,
+    inline: Arc<Inline>,
     files: Arc<Memory>,
     clock: Arc<ManualClock>,
-    requests: mpsc::Sender<Pending>,
     instance: Instance,
     install: Install,
     zone: TimeZone,
+}
+
+/// What a staged core decides on, and the snapshot its reads answer from.
+pub(crate) struct Inline {
+    inner: Mutex<Inner>,
+    published: Arc<Published>,
+}
+
+impl fmt::Debug for Inline {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("Inline").finish_non_exhaustive()
+    }
+}
+
+impl Inline {
+    /// Runs `decide` on the staged core, then publishes what it left, as the core's thread does
+    /// after each input.
+    #[expect(
+        clippy::expect_used,
+        reason = "panics abort (ADR-0002), so none can poison the lock"
+    )]
+    pub(crate) fn decide<T>(&self, decide: impl FnOnce(&mut Inner) -> T) -> T {
+        let mut inner = self.inner.lock().expect("no panic happens while it's held");
+        let answer = decide(&mut inner);
+        self.published.publish(Snapshot::of(&inner));
+        answer
+    }
 }
 
 impl Staged {
@@ -221,7 +251,6 @@ impl Staged {
         now: Timestamp,
     ) -> Self {
         let clock = Arc::new(ManualClock::new(now));
-        let (requests, receiver) = mpsc::channel();
         let inner = Inner::start(Setup {
             instance,
             install,
@@ -230,11 +259,19 @@ impl Staged {
             clock: clock.clone(),
             zone: zone.clone(),
         });
+        let published = Arc::new(Published::new(Snapshot::of(&inner)));
+        let inline = Arc::new(Inline {
+            inner: Mutex::new(inner),
+            published: published.clone(),
+        });
         Self {
-            core: Arc::new(Core::serving(inner, receiver)),
+            core: Arc::new(Core {
+                published,
+                runs: Runs::Inline(inline.clone()),
+            }),
+            inline,
             files,
             clock,
-            requests,
             instance,
             install,
             zone,
@@ -248,18 +285,19 @@ impl Staged {
 
     /// Reports a fact as the shell does, and returns its outcome.
     pub fn report(&self, fact: Fact) -> Outcome {
-        react(&mut self.core.inner(), Input::Fact(fact))
+        self.inline.decide(|inner| react(inner, Input::Fact(fact)))
     }
 
     /// Sends a command as the menu-bar UI does, and returns its outcome, which tells of a
     /// refusal as an event, and what the core answers.
     pub fn send(&self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
-        self.core.inner().choose(command)
+        self.inline.decide(|inner| inner.choose(command))
     }
 
     /// Sends a command only the menu-bar UI has, and returns its outcome.
     pub fn send_ui(&self, command: UiCommand) -> Outcome {
-        react(&mut self.core.inner(), Input::UiCommand(command))
+        self.inline
+            .decide(|inner| react(inner, Input::UiCommand(command)))
     }
 
     /// Quits as the shell does, and returns what it must carry out before it exits.
@@ -268,18 +306,16 @@ impl Staged {
     }
 
     /// Sends a request as the CLI does, and returns its outcome and the response, which
-    /// crosses the wire format both ways, as over the socket.
-    #[expect(
-        clippy::expect_used,
-        reason = "the core holds the receiver, and its tick answers every request it finds"
-    )]
+    /// crosses the wire format both ways, as over the socket. A query is answered from the
+    /// snapshot, as the socket's thread answers it, and leads to nothing.
     pub fn request(&self, request: Request) -> (Outcome, Response) {
-        let (pending, response) = Pending::new(over_the_wire(&request));
-        self.requests
-            .send(pending)
-            .expect("the core is there to receive it");
-        let outcome = self.core.tick();
-        let response = response.try_recv().expect("the tick answers the request");
+        let (outcome, response) = match over_the_wire(&request) {
+            Request::Query(query) => (
+                Outcome::default(),
+                self.inline.published.latest().answer(&query),
+            ),
+            request => self.inline.decide(|inner| inner.answer(&request)),
+        };
         (outcome, over_the_wire(&response))
     }
 

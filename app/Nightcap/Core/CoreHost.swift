@@ -2,28 +2,39 @@ import AppKit
 import NightcapCore
 import ServiceManagement
 import Sparkle
+import Synchronization
 import UserNotifications
 import os
 
-/// Between macOS and the core, on the main thread (ADR-0002): what macOS reports, read and handed
-/// to the core as facts, and the outcome the core answers with, its effects carried out and its
-/// events told. Every fact and command reaches the core through here, so every outcome is carried
-/// out here.
-final class Mac: NSObject {
+/// Between macOS and the core (ADR-0002). It starts the core, reports what macOS observes as
+/// facts, and sends the UI's commands. It's the core's one listener: the outcome of every fact
+/// and command, the CLI's too, arrives on the core's thread and is carried out here on the main
+/// queue, in the order the core decided them, its effects by the adapters that drive macOS and its
+/// events by whoever subscribed. No sender looks at an outcome.
+final class CoreHost: NSObject {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
-    private let core: Core
+    /// The core, whose reads answer from the snapshot it published after its last input.
+    let core: Core
+    private let inbox: Inbox
     private let dockIcon: DockIcon
+    private let notifications: Notifications
     private let accessibilityChanged: () -> Void
     private let notificationsChanged: () -> Void
     private let showOnboarding: () -> Void
-    private let changed: () -> Void
+    private var eventHandlers: [(Event) -> Void] = []
+    private var changeHandlers: [() -> Void] = []
+    /// Run once, after the next outcome is carried out.
+    private var nextChangeHandlers: [() -> Void] = []
     private(set) var nightShift: NightShiftAdapter?
     private(set) var accessibility: AccessibilityPermission?
     private var browserWatcher: BrowserWatcher?
+    /// The watched browser's host as last read, which is logged only as Night Shift changes
+    /// (ADR-0009).
+    private var watchedHost: String?
     private var wakeup: DispatchSourceTimer?
     private var updater: SPUStandardUpdaterController?
-    private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon) { [weak self] title, body, id in
-        self?.notify(title: title, body: body, opens: nil, id: id)
+    private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon) { [notifications] title, body, id in
+        notifications.post(Notice(title: title, body: body), id: id)
     }
     /// Re-reads the permissions every second while onboarding or Settings is open, and every 30
     /// seconds otherwise: macOS posts nothing when notifications are switched in System Settings.
@@ -33,29 +44,35 @@ final class Mac: NSObject {
     private var reportedLoginItem: LoginItem?
     private var reportedStrength: UInt8?
     private var observers: [NSObjectProtocol] = []
-    /// Calls into the core waiting for the outcomes before them to go out.
-    private var waiting: [() -> Outcome] = []
-    private var carryingOut = false
 
-    /// `accessibilityChanged` runs as the grant flips; `notificationsChanged` as a read finds
-    /// notifications changed; `showOnboarding` when the core asks for onboarding; and `changed`
-    /// once a call into the core and the calls its effects led to are all carried out.
+    /// Starts the core, which throws `CoreError.AlreadyRunning` while another Nightcap serves this
+    /// instance's socket. `notifications` posts Sparkle's reminders; `accessibilityChanged` runs
+    /// as the grant flips, `notificationsChanged` as a read finds notifications changed, and
+    /// `showOnboarding` when the core asks for onboarding.
     init(
-        core: Core,
         dockIcon: DockIcon,
+        notifications: Notifications,
         accessibilityChanged: @escaping () -> Void,
         notificationsChanged: @escaping () -> Void,
-        showOnboarding: @escaping () -> Void,
-        changed: @escaping () -> Void
-    ) {
-        self.core = core
+        showOnboarding: @escaping () -> Void
+    ) throws {
+        let inbox = Inbox()
+        let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
+        core = try Core.start(
+            bundleId: Bundle.main.bundleIdentifier!,
+            bundleWritable: FileManager.default.isWritableFile(atPath: bundleFolder),
+            timeZone: TimeZone.current.identifier,
+            listener: inbox)
+        self.inbox = inbox
         self.dockIcon = dockIcon
+        self.notifications = notifications
         self.accessibilityChanged = accessibilityChanged
         self.notificationsChanged = notificationsChanged
         self.showOnboarding = showOnboarding
-        self.changed = changed
         super.init()
-        UNUserNotificationCenter.current().delegate = self
+        // An outcome that arrives before this waits in the inbox for the main queue, which this
+        // holds until it returns.
+        inbox.receive = { [weak self] outcome in self?.carryOut(outcome) }
         accessibility = AccessibilityPermission { [weak self] _ in
             self?.accessibilityChanged()
             Task { await self?.reportSystemState() }
@@ -71,14 +88,72 @@ final class Mac: NSObject {
         string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
             + "?id=\(Bundle.main.bundleIdentifier!)")!
 
-    /// Whether Sparkle runs, which the launch's effects decide.
+    /// Whether Sparkle runs, which the launch's outcome decides.
     var updaterRunning: Bool { updater != nil }
 
     /// Notifications as the core last heard of them; not asked for until the first read, as the
     /// core starts.
-    var notifications: NotificationPermission { reportedPermissions?.notifications ?? .notRequested }
+    var notificationPermission: NotificationPermission { reportedPermissions?.notifications ?? .notRequested }
 
-    /// The launch's facts, then the launch itself, whose effects can open onboarding.
+    // MARK: Subscriptions
+
+    /// Calls `handler` with each event the core tells, as its outcome is carried out.
+    func onEvent(_ handler: @escaping (Event) -> Void) {
+        eventHandlers.append(handler)
+    }
+
+    /// Calls `handler` once each outcome is carried out, so what shows the core's state redraws.
+    func onChange(_ handler: @escaping () -> Void) {
+        changeHandlers.append(handler)
+    }
+
+    /// Calls `handler` once, after the next outcome is carried out: the one a command sent now
+    /// leads to, unless another input was already on its way.
+    func onNextChange(_ handler: @escaping () -> Void) {
+        nextChangeHandlers.append(handler)
+    }
+
+    // MARK: Commands in
+
+    /// A command from the menu, Settings, onboarding or the shortcut, the same as the CLI's.
+    func send(_ command: Command) {
+        core.send(command: command)
+    }
+
+    /// A command only the UI has.
+    func send(_ command: UiCommand) {
+        core.sendUi(command: command)
+    }
+
+    /// The shell carries out its own fixes and hands the core's to it, each named, so a new fix
+    /// has to be given to one or the other.
+    func perform(_ fix: Fix) {
+        switch fix {
+        case .askForAccessibility:
+            accessibility?.ask()
+        case .allowNotifications:
+            allowNotifications()
+        case .openLoginItems:
+            SMAppService.openSystemSettingsLoginItems()
+        case .openLocationServices:
+            let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
+            NSWorkspace.shared.open(URL(string: pane)!)
+        case .stopCheckingWebsites, .keepNotificationsOff, .keepScheduleOff, .openAtLogin, .dontOpenAtLogin, .reload:
+            send(.fix(fix))
+        }
+    }
+
+    /// Releases every force as the app quits (ADR-0008). The core decides what came before, then
+    /// what releases them, and both are carried out here, in order, before the app exits.
+    func stop() {
+        let released = core.stop()
+        inbox.handOver()
+        carryOut(released)
+    }
+
+    // MARK: Facts in
+
+    /// The launch's facts, then the launch itself, whose outcome can open onboarding.
     func launch() {
         // The context first, so a force still in place after a crash holds without a flash.
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
@@ -97,55 +172,10 @@ final class Mac: NSObject {
         // Every 30 seconds from here; onboarding, which the launch can open, has the permissions
         // read every second.
         pollPermissions(every: 30)
-        report(.launched)
+        core.report(fact: .launched)
         // Once now, so status is right while the notification prompt waits for an answer.
         Task { await reportSystemState() }
         watchSystem()
-    }
-
-    /// Hands `fact` to the core and carries out its outcome.
-    func report(_ fact: Fact) {
-        run { [core] in core.report(fact: fact) }
-    }
-
-    /// Sends the core a command from the menu, Settings, onboarding or the shortcut, and carries
-    /// out its outcome.
-    func send(_ command: Command) {
-        run { [core] in core.send(command: command) }
-    }
-
-    /// Sends the core a command only the UI has, and carries out its outcome.
-    func send(_ command: UiCommand) {
-        run { [core] in core.sendUi(command: command) }
-    }
-
-    /// Releases every force as the app quits (ADR-0008), carried out before it exits.
-    func stop() {
-        run { [core] in core.stop() }
-    }
-
-    /// The core's own threads have work for it, such as a CLI request (ADR-0002).
-    func tick() {
-        reportStrength()
-        run { [core] in core.tick() }
-    }
-
-    /// The shell carries out its own fixes and hands the core's back to it, each named, so a new
-    /// fix has to be given to one or the other.
-    func perform(_ fix: Fix) {
-        switch fix {
-        case .askForAccessibility:
-            accessibility?.ask()
-        case .allowNotifications:
-            allowNotifications()
-        case .openLoginItems:
-            SMAppService.openSystemSettingsLoginItems()
-        case .openLocationServices:
-            let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
-            NSWorkspace.shared.open(URL(string: pane)!)
-        case .stopCheckingWebsites, .keepNotificationsOff, .keepScheduleOff, .openAtLogin, .dontOpenAtLogin, .reload:
-            send(.fix(fix))
-        }
     }
 
     /// `closely` while onboarding or Settings, which show the permissions, is open: they're read
@@ -184,10 +214,11 @@ final class Mac: NSObject {
         guard let accessibility else { return }
         let permissions = (accessibility: accessibility.granted, notifications: read)
         if let reportedPermissions, reportedPermissions == permissions { return }
-        let notificationsDiffer = read != notifications
+        let notificationsDiffer = read != notificationPermission
         reportedPermissions = permissions
-        report(
-            .permissionsChanged(accessibility: permissions.accessibility, notifications: permissions.notifications))
+        core.report(
+            fact: .permissionsChanged(
+                accessibility: permissions.accessibility, notifications: permissions.notifications))
         if notificationsDiffer { notificationsChanged() }
     }
 
@@ -201,46 +232,38 @@ final class Mac: NSObject {
         updater.checkForUpdates(nil)
     }
 
-    // MARK: Facts in
-
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
-        report(
-            .statusChanged(
+        core.report(
+            fact: .statusChanged(
                 enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside))
     }
 
     /// CoreBrightness announces no strength change, so the strength is read whenever something
     /// may be about to show it: at launch, with every re-read of the permissions (the menu
-    /// opening, Settings or onboarding open, an app switch), before each tick, which answers the
-    /// CLI, and after each saved write. A read costs under a millisecond.
+    /// opening, Settings or onboarding open, an app switch, and every 30 seconds otherwise), and
+    /// after each saved write. A read costs under a millisecond.
     private func reportStrength() {
         guard let strength = nightShift?.strength, strength != reportedStrength else { return }
         reportedStrength = strength
-        report(.strengthChanged(value: strength))
+        core.report(fact: .strengthChanged(value: strength))
     }
 
     /// CoreBrightness reports sun times only a day either side of now, so they're re-read
     /// whenever time may have moved on: at launch, on waking and before each wakeup.
     private func reportSunTimes() {
         guard let sunTimes = nightShift?.sunTimes else { return }
-        report(.sunTimesChanged(sunrises: sunTimes.sunrises, sunsets: sunTimes.sunsets))
+        core.report(fact: .sunTimesChanged(sunrises: sunTimes.sunrises, sunsets: sunTimes.sunsets))
     }
 
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
-        report(.appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
+        core.report(fact: .appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
     }
 
-    /// The host is logged, as private, only when it changed Night Shift (ADR-0009).
     private func reportHost(generation: UInt64, host: String?) {
-        run { [core, log] in
-            let outcome = core.report(fact: .hostChanged(generation: generation, host: host))
-            if outcome.effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
-                log.info("the browser's host \(host ?? "(unknown)", privacy: .private) changed Night Shift")
-            }
-            return outcome
-        }
+        watchedHost = host
+        core.report(fact: .hostChanged(generation: generation, host: host))
     }
 
     private func reportLoginItem() {
@@ -253,7 +276,7 @@ final class Mac: NSObject {
             }
         guard item != reportedLoginItem else { return }
         reportedLoginItem = item
-        report(.loginItemChanged(item: item))
+        core.report(fact: .loginItemChanged(item: item))
     }
 
     private func watchSystem() {
@@ -275,7 +298,7 @@ final class Mac: NSObject {
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.reportSunTimes()
-                    self?.report(.woke)
+                    self?.core.report(fact: .woke)
                 }
             })
         // Fast user switching: while another user is in front, the core writes nothing and
@@ -285,7 +308,7 @@ final class Mac: NSObject {
                 forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.report(.sessionChanged(active: false))
+                    self?.core.report(fact: .sessionChanged(active: false))
                 }
             })
         observers.append(
@@ -295,7 +318,7 @@ final class Mac: NSObject {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.reportSunTimes()
-                    self.report(.sessionChanged(active: true))
+                    self.core.report(fact: .sessionChanged(active: true))
                     if let status = self.nightShift?.status {
                         self.reportNightShift(status)
                     }
@@ -308,7 +331,7 @@ final class Mac: NSObject {
                 MainActor.assumeIsolated {
                     // TimeZone.current caches the zone it first read.
                     NSTimeZone.resetSystemTimeZone()
-                    self?.report(.timeZoneChanged(ianaId: TimeZone.current.identifier))
+                    self?.core.report(fact: .timeZoneChanged(ianaId: TimeZone.current.identifier))
                 }
             })
     }
@@ -326,86 +349,73 @@ final class Mac: NSObject {
         permissionsPoll = timer
     }
 
-    // MARK: Effects out
+    // MARK: Outcomes out
 
-    /// Calls the core and carries out the outcome it answers with. A call made meanwhile, as when
-    /// an effect reads back what it changed, waits until it's all out, so effects go out in the
-    /// order the core gave them and the UIs refresh once, after the last. No effect needs the core
-    /// to have heard what the one before it changed.
-    private func run(_ call: @escaping () -> Outcome) {
-        waiting.append(call)
-        guard !carryingOut else { return }
-        carryingOut = true
-        while !waiting.isEmpty {
-            carryOut(waiting.removeFirst()())
-        }
-        carryingOut = false
-        changed()
-    }
-
+    /// Carries out an outcome: each effect by the adapter it's for, in the order the core gave
+    /// them, then each event to its subscribers, then one redraw. No effect needs the core to
+    /// have heard what the one before it changed.
     private func carryOut(_ outcome: Outcome) {
-        for effect in outcome.effects {
-            switch effect {
-            case .registerLoginItem:
-                changeLoginItem { try $0.register() }
-            case .unregisterLoginItem:
-                changeLoginItem { try $0.unregister() }
-            case .startUpdater:
-                updater = SPUStandardUpdaterController(
-                    startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
-            case .checkForUpdates:
-                checkForUpdates()
-            case .setNightShift(let enabled):
-                guard let nightShift else {
-                    log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")
-                    continue
-                }
-                nightShift.setEnabled(enabled)
-            case .setSchedule(let schedule):
-                guard let nightShift else {
-                    log.error("Night Shift is unavailable; dropped setSchedule")
-                    continue
-                }
-                nightShift.setSchedule(schedule)
-            case .setStrength(let value, let commit):
-                guard let nightShift else {
-                    log.error("Night Shift is unavailable; dropped setStrength(value: \(value))")
-                    continue
-                }
-                nightShift.setStrength(value, commit: commit)
-                // A preview isn't the strength, so only a saved one is read back.
-                if commit { reportStrength() }
-            case .scheduleWakeup(let at):
-                scheduleWakeup(at: at)
-            case .cancelWakeup:
-                wakeup?.cancel()
-                wakeup = nil
-            // Version 1 is the only onboarding so far, so `completed` is always 0.
-            case .showOnboarding:
-                showOnboarding()
-            case .askForAccessibility:
-                accessibility?.ask()
-            case .watchBrowser(let bundleId, let generation):
-                watchBrowser(bundleId: bundleId, generation: generation)
-            case .stopWatching:
-                browserWatcher?.stop()
-            }
+        outcome.effects.forEach(carryOut)
+        for event in outcome.events {
+            eventHandlers.forEach { $0(event) }
         }
-        outcome.events.forEach(tell)
+        changeHandlers.forEach { $0() }
+        let next = nextChangeHandlers
+        nextChangeHandlers = []
+        next.forEach { $0() }
     }
 
-    /// Posts the notification an event calls for. A refusal has none: the user is looking at
-    /// what they chose, and its message can name a domain, so only its code is logged.
-    private func tell(_ event: Event) {
-        if case .refused(_, let why) = event {
-            log.notice("the core refused a command: \(String(describing: why.code), privacy: .public)")
-            return
+    private func carryOut(_ effect: Effect) {
+        switch effect {
+        case .registerLoginItem:
+            changeLoginItem { try $0.register() }
+        case .unregisterLoginItem:
+            changeLoginItem { try $0.unregister() }
+        case .startUpdater:
+            updater = SPUStandardUpdaterController(
+                startingUpdater: true, updaterDelegate: nil, userDriverDelegate: updateReminders)
+        case .checkForUpdates:
+            checkForUpdates()
+        case .setNightShift(let enabled):
+            guard let nightShift else {
+                log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")
+                return
+            }
+            if let watchedHost {
+                log.info("Night Shift turns \(enabled ? "on" : "off") on \(watchedHost, privacy: .private)")
+            }
+            nightShift.setEnabled(enabled)
+        case .setSchedule(let schedule):
+            guard let nightShift else {
+                log.error("Night Shift is unavailable; dropped setSchedule")
+                return
+            }
+            nightShift.setSchedule(schedule)
+        case .setStrength(let value, let commit):
+            guard let nightShift else {
+                log.error("Night Shift is unavailable; dropped setStrength(value: \(value))")
+                return
+            }
+            nightShift.setStrength(value, commit: commit)
+            // A preview isn't the strength, so only a saved one is read back.
+            if commit { reportStrength() }
+        case .scheduleWakeup(let at):
+            scheduleWakeup(at: at)
+        case .cancelWakeup:
+            wakeup?.cancel()
+            wakeup = nil
+        // Version 1 is the only onboarding so far, so `completed` is always 0.
+        case .showOnboarding:
+            showOnboarding()
+        case .askForAccessibility:
+            accessibility?.ask()
+        case .watchBrowser(let bundleId, let generation):
+            watchedHost = nil
+            watchBrowser(bundleId: bundleId, generation: generation)
+        case .stopWatching:
+            watchedHost = nil
+            browserWatcher?.stop()
         }
-        let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
-            app.bundleIdentifier.map { Notice.FrontApp(bundleId: $0, name: app.localizedName) }
-        }
-        guard let notice = Notice(event, frontApp: front, timeZone: .current) else { return }
-        notify(title: notice.title, body: notice.body, opens: notice.opens)
     }
 
     /// Registers or unregisters the login item, as the user chose (ADR-0011), then reports
@@ -430,7 +440,7 @@ final class Mac: NSObject {
         browserWatcher?.watch(pid: pid, generation: generation)
     }
 
-    /// A wall-clock timer, so it fires on time after sleep or a clock change.
+    /// A wall-clock timer, so it fires on time after sleep or a clock change (ADR-0002).
     private func scheduleWakeup(at date: Date) {
         wakeup?.cancel()
         let seconds = date.timeIntervalSince1970.rounded(.down)
@@ -446,33 +456,10 @@ final class Mac: NSObject {
             wakeup?.cancel()
             wakeup = nil
             reportSunTimes()
-            report(.timerFired)
+            core.report(fact: .timerFired)
         }
         timer.resume()
         wakeup = timer
-    }
-
-    /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
-    /// dropped while the prompt waits for an answer. A notification posted under an `id` replaces
-    /// any earlier one under it.
-    private func notify(title: String, body: String, opens: URL?, id: String = UUID().uuidString) {
-        let content = UNMutableNotificationContent()
-        content.title = title
-        content.body = body
-        if let opens { content.userInfo = [pageKey: opens.absoluteString] }
-        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
-        Task {
-            let center = UNUserNotificationCenter.current()
-            do {
-                guard try await center.requestAuthorization(options: [.alert, .sound]) else {
-                    log.notice("notifications are off; dropped \"\(title, privacy: .public)\"")
-                    return
-                }
-                try await center.add(request)
-            } catch {
-                log.error("couldn't post \"\(title, privacy: .public)\": \(error, privacy: .public)")
-            }
-        }
     }
 
     /// The macOS prompt while notifications were never asked for; it never shows again after
@@ -480,7 +467,7 @@ final class Mac: NSObject {
     private func allowNotifications() {
         Task {
             await reportSystemState()
-            guard notifications == .notRequested else {
+            guard notificationPermission == .notRequested else {
                 NSWorkspace.shared.open(Self.notificationSettings)
                 return
             }
@@ -489,16 +476,27 @@ final class Mac: NSObject {
     }
 }
 
-/// Where a notification keeps the page it opens when clicked.
-nonisolated private let pageKey = "opens"
+/// The core's one listener (ADR-0002). It takes each outcome on the core's thread and hands it to
+/// `receive` on the main queue, in the order the core told them; the main queue keeps that order.
+// A conformer to a Sendable protocol isn't inferred to the main actor, so it says so.
+@MainActor private final class Inbox: Listener {
+    var receive: (Outcome) -> Void = { _ in }
+    private let arrived = Mutex<[Outcome]>([])
 
-extension Mac: UNUserNotificationCenterDelegate {
-    nonisolated func userNotificationCenter(
-        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse
-    ) async {
-        guard let page = response.notification.request.content.userInfo[pageKey] as? String,
-            let url = URL(string: page)
-        else { return }
-        await MainActor.run { _ = NSWorkspace.shared.open(url) }
+    nonisolated func outcome(outcome: Outcome) {
+        arrived.withLock { $0.append(outcome) }
+        DispatchQueue.main.async { [self] in
+            MainActor.assumeIsolated { handOver() }
+        }
+    }
+
+    /// Hands over every outcome that arrived, in order. Quitting takes them at once, ahead of the
+    /// main queue's turn.
+    func handOver() {
+        let outcomes = arrived.withLock { arrived in
+            defer { arrived.removeAll() }
+            return arrived
+        }
+        outcomes.forEach(receive)
     }
 }

@@ -46,6 +46,23 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
     assert_eq!(status(&staged).website_checking.state, OnOff::Off);
 }
 
+#[test]
+fn onboarding_is_finished_once_the_user_goes_through_it_or_the_config_answers_it() {
+    let staged = noon().stage().unwrap();
+    assert!(!staged.core().onboarding().finished);
+    staged.send_ui(UiCommand::FinishOnboarding { websites: false });
+    assert!(staged.core().onboarding().finished);
+
+    let answered = noon()
+        .config("websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n")
+        .stage()
+        .unwrap();
+    report_night_shift(&answered, Schedule::Off, 60);
+    assert!(!answered.core().onboarding().finished);
+    answered.report(Fact::Launched);
+    assert!(answered.core().onboarding().finished);
+}
+
 fn shows_onboarding(effects: &[Effect]) -> bool {
     effects
         .iter()
@@ -60,6 +77,7 @@ fn onboarding_asks_about_night_shift_starting_from_the_macs_values() {
     assert_eq!(
         staged.core().onboarding(),
         OnboardingSteps {
+            finished: false,
             night_shift: OnboardingNightShift {
                 ask_strength: true,
                 ask_schedule: true,

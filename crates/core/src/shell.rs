@@ -1,7 +1,6 @@
 //! What crosses between the shell and the core (ADR-0002): the facts the shell reports, the
 //! commands only its UI sends, the outcome of each, with the effects it carries out and the
-//! events it tells, the waker the core's threads ask for a tick with, and the protocol's types
-//! as the shell sees them.
+//! events it tells, and the protocol's types as the shell sees them.
 
 use std::time::SystemTime;
 
@@ -258,12 +257,6 @@ pub enum ErrorCode {
 pub struct ErrorReply {
     pub code: ErrorCode,
     pub message: String,
-}
-
-/// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
-#[uniffi::export(foreign)]
-pub trait Waker: Send + Sync {
-    fn wake(&self);
 }
 
 /// Something macOS observed, which the shell reports.

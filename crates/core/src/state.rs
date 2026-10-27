@@ -23,8 +23,9 @@ use crate::{adhoc, tour};
 
 const VERSION: u32 = 1;
 
-/// What the core decides from: what it believes about the system, as last reported by the
-/// shell, what it keeps across restarts, and the files and the clock it keeps them by.
+/// What the core decides from, which its thread alone owns (ADR-0002): what it believes about
+/// the system, as last reported by the shell, what it keeps across restarts, and the files and
+/// the clock it keeps them by.
 pub(crate) struct Inner {
     pub(crate) instance: Instance,
     pub(crate) install: Install,

@@ -1,5 +1,6 @@
-//! The IPC server thread (ADR-0010). It never touches the core's state: each request is
-//! queued, the shell is asked for a tick, and the answer comes back from the main thread.
+//! The socket's thread (ADR-0010). It never touches the core's state: a query is answered from
+//! the snapshot the core last published, and anything else goes into the core's mailbox, its
+//! answer back over the socket once the core's thread has decided it.
 
 use std::fs::{self, DirBuilder, Permissions};
 use std::io::{self, BufRead, BufReader, Write};
@@ -15,43 +16,14 @@ use nightcap_protocol::{
 };
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::{CoreError, Waker};
+use crate::CoreError;
+use crate::server::{Mail, Mailbox, Published};
 
-/// How long a client may take to send a line, and how long it waits for the main thread.
+/// How long a client may take to send a line, and how long it waits for the core's thread.
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-pub(crate) struct Pending {
-    pub(crate) request: Request,
-    reply: mpsc::Sender<Response>,
-}
-
-impl Pending {
-    /// A request, and where its response arrives.
-    pub(crate) fn new(request: Request) -> (Self, mpsc::Receiver<Response>) {
-        let (reply, response) = mpsc::channel();
-        (Self { request, reply }, response)
-    }
-
-    pub(crate) fn reply(self, response: Response) {
-        // The receiver is gone only if the client already hung up, and then no one is waiting.
-        let _ = self.reply.send(response);
-    }
-}
-
-pub(crate) fn serve(
-    path: &Path,
-    waker: Arc<dyn Waker>,
-) -> Result<mpsc::Receiver<Pending>, CoreError> {
-    let listener = bind(path)?;
-    let (sender, receiver) = mpsc::channel();
-    thread::Builder::new()
-        .name("nightcap-ipc".to_owned())
-        .spawn(move || accept(&listener, &sender, waker.as_ref()))
-        .map_err(|error| io_error("couldn't start the IPC thread", &error))?;
-    Ok(receiver)
-}
-
-fn bind(path: &Path) -> Result<UnixListener, CoreError> {
+/// Takes the socket at `path`, failing if another instance holds it.
+pub(crate) fn bind(path: &Path) -> Result<UnixListener, CoreError> {
     let folder = path.parent().ok_or_else(|| CoreError::Io {
         message: format!("{} has no folder", path.display()),
     })?;
@@ -75,9 +47,22 @@ fn bind(path: &Path) -> Result<UnixListener, CoreError> {
         .map_err(|error| io_error(&format!("couldn't listen at {}", path.display()), &error))
 }
 
-fn accept(listener: &UnixListener, sender: &mpsc::Sender<Pending>, waker: &dyn Waker) {
+/// Serves `listener` on a thread of its own.
+pub(crate) fn serve(
+    listener: UnixListener,
+    mailbox: Mailbox,
+    published: Arc<Published>,
+) -> Result<(), CoreError> {
+    thread::Builder::new()
+        .name("nightcap-ipc".to_owned())
+        .spawn(move || accept(&listener, &mailbox, &published))
+        .map_err(|error| io_error("couldn't start the IPC thread", &error))?;
+    Ok(())
+}
+
+fn accept(listener: &UnixListener, mailbox: &Mailbox, published: &Published) {
     for stream in listener.incoming() {
-        match stream.and_then(|stream| converse(stream, sender, waker)) {
+        match stream.and_then(|stream| converse(stream, mailbox, published)) {
             Ok(()) => {}
             // A client that leaves before saying anything, such as another instance checking
             // whether this one is alive.
@@ -89,11 +74,7 @@ fn accept(listener: &UnixListener, sender: &mpsc::Sender<Pending>, waker: &dyn W
     }
 }
 
-fn converse(
-    stream: UnixStream,
-    sender: &mpsc::Sender<Pending>,
-    waker: &dyn Waker,
-) -> io::Result<()> {
+fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io::Result<()> {
     // macOS refuses socket options once the peer has closed its end.
     stream.set_read_timeout(Some(TIMEOUT)).map_err(|error| {
         if error.kind() == io::ErrorKind::InvalidInput {
@@ -131,17 +112,21 @@ fn converse(
         Ok(request) => request,
         Err(error) => return write_line(&mut writer, &Response::Error(bad_request(&error))),
     };
-    let (pending, response) = Pending::new(request);
-    sender
-        .send(pending)
-        .map_err(|_| io::Error::other("the core has shut down"))?;
-    waker.wake();
-    let response = response.recv_timeout(TIMEOUT).map_err(|_| {
-        io::Error::new(
-            io::ErrorKind::TimedOut,
-            "the main thread didn't tick in time",
-        )
-    })?;
+    let response = match request {
+        Request::Query(query) => published.latest().answer(&query),
+        request => {
+            let (reply, response) = mpsc::channel();
+            mailbox
+                .post(Mail::Request { request, reply })
+                .map_err(io::Error::other)?;
+            response.recv_timeout(TIMEOUT).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "the core's thread didn't answer in time",
+                )
+            })?
+        }
+    };
     write_line(&mut writer, &response)
 }
 
@@ -184,64 +169,46 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
     use std::os::unix::net::{UnixListener, UnixStream};
     use std::path::{Path, PathBuf};
-    use std::sync::{Arc, Mutex, mpsc};
+    use std::sync::{Arc, mpsc};
     use std::thread;
     use std::time::Duration;
 
-    use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, Instance, NightShift,
+        Command, Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, NightShift,
         NotificationPermission, OnOff, PROTOCOL_VERSION, Payload, Permissions, Place, Query,
         Request, Response, Status, WebsiteChecking,
     };
 
-    use super::{Pending, serve};
-    use crate::file::{Memory, Paths};
-    use crate::staging::ManualClock;
-    use crate::start::Setup;
-    use crate::state::Inner;
-    use crate::{Core, CoreError, Outcome, Waker};
-
-    /// Stands in for the shell: every wake is reported on a channel the test can wait on.
-    struct ChannelWaker(Mutex<mpsc::Sender<()>>);
-
-    impl Waker for ChannelWaker {
-        fn wake(&self) {
-            self.0.lock().unwrap().send(()).unwrap();
-        }
-    }
-
-    fn waker() -> (Arc<dyn Waker>, mpsc::Receiver<()>) {
-        let (sender, wakes) = mpsc::channel();
-        (Arc::new(ChannelWaker(Mutex::new(sender))), wakes)
-    }
+    use super::{bind, serve};
+    use crate::server::tests::{ChannelListener, noon};
+    use crate::server::{Mail, Mailbox, Published, Snapshot};
+    use crate::{Core, CoreError, Effect, Outcome};
 
     /// The socket, in a folder that serving creates.
     fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
         dir.path().join("instance").join("nightcap.sock")
     }
 
-    /// Serves `socket` with no core behind it: each request waits in the channel to be answered
-    /// by hand.
-    fn served(socket: &Path) -> (mpsc::Receiver<Pending>, mpsc::Receiver<()>) {
-        let (waker, wakes) = waker();
-        (serve(socket, waker).unwrap(), wakes)
+    /// Serves `socket` with no core's thread behind it: what reaches the mailbox waits there,
+    /// and queries read a snapshot of a core at noon with nothing reported.
+    fn served(socket: &Path) -> mpsc::Receiver<Mail> {
+        let (mailbox, inbox) = Mailbox::new();
+        let published = Arc::new(Published::new(Snapshot::of(&noon(None))));
+        serve(bind(socket).unwrap(), mailbox, published).unwrap();
+        inbox
     }
 
-    /// A core on files in memory at noon, answering what arrives at `socket` on each tick.
-    fn served_core(socket: &Path) -> (Core, mpsc::Receiver<()>) {
-        let (requests, wakes) = served(socket);
-        let inner = Inner::start(Setup {
-            instance: Instance::Release,
-            install: Install::Managed,
-            socket: Some(socket.to_owned()),
-            files: Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap")))),
-            clock: Arc::new(ManualClock::new(
-                "2026-10-16T12:00:00+02:00".parse().unwrap(),
-            )),
-            zone: TimeZone::get("Europe/Zurich").unwrap(),
-        });
-        (Core::serving(inner, requests), wakes)
+    /// A core on its own thread at noon, serving `socket`, with the outcomes it tells its
+    /// listener.
+    fn served_core(socket: &Path) -> (Core, mpsc::Receiver<Outcome>) {
+        let (listener, outcomes) = ChannelListener::new();
+        let core = Core::run(
+            noon(Some(socket)),
+            Some(bind(socket).unwrap()),
+            Arc::new(listener),
+        )
+        .unwrap();
+        (core, outcomes)
     }
 
     /// Speaks the wire protocol from the client side: a hello, then at most one request.
@@ -302,17 +269,19 @@ mod tests {
     fn a_client_that_hangs_up_at_once_leaves_the_server_answering() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (requests, wakes) = served(&socket);
+        let inbox = served(&socket);
 
         drop(UnixStream::connect(&socket).unwrap());
 
-        let response = ask(&socket, Request::Query(Query::Rules));
-        wakes
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the IPC thread asks for a tick");
-        let pending = requests.try_recv().unwrap();
-        assert_eq!(pending.request, Request::Query(Query::Rules));
-        pending.reply(Response::Ok(Payload::Rules(Vec::new())));
+        let response = ask(&socket, Request::Reload);
+        let Ok(Mail::Request { request, reply }) = inbox.recv_timeout(Duration::from_secs(5))
+        else {
+            panic!("the reload reaches the mailbox");
+        };
+        assert_eq!(request, Request::Reload);
+        reply
+            .send(Response::Ok(Payload::Rules(Vec::new())))
+            .unwrap();
         assert_eq!(
             response.join().unwrap(),
             Response::Ok(Payload::Rules(Vec::new()))
@@ -323,7 +292,7 @@ mod tests {
     fn a_protocol_mismatch_is_refused_at_hello() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (requests, wakes) = served(&socket);
+        let inbox = served(&socket);
 
         let reply = Client::connect(&socket).hello(99);
 
@@ -332,8 +301,8 @@ mod tests {
         };
         assert_eq!(error.code, ErrorCode::ProtocolMismatch);
         assert!(
-            wakes.try_recv().is_err() && requests.try_recv().is_err(),
-            "a refused client never reaches the main thread"
+            inbox.try_recv().is_err(),
+            "a refused client never reaches the core"
         );
     }
 
@@ -341,7 +310,7 @@ mod tests {
     fn a_malformed_request_is_answered_without_a_tick() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (requests, wakes) = served(&socket);
+        let inbox = served(&socket);
 
         let mut client = Client::connect(&socket);
         client.hello(PROTOCOL_VERSION);
@@ -352,15 +321,14 @@ mod tests {
             panic!("expected an error, got {response:?}");
         };
         assert_eq!(error.code, ErrorCode::BadRequest);
-        assert!(wakes.try_recv().is_err());
-        assert!(requests.try_recv().is_err());
+        assert!(inbox.try_recv().is_err());
     }
 
     #[test]
     fn a_bad_identity_is_refused_before_the_core() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (requests, wakes) = served(&socket);
+        let inbox = served(&socket);
 
         for bad in ["domain:https://figma.com", "app:com.figma.Desktop/", "app:"] {
             let mut client = Client::connect(&socket);
@@ -374,8 +342,7 @@ mod tests {
             };
             assert_eq!(error.code, ErrorCode::BadRequest, "{bad}");
         }
-        assert!(wakes.try_recv().is_err());
-        assert!(requests.try_recv().is_err());
+        assert!(inbox.try_recv().is_err());
     }
 
     #[test]
@@ -384,7 +351,7 @@ mod tests {
         let socket = socket_in(&dir);
         let _first = served(&socket);
 
-        let second = serve(&socket, waker().0);
+        let second = bind(&socket);
 
         assert!(matches!(second, Err(CoreError::AlreadyRunning { .. })));
     }
@@ -419,17 +386,17 @@ mod tests {
     fn a_status_query_is_answered_on_the_next_tick() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (core, wakes) = served_core(&socket);
+        let (_core, outcomes) = served_core(&socket);
 
         let response = ask(&socket, Request::Query(Query::Status));
-        wakes
-            .recv_timeout(Duration::from_secs(5))
-            .expect("the IPC thread asks for a tick");
-        assert_eq!(core.tick(), Outcome::default());
 
         let Response::Ok(Payload::Status(mut status)) = response.join().unwrap() else {
             panic!("expected a status");
         };
+        assert!(
+            outcomes.try_recv().is_err(),
+            "a query reaches neither the mailbox nor the shell"
+        );
         // Checks have tests of their own.
         status.checks.clear();
         assert_eq!(
@@ -470,10 +437,32 @@ mod tests {
     }
 
     #[test]
+    fn a_cli_command_is_answered_once_decided_and_its_outcome_reaches_the_shell() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = socket_in(&dir);
+        let (core, outcomes) = served_core(&socket);
+
+        let response = ask(&socket, Request::Command(Command::Websites(OnOff::On)));
+
+        assert!(matches!(
+            response.join().unwrap(),
+            Response::Ok(Payload::Decision(_))
+        ));
+        assert_eq!(
+            outcomes.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Outcome {
+                effects: vec![Effect::AskForAccessibility],
+                events: Vec::new(),
+            }
+        );
+        assert!(core.settings().website_checking.on);
+    }
+
+    #[test]
     fn terminating_removes_the_socket() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (core, _wakes) = served_core(&socket);
+        let (core, _outcomes) = served_core(&socket);
 
         assert_eq!(core.stop(), Outcome::default());
 
