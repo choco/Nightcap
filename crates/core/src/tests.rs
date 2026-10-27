@@ -3024,7 +3024,7 @@ fn an_ad_hoc_rule_graduates_whatever_either_says() {
         vec![app_rule("com.figma.desktop")]
     );
     let store = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
-    assert_eq!(store.load(), Ok(Vec::new()));
+    assert_eq!(store.load().unwrap(), Vec::new());
 }
 
 #[test]
@@ -4479,7 +4479,7 @@ fn saved_ad_hoc_rules_load_back() {
 
     store.save(&rules).unwrap();
 
-    assert_eq!(store.load(), Ok(rules));
+    assert_eq!(store.load().unwrap(), rules);
 }
 
 #[test]
@@ -4492,7 +4492,10 @@ fn ad_hoc_rules_from_a_newer_build_are_refused() {
     )
     .unwrap();
 
-    assert!(adhoc::Store::new(path).load().is_err());
+    assert!(matches!(
+        adhoc::Store::new(path).load(),
+        Err(adhoc::AdHocError::Newer { version: 3, .. })
+    ));
 }
 
 #[test]
@@ -4506,8 +4509,8 @@ fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
     .unwrap();
 
     assert_eq!(
-        adhoc::Store::new(path).load(),
-        Ok(vec![(figma(), OnOff::Off)])
+        adhoc::Store::new(path).load().unwrap(),
+        vec![(figma(), OnOff::Off)]
     );
 }
 
@@ -5774,7 +5777,7 @@ fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     send(&core, &socket, &wakes, Command::RemoveRule(mail.clone()));
     assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
     let kept = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
-    assert_eq!(kept.load(), Ok(vec![(mail.clone(), OnOff::Off)]));
+    assert_eq!(kept.load().unwrap(), vec![(mail.clone(), OnOff::Off)]);
     core.handle(Event::TourEnded);
 
     assert_eq!(status_of(&core, &socket, &wakes).rules, vec![ad_hoc(mail)]);

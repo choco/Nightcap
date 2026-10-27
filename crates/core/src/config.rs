@@ -1,8 +1,9 @@
 //! `config.toml`: the config rules, declared by the user or their installer (ADR-0007,
 //! ADR-0006). It is strict, so a typo is an error rather than a rule that silently never matches.
 
-use std::io::ErrorKind;
-use std::path::Path;
+use std::fs;
+use std::io;
+use std::path::{Path, PathBuf};
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
@@ -88,11 +89,58 @@ pub(crate) fn default_lengths() -> Vec<SignedDuration> {
     ]
 }
 
+/// Why the config can't be used. What it says can quote the file, and so a domain, so the log
+/// gets only its `kind` (ADR-0009).
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ConfigError {
+    #[error("couldn't read {}: {error}", .path.display())]
+    Unreadable { path: PathBuf, error: io::Error },
+    #[error("{}: {error}", .path.display())]
+    Malformed {
+        path: PathBuf,
+        error: toml::de::Error,
+    },
+    #[error("{}: {problem}", .path.display())]
+    Invalid { path: PathBuf, problem: Problem },
+}
+
+impl ConfigError {
+    /// What went wrong, as the log may say it: never what the file holds.
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            Self::Unreadable { .. } => "can't be read",
+            Self::Malformed { .. } => "is malformed",
+            Self::Invalid { .. } => "is invalid",
+        }
+    }
+}
+
+/// What makes a well-formed config invalid.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Problem {
+    #[error("rules are listed by what they say, under [rules.off] and [rules.on]")]
+    UnsaidRules,
+    #[error(transparent)]
+    Entry(#[from] IdentityError),
+    #[error("{0} is in both rules.off and rules.on: an app or domain has one rule")]
+    BothWays(RuleIdentity),
+    #[error("night_shift.strength is 0 to 100, not {0}")]
+    Strength(u8),
+    #[error(
+        "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not {0:?}"
+    )]
+    Schedule(String),
+    #[error(
+        "menu.lengths are lengths like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {0:?}"
+    )]
+    Lengths(Vec<String>),
+}
+
 /// The config in `path`. A missing file means no rules, as on a fresh brew install.
-pub(crate) fn load(path: &Path) -> Result<Config, String> {
-    let text = match std::fs::read_to_string(path) {
+pub(crate) fn load(path: &Path) -> Result<Config, ConfigError> {
+    let text = match fs::read_to_string(path) {
         Ok(text) => text,
-        Err(error) if error.kind() == ErrorKind::NotFound => {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return Ok(Config {
                 rules: Vec::new(),
                 websites: None,
@@ -101,15 +149,27 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
                 found: false,
             });
         }
-        Err(error) => return Err(format!("couldn't read {}: {error}", path.display())),
+        Err(error) => {
+            return Err(ConfigError::Unreadable {
+                path: path.to_owned(),
+                error,
+            });
+        }
     };
-    let file: File =
-        toml::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
-    let in_file = |error: String| format!("{}: {error}", path.display());
+    let file = toml::from_str(&text).map_err(|error| ConfigError::Malformed {
+        path: path.to_owned(),
+        error,
+    })?;
+    checked(file).map_err(|problem| ConfigError::Invalid {
+        path: path.to_owned(),
+        problem,
+    })
+}
+
+/// What a well-formed config declares, once it's checked.
+fn checked(file: File) -> Result<Config, Problem> {
     if file.rules.app.is_some() || file.rules.domain.is_some() {
-        return Err(in_file(
-            "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned(),
-        ));
+        return Err(Problem::UnsaidRules);
     }
     let mut rules: Vec<Rule> = Vec::new();
     for (says, lists) in [(OnOff::Off, &file.rules.off), (OnOff::On, &file.rules.on)] {
@@ -121,19 +181,13 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
             .domain
             .iter()
             .map(|entry| entry.parse().map(RuleIdentity::Domain));
-        let identities = apps
-            .chain(domains)
-            .collect::<Result<Vec<_>, IdentityError>>()
-            .map_err(|error| in_file(error.to_string()))?;
-        for identity in identities {
+        for identity in apps.chain(domains) {
+            let identity = identity?;
             if let Some(other) = rules
                 .iter()
                 .find(|rule| rule.identity == identity && rule.says != says)
             {
-                return Err(in_file(format!(
-                    "{} is in both rules.off and rules.on: an app or domain has one rule",
-                    other.identity
-                )));
+                return Err(Problem::BothWays(other.identity.clone()));
             }
             rules.push(Rule {
                 identity,
@@ -142,7 +196,7 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
             });
         }
     }
-    let night_shift = night_shift(file.night_shift).map_err(in_file)?;
+    let night_shift = night_shift(file.night_shift)?;
     let lengths = match file.menu.lengths {
         None => default_lengths(),
         Some(lengths) => lengths
@@ -150,11 +204,7 @@ pub(crate) fn load(path: &Path) -> Result<Config, String> {
             .map(|text| length(text))
             .collect::<Option<Vec<_>>>()
             .filter(|lengths| !lengths.is_empty())
-            .ok_or_else(|| {
-                in_file(format!(
-                    "menu.lengths are lengths like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {lengths:?}"
-                ))
-            })?,
+            .ok_or(Problem::Lengths(lengths))?,
     };
     Ok(Config {
         rules,
@@ -175,21 +225,15 @@ fn length(text: &str) -> Option<SignedDuration> {
         .then_some(length)
 }
 
-fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, String> {
+fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, Problem> {
     if let Some(strength) = file.strength
         && strength > 100
     {
-        return Err(format!("night_shift.strength is 0 to 100, not {strength}"));
+        return Err(Problem::Strength(strength));
     }
     let schedule = file
         .schedule
-        .map(|text| {
-            schedule(&text).ok_or_else(|| {
-                format!(
-                    "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not {text:?}"
-                )
-            })
-        })
+        .map(|text| schedule(&text).ok_or(Problem::Schedule(text)))
         .transpose()?;
     Ok(NightShiftConfig {
         strength: file.strength,

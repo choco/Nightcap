@@ -616,14 +616,14 @@ struct State {
     /// The config rules and the ad-hoc ones not in the config, as the rule engine sees them.
     rules: Vec<Rule>,
     config_rules: Vec<Rule>,
-    config_error: Option<String>,
+    config_error: Option<config::ConfigError>,
     /// Whether the config file existed when it was last loaded.
     config_found: bool,
     /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
     lengths: Vec<SignedDuration>,
     ad_hoc: Vec<(RuleIdentity, OnOff)>,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
-    ad_hoc_error: Option<String>,
+    ad_hoc_error: Option<adhoc::AdHocError>,
     /// Website checking as the user chose it; `websites` in the config wins (ADR-0012).
     websites: bool,
     onboarding: u32,
@@ -701,13 +701,23 @@ impl Core {
         let socket = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
-        let missing = |what: &str| CoreError::Io {
-            message: format!("can't find the XDG {what} directory"),
-        };
-        let xdg = etcetera::base_strategy::Xdg::new().map_err(|_| missing("base"))?;
-        let state_folder = xdg.state_dir().ok_or_else(|| missing("state"))?;
-        let zone = TimeZone::get(&time_zone)
-            .map_err(|_| CoreError::UnknownTimeZone { iana_id: time_zone })?;
+        let xdg = etcetera::base_strategy::Xdg::new().map_err(|error| CoreError::Io {
+            message: format!("can't find the XDG base directories: {error}"),
+        })?;
+        let state_folder = xdg.state_dir().ok_or_else(|| CoreError::Io {
+            message: "can't find the XDG state directory".to_owned(),
+        })?;
+        let zone = TimeZone::get(&time_zone).map_err(|error| {
+            if jiff::tz::db().is_definitively_empty() {
+                CoreError::Io {
+                    message: format!("can't read the time zone database: {error}"),
+                }
+            } else {
+                CoreError::UnknownTimeZone {
+                    iana_id: time_zone.clone(),
+                }
+            }
+        })?;
         let install = if bundle_writable {
             Install::SelfManaged
         } else {
@@ -1243,8 +1253,10 @@ impl Core {
         let (config, config_error) = match config::load(&setup.config_file) {
             Ok(config) => (config, None),
             Err(error) => {
-                // The error can quote a domain, so it goes to status, not the log (ADR-0009).
-                tracing::warn!("running without config rules: the config is invalid; see status");
+                tracing::warn!(
+                    "running without config rules: the config {}; see status",
+                    error.kind()
+                );
                 let config = config::Config {
                     rules: Vec::new(),
                     websites: None,
@@ -1259,7 +1271,10 @@ impl Core {
         let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
             Ok(rules) => (rules, None),
             Err(error) => {
-                tracing::warn!("ad-hoc rules are off: rules.toml can't be used; see status");
+                tracing::warn!(
+                    "ad-hoc rules are off: rules.toml {}; see status",
+                    error.kind()
+                );
                 (Vec::new(), Some(error))
             }
         };
@@ -1378,16 +1393,14 @@ impl Core {
             }
             Request::Reload => match self.reload(effects) {
                 Ok(()) => self.status(),
-                Err(error) => Response::Error(ErrorReply {
-                    code: ErrorCode::InvalidConfig,
-                    message: error,
-                }),
+                Err(error) => Response::Error(error),
             },
         }
     }
 
-    /// Loads the config again; an invalid one keeps the rules loaded before.
-    fn reload(&self, effects: &mut Vec<Effect>) -> Result<(), String> {
+    /// Loads the config again; an invalid one keeps the rules loaded before, and its check says
+    /// why.
+    fn reload(&self, effects: &mut Vec<Effect>) -> Result<(), ErrorReply> {
         match config::load(&self.config_file) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
@@ -1404,9 +1417,13 @@ impl Core {
                 Ok(())
             }
             Err(error) => {
-                tracing::warn!("keeping the rules loaded before: the config is invalid");
-                self.state().config_error = Some(error.clone());
-                Err(error)
+                tracing::warn!(
+                    "keeping the rules loaded before: the config {}",
+                    error.kind()
+                );
+                let refusal = refused(ErrorCode::InvalidConfig, error.to_string());
+                self.state().config_error = Some(error);
+                Err(refusal)
             }
         }
     }
@@ -1878,8 +1895,8 @@ impl Core {
                 .as_ref()
                 .map(|host| host.as_str().to_owned()),
             rules: state.rules.clone(),
-            config_error: state.config_error.clone(),
-            ad_hoc_error: state.ad_hoc_error.clone(),
+            config_error: state.config_error.as_ref().map(ToString::to_string),
+            ad_hoc_error: state.ad_hoc_error.as_ref().map(ToString::to_string),
             website_checking: WebsiteChecking {
                 state: on_off(state.website_checking()),
                 from_config: state.config_websites.is_some(),
@@ -2887,12 +2904,12 @@ impl State {
             )),
             CheckKind::ConfigFile => self
                 .config_error
-                .clone()
-                .map(|error| ("Nightcap’s config is invalid".to_owned(), error)),
+                .as_ref()
+                .map(|error| ("Nightcap’s config is invalid".to_owned(), error.to_string())),
             CheckKind::AdHocRules => self
                 .ad_hoc_error
-                .clone()
-                .map(|error| ("Ad-hoc rules are off".to_owned(), error)),
+                .as_ref()
+                .map(|error| ("Ad-hoc rules are off".to_owned(), error.to_string())),
             // Waiting for approval follows the user's own choice, which macOS announces itself.
             CheckKind::OpenAtLogin => {
                 (self.login_item == Some(LoginItem::NotRegistered)).then(|| {

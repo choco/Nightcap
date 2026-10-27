@@ -46,6 +46,35 @@ impl RuleLists {
     }
 }
 
+/// Why `rules.toml` can't be used, which turns ad-hoc rules off. What it says can quote the
+/// file, and so a domain, so the log gets only its `kind` (ADR-0009).
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum AdHocError {
+    #[error("couldn't read {}: {error}", .path.display())]
+    Unreadable { path: PathBuf, error: io::Error },
+    #[error("{}: {error}", .path.display())]
+    Malformed {
+        path: PathBuf,
+        error: toml::de::Error,
+    },
+    #[error("{} is version {version}, from a newer Nightcap than this one", .path.display())]
+    Newer { path: PathBuf, version: u32 },
+    #[error("{}: {error}", .path.display())]
+    Invalid { path: PathBuf, error: IdentityError },
+}
+
+impl AdHocError {
+    /// What went wrong, as the log may say it: never what the file holds.
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            Self::Unreadable { .. } => "can't be read",
+            Self::Malformed { .. } => "is malformed",
+            Self::Newer { .. } => "is from a newer Nightcap",
+            Self::Invalid { .. } => "is invalid",
+        }
+    }
+}
+
 pub(crate) struct Store {
     path: PathBuf,
 }
@@ -58,20 +87,27 @@ impl Store {
     /// The ad-hoc rules and what each says, or why there are none to use: an invalid file, or
     /// one from a newer Nightcap, which must never be overwritten. A missing file means no
     /// rules.
-    pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, String> {
+    pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, AdHocError> {
+        let path = || self.path.clone();
         let text = match fs::read_to_string(&self.path) {
             Ok(text) => text,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(format!("couldn't read {}: {error}", self.path.display())),
+            Err(error) => {
+                return Err(AdHocError::Unreadable {
+                    path: path(),
+                    error,
+                });
+            }
         };
-        let file: File =
-            toml::from_str(&text).map_err(|error| format!("{}: {error}", self.path.display()))?;
+        let file: File = toml::from_str(&text).map_err(|error| AdHocError::Malformed {
+            path: path(),
+            error,
+        })?;
         if file.version > VERSION {
-            return Err(format!(
-                "{} is version {}, from a newer Nightcap than this one",
-                self.path.display(),
-                file.version
-            ));
+            return Err(AdHocError::Newer {
+                path: path(),
+                version: file.version,
+            });
         }
         let Rules {
             off,
@@ -91,8 +127,10 @@ impl Store {
                 .iter()
                 .map(|entry| entry.parse().map(RuleIdentity::Domain));
             for identity in apps.chain(domains) {
-                let identity = identity
-                    .map_err(|error: IdentityError| format!("{}: {error}", self.path.display()))?;
+                let identity = identity.map_err(|error| AdHocError::Invalid {
+                    path: path(),
+                    error,
+                })?;
                 rules.push((identity, says));
             }
         }
