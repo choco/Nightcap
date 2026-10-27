@@ -1,7 +1,8 @@
 import AppKit
 import NightcapCore
 
-/// Apps on this Mac, as Settings and onboarding name them and let the user pick one.
+/// Apps on this Mac, as Settings, onboarding and the tour's site step name them, and let the user
+/// pick one.
 enum Apps {
     /// The name Finder shows for the app at `url`, without ".app" unless Finder shows every
     /// extension.

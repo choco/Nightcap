@@ -157,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
             let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
-        return Tour.Browser(bundleId: bundleId, name: FileManager.default.displayName(atPath: url.path))
+        return Tour.Browser(bundleId: bundleId, name: Apps.name(at: url))
     }
 
     private func showOnboarding() {
