@@ -1,6 +1,9 @@
-//! The socket's thread (ADR-0010). It never touches the core's state: a query is answered from
-//! the snapshot the core last published, and anything else goes into the core's mailbox, its
-//! answer back over the socket once the core's thread has decided it.
+//! The CLI's connection (ADR-0010): the socket's thread, and the core's answers to the requests
+//! it passes on. The thread never touches the core's state: a query is answered from the snapshot
+//! the core last published, and anything else goes into the core's mailbox, its answer back over
+//! the socket once the core's thread has decided it.
+
+mod requests;
 
 use std::fs::{self, DirBuilder, Permissions};
 use std::io::{self, BufRead, BufReader, Write};

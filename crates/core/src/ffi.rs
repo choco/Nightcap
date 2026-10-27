@@ -1,4 +1,6 @@
-//! The protocol's types as the shell sees them, and the core's error.
+//! The protocol's types as the shell sees them, through UniFFI: the remote mirrors of its enums
+//! and records, and the custom types that cross as plain values, with the checks the shell runs
+//! before it sends one.
 
 use std::time::SystemTime;
 
@@ -253,16 +255,4 @@ pub enum ErrorCode {
 pub struct ErrorReply {
     pub code: ErrorCode,
     pub message: String,
-}
-
-#[derive(Debug, thiserror::Error, uniffi::Error)]
-pub enum CoreError {
-    #[error("{bundle_id} isn't a Nightcap bundle ID")]
-    UnknownBundleId { bundle_id: String },
-    #[error("another Nightcap is already running at {path}")]
-    AlreadyRunning { path: String },
-    #[error("{iana_id} isn't a time zone this Mac knows")]
-    UnknownTimeZone { iana_id: String },
-    #[error("{message}")]
-    Io { message: String },
 }

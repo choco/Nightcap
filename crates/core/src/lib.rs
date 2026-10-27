@@ -3,6 +3,7 @@
 uniffi::setup_scaffolding!();
 
 mod commands;
+mod ffi;
 mod ipc;
 mod logging;
 mod menu;
@@ -12,20 +13,18 @@ mod rules;
 mod server;
 mod settings;
 mod setup;
-mod shell;
 #[cfg(any(test, debug_assertions))]
 mod staging;
-mod status;
 mod storage;
 mod tour;
 
+pub use ffi::{is_bundle_id, normalize_domain};
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
 pub use setup::checks::{Fix, FixButton, ProblemLine, SettingsCheck};
-pub use shell::{CoreError, is_bundle_id, normalize_domain};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
 };
@@ -210,4 +209,16 @@ impl Core {
             Runs::Inline(inline) => _ = inline.decide(|inner| react(inner, input)),
         }
     }
+}
+
+#[derive(Debug, thiserror::Error, uniffi::Error)]
+pub enum CoreError {
+    #[error("{bundle_id} isn't a Nightcap bundle ID")]
+    UnknownBundleId { bundle_id: String },
+    #[error("another Nightcap is already running at {path}")]
+    AlreadyRunning { path: String },
+    #[error("{iana_id} isn't a time zone this Mac knows")]
+    UnknownTimeZone { iana_id: String },
+    #[error("{message}")]
+    Io { message: String },
 }
