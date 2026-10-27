@@ -97,7 +97,8 @@ final class Mac: NSObject {
         apply(core.tick())
     }
 
-    /// The shell carries out its own fixes and hands the rest to the core.
+    /// The shell carries out its own fixes and hands the core's back to it, each named, so a new
+    /// fix has to be given to one or the other.
     func perform(_ fix: Fix) {
         switch fix {
         case .askForAccessibility:
@@ -109,7 +110,7 @@ final class Mac: NSObject {
         case .openLocationServices:
             let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
             NSWorkspace.shared.open(URL(string: pane)!)
-        default:
+        case .stopCheckingWebsites, .keepNotificationsOff, .keepScheduleOff, .openAtLogin, .dontOpenAtLogin, .reload:
             handle(.fixChosen(fix: fix))
         }
     }
