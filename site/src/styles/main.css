@@ -215,8 +215,8 @@
 	/* Safari paints its status bar and toolbar strips, and the overscroll past either end, in the
      body's background, which the page covers everywhere else: the sky at the top, the ground
      once the end is in view, and on the home page, under the page tint's two layers, flattened,
-     while its Night Shift is on. The tint's mask isolates its layers, so the first one's
-     multiply composites as a plain mix. */
+     while its Night Shift is on. Lens.module.css flattens them as a plain mix, without the
+     multiply the desk's tint gives its first layer, and so does this. */
 	body {
 		--edge: var(--hero-top);
 		background-color: var(--edge);
