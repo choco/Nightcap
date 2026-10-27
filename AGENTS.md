@@ -9,8 +9,8 @@ Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo a
 - `build-core [--release]`: builds the core and the CLI, and regenerates `app/NightcapCore` (the xcframework and the Swift bindings). The Swift side sees a change to the core's UniFFI exports only after this runs.
 - `build-app [--release]`: builds `build/xcode/Release/Nightcap.app` or the dev build, `build/xcode/Debug/Nightcap Dev.app` (`io.github.choco.nightcap.dev`), unsigned. The dev build's own name keeps it apart from the installed app in System Settings.
 - `run-dev`: builds, signs and launches the dev build.
-- `run-tests`: runs the Rust tests.
-- `test-app`: runs the Swift tests, the `NightcapTests` bundle, on its own: it never launches the app, and stages its cores in memory with `Core.staged`, which only a debug core exports, so run `build-core` without `--release` first. Its tests use Swift Testing: an `XCTestCase` subclass's inherited initialisers clash with the bundle's main-actor default isolation, which it shares with the app so that the app's files compile there unchanged.
+- `run-tests`: runs the Rust tests. The core's integration tests (`crates/core/tests/`) stage cores in memory with `Scenario::stage()`, which only debug builds have, and reach the socket and the disk only in `ipc.rs`'s and `file.rs`'s own tests.
+- `test-app`: runs the Swift tests, the `NightcapTests` bundle, on its own: it never launches the app, and stages its cores in memory with `Core.staged`, which only a debug core exports, so run `build-core` without `--release` first.
 - `check [--rust] [--deps] [--scripts] [--site] [--swift]`: runs what CI checks, every area unless flags name some: rustfmt, clippy, rustdoc and the tests (`--rust`), cargo-deny against `deny.toml` (`--deps`), shellcheck on `scripts/` and `release/` and actionlint on the workflows (`--scripts`), `build-site` (`--site`), and swift-format against `.swift-format`, `build-core` and `test-app` (`--swift`, by default on macOS only). CI's jobs call it by area.
 - `release-notes [<version>]`: prints a version's notes from `CHANGELOG.md`, written for users: under a `## 1.1.0 · 25 October 2026` heading, a one-paragraph headline, then New and Fixed. The commit that bumps the version adds them: the release workflow fails without them, and the site build fails on a heading in another shape. They become the GitHub release, Sparkle's update window and the site's changelog, which the notification the first launch after an update posts opens.
 - `build-site`: installs, lints, type-checks and builds the project site into `build/site`, prerendered to static HTML. Preview it with `python3 -m http.server -d build/site`. The download buttons lead to the releases page unless `VITE_RELEASE_VERSION` and `VITE_RELEASE_URL` name a release's version and DMG, as the Pages deploy sets them.
@@ -29,6 +29,10 @@ The site's ambient motion is free in Safari only while WebKit's compositor runs 
 The privacy policy (`site/src/Privacy.tsx`) says what Nightcap keeps, where, and what it sends over the network. A change to any of these, in the app or the site, changes the policy and its date in the same commit.
 
 Swift files under `app/Nightcap/` join the app target automatically, and those under `app/NightcapTests/` the test bundle (folder-synced groups); an app file the tests compile too, such as `OnboardingFlow.swift`, is listed in the `Nightcap` folder's exceptions for `NightcapTests`. Otherwise the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and `NightcapCore.swift` are build outputs: change their sources and rebuild.
+
+## Code style
+
+Writing, reviewing or briefing code follows its language's guide, which holds the language's conventions apart from this project: Rust `docs/style/rust.md`, Swift `docs/style/swift.md`, TypeScript, React and CSS `docs/style/typescript.md`, shell `docs/style/shell.md`, GitHub Actions `docs/style/github-actions.md`. What is Nightcap's own lives here and in the ADRs. Its comments use the glossary's words and name the ADR a rule comes from.
 
 ## Design
 
