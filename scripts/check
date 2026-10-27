@@ -5,7 +5,8 @@
 #   --scripts  shellcheck on the shell scripts in scripts/ and release/, and actionlint on the
 #              workflows, with shellcheck on their run steps
 #   --site     Biome, the type checker and the site's build (build-site)
-# Usage: check [--rust] [--deps] [--scripts] [--site]
+#   --swift    swift-format against .swift-format; by default only on macOS, which has it
+# Usage: check [--rust] [--deps] [--scripts] [--site] [--swift]
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -15,11 +16,15 @@ rust=
 deps=
 scripts=
 site=
+swift=
 if [[ $# -eq 0 ]]; then
   rust=1
   deps=1
   scripts=1
   site=1
+  if [[ "$(uname)" == Darwin ]]; then
+    swift=1
+  fi
 fi
 for area in "$@"; do
   case "$area" in
@@ -27,8 +32,9 @@ for area in "$@"; do
     --deps) deps=1 ;;
     --scripts) scripts=1 ;;
     --site) site=1 ;;
+    --swift) swift=1 ;;
     *)
-      echo "usage: check [--rust] [--deps] [--scripts] [--site]" >&2
+      echo "usage: check [--rust] [--deps] [--scripts] [--site] [--swift]" >&2
       exit 1
       ;;
   esac
@@ -59,4 +65,8 @@ fi
 
 if [[ -n "$site" ]]; then
   scripts/build-site
+fi
+
+if [[ -n "$swift" ]]; then
+  xcrun swift-format lint --strict --recursive app/Nightcap app/TourSample app/NightcapCore/Package.swift
 fi
