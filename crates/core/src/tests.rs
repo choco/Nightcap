@@ -577,6 +577,42 @@ fn custom_hours_that_arent_times_of_day_are_refused() {
     assert_eq!(refusal(response), ErrorCode::BadRequest);
 }
 
+#[test]
+fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+        sun_schedule_set_aside: false,
+    });
+    let hours = Schedule::Custom {
+        from: TimeOfDay {
+            hour: 25,
+            minute: 0,
+        },
+        to: TimeOfDay {
+            hour: 7,
+            minute: 60,
+        },
+    };
+
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: hours,
+        sun_schedule_set_aside: false,
+    });
+    clock.set("2026-10-17T07:30:00+02:00");
+    core.handle(Event::TimerFired);
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.night_shift, NightShift::On);
+    assert_eq!(status.schedule, None);
+    assert_eq!(status.next_transition, None);
+    assert_eq!(core.menu().night_shift.reason, None);
+}
+
 /// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
 /// `Launched`.
 fn report_night_shift(core: &Core, schedule: Schedule, strength: u8) {
@@ -1525,6 +1561,29 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
     let status = status_of(&core, &socket, &wakes);
     assert_eq!(status.scheduled_state, Some(OnOff::On));
     assert_eq!(status.layers, Vec::new());
+}
+
+#[test]
+fn sun_times_the_shell_reports_out_of_range_count_as_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T01:40:00+02:00");
+    report_zurich_sun(&core);
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: Schedule::SunsetToSunrise,
+        sun_schedule_set_aside: false,
+    });
+
+    let past_jiff = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(400_000_000_000);
+    core.handle(Event::SunTimesChanged {
+        sunrises: vec![past_jiff],
+        sunsets: Vec::new(),
+    });
+
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.scheduled_state, None);
+    assert_eq!(status.next_transition, None);
 }
 
 #[test]

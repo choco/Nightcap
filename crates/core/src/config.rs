@@ -10,6 +10,8 @@ use nightcap_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::schedule;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
@@ -210,9 +212,7 @@ fn schedule(text: &str) -> Option<Schedule> {
 }
 
 fn time_of_day(text: &str) -> Option<TimeOfDay> {
-    let time = jiff::civil::Time::strptime("%H:%M", text).ok()?;
-    Some(TimeOfDay {
-        hour: u8::try_from(time.hour()).ok()?,
-        minute: u8::try_from(time.minute()).ok()?,
-    })
+    jiff::civil::Time::strptime("%H:%M", text)
+        .ok()
+        .map(schedule::time_of_day)
 }

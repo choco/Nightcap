@@ -30,7 +30,7 @@ use nightcap_protocol::{
 use config::NightShiftConfig;
 use domain::Host;
 use engine::{Context, Inputs};
-use schedule::{SunTimes, Timeline};
+use schedule::{CheckedSchedule, SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
 pub enum NotificationPermission {
@@ -1048,7 +1048,13 @@ impl Core {
                 };
                 state.pending_write = None;
                 let keep_on = std::mem::take(&mut state.keep_on_with_schedule_off);
-                let previous = state.timeline.schedule.replace(schedule);
+                // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
+                let checked = CheckedSchedule::try_from(schedule)
+                    .inspect_err(|error| {
+                        tracing::error!("the shell reported a schedule it can't have: {error}");
+                    })
+                    .ok();
+                let previous = std::mem::replace(&mut state.timeline.schedule, checked);
                 state.schedule_set_aside = sun_schedule_set_aside && schedule == Schedule::Off;
                 if !state.schedule_set_aside {
                     state.schedule_off_accepted = false;
@@ -1058,7 +1064,10 @@ impl Core {
                     // hand while the session was away.
                     state.session = Session::Active;
                     Vec::new()
-                } else if previous.is_some_and(|previous| previous != schedule) {
+                } else if previous
+                    .zip(checked)
+                    .is_some_and(|(previous, checked)| previous != checked)
+                {
                     // macOS applies an edited schedule at once, so the edit is a schedule
                     // transition and whatever it switched isn't an external change.
                     tracing::info!("schedule edited");
@@ -1157,20 +1166,22 @@ impl Core {
                 Vec::new()
             }
             Event::SunTimesChanged { sunrises, sunsets } => {
-                #[expect(
-                    clippy::expect_used,
-                    reason = "CoreBrightness reports sun times within a day or two of now"
-                )]
-                let timestamps = |times: Vec<SystemTime>| -> Vec<Timestamp> {
+                let timestamps = |times: Vec<SystemTime>| {
                     times
                         .into_iter()
-                        .map(|time| {
-                            Timestamp::try_from(time).expect("sun times are within jiff's range")
-                        })
-                        .collect()
+                        .map(Timestamp::try_from)
+                        .collect::<Result<Vec<_>, _>>()
                 };
-                self.state().timeline.sun_times =
-                    SunTimes::new(&timestamps(sunrises), &timestamps(sunsets));
+                let sun_times = match (timestamps(sunrises), timestamps(sunsets)) {
+                    (Ok(sunrises), Ok(sunsets)) => SunTimes::new(&sunrises, &sunsets),
+                    // A shell bug, logged rather than a panic, which would stop the app
+                    // (ADR-0002).
+                    (Err(error), _) | (_, Err(error)) => {
+                        tracing::error!("the shell reported a sun time out of range: {error}");
+                        SunTimes::default()
+                    }
+                };
+                self.state().timeline.sun_times = sun_times;
                 Vec::new()
             }
             Event::TimeZoneChanged { iana_id } => {
@@ -1492,16 +1503,9 @@ impl Core {
                     Ok(())
                 }
             }
-            Command::SetSchedule(schedule) => {
-                let time_of_day = |time: &TimeOfDay| time.hour < 24 && time.minute < 60;
-                if let Schedule::Custom { from, to } = schedule
-                    && !(time_of_day(from) && time_of_day(to))
-                {
-                    Err(refused(
-                        ErrorCode::BadRequest,
-                        "custom hours are times of day, from 00:00 to 23:59",
-                    ))
-                } else {
+            Command::SetSchedule(schedule) => match CheckedSchedule::try_from(*schedule) {
+                Err(error) => Err(refused(ErrorCode::BadRequest, error.to_string())),
+                Ok(_) => {
                     tracing::info!("schedule set on command");
                     state.keep_on_with_schedule_off =
                         *schedule == Schedule::Off && night_shift == NightShift::On;
@@ -1510,7 +1514,7 @@ impl Core {
                     });
                     Ok(())
                 }
-            }
+            },
             Command::Websites(chosen) => {
                 let on = *chosen == OnOff::On;
                 let turned_on = on && !state.website_checking();
@@ -1797,8 +1801,8 @@ impl Core {
         let now = self.clock.now();
         let mut state = self.state();
         let transition = state.timeline.next_transition(state.applied_until);
-        let awaits_sun_times =
-            transition.is_none() && state.timeline.schedule == Some(Schedule::SunsetToSunrise);
+        let awaits_sun_times = transition.is_none()
+            && state.timeline.schedule == Some(CheckedSchedule::SunsetToSunrise);
         state.sun_times_awaited_since =
             awaits_sun_times.then(|| state.sun_times_awaited_since.unwrap_or(now));
         #[expect(
@@ -1859,7 +1863,7 @@ impl Core {
             strength: state.strength,
             config_strength: state.config_night_shift.strength,
             decision: state.decide(),
-            schedule: state.timeline.schedule,
+            schedule: state.timeline.schedule.map(Schedule::from),
             config_schedule: state.config_night_shift.schedule,
             scheduled_state: state
                 .timeline
@@ -2222,9 +2226,9 @@ impl State {
                 && self
                     .timeline
                     .schedule
-                    .is_some_and(|schedule| schedule != Schedule::Off),
+                    .is_some_and(|schedule| schedule != CheckedSchedule::Off),
             strength: self.strength,
-            schedule: self.timeline.schedule,
+            schedule: self.timeline.schedule.map(Schedule::from),
         }
     }
 
@@ -2458,8 +2462,8 @@ impl State {
     fn until_turn(&self, place: &Place, state: OnOff, until: Timestamp) -> RowItem {
         // The time alone could be any clock's; the line under it says it's the schedule's.
         let moment = match (&self.timeline.schedule, state) {
-            (Some(Schedule::SunsetToSunrise), OnOff::On) => "At sunrise",
-            (Some(Schedule::SunsetToSunrise), OnOff::Off) => "At sunset",
+            (Some(CheckedSchedule::SunsetToSunrise), OnOff::On) => "At sunrise",
+            (Some(CheckedSchedule::SunsetToSunrise), OnOff::Off) => "At sunset",
             (_, OnOff::On) => "When the schedule ends",
             (_, OnOff::Off) => "When the schedule starts",
         };
@@ -2515,7 +2519,7 @@ impl State {
     fn menu_reason(&self, decision: &Decision) -> Option<String> {
         let Some(top) = decision.reasons.first() else {
             // Without the sun times, only macOS knows where the schedule stands, and applies it.
-            return (self.timeline.schedule == Some(Schedule::SunsetToSunrise))
+            return (self.timeline.schedule == Some(CheckedSchedule::SunsetToSunrise))
                 .then(|| "Following the schedule".to_owned());
         };
         let at = match &decision.place {
@@ -2534,7 +2538,7 @@ impl State {
                 (Some(until), _) => {
                     format!("following the schedule until {}", self.clock_time(*until))
                 }
-                (None, Some(Schedule::Off)) => "no schedule".to_owned(),
+                (None, Some(CheckedSchedule::Off)) => "no schedule".to_owned(),
                 (None, _) => "following the schedule".to_owned(),
             },
         };
@@ -2740,7 +2744,7 @@ impl State {
             check(
                 CheckKind::NightShift,
                 CheckState::Ok,
-                &match self.timeline.schedule {
+                &match self.timeline.schedule.map(Schedule::from) {
                     None => "Available.".to_owned(),
                     Some(Schedule::Off) => "Available, with no schedule.".to_owned(),
                     Some(Schedule::SunsetToSunrise) => {
