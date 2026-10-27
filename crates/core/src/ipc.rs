@@ -26,6 +26,12 @@ pub(crate) struct Pending {
 }
 
 impl Pending {
+    /// A request, and where its response arrives.
+    pub(crate) fn new(request: Request) -> (Self, mpsc::Receiver<Response>) {
+        let (reply, response) = mpsc::channel();
+        (Self { request, reply }, response)
+    }
+
     pub(crate) fn reply(self, response: Response) {
         // The receiver is gone only if the client already hung up, and then no one is waiting.
         let _ = self.reply.send(response);
@@ -125,9 +131,9 @@ fn converse(
         Ok(request) => request,
         Err(error) => return write_line(&mut writer, &Response::Error(bad_request(&error))),
     };
-    let (reply, response) = mpsc::channel();
+    let (pending, response) = Pending::new(request);
     sender
-        .send(Pending { request, reply })
+        .send(pending)
         .map_err(|_| io::Error::other("the core has shut down"))?;
     waker.wake();
     let response = response.recv_timeout(TIMEOUT).map_err(|_| {

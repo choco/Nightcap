@@ -657,7 +657,7 @@ impl Clock for SystemClock {
 pub struct Core {
     instance: Instance,
     install: Install,
-    socket: PathBuf,
+    socket: Option<PathBuf>,
     files: Arc<dyn Files>,
     store: state::Store,
     ad_hoc_store: adhoc::Store,
@@ -681,7 +681,10 @@ impl fmt::Debug for Core {
 struct Setup {
     instance: Instance,
     install: Install,
-    socket: PathBuf,
+    /// The socket the IPC thread serves, which the core removes on the way out.
+    socket: Option<PathBuf>,
+    /// The requests to answer on the next tick, which the IPC thread queues.
+    requests: mpsc::Receiver<ipc::Pending>,
     files: Arc<dyn Files>,
     clock: Arc<dyn Clock>,
     zone: TimeZone,
@@ -813,17 +816,17 @@ impl Core {
         } else {
             Install::Managed
         };
-        let core = Self::start(
-            Setup {
-                instance,
-                install,
-                socket,
-                files: Arc::new(files),
-                clock: Arc::new(SystemClock),
-                zone,
-            },
-            waker,
-        )?;
+        // Before any file is read, so a second instance stops here.
+        let requests = ipc::serve(&socket, waker)?;
+        let core = Self::start(Setup {
+            instance,
+            install,
+            socket: Some(socket),
+            requests,
+            files: Arc::new(files),
+            clock: Arc::new(SystemClock),
+            zone,
+        });
         tracing::info!(
             "core {} listening, {install:?} install",
             env!("CARGO_PKG_VERSION")
@@ -832,21 +835,22 @@ impl Core {
     }
 
     pub fn handle(&self, event: Event) -> Vec<Effect> {
-        let mut state = self.state();
-        self.catch_up(&mut state);
+        if let Event::CommandChosen { command } = &event {
+            let (effects, outcome) = self.choose(command);
+            if let Err(error) = outcome {
+                // The message can name a domain, so only the code is logged (ADR-0009).
+                tracing::warn!("a menu command was refused: {:?}", error.code);
+            }
+            return effects;
+        }
         // The user is looking at whatever their own choice in Nightcap's UI got wrong.
-        let chosen_in_nightcap = matches!(
+        let aloud = !matches!(
             event,
-            Event::CommandChosen { .. }
-                | Event::FixChosen { .. }
-                | Event::OnboardingFinished { .. }
+            Event::FixChosen { .. } | Event::OnboardingFinished { .. }
         );
-        let mut effects = self.react(&mut state, event);
-        self.rewatch(&mut state, &mut effects);
-        self.enforce(&mut state, &mut effects);
-        self.reschedule(&mut state, &mut effects);
-        self.announce(&mut state, !chosen_in_nightcap, &mut effects);
-        self.save(&mut state);
+        let (effects, ()) = self.turn(aloud, |state, effects| {
+            effects.extend(self.react(state, event));
+        });
         effects
     }
 
@@ -1021,24 +1025,47 @@ impl Core {
             .requests
             .lock()
             .expect("no panic happens while it's held");
-        let mut state = self.state();
-        self.catch_up(&mut state);
-        let mut effects = Vec::new();
-        for pending in requests.try_iter() {
-            let response = self.answer(&mut state, &pending.request, &mut effects);
-            pending.reply(response);
-        }
-        self.rewatch(&mut state, &mut effects);
-        self.enforce(&mut state, &mut effects);
-        self.reschedule(&mut state, &mut effects);
         // The CLI already printed what went wrong.
-        self.announce(&mut state, false, &mut effects);
-        self.save(&mut state);
+        let (effects, ()) = self.turn(false, |state, effects| {
+            for pending in requests.try_iter() {
+                let response = self.answer(state, &pending.request, effects);
+                pending.reply(response);
+            }
+        });
         effects
     }
 }
 
 impl Core {
+    /// Runs a command the user chose in the menu or Settings, which answers as the CLI's would.
+    /// A problem it causes isn't announced: the user is looking at what they chose.
+    pub(crate) fn choose(&self, command: &Command) -> (Vec<Effect>, Result<Decision, ErrorReply>) {
+        self.turn(false, |state, effects| {
+            self.run_command(state, command, effects)
+        })
+    }
+
+    /// One turn of the core, for an event or a tick: it applies the schedule transitions and
+    /// the ends that came due, lets `react` change the state, then rewatches, writes Night
+    /// Shift, reschedules, announces the problems that appeared unless `aloud` is false, and
+    /// saves.
+    fn turn<T>(
+        &self,
+        aloud: bool,
+        react: impl FnOnce(&mut State, &mut Vec<Effect>) -> T,
+    ) -> (Vec<Effect>, T) {
+        let mut state = self.state();
+        self.catch_up(&mut state);
+        let mut effects = Vec::new();
+        let outcome = react(&mut state, &mut effects);
+        self.rewatch(&mut state, &mut effects);
+        self.enforce(&mut state, &mut effects);
+        self.reschedule(&mut state, &mut effects);
+        self.announce(&mut state, aloud, &mut effects);
+        self.save(&mut state);
+        (effects, outcome)
+    }
+
     fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {
         match event {
             Event::Launched => {
@@ -1256,14 +1283,8 @@ impl Core {
                 }
                 effects
             }
-            Event::CommandChosen { command } => {
-                let mut effects = Vec::new();
-                if let Err(error) = self.run_command(state, &command, &mut effects) {
-                    // The message can name a domain, so only the code is logged (ADR-0009).
-                    tracing::warn!("a menu command was refused: {:?}", error.code);
-                }
-                effects
-            }
+            // `handle` runs it through `choose`.
+            Event::CommandChosen { .. } => Vec::new(),
             Event::TimerFired => {
                 // The shell's timer is spent, whether or not its transition came due.
                 state.wakeup = None;
@@ -1319,16 +1340,17 @@ impl Core {
                 let now = self.clock.now();
                 state.places.release(now);
                 state.tour = None;
-                if let Err(error) = std::fs::remove_file(&self.socket) {
-                    tracing::warn!("couldn't remove {}: {error}", self.socket.display());
+                if let Some(socket) = &self.socket
+                    && let Err(error) = std::fs::remove_file(socket)
+                {
+                    tracing::warn!("couldn't remove {}: {error}", socket.display());
                 }
                 Vec::new()
             }
         }
     }
 
-    fn start(setup: Setup, waker: Arc<dyn Waker>) -> Result<Self, CoreError> {
-        let requests = ipc::serve(&setup.socket, waker)?;
+    fn start(setup: Setup) -> Self {
         let store = state::Store::new(setup.files.clone());
         let mut persisted = store.load();
         persisted.expire(setup.clock.now());
@@ -1368,7 +1390,7 @@ impl Core {
             store,
             ad_hoc_store,
             clock: setup.clock.clone(),
-            requests: Mutex::new(requests),
+            requests: Mutex::new(setup.requests),
             state: Mutex::new(State {
                 facts: Facts {
                     night_shift: NightShift::Unavailable,
@@ -1420,7 +1442,7 @@ impl Core {
             }),
         };
         core.graduate(&mut core.state(), config.rules);
-        Ok(core)
+        core
     }
 
     /// Only a self-managed release opens at login and updates through Sparkle: an installer

@@ -14,7 +14,6 @@ use nightcap_protocol::{
     RuleSource, Schedule, Status, TimeOfDay, WebsiteChecking,
 };
 
-use crate::adhoc;
 use crate::config::NightShiftConfig;
 use crate::file::{Disk, Files, Paths};
 use crate::state::{Persisted, Store};
@@ -25,6 +24,7 @@ use crate::{
     SettingsSwitch, Setup, TourApp, TourFacts, TourPlace, TourSite, TourTitles, Waker,
     normalize_domain, tour_titles,
 };
+use crate::{adhoc, ipc};
 
 /// Stands in for the shell: every wake is reported on a channel the test can wait on.
 struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -77,11 +77,12 @@ fn start_as(socket: &Path, instance: Instance, install: Install) -> (Core, mpsc:
     start_with(setup(socket, instance, install))
 }
 
+/// Starts a core whose IPC thread serves `setup`'s socket.
 fn start_with(setup: Setup) -> (Core, mpsc::Receiver<()>) {
     let (sender, wakes) = mpsc::channel();
     let waker = Arc::new(ChannelWaker(Mutex::new(sender)));
-    let core = Core::start(setup, waker).unwrap();
-    (core, wakes)
+    let requests = ipc::serve(setup.socket.as_ref().unwrap(), waker).unwrap();
+    (Core::start(Setup { requests, ..setup }), wakes)
 }
 
 /// Starts a release core in Zurich whose clock reads `now` until the test moves it.
@@ -104,7 +105,7 @@ fn restart_at(socket: &Path, now: &str) -> (Core, PathBuf, mpsc::Receiver<()>, A
         .with_file_name("restarted")
         .join("nightcap.sock");
     let (core, wakes) = start_with(Setup {
-        socket: restarted.clone(),
+        socket: Some(restarted.clone()),
         clock: clock.clone(),
         ..setup(socket, Instance::Release, Install::Managed)
     });
@@ -116,7 +117,8 @@ fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
     Setup {
         instance,
         install,
-        socket: socket.to_owned(),
+        socket: Some(socket.to_owned()),
+        requests: mpsc::channel().1,
         files: on_disk(socket.parent().unwrap().parent().unwrap()),
         clock: TestClock::at("2026-10-16T12:00:00+02:00"),
         zone: TimeZone::get("Europe/Zurich").unwrap(),
@@ -4492,10 +4494,7 @@ fn a_second_instance_on_the_same_socket_is_refused() {
     let (_first, _wakes) = start(&socket);
 
     let (sender, _) = mpsc::channel();
-    let second = Core::start(
-        setup(&socket, Instance::Release, Install::Managed),
-        Arc::new(ChannelWaker(Mutex::new(sender))),
-    );
+    let second = ipc::serve(&socket, Arc::new(ChannelWaker(Mutex::new(sender))));
 
     assert!(matches!(second, Err(CoreError::AlreadyRunning { .. })));
 }
@@ -5189,7 +5188,7 @@ fn restart_self_managed(socket: &Path) -> (Core, PathBuf, mpsc::Receiver<()>) {
         .with_file_name("restarted")
         .join("nightcap.sock");
     let (core, wakes) = start_with(Setup {
-        socket: restarted.clone(),
+        socket: Some(restarted.clone()),
         ..setup(socket, Instance::Release, Install::SelfManaged)
     });
     (core, restarted, wakes)
