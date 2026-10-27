@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Runs what CI checks: every area by default, or only those named. CI's jobs call it by area.
+#   --rust  rustfmt, clippy, rustdoc and the tests
+#   --site  Biome, the type checker and the site's build (build-site)
+# Usage: check [--rust] [--site]
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+rust=
+site=
+if [[ $# -eq 0 ]]; then
+  rust=1
+  site=1
+fi
+for area in "$@"; do
+  case "$area" in
+    --rust) rust=1 ;;
+    --site) site=1 ;;
+    *)
+      echo "usage: check [--rust] [--site]" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$rust" ]]; then
+  cargo fmt --all --check
+  cargo clippy --workspace --all-targets -- -D warnings
+  RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+  scripts/run-tests
+fi
+
+if [[ -n "$site" ]]; then
+  scripts/build-site
+fi

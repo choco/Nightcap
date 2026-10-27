@@ -17,9 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - run: cargo fmt --all --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: scripts/run-tests
+      - run: scripts/check --rust
 
   macos:
     runs-on: xcode-27
@@ -27,6 +25,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select --switch /Applications/Xcode_27.0.app
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # Clippy and rustdoc reach the code behind cfg(target_os = "macos") only here.
+      - run: scripts/check --rust
       - run: scripts/build-core
       - run: scripts/build-app
 
@@ -42,4 +42,4 @@ jobs:
           package_json_file: site/package.json
           cache: true
           cache_dependency_path: site/pnpm-lock.yaml
-      - run: scripts/build-site
+      - run: scripts/check --site
