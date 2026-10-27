@@ -767,7 +767,8 @@ impl Core {
     }
 
     pub fn handle(&self, event: Event) -> Vec<Effect> {
-        self.catch_up();
+        let mut state = self.state();
+        self.catch_up(&mut state);
         // The user is looking at whatever their own choice in Nightcap's UI got wrong.
         let chosen_in_nightcap = matches!(
             event,
@@ -775,12 +776,12 @@ impl Core {
                 | Event::FixChosen { .. }
                 | Event::OnboardingFinished { .. }
         );
-        let mut effects = self.react(event);
-        self.rewatch(&mut effects);
-        self.enforce(&mut effects);
-        self.reschedule(&mut effects);
-        self.announce(!chosen_in_nightcap, &mut effects);
-        self.save();
+        let mut effects = self.react(&mut state, event);
+        self.rewatch(&mut state, &mut effects);
+        self.enforce(&mut state, &mut effects);
+        self.reschedule(&mut state, &mut effects);
+        self.announce(&mut state, !chosen_in_nightcap, &mut effects);
+        self.save(&mut state);
         effects
     }
 
@@ -938,27 +939,27 @@ impl Core {
             .requests
             .lock()
             .expect("no panic happens while it's held");
-        self.catch_up();
+        let mut state = self.state();
+        self.catch_up(&mut state);
         let mut effects = Vec::new();
         for pending in requests.try_iter() {
-            let response = self.answer(&pending.request, &mut effects);
+            let response = self.answer(&mut state, &pending.request, &mut effects);
             pending.reply(response);
         }
-        self.rewatch(&mut effects);
-        self.enforce(&mut effects);
-        self.reschedule(&mut effects);
+        self.rewatch(&mut state, &mut effects);
+        self.enforce(&mut state, &mut effects);
+        self.reschedule(&mut state, &mut effects);
         // The CLI already printed what went wrong.
-        self.announce(false, &mut effects);
-        self.save();
+        self.announce(&mut state, false, &mut effects);
+        self.save(&mut state);
         effects
     }
 }
 
 impl Core {
-    fn react(&self, event: Event) -> Vec<Effect> {
+    fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {
         match event {
             Event::Launched => {
-                let mut state = self.state();
                 let mut effects = Vec::new();
                 // Updates install silently, so the first launch of a new version says what's new.
                 // A first run has nothing to compare; one from before versions were kept has
@@ -1013,7 +1014,6 @@ impl Core {
                         .inspect_err(|error| tracing::debug!("{error}; it counts as having none"))
                         .ok()
                 });
-                let mut state = self.state();
                 state.facts.context.app = bundle_id;
                 state.app_name = name;
                 state.is_browser = is_browser;
@@ -1021,7 +1021,6 @@ impl Core {
             }
             // The host itself is never logged (ADR-0009).
             Event::HostChanged { generation, host } => {
-                let mut state = self.state();
                 match &mut state.watch {
                     Some(watch) if watch.generation == generation => {
                         watch.reported = true;
@@ -1034,7 +1033,6 @@ impl Core {
             }
             Event::LoginItemChanged { item } => {
                 tracing::info!("login item: {item:?}");
-                let mut state = self.state();
                 state.login_item = Some(item);
                 // An enabled item becomes the user's wish, however it got enabled.
                 if item == LoginItem::Enabled {
@@ -1049,7 +1047,6 @@ impl Core {
                 tracing::info!(
                     "permissions: accessibility {accessibility}, notifications {notifications:?}"
                 );
-                let mut state = self.state();
                 state.accessibility = Some(accessibility);
                 state.notifications = notifications;
                 // Allowed notifications become the user's wish, however they got allowed.
@@ -1063,8 +1060,6 @@ impl Core {
                 schedule,
                 sun_schedule_set_aside,
             } => {
-                let mut guard = self.state();
-                let state = &mut *guard;
                 if state.session == Session::Away {
                     tracing::debug!("ignored a status callback while dormant");
                     return Vec::new();
@@ -1110,11 +1105,10 @@ impl Core {
                 }
             }
             Event::StrengthChanged { value } => {
-                self.state().strength = Some(value);
+                state.strength = Some(value);
                 Vec::new()
             }
             Event::OnboardingFinished { websites } => {
-                let mut state = self.state();
                 state.onboarding = ONBOARDING;
                 if state.facts.config_websites.is_none() {
                     tracing::info!("onboarding finished; website checking {websites}");
@@ -1123,7 +1117,6 @@ impl Core {
                 Vec::new()
             }
             Event::TourStarted => {
-                let mut state = self.state();
                 let stands_in = state.facts.night_shift == NightShift::Off;
                 if !state.places.start_tour(stands_in) {
                     tracing::warn!("a tour started while one runs; keeping the first");
@@ -1141,7 +1134,7 @@ impl Core {
             }
             Event::TourEnded => {
                 let now = self.clock.now();
-                self.state().places.end_tour(now);
+                state.places.end_tour(now);
                 Vec::new()
             }
             Event::FixChosen { fix } => {
@@ -1149,16 +1142,15 @@ impl Core {
                 match fix {
                     Fix::StopCheckingWebsites => {
                         if let Err(error) =
-                            self.run_command(&Command::Websites(OnOff::Off), &mut effects)
+                            self.run_command(state, &Command::Websites(OnOff::Off), &mut effects)
                         {
                             tracing::warn!("a fix was refused: {:?}", error.code);
                         }
                     }
-                    Fix::KeepNotificationsOff => self.state().notifications_wanted = false,
-                    Fix::KeepScheduleOff => self.state().schedule_off_accepted = true,
+                    Fix::KeepNotificationsOff => state.notifications_wanted = false,
+                    Fix::KeepScheduleOff => state.schedule_off_accepted = true,
                     Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
                     Fix::DontOpenAtLogin => {
-                        let mut state = self.state();
                         state.open_at_login = false;
                         // An item waiting for approval would still ask for it.
                         if state.login_item != Some(LoginItem::NotRegistered) {
@@ -1166,14 +1158,14 @@ impl Core {
                         }
                     }
                     // An invalid config shows in its check again.
-                    Fix::Reload => _ = self.reload(&mut effects),
+                    Fix::Reload => _ = self.reload(state, &mut effects),
                     _ => tracing::debug!("{fix:?} is the shell's to carry out"),
                 }
                 effects
             }
             Event::CommandChosen { command } => {
                 let mut effects = Vec::new();
-                if let Err(error) = self.run_command(&command, &mut effects) {
+                if let Err(error) = self.run_command(state, &command, &mut effects) {
                     // The message can name a domain, so only the code is logged (ADR-0009).
                     tracing::warn!("a menu command was refused: {:?}", error.code);
                 }
@@ -1181,7 +1173,7 @@ impl Core {
             }
             Event::TimerFired => {
                 // The shell's timer is spent, whether or not its transition came due.
-                self.state().wakeup = None;
+                state.wakeup = None;
                 Vec::new()
             }
             Event::SunTimesChanged { sunrises, sunsets } => {
@@ -1200,14 +1192,14 @@ impl Core {
                         SunTimes::default()
                     }
                 };
-                self.state().facts.timeline.sun_times = sun_times;
+                state.facts.timeline.sun_times = sun_times;
                 Vec::new()
             }
             Event::TimeZoneChanged { iana_id } => {
                 match TimeZone::get(&iana_id) {
                     Ok(zone) => {
                         tracing::info!("time zone changed to {iana_id}");
-                        self.state().facts.timeline.zone = zone;
+                        state.facts.timeline.zone = zone;
                     }
                     Err(error) => {
                         tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}");
@@ -1217,13 +1209,13 @@ impl Core {
             }
             Event::SessionChanged { active } => {
                 tracing::info!("session active: {active}");
-                self.state().session = if active { Session::Back } else { Session::Away };
+                state.session = if active { Session::Back } else { Session::Away };
                 Vec::new()
             }
             Event::Woke => {
                 tracing::debug!("woke");
                 let now = self.clock.now();
-                if let Some(unreported) = &mut self.state().unreported {
+                if let Some(unreported) = &mut state.unreported {
                     unreported.until = now + POST_WAKE_GRACE;
                 }
                 Vec::new()
@@ -1232,7 +1224,7 @@ impl Core {
                 // Nightcap can't tell a restart from being removed, so it never leaves a force
                 // behind (ADR-0008), nor Night Shift on for a tour (ADR-0016).
                 let now = self.clock.now();
-                self.state().places.release(now);
+                state.places.release(now);
                 if let Err(error) = std::fs::remove_file(&self.socket) {
                     tracing::warn!("couldn't remove {}: {error}", self.socket.display());
                 }
@@ -1351,15 +1343,14 @@ impl Core {
         self.state.lock().expect("no panic happens while it's held")
     }
 
-    fn answer(&self, request: &Request, effects: &mut Vec<Effect>) -> Response {
+    fn answer(&self, state: &mut State, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
-            Request::Command(command) => match self.run_command(command, effects) {
+            Request::Command(command) => match self.run_command(state, command, effects) {
                 Ok(decision) => Response::Ok(Payload::Decision(decision)),
                 Err(error) => Response::Error(error),
             },
-            Request::Query(Query::Status) => self.status(),
+            Request::Query(Query::Status) => self.status(state),
             Request::Query(Query::Rules) => {
-                let state = self.state();
                 let look = state.places.look(&state.facts.world(self.clock.now()));
                 Response::Ok(Payload::Rules(
                     look.rules
@@ -1369,7 +1360,7 @@ impl Core {
                 ))
             }
             Request::Query(Query::Export(format)) => {
-                match adhoc::export(&self.state().places.kept().ad_hoc, *format) {
+                match adhoc::export(&state.places.kept().ad_hoc, *format) {
                     Ok(text) => Response::Ok(Payload::Export(text)),
                     Err(error) => Response::Error(refused(
                         ErrorCode::Internal,
@@ -1394,8 +1385,8 @@ impl Core {
                     .to_owned(),
                 })
             }
-            Request::Reload => match self.reload(effects) {
-                Ok(()) => self.status(),
+            Request::Reload => match self.reload(state, effects) {
+                Ok(()) => self.status(state),
                 Err(error) => Response::Error(error),
             },
         }
@@ -1403,18 +1394,17 @@ impl Core {
 
     /// Loads the config again; an invalid one keeps the rules loaded before, and its check says
     /// why.
-    fn reload(&self, effects: &mut Vec<Effect>) -> Result<(), ErrorReply> {
+    fn reload(&self, state: &mut State, effects: &mut Vec<Effect>) -> Result<(), ErrorReply> {
         match config::load(&self.config_file) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
-                let mut state = self.state();
                 state.facts.config_websites = config.websites;
                 state.config_night_shift = config.night_shift;
                 state.lengths = config.lengths;
                 state.apply_config_night_shift(effects);
                 state.config_error = None;
                 state.config_found = config.found;
-                self.graduate(&mut state, config.rules);
+                self.graduate(state, config.rules);
                 Ok(())
             }
             Err(error) => {
@@ -1423,7 +1413,7 @@ impl Core {
                     error.kind()
                 );
                 let refusal = refused(ErrorCode::InvalidConfig, error.to_string());
-                self.state().config_error = Some(error);
+                state.config_error = Some(error);
                 Err(refusal)
             }
         }
@@ -1432,11 +1422,10 @@ impl Core {
     /// Runs a command from the CLI or the menu, answering with the resulting decision.
     fn run_command(
         &self,
+        state: &mut State,
         command: &Command,
         effects: &mut Vec<Effect>,
     ) -> Result<Decision, ErrorReply> {
-        let mut guard = self.state();
-        let state = &mut *guard;
         let night_shift = state.facts.night_shift;
         let needs_night_shift = matches!(
             command,
@@ -1607,9 +1596,8 @@ impl Core {
 
     /// Applies every schedule transition that came due since the last event, and ends the
     /// timers and holds that ran out.
-    fn catch_up(&self) {
+    fn catch_up(&self, state: &mut State) {
         let now = self.clock.now();
-        let mut state = self.state();
         if now <= state.facts.applied_until {
             return;
         }
@@ -1637,8 +1625,7 @@ impl Core {
 
     /// Posts one notification when a problem appears, unless `aloud` is false because the user
     /// caused it themselves. A problem that ends and comes back is announced again.
-    fn announce(&self, aloud: bool, effects: &mut Vec<Effect>) {
-        let mut state = self.state();
+    fn announce(&self, state: &mut State, aloud: bool, effects: &mut Vec<Effect>) {
         let problems: Vec<_> = state
             .checks(self.clock.now())
             .into_iter()
@@ -1663,9 +1650,7 @@ impl Core {
 
     /// Watches the frontmost browser while website checking is on, unless its own place says
     /// off and no site could say on (ADR-0012, ADR-0018).
-    fn rewatch(&self, effects: &mut Vec<Effect>) {
-        let mut guard = self.state();
-        let state = &mut *guard;
+    fn rewatch(&self, state: &mut State, effects: &mut Vec<Effect>) {
         let holds_off = state
             .places
             .look(&state.facts.world(self.clock.now()))
@@ -1752,8 +1737,7 @@ impl Core {
     }
 
     /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).
-    fn save(&self) {
-        let mut state = self.state();
+    fn save(&self, state: &mut State) {
         let snapshot = state.snapshot(self.clock.now());
         if snapshot == state.saved {
             return;
@@ -1768,9 +1752,8 @@ impl Core {
     /// hold, whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
     /// times, which CoreBrightness can take a minute or two after login to work out, so the
     /// wakeup comes at the next whole minute instead: the shell reads them again before each.
-    fn reschedule(&self, effects: &mut Vec<Effect>) {
+    fn reschedule(&self, state: &mut State, effects: &mut Vec<Effect>) {
         let now = self.clock.now();
-        let mut state = self.state();
         let transition = state
             .facts
             .timeline
@@ -1811,8 +1794,7 @@ impl Core {
 
     /// Writes Night Shift when what the core wants differs from what was last observed
     /// (ADR-0004), once until a status callback reports the result.
-    fn enforce(&self, effects: &mut Vec<Effect>) {
-        let mut state = self.state();
+    fn enforce(&self, state: &mut State, effects: &mut Vec<Effect>) {
         if state.facts.night_shift == NightShift::Unavailable || state.session != Session::Active {
             return;
         }
@@ -1832,8 +1814,7 @@ impl Core {
         }
     }
 
-    fn status(&self) -> Response {
-        let state = self.state();
+    fn status(&self, state: &State) -> Response {
         let facts = &state.facts;
         let look = state.places.look(&facts.world(self.clock.now()));
         Response::Ok(Payload::Status(Box::new(Status {
