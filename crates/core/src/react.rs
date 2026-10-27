@@ -5,57 +5,14 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::NightShift;
 
-use crate::onboarding::ONBOARDING;
 use crate::schedule::SunTimes;
-use crate::{Core, Effect, Event, State, tour};
+use crate::{Core, Effect, Event, State};
 
 impl Core {
     pub(crate) fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {
         match event {
-            Event::Launched => {
-                let mut effects = Vec::new();
-                // Updates install silently, so the first launch of a new version says what's new.
-                // A first run has nothing to compare; one from before versions were kept has
-                // finished onboarding.
-                let version = env!("CARGO_PKG_VERSION");
-                let updated = match &state.last_version {
-                    Some(last) => last != version,
-                    None => state.onboarding > 0,
-                };
-                if updated {
-                    tracing::info!("updated to {version}");
-                    effects.push(Effect::Notify {
-                        title: format!("Nightcap updated to {version}"),
-                        body: "Click to see what’s new.".to_owned(),
-                        opens: Some(format!("https://nightcap.choco.me/changelog/#v{version}")),
-                    });
-                }
-                state.last_version = Some(version.to_owned());
-                if state.onboarding < ONBOARDING {
-                    // The config can answer website checking and Night Shift; opening at login
-                    // it can't.
-                    let night_shift = state.onboarding_night_shift();
-                    let night_shift_answered =
-                        !night_shift.ask_strength && !night_shift.ask_schedule;
-                    if state.facts.config_websites.is_some()
-                        && night_shift_answered
-                        && !state.grants.opens_itself_at_login
-                    {
-                        state.onboarding = ONBOARDING;
-                    } else {
-                        effects.push(Effect::ShowOnboarding {
-                            completed: state.onboarding,
-                        });
-                    }
-                }
-                if self.updates_itself() {
-                    effects.push(Effect::StartUpdater);
-                }
-                state.apply_config_night_shift(&mut effects);
-                effects
-            }
+            Event::Launched => self.launched(state),
             Event::AppActivated {
                 bundle_id,
                 name,
@@ -91,11 +48,7 @@ impl Core {
                 Vec::new()
             }
             Event::OnboardingFinished { websites } => {
-                state.onboarding = ONBOARDING;
-                if state.facts.config_websites.is_none() {
-                    tracing::info!("onboarding finished; website checking {websites}");
-                    state.facts.websites = websites;
-                }
+                state.onboarding_finished(websites);
                 Vec::new()
             }
             Event::TourStarted {
@@ -103,26 +56,11 @@ impl Core {
                 site,
                 example,
             } => {
-                let stands_in = state.facts.night_shift == NightShift::Off;
-                if !state.places.start_tour(stands_in) {
-                    tracing::warn!("a tour started while one runs; keeping the first");
-                    return Vec::new();
-                }
-                state.tour = Some(tour::Tour::new(&sample, site.as_ref(), &example));
-                tracing::info!(
-                    "tour started{}",
-                    if stands_in {
-                        ", standing in for the schedule with Night Shift on"
-                    } else {
-                        ""
-                    }
-                );
+                state.tour_started(&sample, site.as_ref(), &example);
                 Vec::new()
             }
             Event::TourEnded => {
-                let now = self.clock.now();
-                state.places.end_tour(now);
-                state.tour = None;
+                state.tour_ended(self.clock.now());
                 Vec::new()
             }
             Event::FixChosen { fix } => self.run_fix(state, fix),

@@ -1,5 +1,5 @@
 //! How a core starts: where it lives and what kind of install it serves, the clock it reads,
-//! and what it finds in its files.
+//! what it finds in its files, and what the shell's launch does.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
@@ -16,7 +16,7 @@ use crate::places::{Context, Kept, Places};
 use crate::schedule::{SunTimes, Timeline};
 use crate::turn::Reconciling;
 use crate::watch::Watching;
-use crate::{Core, CoreError, Facts, State, adhoc, ipc, state};
+use crate::{Core, CoreError, Effect, Facts, State, adhoc, ipc, state};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
@@ -140,6 +140,35 @@ impl Core {
     /// owns a managed one, and a dev build would shadow the installed app (ADR-0011).
     pub(crate) fn updates_itself(&self) -> bool {
         self.install == Install::SelfManaged && self.instance == Instance::Release
+    }
+
+    /// The shell's first event: says what's new after an update, offers onboarding, starts the
+    /// updater where this install updates itself, and applies the config's `[night_shift]`.
+    pub(crate) fn launched(&self, state: &mut State) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        // Updates install silently, so the first launch of a new version says what's new.
+        // A first run has nothing to compare; one from before versions were kept has
+        // finished onboarding.
+        let version = env!("CARGO_PKG_VERSION");
+        let updated = match &state.last_version {
+            Some(last) => last != version,
+            None => state.onboarding > 0,
+        };
+        if updated {
+            tracing::info!("updated to {version}");
+            effects.push(Effect::Notify {
+                title: format!("Nightcap updated to {version}"),
+                body: "Click to see what’s new.".to_owned(),
+                opens: Some(format!("https://nightcap.choco.me/changelog/#v{version}")),
+            });
+        }
+        state.last_version = Some(version.to_owned());
+        state.offer_onboarding(&mut effects);
+        if self.updates_itself() {
+            effects.push(Effect::StartUpdater);
+        }
+        state.apply_config_night_shift(&mut effects);
+        effects
     }
 }
 

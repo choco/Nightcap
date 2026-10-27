@@ -1,13 +1,13 @@
-//! What onboarding asks, which the shell pulls like the menu (ADR-0002): its Night Shift steps
-//! (ADR-0014), and what the config or the install already answers.
+//! What onboarding asks, which the shell pulls like the menu (ADR-0002), and when it shows: its
+//! Night Shift steps (ADR-0014), and what the config or the install already answers.
 
 use nightcap_protocol::{NightShift, Schedule};
 
 use crate::schedule::CheckedSchedule;
-use crate::{LoginItem, State};
+use crate::{Effect, LoginItem, State};
 
 /// The current onboarding version: welcome, notifications, and website checking.
-pub(crate) const ONBOARDING: u32 = 1;
+const ONBOARDING: u32 = 1;
 
 /// What onboarding asks, pulled like the menu: the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -49,7 +49,7 @@ impl OnboardingSteps {
 }
 
 impl State {
-    pub(crate) fn onboarding_night_shift(&self) -> OnboardingNightShift {
+    fn onboarding_night_shift(&self) -> OnboardingNightShift {
         let available = self.facts.night_shift != NightShift::Unavailable;
         let ask_strength =
             self.strength.is_some() && self.loaded.config_night_shift.strength.is_none();
@@ -65,6 +65,36 @@ impl State {
                     .is_some_and(|schedule| schedule != CheckedSchedule::Off),
             strength: self.strength,
             schedule: self.facts.timeline.schedule.map(Schedule::from),
+        }
+    }
+
+    /// Shows onboarding from the version last completed, unless the config answers all it would
+    /// ask.
+    pub(crate) fn offer_onboarding(&mut self, effects: &mut Vec<Effect>) {
+        if self.onboarding < ONBOARDING {
+            // The config can answer website checking and Night Shift; opening at login
+            // it can't.
+            let night_shift = self.onboarding_night_shift();
+            let night_shift_answered = !night_shift.ask_strength && !night_shift.ask_schedule;
+            if self.facts.config_websites.is_some()
+                && night_shift_answered
+                && !self.grants.opens_itself_at_login
+            {
+                self.onboarding = ONBOARDING;
+            } else {
+                effects.push(Effect::ShowOnboarding {
+                    completed: self.onboarding,
+                });
+            }
+        }
+    }
+
+    /// The user went through onboarding, choosing whether to check websites.
+    pub(crate) fn onboarding_finished(&mut self, websites: bool) {
+        self.onboarding = ONBOARDING;
+        if self.facts.config_websites.is_none() {
+            tracing::info!("onboarding finished; website checking {websites}");
+            self.facts.websites = websites;
         }
     }
 }

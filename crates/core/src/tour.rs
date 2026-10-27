@@ -3,13 +3,15 @@
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{BundleId, Command, Domain, Length, OnOff, Place, Reason, RuleIdentity};
+use nightcap_protocol::{
+    BundleId, Command, Domain, Length, NightShift, OnOff, Place, Reason, RuleIdentity,
+};
 
-use crate::config;
 use crate::domain::Host;
 use crate::places::{Context, Kept, Look, Places, Refusal, Stack, World};
 use crate::rows::{MenuItem, PlaceRow, RowItem, Rows};
 use crate::schedule::{SunTimes, Timeline};
+use crate::{State, config};
 
 /// An app the tour names: its bundle ID, which a rule names it by, and its name, which the menu
 /// calls it by.
@@ -128,6 +130,38 @@ impl Tour {
             },
             titles: self.titles.clone(),
         }
+    }
+}
+
+impl State {
+    /// Starts the tour, unless one runs, with what its steps follow (ADR-0016). It stands in for
+    /// the schedule with Night Shift on if it finds Night Shift off.
+    pub(crate) fn tour_started(
+        &mut self,
+        sample: &TourApp,
+        site: Option<&TourSite>,
+        example: &TourApp,
+    ) {
+        let stands_in = self.facts.night_shift == NightShift::Off;
+        if !self.places.start_tour(stands_in) {
+            tracing::warn!("a tour started while one runs; keeping the first");
+            return;
+        }
+        self.tour = Some(Tour::new(sample, site, example));
+        tracing::info!(
+            "tour started{}",
+            if stands_in {
+                ", standing in for the schedule with Night Shift on"
+            } else {
+                ""
+            }
+        );
+    }
+
+    /// Ends the tour, which puts back what it found, short of what ran out by `now`.
+    pub(crate) fn tour_ended(&mut self, now: Timestamp) {
+        self.places.end_tour(now);
+        self.tour = None;
     }
 }
 
