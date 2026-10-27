@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
 use crate::file::{self, Files};
-use crate::schedule;
+use crate::rules::schedule;
 
 /// The file as toml reads it. What's checked after reading keeps its place in the file, so a
 /// problem with it names its line.

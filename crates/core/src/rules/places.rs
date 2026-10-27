@@ -7,8 +7,8 @@ use nightcap_protocol::{
     RuleIdentity, RuleSource,
 };
 
-use crate::domain::{self, Host};
-use crate::schedule::Timeline;
+use crate::rules::domain::{self, Host};
+use crate::rules::schedule::Timeline;
 
 /// What rules match against, and the front app's name, which the menu calls it by.
 #[derive(Default)]
@@ -932,7 +932,7 @@ mod tests {
     use jiff::tz::TimeZone;
 
     use super::*;
-    use crate::schedule::{CheckedSchedule, SunTimes};
+    use crate::rules::schedule::{CheckedSchedule, SunTimes};
 
     const DAY: &str = "2026-10-16T12:00:00+02:00";
     const NIGHT: &str = "2026-10-16T23:00:00+02:00";

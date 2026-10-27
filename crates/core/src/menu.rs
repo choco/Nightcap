@@ -5,9 +5,9 @@ use jiff::Timestamp;
 use nightcap_protocol::{Command, Decision, NightShift, OnOff, Place, Reason};
 
 use crate::ProblemLine;
-use crate::places::Stack;
 use crate::rows::{PlaceRow, Rows, capitalized, clock_time, here, until_text, whose};
-use crate::schedule::CheckedSchedule;
+use crate::rules::places::Stack;
+use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 
 /// What the menu shows. The core decides it; the shell only draws it.

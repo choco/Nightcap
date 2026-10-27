@@ -6,7 +6,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::Command;
 
-use crate::schedule::SunTimes;
+use crate::rules::schedule::SunTimes;
 use crate::server::state::Inner;
 use crate::{Fact, Outcome, UiCommand};
 

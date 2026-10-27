@@ -3,7 +3,7 @@
 
 use nightcap_protocol::{NightShift, Schedule};
 
-use crate::schedule::CheckedSchedule;
+use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 use crate::{Effect, LoginItem};
 

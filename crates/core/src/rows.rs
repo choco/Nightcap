@@ -7,8 +7,8 @@ use nightcap_protocol::{
     Command, Layer, Length, OnOff, Place, Reason, Rule, RuleIdentity, RuleSource,
 };
 
-use crate::places::{Context, Look, Stack, World, place_identity};
-use crate::schedule::CheckedSchedule;
+use crate::rules::places::{Context, Look, Stack, World, place_identity};
+use crate::rules::schedule::CheckedSchedule;
 
 /// A place row: everywhere's under the Night Shift item, then the front app's and site's.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

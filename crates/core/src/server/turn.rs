@@ -6,7 +6,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
 
-use crate::schedule::CheckedSchedule;
+use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 use crate::{Effect, Event, Outcome};
 

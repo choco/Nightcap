@@ -9,8 +9,8 @@ use nightcap_protocol::{
 
 use crate::adhoc::AdHocError;
 use crate::config::{ConfigError, NightShiftConfig};
-use crate::places::{Places, Refusal};
-use crate::schedule::CheckedSchedule;
+use crate::rules::places::{Places, Refusal};
+use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 use crate::{Effect, Event, LoginItem, Outcome, config};
 
