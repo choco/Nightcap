@@ -9,10 +9,81 @@ use crate::domain::Host;
 use crate::places::{Context, Kept, Look, Places, Refusal, Stack, World};
 use crate::rows::Rows;
 use crate::schedule::{SunTimes, Timeline};
-use crate::{
-    MenuItem, MenuPath, PlaceRow, RowItem, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot,
-    TourTitles, config,
-};
+use crate::{MenuItem, PlaceRow, RowItem, config};
+
+/// An app the tour names: its bundle ID, which a rule names it by, and its name, which the menu
+/// calls it by.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourApp {
+    pub bundle_id: BundleId,
+    pub name: String,
+}
+
+/// The site the tour opens for its site step, and the browser it opens it in.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourSite {
+    pub domain: Domain,
+    pub browser: BundleId,
+}
+
+/// What a running tour's steps follow, and the titles they quote (ADR-0016).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourSnapshot {
+    pub facts: TourFacts,
+    pub titles: TourTitles,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourFacts {
+    /// The tour stands in for the schedule with Night Shift on: it was off as the tour started.
+    pub stands_in: bool,
+    /// Night Shift on everywhere, as the Night Shift item's check shows it: the switch's side.
+    pub everywhere_on: bool,
+    pub sample: TourPlace,
+    /// None where the tour has no site step.
+    pub site: Option<TourPlace>,
+}
+
+/// The tour sample or the site, as its step follows it.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourPlace {
+    /// The sample is the front app, or the site is the one in the front tab (ADR-0017).
+    pub in_front: bool,
+    /// What its rule says, if it has one.
+    pub rule: Option<OnOff>,
+    /// Its place's top layer says the other way from its rule.
+    pub snoozed: bool,
+}
+
+/// A menu item as the tour quotes it: the place row it's in, then the item.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MenuPath {
+    pub row: String,
+    pub item: String,
+}
+
+/// The menu's titles that the tour's steps quote, as `menu()` shows them in the situation each
+/// step describes.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TourTitles {
+    /// Always, in the sample's row with the sample in front and no rule.
+    pub add_sample_rule: MenuPath,
+    /// The sample's row while its rule holds, whose lengths snooze the rule.
+    pub snooze_sample: String,
+    /// What ends the rule's snooze, in the sample's row.
+    pub put_sample_rule_back: MenuPath,
+    /// Always, in the site's row with its browser in front on it.
+    pub add_site_rule: Option<MenuPath>,
+    /// Always, in the example's row with it in front and Night Shift off: a rule that says on.
+    pub add_example_rule: MenuPath,
+}
+
+/// The titles the tour's steps quote, for its sample, its site and the app it gives as an
+/// example, which `Core::tour` reports too.
+#[uniffi::export]
+pub fn tour_titles(sample: TourApp, site: Option<TourSite>, example: TourApp) -> TourTitles {
+    titles(&sample, site.as_ref(), &example)
+}
 
 /// What `TourStarted` named, which the tour's steps follow until it ends.
 #[derive(Debug)]
