@@ -12,7 +12,6 @@ final class Mac: NSObject {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let core: Core
     private let dockIcon: DockIcon
-    private let frontmostChanged: (_ bundleId: String?) -> Void
     private let accessibilityChanged: () -> Void
     private let notificationsChanged: () -> Void
     private let showOnboarding: () -> Void
@@ -37,14 +36,12 @@ final class Mac: NSObject {
     private var waiting: [() -> [Effect]] = []
     private var carryingOut = false
 
-    /// `frontmostChanged` runs as an app comes to the front, before the core hears of it;
-    /// `accessibilityChanged` as the grant flips; `notificationsChanged` as a read finds
+    /// `accessibilityChanged` runs as the grant flips; `notificationsChanged` as a read finds
     /// notifications changed; `showOnboarding` when the core asks for onboarding; and `changed`
     /// once a call into the core and the calls its effects led to are all carried out.
     init(
         core: Core,
         dockIcon: DockIcon,
-        frontmostChanged: @escaping (_ bundleId: String?) -> Void,
         accessibilityChanged: @escaping () -> Void,
         notificationsChanged: @escaping () -> Void,
         showOnboarding: @escaping () -> Void,
@@ -52,7 +49,6 @@ final class Mac: NSObject {
     ) {
         self.core = core
         self.dockIcon = dockIcon
-        self.frontmostChanged = frontmostChanged
         self.accessibilityChanged = accessibilityChanged
         self.notificationsChanged = notificationsChanged
         self.showOnboarding = showOnboarding
@@ -216,8 +212,6 @@ final class Mac: NSObject {
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
-        // The tour learns the front app first, so the force the new app brings is read as its.
-        frontmostChanged(bundleId)
         handle(.appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
     }
 

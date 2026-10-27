@@ -59,7 +59,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let mac = Mac(
             core: core,
             dockIcon: dockIcon,
-            frontmostChanged: { [weak self] bundleId in self?.tour?.frontmostChanged(bundleId) },
             accessibilityChanged: { [weak self] in self?.onboarding?.accessibilityChanged() },
             notificationsChanged: { [weak self] in self?.onboarding?.notificationsChanged() },
             showOnboarding: { [weak self] in self?.showOnboarding() },
@@ -136,9 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let core, let mac else { return }
         let tour = Tour(
-            standsIn: mac.nightShift?.status?.enabled == false,
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             browser: tourBrowser(core.settings()),
+            current: { (core.tour(), core.menu().icon) },
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
             begin: { mac.handle($0) },
@@ -200,10 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu = StatusMenu(
             current: { core.menu() },
             icons: siteIcons,
-            choose: { [weak self] command in
-                mac.handle(.commandChosen(command: command))
-                self?.tour?.chose(command)
-            },
+            choose: { command in mac.handle(.commandChosen(command: command)) },
             openSettings: { [weak self] onProblem in
                 self?.showSettings(onProblem ? SettingsWindow.tab(for: core.settings()) : nil)
             },
@@ -260,10 +256,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refresh() {
         statusMenu?.refresh()
         settingsWindow?.refresh()
-        if let tour, let core {
-            let menu = core.menu()
-            tour.forcedChanged(menu.icon == .forcedOff)
-            tour.switchChanged(on: menu.nightShift.on)
-        }
+        tour?.refresh()
     }
 }
