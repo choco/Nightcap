@@ -3014,11 +3014,16 @@ impl State {
     }
 
     /// The places from `place` on, as the engine reads them: the less specific ones in front
-    /// after it, or, for a place that isn't in front, everywhere.
+    /// after it, or, for a place that isn't in front, everywhere. The engine leaves out a tab
+    /// domain that says nothing, and no other domain is in front then, so the app and
+    /// everywhere follow it.
     fn places_from(&self, place: &Place) -> Vec<Place> {
         let in_front = engine::in_front(&self.inputs());
         match in_front.iter().position(|front| front == place) {
             Some(index) => in_front.into_iter().skip(index).collect(),
+            None if self.site_in_front().as_ref() == Some(place) => {
+                std::iter::once(place.clone()).chain(in_front).collect()
+            }
             None => vec![place.clone(), Place::Everywhere],
         }
     }

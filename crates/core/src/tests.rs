@@ -3732,6 +3732,38 @@ fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
 }
 
 #[test]
+fn a_site_that_says_nothing_turns_the_other_way_from_its_browser() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(
+        &socket,
+        "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
+    );
+    let (core, _wakes, _clock) = start_at(&socket, "2026-10-16T23:00:00+02:00");
+    core.handle(Event::StatusChanged {
+        enabled: true,
+        schedule: custom_hours(),
+        sun_schedule_set_aside: false,
+    });
+    activate_browser(&core, "com.apple.Safari");
+
+    report_host(&core, 1, "example.com");
+
+    let row = site_row(&core).unwrap();
+    assert_eq!(
+        site_title(&row),
+        ("Turn On at This Site", Some("example.com"))
+    );
+    assert_eq!(
+        choice_titled(&row, "Always").command,
+        Command::AddRule {
+            identity: domain("example.com"),
+            says: OnOff::On,
+        }
+    );
+}
+
+#[test]
 fn the_site_row_snoozes_a_config_rule() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
