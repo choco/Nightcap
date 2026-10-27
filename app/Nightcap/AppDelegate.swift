@@ -165,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let core, let mac, let accessibility = mac.accessibility else { return }
         let onboarding = Onboarding(
             steps: core.onboarding(),
-            rules: core.settings().rules,
+            rules: { core.settings().rules },
             icons: siteIcons,
             sun: mac.nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }

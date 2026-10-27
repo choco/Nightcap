@@ -71,11 +71,13 @@ enum Snapshot {
         let steps = { (nightShift: OnboardingNightShift) in
             Onboarding(
                 steps: OnboardingSteps(nightShift: nightShift, websitesFromConfig: nil, opensAtLogin: false),
-                rules: [
-                    SettingsRule(
-                        identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
-                        action: nil)
-                ],
+                rules: {
+                    [
+                        SettingsRule(
+                            identity: .app("com.apple.Photos"), says: .off, label: "From your config", snoozed: false,
+                            action: nil)
+                    ]
+                },
                 icons: icons,
                 sun: Sun(
                     sunset: Calendar.current.date(bySettingHour: 18, minute: 41, second: 0, of: Date())!,
@@ -88,7 +90,7 @@ enum Snapshot {
         alreadySetUp.alreadySetUp = true
         alreadySetUp.schedule = .sunsetToSunrise
         let nightShiftUser = steps(alreadySetUp)
-        let states: [(String, Onboarding, Onboarding.Step, Onboarding.WebsitesPage, Bool)] = [
+        let states: [(String, Onboarding, OnboardingFlow.Step, OnboardingFlow.WebsitesPage, Bool)] = [
             ("already-set-up", nightShiftUser, .alreadySetUp, .ask, false),
             ("review", nightShiftUser, .strength, .ask, true),
             ("strength", newUser, .strength, .ask, false),

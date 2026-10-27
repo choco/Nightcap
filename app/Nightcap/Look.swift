@@ -473,8 +473,7 @@ final class StrengthSlider: NSSlider {
 /// already reached can be clicked.
 final class StepDots: NSView {
     struct Dot {
-        enum State { case current, done, todo }
-        let state: State
+        let state: OnboardingFlow.Dot.State
         let label: String
         let go: (() -> Void)?
     }
