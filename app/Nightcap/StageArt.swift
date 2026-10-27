@@ -23,8 +23,9 @@ struct Sun: Equatable {
 }
 
 enum StageArt {
-    /// The scene's view, sized to its content. `strength` warms the mocks of a screen.
-    static func view(for scene: Scene, strength: UInt8, sun: Sun?) -> NSView {
+    /// The scene's view, sized to its content. `strength` warms the mocks of a screen, and the menu
+    /// shows `shortcut`.
+    static func view(for scene: Scene, strength: UInt8, sun: Sun?, shortcut: KeyboardShortcuts.Shortcut?) -> NSView {
         switch scene {
         case .strength: StrengthArt(strength: strength)
         case .timeline(let schedule): timeline(schedule, sun: sun)
@@ -34,7 +35,7 @@ enum StageArt {
         case .accessibility(let granted): accessibility(granted: granted)
         case .sites: sites(strength: strength)
         case .lastThings(let app): lastThings(app: app, strength: strength)
-        case .ready: ready()
+        case .ready: ready(shortcut: shortcut)
         }
     }
 
@@ -302,7 +303,7 @@ enum StageArt {
     /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift
     /// item, the strength between the menu's suns, everywhere's row, then the front app's
     /// (ADR-0018). It stops there: Settings and Quit, under them, don't fit the stage.
-    private static func ready() -> NSView {
+    private static func ready(shortcut: KeyboardShortcuts.Shortcut?) -> NSView {
         let menu = readyMenu
         let reason = menu.nightShift.reason.map { MenuArt.wrapped($0).split(separator: "\n").map(String.init) } ?? []
         // Down the menu: the Night Shift item, whose lines set its height, then each entry, a
@@ -342,7 +343,7 @@ enum StageArt {
             for (index, text) in reason.enumerated() {
                 line(text, .systemFont(ofSize: 10), .nightcapSecondary, title, 26 + CGFloat(index) * 12)
             }
-            if let keys = KeyboardShortcuts.getShortcut(for: .nightShift)?.description {
+            if let keys = shortcut?.description {
                 line(keys, item, .nightcapSecondary, box.maxX - 15 - Paint.width(keys, item), 25)
             }
             var y = top

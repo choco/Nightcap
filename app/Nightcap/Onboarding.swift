@@ -1,4 +1,5 @@
 import AppKit
+import KeyboardShortcuts
 import NightcapCore
 
 /// Onboarding (ADR-0011, ADR-0012, ADR-0014): one step at a time under a stage that illustrates
@@ -50,6 +51,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private let flow: OnboardingFlow
     private let icons: SiteIcons
     private let sun: Sun?
+    private let shortcut: KeyboardShortcuts.Shortcut?
     /// The window's lasting content: the stage, whose loops would restart if it were rebuilt, and
     /// the page under it, which is.
     private var stage: Stage?
@@ -64,14 +66,16 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
 
-    /// `rules` are the core's rules as they stand; `choose` sends a command to the core, as the
-    /// menu does; `notifications` says whether notifications are allowed, denied or not asked for
-    /// yet, as last read; `onFinish` runs once onboarding ends, by Done or the close button.
+    /// `rules` are the core's rules as they stand; `shortcut` is the one Ready's menu shows;
+    /// `choose` sends a command to the core, as the menu does; `notifications` says whether
+    /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
+    /// onboarding ends, by Done or the close button.
     init(
         steps setup: OnboardingSteps,
         rules: @escaping () -> [SettingsRule],
         icons: SiteIcons,
         sun: Sun?,
+        shortcut: KeyboardShortcuts.Shortcut?,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
@@ -89,6 +93,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             notifications: notifications, askForNotifications: askForNotifications, onFinish: onFinish)
         self.icons = icons
         self.sun = sun
+        self.shortcut = shortcut
         super.init()
         window.title = "Welcome to Nightcap"
         window.titleVisibility = .hidden
@@ -209,7 +214,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func build() {
         let content = Backdrop()
         let band = window.frame.height - window.contentLayoutRect.height
-        let stage = Stage(band: band, height: Self.stageHeight, sun: sun)
+        let stage = Stage(band: band, height: Self.stageHeight, sun: sun, shortcut: shortcut)
         let pageArea = NSView()
         for view in [stage, pageArea] {
             view.translatesAutoresizingMaskIntoConstraints = false
@@ -894,6 +899,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 /// with the wordmark.
 final class Stage: NSView {
     private let sun: Sun?
+    private let shortcut: KeyboardShortcuts.Shortcut?
     /// Where the illustration's centre sits: in the middle of what the title band leaves.
     private let middle: CGFloat
     private var scene: Scene?
@@ -904,8 +910,9 @@ final class Stage: NSView {
         didSet { (art as? StrengthArt)?.strength = strength }
     }
 
-    init(band: CGFloat, height: CGFloat, sun: Sun?) {
+    init(band: CGFloat, height: CGFloat, sun: Sun?, shortcut: KeyboardShortcuts.Shortcut?) {
         self.sun = sun
+        self.shortcut = shortcut
         middle = band + (height - band) / 2
         super.init(frame: .zero)
         let wordmark = Self.wordmark()
@@ -932,7 +939,7 @@ final class Stage: NSView {
         guard scene != self.scene else { return }
         self.scene = scene
         art?.removeFromSuperview()
-        let art = StageArt.view(for: scene, strength: strength, sun: sun)
+        let art = StageArt.view(for: scene, strength: strength, sun: sun, shortcut: shortcut)
         art.translatesAutoresizingMaskIntoConstraints = false
         addSubview(art)
         NSLayoutConstraint.activate([

@@ -19,6 +19,8 @@ enum Snapshot {
             domain = ["figma.com"]
             """
         let sunrise = Calendar.current.date(byAdding: .day, value: 1, to: today(7, 12))!
+        // A new user's shortcut, whatever the dev build has recorded.
+        let shortcut = KeyboardShortcuts.Name.nightShift.initialShortcut!
         // A self-managed release in the evening, whose config broke after its rules loaded: the
         // reload keeps them, beside the check that says why.
         let settingsCore = try! Core.staged(
@@ -50,7 +52,9 @@ enum Snapshot {
             NSApp.appearance = NSAppearance(named: appearance)
             for tab in SettingsWindow.Tab.allCases {
                 let url = URL(fileURLWithPath: folder).appendingPathComponent("app-\(tab.rawValue)-\(name).png")
-                guard let png = window.snapshot(tab) else { fatalError("couldn't render \(tab)") }
+                guard let png = window.snapshot(tab, shortcut: shortcut) else {
+                    fatalError("couldn't render \(tab)")
+                }
                 try! png.write(to: url)
             }
         }
@@ -70,6 +74,7 @@ enum Snapshot {
                 rules: { core.settings().rules },
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
+                shortcut: shortcut,
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
                 notifications: { .notRequested }, askForNotifications: {}, onFinish: { _ in })
         }
@@ -98,7 +103,7 @@ enum Snapshot {
             }
         }
         let tour = Tour(
-            shortcut: KeyboardShortcuts.Shortcut(.n, modifiers: [.control, .option, .command]),
+            shortcut: shortcut,
             browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
             current: { (nil, .off) }, press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
         let away = TourPlace(inFront: false, rule: nil, snoozed: false)

@@ -41,6 +41,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private var shown: Settings?
     /// Whether switching tabs animates the window to its new height.
     private var animates = true
+    #if DEBUG
+    /// The shortcut a snapshot's recorder shows, held by the recorder alone, so the one the dev
+    /// build has recorded stays as it is.
+    private var snapshotShortcut: KeyboardShortcuts.Shortcut?
+    #endif
 
     /// The groups' width, which makes the mockup's 600-point window.
     private static let width: CGFloat = 552
@@ -110,11 +115,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     #if DEBUG
-    /// The shown tab's content as a PNG, for comparing against the mockup.
-    func snapshot(_ tab: Tab) -> Data? {
+    /// The shown tab's content as a PNG, for comparing against the mockup, with the scenario's
+    /// `shortcut` in the shortcut's recorder.
+    func snapshot(_ tab: Tab, shortcut: KeyboardShortcuts.Shortcut) -> Data? {
         let window = self.window ?? makeWindow()
         window.alphaValue = 0
         animates = false
+        snapshotShortcut = shortcut
         show(tab)
         return window.contentView?.png()
     }
@@ -262,7 +269,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                             title: "Shortcut",
                             detail:
                                 "Tap it to turn Night Shift on or off. Hold it to see true colour until you let go.",
-                            accessory: KeyboardShortcuts.RecorderCocoa(for: .nightShift)),
+                            accessory: shortcutRecorder()),
                         nil),
                 ]),
             block(
@@ -304,6 +311,15 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                         nil),
                 ]),
         ])
+    }
+
+    /// The shortcut's recorder, bound to the shortcut KeyboardShortcuts keeps in user defaults; a
+    /// snapshot's shows its scenario's instead.
+    private func shortcutRecorder() -> NSView {
+        #if DEBUG
+        if let snapshotShortcut { return KeyboardShortcuts.RecorderCocoa(shortcut: snapshotShortcut) }
+        #endif
+        return KeyboardShortcuts.RecorderCocoa(for: .nightShift)
     }
 
     /// "Open at login", in self-managed installs: its switch shows on or off, so its check
