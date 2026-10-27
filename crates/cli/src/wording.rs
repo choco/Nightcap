@@ -6,7 +6,7 @@ use jiff::tz::TimeZone;
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, ConfigFileDetail, Decision, FileError,
     NightShiftDetail, NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule,
-    RuleSource, Schedule, TimeOfDay,
+    RuleIdentity, RuleSource, Schedule, TimeOfDay,
 };
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
@@ -57,6 +57,23 @@ pub(crate) fn rule(rule: &Rule) -> String {
         source(rule.source),
         rule.says
     )
+}
+
+/// What adding a rule for `identity` that says `says` did, given the rule Nightcap had for the
+/// same app or domain just before: added one, changed the user's own, or left one that already
+/// says so. A config rule that says otherwise is refused before this is said.
+pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, before: Option<&Rule>) -> String {
+    match before {
+        None => format!("Added {identity}, which turns Night Shift {says}."),
+        Some(rule) if rule.says == says => format!(
+            "The {} rule for {identity} already turns Night Shift {says}.",
+            source(rule.source)
+        ),
+        Some(rule) => format!(
+            "Changed the {} rule for {identity} to turn Night Shift {says}.",
+            source(rule.source)
+        ),
+    }
 }
 
 fn source(source: RuleSource) -> &'static str {
@@ -186,7 +203,7 @@ fn file_error(error: &FileError) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nightcap_protocol::{Layer, RuleIdentity};
+    use nightcap_protocol::Layer;
 
     use super::*;
 
@@ -480,6 +497,45 @@ mod tests {
                 version: 3,
             })),
             "Ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml is version 3, from a newer Nightcap than this one."
+        );
+    }
+
+    #[test]
+    fn adding_a_rule_says_whether_it_was_added_changed_or_already_there() {
+        let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
+        let there = |source, says| Rule {
+            identity: "app:com.figma.desktop".parse().unwrap(),
+            source,
+            says,
+        };
+
+        assert_eq!(
+            rule_added(&figma, OnOff::Off, None),
+            "Added app:com.figma.Desktop, which turns Night Shift off."
+        );
+        assert_eq!(
+            rule_added(
+                &figma,
+                OnOff::Off,
+                Some(&there(RuleSource::Config, OnOff::Off))
+            ),
+            "The config rule for app:com.figma.Desktop already turns Night Shift off."
+        );
+        assert_eq!(
+            rule_added(
+                &figma,
+                OnOff::On,
+                Some(&there(RuleSource::AdHoc, OnOff::On))
+            ),
+            "The ad-hoc rule for app:com.figma.Desktop already turns Night Shift on."
+        );
+        assert_eq!(
+            rule_added(
+                &figma,
+                OnOff::On,
+                Some(&there(RuleSource::AdHoc, OnOff::Off))
+            ),
+            "Changed the ad-hoc rule for app:com.figma.Desktop to turn Night Shift on."
         );
     }
 }

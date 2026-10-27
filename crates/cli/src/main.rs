@@ -418,7 +418,14 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
         }
         RulesAction::Add { identity, on } => {
             let says = OnOff::from(on);
-            let done = format!("Added {identity}, which turns Night Shift {says}.");
+            // The reply is the decision alone, so what the add did follows from the rule there
+            // before it.
+            let Payload::Rules(rules) = request(instance, &Request::Query(Query::Rules), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            let before = rules.iter().find(|rule| rule.identity == identity);
+            let done = wording::rule_added(&identity, says, before);
             (protocol::Command::AddRule { identity, says }, done)
         }
         RulesAction::Remove { identity } => {
