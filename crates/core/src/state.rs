@@ -24,6 +24,10 @@ const VERSION: u32 = 1;
 /// What the core believes about the system, as last reported by the shell, plus what it
 /// keeps across restarts.
 pub(crate) struct State {
+    /// A self-managed release, which updates itself through Sparkle and opens itself at login
+    /// if the user wants: an installer owns a managed one, and a dev build would shadow the
+    /// installed app (ADR-0011).
+    pub(crate) manages_itself: bool,
     pub(crate) facts: Facts,
     pub(crate) places: Places,
     pub(crate) strength: Option<u8>,

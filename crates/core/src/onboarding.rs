@@ -43,7 +43,7 @@ impl OnboardingSteps {
             opens_at_login: state
                 .grants
                 .login_item
-                .filter(|_| state.grants.opens_itself_at_login)
+                .filter(|_| state.manages_itself)
                 .map(|item| item != LoginItem::NotRegistered),
         }
     }
@@ -77,9 +77,7 @@ impl State {
             // it can't.
             let night_shift = self.onboarding_night_shift();
             let night_shift_answered = !night_shift.ask_strength && !night_shift.ask_schedule;
-            if self.facts.config_websites.is_some()
-                && night_shift_answered
-                && !self.grants.opens_itself_at_login
+            if self.facts.config_websites.is_some() && night_shift_answered && !self.manages_itself
             {
                 self.onboarding = ONBOARDING;
             } else {

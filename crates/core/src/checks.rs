@@ -134,8 +134,6 @@ pub(crate) struct Grants {
     pub(crate) login_item: Option<LoginItem>,
     /// See `state::Persisted::open_at_login`.
     pub(crate) open_at_login: bool,
-    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
-    pub(crate) opens_itself_at_login: bool,
     /// macOS has sunset to sunrise set aside, and the schedule is off.
     pub(crate) schedule_set_aside: bool,
     /// See `state::Persisted::schedule_off_accepted`.
@@ -324,11 +322,7 @@ impl State {
                 },
             ));
         }
-        if let Some(item) = self
-            .grants
-            .login_item
-            .filter(|_| self.grants.opens_itself_at_login)
-        {
+        if let Some(item) = self.grants.login_item.filter(|_| self.manages_itself) {
             found.push(CheckDetail::OpenAtLogin(
                 match (item, self.grants.open_at_login) {
                     (LoginItem::Enabled, _) => OpenAtLoginDetail::Opens,

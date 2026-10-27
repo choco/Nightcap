@@ -88,6 +88,8 @@ impl Core {
             clock: setup.clock.clone(),
             requests: Mutex::new(setup.requests),
             state: Mutex::new(State {
+                manages_itself: setup.install == Install::SelfManaged
+                    && setup.instance == Instance::Release,
                 facts: Facts {
                     night_shift: NightShift::Unavailable,
                     timeline: Timeline {
@@ -113,8 +115,6 @@ impl Core {
                     notifications_wanted: persisted.notifications_wanted,
                     login_item: None,
                     open_at_login: persisted.open_at_login,
-                    opens_itself_at_login: setup.install == Install::SelfManaged
-                        && setup.instance == Instance::Release,
                     schedule_set_aside: false,
                     schedule_off_accepted: persisted.schedule_off_accepted,
                     announced: persisted.announced.clone(),
@@ -135,12 +135,6 @@ impl Core {
         };
         core.graduate(&mut core.state(), config.rules);
         core
-    }
-
-    /// Only a self-managed release opens at login and updates through Sparkle: an installer
-    /// owns a managed one, and a dev build would shadow the installed app (ADR-0011).
-    pub(crate) fn updates_itself(&self) -> bool {
-        self.install == Install::SelfManaged && self.instance == Instance::Release
     }
 
     /// The shell's first event: says what's new after an update, offers onboarding, starts the
@@ -165,7 +159,7 @@ impl Core {
         }
         state.last_version = Some(version.to_owned());
         state.offer_onboarding(&mut effects);
-        if self.updates_itself() {
+        if state.manages_itself {
             effects.push(Effect::StartUpdater);
         }
         state.apply_config_night_shift(&mut effects);

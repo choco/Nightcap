@@ -113,7 +113,7 @@ impl Settings {
             open_at_login: state
                 .grants
                 .login_item
-                .filter(|_| state.grants.opens_itself_at_login)
+                .filter(|_| state.manages_itself)
                 .map(|item| {
                     let on = item != LoginItem::NotRegistered;
                     SettingsSwitch {

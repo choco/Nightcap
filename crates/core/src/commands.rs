@@ -79,7 +79,7 @@ impl Core {
             Command::AddRule { identity, says } => self.add_rule(state, identity, *says),
             Command::RemoveRule(identity) => self.remove_rule(state, identity),
             Command::OpenAtLogin(chosen) => {
-                if self.updates_itself() {
+                if state.manages_itself {
                     state.grants.open_at_login = *chosen == OnOff::On;
                     match chosen {
                         OnOff::On => effects.push(Effect::RegisterLoginItem),

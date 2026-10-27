@@ -42,7 +42,7 @@ impl Core {
                 }
             }
             Request::Update => {
-                if self.updates_itself() {
+                if state.manages_itself {
                     tracing::info!("checking for updates");
                     effects.push(Effect::CheckForUpdates);
                     return Response::Ok(Payload::UpdateCheckStarted);

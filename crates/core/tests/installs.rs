@@ -71,6 +71,31 @@ fn a_dev_build_never_registers_a_login_item() {
     assert_eq!(launch(&staged), Vec::new());
 }
 
+#[test]
+fn only_an_install_that_updates_itself_opens_itself_at_login() {
+    for (instance, install, manages_itself) in [
+        (Instance::Release, Install::SelfManaged, true),
+        (Instance::Release, Install::Managed, false),
+        (Instance::Dev, Install::SelfManaged, false),
+        (Instance::Dev, Install::Managed, false),
+    ] {
+        let staged = noon().installed(instance, install).stage().unwrap();
+        staged.core().handle(login_item(LoginItem::NotRegistered));
+
+        let (_, update) = staged.request(Request::Update);
+        let (_, login) = send(&staged, Command::OpenAtLogin(OnOff::On));
+
+        let case = format!("{instance:?}, {install:?}");
+        assert_eq!(matches!(update, Response::Ok(_)), manages_itself, "{case}");
+        assert_eq!(matches!(login, Response::Ok(_)), manages_itself, "{case}");
+        assert_eq!(
+            staged.core().onboarding().opens_at_login.is_some(),
+            manages_itself,
+            "{case}"
+        );
+    }
+}
+
 fn login_item(item: LoginItem) -> Event {
     Event::LoginItemChanged { item }
 }
