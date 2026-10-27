@@ -9,10 +9,13 @@ use nightcap_protocol::{
     IdentityError, OnOff, Rule, RuleIdentity, RuleSource, Schedule, TimeOfDay,
 };
 use serde::{Deserialize, Serialize};
+use toml::Spanned;
 
 use crate::file::{self, Files};
 use crate::schedule;
 
+/// The file as toml reads it. What's checked after reading keeps its place in the file, so a
+/// problem with it names its line.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
@@ -30,15 +33,15 @@ struct File {
 #[serde(deny_unknown_fields)]
 struct MenuFile {
     /// The menu's preset lengths, such as "30m", "1h" or "1h30m" (ADR-0018).
-    lengths: Option<Vec<String>>,
+    lengths: Option<Spanned<Vec<String>>>,
 }
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct NightShiftFile {
-    strength: Option<u8>,
+    strength: Option<Spanned<u8>>,
     /// "off", "sunset-to-sunrise", or custom hours such as "22:00-07:00".
-    schedule: Option<String>,
+    schedule: Option<Spanned<String>>,
 }
 
 /// Night Shift's strength and schedule as the config sets them, each optional. Nightcap
@@ -67,17 +70,17 @@ struct Rules {
     #[serde(default)]
     on: RuleLists,
     /// Lists straight under `[rules]`, which name no say; read only to point at the tables.
-    app: Option<serde::de::IgnoredAny>,
-    domain: Option<serde::de::IgnoredAny>,
+    app: Option<Spanned<serde::de::IgnoredAny>>,
+    domain: Option<Spanned<serde::de::IgnoredAny>>,
 }
 
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RuleLists {
     #[serde(default)]
-    app: Vec<String>,
+    app: Vec<Spanned<String>>,
     #[serde(default)]
-    domain: Vec<String>,
+    domain: Vec<Spanned<String>>,
 }
 
 /// The menu's preset lengths when the config sets none.
@@ -97,8 +100,12 @@ pub(crate) enum ConfigError {
     Unreadable { path: PathBuf, error: io::Error },
     #[error("{}: {error}", .path.display())]
     Malformed { path: PathBuf, error: Malformed },
-    #[error("{}: {problem}", .path.display())]
-    Invalid { path: PathBuf, problem: Problem },
+    #[error("{}: line {line}: {problem}", .path.display())]
+    Invalid {
+        path: PathBuf,
+        line: usize,
+        problem: Problem,
+    },
 }
 
 impl ConfigError {
@@ -124,15 +131,8 @@ pub(crate) struct Malformed {
 impl Malformed {
     /// `error`, which toml found in `contents`.
     pub(crate) fn new(error: &toml::de::Error, contents: &[u8]) -> Self {
-        let line = error.span().map(|span| {
-            1 + contents
-                .iter()
-                .take(span.start)
-                .filter(|&&byte| byte == b'\n')
-                .count()
-        });
         Self {
-            line,
+            line: error.span().map(|span| line_at(contents, span.start)),
             message: error.message().to_owned(),
         }
     }
@@ -147,13 +147,22 @@ impl fmt::Display for Malformed {
     }
 }
 
+/// The line, counted from 1, that the byte at `offset` in `contents` is on.
+fn line_at(contents: &[u8], offset: usize) -> usize {
+    1 + contents
+        .iter()
+        .take(offset)
+        .filter(|&&byte| byte == b'\n')
+        .count()
+}
+
 /// What makes a well-formed config invalid.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum Problem {
     #[error("rules are listed by what they say, under [rules.off] and [rules.on]")]
     UnsaidRules,
     #[error(transparent)]
-    Entry(#[from] IdentityError),
+    Entry(IdentityError),
     #[error("{0} is in both rules.off and rules.on: an app or domain has one rule")]
     BothWays(RuleIdentity),
     #[error("night_shift.strength is 0 to 100, not {0}")]
@@ -195,32 +204,34 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
     })?;
     checked(file).map_err(|problem| ConfigError::Invalid {
         path: path(),
-        problem,
+        line: line_at(&contents, problem.span().start),
+        problem: problem.into_inner(),
     })
 }
 
-/// What a well-formed config declares, once it's checked.
-fn checked(file: File) -> Result<Config, Problem> {
-    if file.rules.app.is_some() || file.rules.domain.is_some() {
-        return Err(Problem::UnsaidRules);
+/// What a well-formed config declares, once it's checked, or its first problem and where it is.
+fn checked(file: File) -> Result<Config, Spanned<Problem>> {
+    if let Some(unsaid) = file.rules.app.as_ref().or(file.rules.domain.as_ref()) {
+        return Err(Spanned::new(unsaid.span(), Problem::UnsaidRules));
     }
     let mut rules: Vec<Rule> = Vec::new();
     for (says, lists) in [(OnOff::Off, &file.rules.off), (OnOff::On, &file.rules.on)] {
         let apps = lists
             .app
             .iter()
-            .map(|entry| entry.parse().map(RuleIdentity::App));
+            .map(|entry| (entry, entry.get_ref().parse().map(RuleIdentity::App)));
         let domains = lists
             .domain
             .iter()
-            .map(|entry| entry.parse().map(RuleIdentity::Domain));
-        for identity in apps.chain(domains) {
-            let identity = identity?;
+            .map(|entry| (entry, entry.get_ref().parse().map(RuleIdentity::Domain)));
+        for (entry, identity) in apps.chain(domains) {
+            let at = |problem| Spanned::new(entry.span(), problem);
+            let identity = identity.map_err(|error| at(Problem::Entry(error)))?;
             if let Some(other) = rules
                 .iter()
                 .find(|rule| rule.identity == identity && rule.says != says)
             {
-                return Err(Problem::BothWays(other.identity.clone()));
+                return Err(at(Problem::BothWays(other.identity.clone())));
             }
             rules.push(Rule {
                 identity,
@@ -232,12 +243,16 @@ fn checked(file: File) -> Result<Config, Problem> {
     let night_shift = night_shift(file.night_shift)?;
     let lengths = match file.menu.lengths {
         None => default_lengths(),
-        Some(lengths) => lengths
-            .iter()
-            .map(|text| length(text))
-            .collect::<Option<Vec<_>>>()
-            .filter(|lengths| !lengths.is_empty())
-            .ok_or(Problem::Lengths(lengths))?,
+        Some(lengths) => {
+            let read = lengths
+                .get_ref()
+                .iter()
+                .map(|text| length(text))
+                .collect::<Option<Vec<_>>>()
+                .filter(|read| !read.is_empty());
+            let span = lengths.span();
+            read.ok_or_else(|| Spanned::new(span, Problem::Lengths(lengths.into_inner())))?
+        }
     };
     Ok(Config {
         rules,
@@ -258,18 +273,25 @@ fn length(text: &str) -> Option<SignedDuration> {
         .then_some(length)
 }
 
-fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, Problem> {
-    if let Some(strength) = file.strength
-        && strength > 100
+fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, Spanned<Problem>> {
+    if let Some(strength) = &file.strength
+        && *strength.get_ref() > 100
     {
-        return Err(Problem::Strength(strength));
+        return Err(Spanned::new(
+            strength.span(),
+            Problem::Strength(*strength.get_ref()),
+        ));
     }
     let schedule = file
         .schedule
-        .map(|text| schedule(&text).ok_or(Problem::Schedule(text)))
+        .map(|text| {
+            let span = text.span();
+            schedule(text.get_ref())
+                .ok_or_else(|| Spanned::new(span, Problem::Schedule(text.into_inner())))
+        })
         .transpose()?;
     Ok(NightShiftConfig {
-        strength: file.strength,
+        strength: file.strength.map(Spanned::into_inner),
         schedule,
     })
 }

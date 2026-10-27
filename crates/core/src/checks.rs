@@ -591,9 +591,13 @@ impl From<&ConfigError> for FileError {
                 line: error.line,
                 message: error.message.clone(),
             },
-            ConfigError::Invalid { path, problem } => Self::Invalid {
+            ConfigError::Invalid {
+                path,
+                line,
+                problem,
+            } => Self::Invalid {
                 path: path.display().to_string(),
-                line: None,
+                line: Some(*line),
                 message: problem.to_string(),
             },
         }

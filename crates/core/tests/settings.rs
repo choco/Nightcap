@@ -187,7 +187,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         config(&staged),
         stands(
             CheckState::Broken,
-            "night_shift.strength is 0 to 100, not 101."
+            "Line 2: night_shift.strength is 0 to 100, not 101."
         )
     );
     assert_eq!(
@@ -195,7 +195,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(
             FileError::Invalid {
                 path,
-                line: None,
+                line: Some(2),
                 message: "night_shift.strength is 0 to 100, not 101".to_owned(),
             }
         )))

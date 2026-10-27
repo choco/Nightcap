@@ -5,8 +5,9 @@ mod common;
 
 use nightcap_core::{Effect, Event, File, MenuEntry, RowImage};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ExportFormat, Length, OnOff, Payload, Place, Reason, Request,
-    Response, Rule, RuleIdentity, RuleSource,
+    CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
+    FileError, Length, OnOff, Payload, Place, Reason, Request, Response, Rule, RuleIdentity,
+    RuleSource,
 };
 
 use common::{
@@ -540,6 +541,64 @@ fn a_config_that_cant_be_is_refused() {
             error.message.contains(said),
             "{config:?}: {}",
             error.message
+        );
+    }
+}
+
+#[test]
+fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
+    let staged = noon().stage().unwrap();
+    let path = staged.core().settings().config_path;
+
+    for (config, line) in [
+        (
+            "[rules.off]\napp = [\"com.figma.Desktop\"]\n\n[rules.on]\napp = [\n  \"com.apple.Photos\",\n  \"com.figma.desktop\",\n]\n",
+            7,
+        ),
+        (
+            "websites = true\n[rules]\napp = [\"com.figma.Desktop\"]\n",
+            3,
+        ),
+        (
+            "[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n",
+            4,
+        ),
+        (
+            "[rules.on]\ndomain = [\"figma.com\"]\n[rules.off]\ndomain = [\"https://figma.com\"]\n",
+            4,
+        ),
+        (
+            "[night_shift]\nschedule = \"22:00-07:00\"\nstrength = 101\n",
+            3,
+        ),
+        ("[night_shift]\nschedule = \"dusk\"\n", 2),
+        ("\n[menu]\nlengths = [\"45m\", \"forever\"]\n", 3),
+    ] {
+        staged.write_config(Some(config));
+        let (_, response) = staged.request(Request::Reload);
+
+        let Response::Error(error) = response else {
+            panic!("{config:?} was accepted: {response:?}");
+        };
+        assert!(
+            error.message.starts_with(&format!("{path}: line {line}: ")),
+            "{config:?}: {}",
+            error.message
+        );
+        let found = status(&staged)
+            .checks
+            .into_iter()
+            .map(|check| check.detail)
+            .find(|detail| detail.kind() == CheckKind::ConfigFile);
+        assert!(
+            matches!(
+                &found,
+                Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    line: Some(at),
+                    ..
+                }))) if *at == line
+            ),
+            "{config:?}: {found:?}"
         );
     }
 }
