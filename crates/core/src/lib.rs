@@ -1722,37 +1722,33 @@ impl Core {
         identity: &RuleIdentity,
         says: OnOff,
     ) -> Result<(), ErrorReply> {
-        let before = state.places.clone();
-        state.places.add_rule(identity, says)?;
-        self.keep_ad_hoc(state, before)
+        let mut next = state.places.clone();
+        next.add_rule(identity, says)?;
+        self.commit_rules(state, next)
     }
 
     fn remove_rule(&self, state: &mut State, identity: &RuleIdentity) -> Result<(), ErrorReply> {
-        let before = state.places.clone();
-        state.places.remove_rule(identity)?;
-        self.keep_ad_hoc(state, before)
+        let mut next = state.places.clone();
+        next.remove_rule(identity)?;
+        self.commit_rules(state, next)
     }
 
-    /// Writes `rules.toml` when a change reached the ad-hoc rules it keeps, and puts the places
-    /// back as they were `before` when it can't.
-    fn keep_ad_hoc(&self, state: &mut State, before: Places) -> Result<(), ErrorReply> {
-        if state.places.kept().ad_hoc == before.kept().ad_hoc {
-            return Ok(());
-        }
-        let saved = state.check_ad_hoc_rules_on().and_then(|()| {
+    /// Takes `next` as the places once `rules.toml` keeps the ad-hoc rules it has, if they
+    /// changed.
+    fn commit_rules(&self, state: &mut State, next: Places) -> Result<(), ErrorReply> {
+        if next.kept().ad_hoc != state.places.kept().ad_hoc {
+            state.check_ad_hoc_rules_on()?;
             self.ad_hoc_store
-                .save(&state.places.kept().ad_hoc)
+                .save(&next.kept().ad_hoc)
                 .map_err(|error| {
                     refused(
                         ErrorCode::AdHocRulesOff,
                         format!("couldn't save rules.toml: {error}"),
                     )
-                })
-        });
-        if saved.is_err() {
-            state.places = before;
+                })?;
         }
-        saved
+        state.places = next;
+        Ok(())
     }
 
     /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).

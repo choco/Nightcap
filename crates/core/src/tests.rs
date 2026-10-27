@@ -2707,6 +2707,32 @@ fn a_rule_that_doesnt_exist_is_refused() {
 }
 
 #[test]
+fn a_rule_rules_toml_cant_keep_is_refused_and_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    activate(&core, "com.apple.mail");
+    let snooze = set(Place::from(mail()), OnOff::Off, minutes(30));
+    send(&core, &socket, &wakes, snooze);
+    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
+    std::fs::create_dir(&rules_file).unwrap();
+
+    let (_, response) = send(&core, &socket, &wakes, add_rule(mail()));
+
+    assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
+    let status = status_of(&core, &socket, &wakes);
+    assert_eq!(status.rules, Vec::new());
+    assert_eq!(
+        status.layers,
+        vec![layered(
+            Place::from(mail()),
+            None,
+            Some(layer(OnOff::Off, Some("2026-10-16T23:30:00+02:00")))
+        )]
+    );
+}
+
+#[test]
 fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
