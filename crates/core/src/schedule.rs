@@ -21,7 +21,7 @@ pub(crate) struct SunTimes {
 }
 
 impl SunTimes {
-    pub fn new(sunrises: &[Timestamp], sunsets: &[Timestamp]) -> Self {
+    pub(crate) fn new(sunrises: &[Timestamp], sunsets: &[Timestamp]) -> Self {
         let mut changes: Vec<_> = sunrises
             .iter()
             .map(|&sunrise| (sunrise, false))
@@ -35,7 +35,7 @@ impl SunTimes {
 impl Timeline {
     /// Whether the schedule has Night Shift on at `at`, or None while the schedule, or the sun
     /// times it needs, aren't known.
-    pub fn scheduled_state(&self, at: Timestamp) -> Option<bool> {
+    pub(crate) fn scheduled_state(&self, at: Timestamp) -> Option<bool> {
         match self.schedule? {
             Schedule::Off => Some(false),
             Schedule::SunsetToSunrise => self
@@ -58,7 +58,11 @@ impl Timeline {
     }
 
     /// The first schedule transition after `after`.
-    pub fn next_transition(&self, after: Timestamp) -> Option<Timestamp> {
+    #[expect(
+        clippy::expect_used,
+        reason = "schedules stay millennia from jiff's limits"
+    )]
+    pub(crate) fn next_transition(&self, after: Timestamp) -> Option<Timestamp> {
         match self.schedule? {
             Schedule::Off => None,
             Schedule::SunsetToSunrise => self
@@ -88,6 +92,11 @@ impl Timeline {
     }
 }
 
+#[expect(
+    clippy::as_conversions,
+    clippy::expect_used,
+    reason = "the shell reports hours and minutes in range"
+)]
 fn time(time: TimeOfDay) -> civil::Time {
     civil::Time::new(time.hour as i8, time.minute as i8, 0, 0)
         .expect("the shell reports hours and minutes in range")

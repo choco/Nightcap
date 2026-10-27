@@ -17,3 +17,6 @@ libc = "0.2.190"
 nightcap-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+
+[lints]
+workspace = true

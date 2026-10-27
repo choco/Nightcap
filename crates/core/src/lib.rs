@@ -1,3 +1,5 @@
+#![warn(clippy::expect_used, clippy::indexing_slicing, clippy::unreachable)]
+
 uniffi::setup_scaffolding!();
 
 mod adhoc;
@@ -9,6 +11,7 @@ mod logging;
 mod schedule;
 mod state;
 
+use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::SystemTime;
@@ -558,6 +561,17 @@ pub struct Core {
     state: Mutex<State>,
 }
 
+impl fmt::Debug for Core {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Core")
+            .field("instance", &self.instance)
+            .field("install", &self.install)
+            .field("socket", &self.socket)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Where a core lives and what kind of install it serves.
 struct Setup {
     instance: Instance,
@@ -724,8 +738,12 @@ impl Core {
     }
 
     /// The ad-hoc rules, written for the config (ADR-0007).
+    #[expect(
+        clippy::expect_used,
+        reason = "TOML refuses only shapes the rule lists never have, and the shell's call can't fail"
+    )]
     pub fn export(&self, format: ExportFormat) -> String {
-        adhoc::export(self.state().kept_ad_hoc(), format)
+        adhoc::export(self.state().kept_ad_hoc(), format).expect("rules always serialize")
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {
@@ -754,8 +772,7 @@ impl Core {
             rules: state
                 .rules
                 .iter()
-                .filter(|rule| rule.source != RuleSource::Tour)
-                .map(|rule| state.settings_rule(rule))
+                .filter_map(|rule| state.settings_rule(rule))
                 .collect(),
             for_now: state
                 .layers
@@ -863,6 +880,10 @@ impl Core {
         }
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "panics abort (ADR-0002), so none can poison the lock"
+    )]
     pub fn tick(&self) -> Vec<Effect> {
         let requests = self
             .requests
@@ -1107,6 +1128,10 @@ impl Core {
                 Vec::new()
             }
             Event::SunTimesChanged { sunrises, sunsets } => {
+                #[expect(
+                    clippy::expect_used,
+                    reason = "CoreBrightness reports sun times within a day or two of now"
+                )]
                 let timestamps = |times: Vec<SystemTime>| -> Vec<Timestamp> {
                     times
                         .into_iter()
@@ -1126,7 +1151,7 @@ impl Core {
                         self.state().timeline.zone = zone;
                     }
                     Err(error) => {
-                        tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}")
+                        tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}");
                     }
                 }
                 Vec::new()
@@ -1267,6 +1292,10 @@ impl Core {
         self.install == Install::SelfManaged && self.instance == Instance::Release
     }
 
+    #[expect(
+        clippy::expect_used,
+        reason = "panics abort (ADR-0002), so none can poison the lock"
+    )]
     fn state(&self) -> MutexGuard<'_, State> {
         self.state.lock().expect("no panic happens while it's held")
     }
@@ -1281,10 +1310,15 @@ impl Core {
             Request::Query(Query::Rules) => {
                 Response::Ok(Payload::Rules(self.state().rules.clone()))
             }
-            Request::Query(Query::Export(format)) => Response::Ok(Payload::Export(adhoc::export(
-                self.state().kept_ad_hoc(),
-                *format,
-            ))),
+            Request::Query(Query::Export(format)) => {
+                match adhoc::export(self.state().kept_ad_hoc(), *format) {
+                    Ok(text) => Response::Ok(Payload::Export(text)),
+                    Err(error) => Response::Error(refused(
+                        ErrorCode::Internal,
+                        format!("couldn't write the rules as TOML: {error}"),
+                    )),
+                }
+            }
             Request::Update => {
                 if self.updates_itself() {
                     tracing::info!("checking for updates");
@@ -1647,20 +1681,22 @@ impl Core {
         let kept = state
             .ad_hoc
             .iter()
-            .position(|(kept, _)| same_rule(kept, &identity));
+            .any(|(kept, _)| same_rule(kept, &identity));
         // A rule added during the tour is the tour's, which nothing keeps past it, and a change to
         // one of the user's own lasts only while it runs (ADR-0016).
-        if kept.is_none()
-            && let Some(tour) = &mut state.tour
-        {
+        if !kept && let Some(tour) = &mut state.tour {
             tracing::info!("tour rule {}: {says}", loggable(&identity));
             tour.rules.retain(|(rule, _)| !same_rule(rule, &identity));
             tour.rules.push((identity.clone(), says));
         } else {
             state.check_ad_hoc_rules_on()?;
             let before = state.ad_hoc.clone();
-            match kept {
-                Some(index) => state.ad_hoc[index].1 = says,
+            match state
+                .ad_hoc
+                .iter_mut()
+                .find(|(kept, _)| same_rule(kept, &identity))
+            {
+                Some((_, kept_says)) => *kept_says = says,
                 None => state.ad_hoc.push((identity.clone(), says)),
             }
             if state.tour.is_none()
@@ -1755,6 +1791,10 @@ impl Core {
             transition.is_none() && state.timeline.schedule == Some(Schedule::SunsetToSunrise);
         state.sun_times_awaited_since =
             awaits_sun_times.then(|| state.sun_times_awaited_since.unwrap_or(now));
+        #[expect(
+            clippy::expect_used,
+            reason = "rounding fails only beside jiff's limits, millennia from any clock"
+        )]
         let retry = awaits_sun_times.then(|| {
             now.round(
                 jiff::TimestampRound::new()
@@ -2050,8 +2090,8 @@ impl State {
                 places.push(Place::Everywhere);
             }
         }
-        for (index, place) in places.iter().enumerate() {
-            let with = (places.len() > 1).then(|| places[1 - index].clone());
+        for place in &places {
+            let with = places.iter().find(|other| *other != place).cloned();
             let layers = self.layers_mut(place);
             layers.timer = None;
             layers.hold = Some(Layer { state, until, with });
@@ -2251,10 +2291,7 @@ impl State {
             return None;
         }
         Some(PlaceRow {
-            title: format!(
-                "Turn {}",
-                capitalized(&state.to_string()).expect("on or off")
-            ),
+            title: format!("Turn {}", capitalized(&state.to_string())),
             site: None,
             // The app or site in front keeps the other way, which the row can't change there.
             subtitle: (decision.place != Place::Everywhere && decision.state != Some(state))
@@ -2354,12 +2391,9 @@ impl State {
         };
         PlaceRow {
             title: if offers {
-                format!(
-                    "Turn {} {here}",
-                    capitalized(&state.to_string()).expect("on or off")
-                )
+                format!("Turn {} {here}", capitalized(&state.to_string()))
             } else {
-                capitalized(&here).expect("a place has a name")
+                capitalized(&here)
             },
             site: match place {
                 Place::Domain(domain) => Some(domain.clone()),
@@ -2394,6 +2428,10 @@ impl State {
                 )
             })
             .collect();
+        #[expect(
+            clippy::expect_used,
+            reason = "rounding fails only beside jiff's limits, millennia from any clock"
+        )]
         let start = (now + SignedDuration::from_hours(1))
             .round(
                 jiff::TimestampRound::new()
@@ -2403,7 +2441,7 @@ impl State {
             )
             .expect("a quarter hour rounds any time");
         items.push(RowItem::PickTime {
-            title: title.replace("{}", &capitalized(&state.to_string()).expect("on or off")),
+            title: title.replace("{}", &capitalized(&state.to_string())),
             place: place.clone(),
             state,
             start,
@@ -2459,12 +2497,12 @@ impl State {
             .collect();
         match rule {
             Some(rule) if parts.is_empty() => {
-                parts.push(format!("always {}: {}", rule.says, whose(rule)))
+                parts.push(format!("always {}: {}", rule.says, whose(rule)));
             }
             Some(rule) => parts.push(whose(rule).to_owned()),
             None => {}
         }
-        capitalized(&parts.join(", then "))
+        (!parts.is_empty()).then(|| capitalized(&parts.join(", then ")))
     }
 
     /// The reason under the menu's Night Shift item: what decides the screen.
@@ -2494,7 +2532,7 @@ impl State {
                 (None, _) => "following the schedule".to_owned(),
             },
         };
-        capitalized(&text)
+        Some(capitalized(&text))
     }
 
     /// Everywhere's hold and timer after the switch to `state`, as `switch` would leave them.
@@ -2532,8 +2570,9 @@ impl State {
     }
 
     /// A rule's row in the Rules tab: a snooze can be put back, an ad-hoc rule removed, and a
-    /// config rule changed only in the config (ADR-0006).
-    fn settings_rule(&self, rule: &Rule) -> SettingsRule {
+    /// config rule changed only in the config (ADR-0006). The tour's rules have none
+    /// (ADR-0016).
+    fn settings_rule(&self, rule: &Rule) -> Option<SettingsRule> {
         let identity = rule.identity.clone();
         let place = Place::from(identity.clone());
         let snooze = self
@@ -2547,6 +2586,7 @@ impl State {
             })
         };
         let (label, action) = match (snooze, rule.source) {
+            (_, RuleSource::Tour) => return None,
             (Some(layer), _) => (
                 format!("Snoozed {}", self.until_text(layer.until, layer.state)),
                 action("Put Back", Command::Reset(place)),
@@ -2556,15 +2596,14 @@ impl State {
                 "Ad-hoc".to_owned(),
                 action("Remove", Command::RemoveRule(identity.clone())),
             ),
-            (None, RuleSource::Tour) => unreachable!("Settings leaves out the tour's rules"),
         };
-        SettingsRule {
+        Some(SettingsRule {
             identity,
             says: rule.says,
             label,
             snoozed: snooze.is_some(),
             action,
-        }
+        })
     }
 
     /// "until 07:00", or "until you turn it on" for an off with no end.
@@ -2658,7 +2697,7 @@ impl State {
                 1 => "1 Thing Needs Attention…".to_owned(),
                 count => format!("{count} Things Need Attention…"),
             },
-            subtitle: capitalized(&listed(&names)),
+            subtitle: Some(capitalized(&listed(&names))),
         })
     }
 
@@ -2958,7 +2997,7 @@ impl State {
     fn places_from(&self, place: &Place) -> Vec<Place> {
         let in_front = engine::in_front(&self.inputs());
         match in_front.iter().position(|front| same_place(front, place)) {
-            Some(index) => in_front[index..].to_vec(),
+            Some(index) => in_front.into_iter().skip(index).collect(),
             None => vec![place.clone(), Place::Everywhere],
         }
     }
@@ -3018,15 +3057,13 @@ impl State {
             .iter()
             .position(|layers| same_place(&layers.place, place))
         {
+            #[expect(clippy::indexing_slicing, reason = "the place's layers are at `index`")]
             Some(index) => &mut self.layers[index],
-            None => {
-                self.layers.push(PlaceLayers {
-                    place: place.clone(),
-                    hold: None,
-                    timer: None,
-                });
-                self.layers.last_mut().expect("just pushed")
-            }
+            None => self.layers.push_mut(PlaceLayers {
+                place: place.clone(),
+                hold: None,
+                timer: None,
+            }),
         }
     }
 
@@ -3153,12 +3190,16 @@ fn listed(parts: &[String]) -> String {
     }
 }
 
-/// `text` with its first letter capitalized, or None when it's empty.
-fn capitalized(text: &str) -> Option<String> {
+/// `text` with its first letter capitalized.
+fn capitalized(text: &str) -> String {
     let mut letters = text.chars();
     letters
         .next()
-        .map(|first| first.to_uppercase().chain(letters).collect())
+        .map(char::to_uppercase)
+        .into_iter()
+        .flatten()
+        .chain(letters)
+        .collect()
 }
 
 fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {

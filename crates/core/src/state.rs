@@ -115,7 +115,10 @@ impl Store {
 
     /// Writes beside the file and renames over it, so a crash never leaves half a file.
     pub(crate) fn save(&self, state: &Persisted) -> io::Result<()> {
-        let folder = self.path.parent().expect("the state file has a folder");
+        let folder = self
+            .path
+            .parent()
+            .ok_or_else(|| io::Error::other(format!("{} has no folder", self.path.display())))?;
         fs::create_dir_all(folder)?;
         let file = File {
             version: VERSION,

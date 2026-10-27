@@ -46,7 +46,9 @@ pub(crate) fn serve(
 }
 
 fn bind(path: &Path) -> Result<UnixListener, CoreError> {
-    let folder = path.parent().expect("the socket path has a folder");
+    let folder = path.parent().ok_or_else(|| CoreError::Io {
+        message: format!("{} has no folder", path.display()),
+    })?;
     DirBuilder::new()
         .recursive(true)
         .mode(0o700)

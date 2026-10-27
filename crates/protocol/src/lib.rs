@@ -562,6 +562,8 @@ pub enum ErrorCode {
     SetInConfig,
     /// The install doesn't open itself at login: its installer starts it, or it's a dev build.
     NoLoginItem,
+    /// Nightcap failed at something it should always manage: a bug.
+    Internal,
 }
 
 #[cfg(test)]
@@ -669,7 +671,7 @@ mod tests {
             json(&Request::Command(Command::Set {
                 place: Place::Everywhere,
                 state: OnOff::Off,
-                length: Length::For(jiff::SignedDuration::from_mins(90)),
+                length: Length::For(SignedDuration::from_mins(90)),
             })),
             r#"{"command":{"set":{"place":"everywhere","state":"off","length":{"for":"PT1H30M"}}}}"#
         );
@@ -772,7 +774,7 @@ mod tests {
 
     #[test]
     fn decisions_describe_themselves_after_night_shift() {
-        let zone = jiff::tz::TimeZone::get("Europe/Zurich").unwrap();
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
         let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
         let figma_app = || Place::App("com.figma.Desktop".to_owned());
         let figma = Rule {

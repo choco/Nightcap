@@ -7,6 +7,10 @@ pub(crate) fn init(subsystem: &str) {
     use tracing_subscriber::layer::SubscriberExt;
 
     static INIT: Once = Once::new();
+    #[expect(
+        clippy::expect_used,
+        reason = "the core is the only part of the app that installs a subscriber, and only here"
+    )]
     INIT.call_once(|| {
         let subscriber =
             tracing_subscriber::registry().with(tracing_oslog::OsLogger::new(subsystem, "core"));

@@ -133,8 +133,7 @@ fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Comman
         }
         (None, None, false) => {
             return Err(format!(
-                "an app or a site needs a length: --for, --until or --until-schedule; for good, add a rule with `nightcap rules add {}`",
-                place
+                "an app or a site needs a length: --for, --until or --until-schedule; for good, add a rule with `nightcap rules add {place}`"
             ));
         }
     };
@@ -227,7 +226,7 @@ fn parse_time_of_day(text: &str) -> Result<jiff::civil::Time, String> {
 }
 
 fn parse_duration(text: &str) -> Result<Duration, String> {
-    let duration: jiff::SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
+    let duration: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
     Duration::try_from(duration).map_err(|error| format!("{error}"))
 }
 
@@ -248,6 +247,10 @@ impl From<anyhow::Error> for Failure {
 fn main() -> ExitCode {
     // A reader that stops early, as `nightcap status | head -1` does, ends the CLI quietly, as it
     // would a C tool, rather than with a panic from `println!`.
+    #[expect(
+        unsafe_code,
+        reason = "libc is the only way to restore SIGPIPE's default"
+    )]
     // SAFETY: restoring a signal's default action, before any other thread exists.
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
@@ -331,8 +334,8 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
         Command::Reset { place } => protocol::Command::Reset(place.place()),
         Command::Websites { state } => {
             let state = match state {
-                Switch::On => protocol::OnOff::On,
-                Switch::Off => protocol::OnOff::Off,
+                Switch::On => OnOff::On,
+                Switch::Off => OnOff::Off,
             };
             let command = protocol::Command::Websites(state);
             let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {

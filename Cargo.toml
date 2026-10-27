@@ -17,6 +17,24 @@ serde_json = "1.0.154"
 thiserror = "2.0.21"
 uniffi = "0.32"
 
+[workspace.lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "warn"
+missing_debug_implementations = "warn"
+unused_qualifications = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+as_conversions = "deny"
+undocumented_unsafe_blocks = "deny"
+allow_attributes_without_reason = "deny"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+
 # Rust panics can't cross the FFI boundary into Swift (ADR-0002).
 [profile.dev]
 panic = "abort"

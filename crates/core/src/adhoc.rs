@@ -103,7 +103,10 @@ impl Store {
             rules: Rules::from(rules),
         };
         let text = toml::to_string(&file).map_err(io::Error::other)?;
-        let folder = self.path.parent().expect("the rules file has a folder");
+        let folder = self
+            .path
+            .parent()
+            .ok_or_else(|| io::Error::other(format!("{} has no folder", self.path.display())))?;
         fs::create_dir_all(folder)?;
         let partial = self.path.with_extension("toml.partial");
         fs::write(
@@ -116,9 +119,12 @@ impl Store {
 
 /// The ad-hoc rules, ready to paste into the config of the given format. Bundle IDs and
 /// domains never hold quotes or backslashes, so they need no escaping.
-pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> String {
+pub(crate) fn export(
+    rules: &[(RuleIdentity, OnOff)],
+    format: ExportFormat,
+) -> Result<String, toml::ser::Error> {
     let rules = Rules::from(rules);
-    match format {
+    Ok(match format {
         ExportFormat::Nix => {
             let list = |items: &[String]| {
                 let quoted: Vec<_> = items.iter().map(|item| format!("\"{item}\" ")).collect();
@@ -142,9 +148,9 @@ pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> S
             struct Export<'a> {
                 rules: &'a Rules,
             }
-            toml::to_string(&Export { rules: &rules }).expect("rules always serialize")
+            toml::to_string(&Export { rules: &rules })?
         }
-    }
+    })
 }
 
 impl From<&[(RuleIdentity, OnOff)]> for Rules {
