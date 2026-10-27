@@ -3,9 +3,9 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, File, MenuEntry, RowImage};
+use nightcap_core::{Effect, Event, Fact, File, MenuEntry, RowImage};
 use nightcap_protocol::{
-    CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
+    Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
     FileError, Length, OnOff, Payload, Place, Reason, Request, Response, Rule, RuleIdentity,
     RuleSource,
 };
@@ -46,7 +46,7 @@ fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
         .stage()
         .unwrap();
     activate(&staged, "com.figma.Desktop");
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     let effects = activate(&staged, "com.apple.Terminal");
 
@@ -60,12 +60,25 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
         .stage()
         .unwrap();
 
-    let effects = launch(&staged);
+    let outcome = launch(&staged);
 
-    let [Effect::Notify { body, .. }] = effects.as_slice() else {
-        panic!("expected one notification, got {effects:?}");
+    let [
+        Event::ProblemAppeared {
+            check:
+                Check {
+                    detail:
+                        CheckDetail::ConfigFile(ConfigFileDetail::Error(
+                            FileError::Malformed { message, .. }
+                            | FileError::Invalid { message, .. },
+                        )),
+                    ..
+                },
+        },
+    ] = outcome.events.as_slice()
+    else {
+        panic!("expected one announcement, got {outcome:?}");
     };
-    assert!(body.contains("apps"), "{body}");
+    assert!(message.contains("apps"), "{message}");
     let status = status(&staged);
     assert_eq!(status.rules, Vec::new());
     assert!(
@@ -81,9 +94,12 @@ fn reload_applies_a_changed_config() {
     activate(&staged, "com.figma.Desktop");
 
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
-    let (effects, response) = staged.request(Request::Reload);
+    let (outcome, response) = staged.request(Request::Reload);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(
+        outcome.effects,
+        vec![Effect::SetNightShift { enabled: false }]
+    );
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
@@ -98,9 +114,9 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         .unwrap();
 
     staged.write_config(Some("[rules.off]\napp = \"com.figma.Desktop\"\n"));
-    let (effects, response) = staged.request(Request::Reload);
+    let (outcome, response) = staged.request(Request::Reload);
 
-    assert_eq!(effects, Vec::new());
+    assert_eq!(outcome.effects, Vec::new());
     let Response::Error(error) = response else {
         panic!("expected an error, got {response:?}");
     };
@@ -144,10 +160,10 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
 fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
     let staged = forced();
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
-    let effects = staged.core().handle(Event::TimerFired);
+    let effects = staged.report(Fact::TimerFired).effects;
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
     let status = status(&staged);
@@ -162,7 +178,7 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
         &staged,
         set(figma_app(), OnOff::On, Length::UntilScheduleTurns),
     );
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     assert_eq!(activate(&staged, "com.apple.Terminal"), Vec::new());
     assert_eq!(activate(&staged, "com.figma.Desktop"), Vec::new());
@@ -194,7 +210,7 @@ fn reset_puts_a_snoozed_rule_back_early() {
 fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
     let staged = forced();
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     let (effects, response) = send(&staged, add_rule(figma()));
 
@@ -261,7 +277,7 @@ fn removing_an_ad_hoc_rule_lifts_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
     send(&staged, add_rule(figma()));
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     let (effects, _) = send(&staged, Command::RemoveRule(figma()));
 
@@ -353,10 +369,10 @@ fn removing_a_config_rule_from_the_menu_is_refused() {
         .stage()
         .unwrap();
 
-    let (effects, outcome) = staged.choose(&Command::RemoveRule(figma()));
+    let (outcome, answer) = staged.send(Command::RemoveRule(figma()));
 
-    assert_eq!(effects, Vec::new());
-    assert_eq!(outcome.unwrap_err().code, ErrorCode::ConfigRule);
+    assert_eq!(outcome.effects, Vec::new());
+    assert_eq!(answer.unwrap_err().code, ErrorCode::ConfigRule);
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
 }
 
@@ -371,10 +387,10 @@ fn always_from_the_menu_while_rules_toml_is_from_a_newer_nightcap_is_refused() {
         .unwrap();
     let always = choice_titled(&app_row(&staged).unwrap(), "Always").command;
 
-    let (effects, outcome) = staged.choose(&always);
+    let (outcome, answer) = staged.send(always);
 
-    assert_eq!(effects, Vec::new());
-    assert_eq!(outcome.unwrap_err().code, ErrorCode::AdHocRulesOff);
+    assert_eq!(outcome.effects, Vec::new());
+    assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(newer));
 }
@@ -411,17 +427,21 @@ fn adding_your_rule_again_from_settings_ends_its_snooze_and_leaves_rules_toml_as
     let written = "version = 2\n[rules.off]\napp = [\"com.apple.mail\"]\n";
     let staged = on_by_the_schedule().rules(written).stage().unwrap();
     activate(&staged, "com.apple.mail");
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
     staged
-        .choose(&set(Place::from(mail()), OnOff::On, minutes(30)))
+        .send(set(Place::from(mail()), OnOff::On, minutes(30)))
         .1
         .unwrap();
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
-    let (effects, outcome) = staged.choose(&add_rule(mail()));
+    let (outcome, answer) = staged.send(add_rule(mail()));
 
-    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
-    assert_eq!(outcome.unwrap().place, Place::from(mail()));
+    assert!(
+        outcome
+            .effects
+            .contains(&Effect::SetNightShift { enabled: false })
+    );
+    assert_eq!(answer.unwrap().place, Place::from(mail()));
     assert_eq!(status(&staged).layers, Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(written));
 }
@@ -437,7 +457,7 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
             says: OnOff::On,
         },
     );
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(

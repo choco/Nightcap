@@ -53,7 +53,7 @@ pub enum RowItem {
     Separator,
 }
 
-/// Choosing it sends `command` back as `Event::CommandChosen`.
+/// Choosing it sends `command` back with `Core::send`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MenuItem {
     pub title: String,

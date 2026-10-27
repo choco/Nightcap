@@ -3,10 +3,11 @@
 //! breaking change bumps the version.
 
 use std::io;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use nightcap_protocol::{CheckKind, NightShift, OnOff, PlaceLayers};
+use nightcap_protocol::{CheckKind, Install, Instance, NightShift, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::checks::Grants;
@@ -15,15 +16,24 @@ use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
+use crate::start::Clock;
 use crate::turn::{Reconciling, wanted};
 use crate::watch::Watching;
-use crate::{Core, tour};
+use crate::{adhoc, tour};
 
 const VERSION: u32 = 1;
 
-/// What the core believes about the system, as last reported by the shell, plus what it
-/// keeps across restarts.
-pub(crate) struct State {
+/// What the core decides from: what it believes about the system, as last reported by the
+/// shell, what it keeps across restarts, and the files and the clock it keeps them by.
+pub(crate) struct Inner {
+    pub(crate) instance: Instance,
+    pub(crate) install: Install,
+    /// The socket the IPC thread serves, which the core removes on the way out.
+    pub(crate) socket: Option<PathBuf>,
+    pub(crate) files: Arc<dyn Files>,
+    pub(crate) store: Store,
+    pub(crate) ad_hoc_store: adhoc::Store,
+    pub(crate) clock: Arc<dyn Clock>,
     /// A self-managed release, which updates itself through Sparkle and opens itself at login
     /// if the user wants: an installer owns a managed one, and a dev build would shadow the
     /// installed app (ADR-0011).
@@ -74,10 +84,10 @@ impl Facts {
     }
 }
 
-impl State {
+impl Inner {
     /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
     /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
-    fn snapshot(&self, now: Timestamp) -> Persisted {
+    fn persisted(&self, now: Timestamp) -> Persisted {
         Persisted {
             layers: self.places.kept().layers.clone(),
             websites: self.facts.websites,
@@ -96,17 +106,15 @@ impl State {
             last_version: self.last_version.clone(),
         }
     }
-}
 
-impl Core {
     /// Writes `state.json` whenever what it holds changes, so a crash loses nothing (ADR-0008).
-    pub(crate) fn save(&self, state: &mut State) {
-        let snapshot = state.snapshot(self.clock.now());
-        if snapshot == state.saved {
+    pub(crate) fn save(&mut self) {
+        let persisted = self.persisted(self.clock.now());
+        if persisted == self.saved {
             return;
         }
-        match self.store.save(&snapshot) {
-            Ok(()) => state.saved = snapshot,
+        match self.store.save(&persisted) {
+            Ok(()) => self.saved = persisted,
             Err(error) => tracing::warn!("couldn't save the state: {error}"),
         }
     }

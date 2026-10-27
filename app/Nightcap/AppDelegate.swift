@@ -93,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         mac?.nightShift?.endPeek()
         tour?.end()
-        mac?.handle(.terminating)
+        mac?.stop()
     }
 
     /// launchd stops the app with SIGTERM, whose default action would skip
@@ -116,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.tour?.shortcutPressed()
             },
             tap: { [weak self] in
-                self?.mac?.handle(.commandChosen(command: .toggle))
+                self?.mac?.send(.toggle)
                 self?.mac?.nightShift?.endPeek()
                 self?.tour?.shortcutTapped()
             },
@@ -140,11 +140,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             current: { (core.tour(), core.menu().icon) },
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
-            begin: { mac.handle($0) },
+            begin: { mac.send($0) },
             onEnd: { [weak self] begun in
                 guard let self else { return }
                 self.tour = nil
-                if begun { mac.handle(.tourEnded) }
+                if begun { mac.send(.endTour) }
             })
         self.tour = tour
         tour.start()
@@ -174,12 +174,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
-            choose: { command in mac.handle(.commandChosen(command: command)) },
+            choose: { command in mac.send(command) },
             notifications: { mac.notifications },
             askForNotifications: { mac.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }
-                mac.handle(.onboardingFinished(websites: websites))
+                mac.send(.finishOnboarding(websites: websites))
                 self.onboarding = nil
                 mac.watchPermissions(closely: false)
                 showStatusMenu()
@@ -201,7 +201,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu = StatusMenu(
             current: { core.menu() },
             icons: siteIcons,
-            choose: { command in mac.handle(.commandChosen(command: command)) },
+            choose: { command in mac.send(command) },
             openSettings: { [weak self] onProblem in
                 self?.showSettings(onProblem ? SettingsWindow.tab(for: core.settings()) : nil)
             },
@@ -214,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindow = SettingsWindow(
             current: { core.settings() },
             icons: siteIcons,
-            choose: { command in mac.handle(.commandChosen(command: command)) },
+            choose: { command in mac.send(command) },
             perform: { fix in mac.perform(fix) },
             checkForUpdates: checkForUpdates,
             export: { core.export(format: $0) },

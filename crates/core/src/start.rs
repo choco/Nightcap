@@ -2,7 +2,7 @@
 //! what it finds in its files, and what the shell's launch does.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::Arc;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -14,10 +14,10 @@ use crate::config::{self, NightShiftConfig};
 use crate::file::Files;
 use crate::places::{Context, Kept, Places};
 use crate::schedule::{SunTimes, Timeline};
-use crate::state::{Facts, State};
+use crate::state::{Facts, Inner};
 use crate::turn::Reconciling;
 use crate::watch::Watching;
-use crate::{Core, CoreError, Effect, adhoc, ipc, state};
+use crate::{CoreError, Effect, Event, Outcome, adhoc, state};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
@@ -25,8 +25,6 @@ pub(crate) struct Setup {
     pub(crate) install: Install,
     /// The socket the IPC thread serves, which the core removes on the way out.
     pub(crate) socket: Option<PathBuf>,
-    /// The requests to answer on the next tick, which the IPC thread queues.
-    pub(crate) requests: mpsc::Receiver<ipc::Pending>,
     pub(crate) files: Arc<dyn Files>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) zone: TimeZone,
@@ -45,7 +43,8 @@ impl Clock for SystemClock {
     }
 }
 
-impl Core {
+impl Inner {
+    /// The core as it finds its files, with nothing reported yet.
     pub(crate) fn start(setup: Setup) -> Self {
         let store = state::Store::new(setup.files.clone());
         let mut persisted = store.load();
@@ -78,7 +77,7 @@ impl Core {
                 (Vec::new(), Some(error))
             }
         };
-        let core = Self {
+        let mut inner = Self {
             instance: setup.instance,
             install: setup.install,
             socket: setup.socket,
@@ -86,84 +85,78 @@ impl Core {
             store,
             ad_hoc_store,
             clock: setup.clock.clone(),
-            requests: Mutex::new(setup.requests),
-            state: Mutex::new(State {
-                manages_itself: setup.install == Install::SelfManaged
-                    && setup.instance == Instance::Release,
-                facts: Facts {
-                    night_shift: NightShift::Unavailable,
-                    timeline: Timeline {
-                        schedule: None,
-                        sun_times: SunTimes::default(),
-                        zone: setup.zone,
-                    },
-                    context: Context::default(),
-                    applied_until: setup.clock.now(),
-                    websites: persisted.websites,
-                    config_websites: config.websites,
+            manages_itself: setup.install == Install::SelfManaged
+                && setup.instance == Instance::Release,
+            facts: Facts {
+                night_shift: NightShift::Unavailable,
+                timeline: Timeline {
+                    schedule: None,
+                    sun_times: SunTimes::default(),
+                    zone: setup.zone,
                 },
-                places: Places::new(Kept {
-                    layers: persisted.layers.clone(),
-                    ad_hoc,
-                }),
-                strength: None,
-                reconciling: Reconciling::new(persisted.night_shift),
-                watching: Watching::default(),
-                grants: Grants {
-                    accessibility: None,
-                    notifications: NotificationPermission::NotRequested,
-                    notifications_wanted: persisted.notifications_wanted,
-                    login_item: None,
-                    open_at_login: persisted.open_at_login,
-                    schedule_set_aside: false,
-                    schedule_off_accepted: persisted.schedule_off_accepted,
-                    announced: persisted.announced.clone(),
-                },
-                loaded: Loaded {
-                    config_error,
-                    config_found: config.found,
-                    lengths: config.lengths,
-                    config_night_shift: config.night_shift,
-                    applied_from_config: persisted.applied_from_config,
-                    ad_hoc_error,
-                },
-                onboarding: persisted.onboarding,
-                last_version: persisted.last_version.clone(),
-                tour: None,
-                saved: persisted,
+                context: Context::default(),
+                applied_until: setup.clock.now(),
+                websites: persisted.websites,
+                config_websites: config.websites,
+            },
+            places: Places::new(Kept {
+                layers: persisted.layers.clone(),
+                ad_hoc,
             }),
+            strength: None,
+            reconciling: Reconciling::new(persisted.night_shift),
+            watching: Watching::default(),
+            grants: Grants {
+                accessibility: None,
+                notifications: NotificationPermission::NotRequested,
+                notifications_wanted: persisted.notifications_wanted,
+                login_item: None,
+                open_at_login: persisted.open_at_login,
+                schedule_set_aside: false,
+                schedule_off_accepted: persisted.schedule_off_accepted,
+                announced: persisted.announced.clone(),
+            },
+            loaded: Loaded {
+                config_error,
+                config_found: config.found,
+                lengths: config.lengths,
+                config_night_shift: config.night_shift,
+                applied_from_config: persisted.applied_from_config,
+                ad_hoc_error,
+            },
+            onboarding: persisted.onboarding,
+            last_version: persisted.last_version.clone(),
+            tour: None,
+            saved: persisted,
         };
-        core.graduate(&mut core.state(), config.rules);
-        core
+        inner.graduate(config.rules);
+        inner
     }
 
-    /// The shell's first event: says what's new after an update, offers onboarding, starts the
+    /// The shell's first fact: says what's new after an update, offers onboarding, starts the
     /// updater where this install updates itself, and applies the config's `[night_shift]`.
-    pub(crate) fn launched(&self, state: &mut State) -> Vec<Effect> {
-        let mut effects = Vec::new();
+    pub(crate) fn launched(&mut self, outcome: &mut Outcome) {
         // Updates install silently, so the first launch of a new version says what's new.
         // A first run has nothing to compare; one from before versions were kept has
         // finished onboarding.
         let version = env!("CARGO_PKG_VERSION");
-        let updated = match &state.last_version {
+        let updated = match &self.last_version {
             Some(last) => last != version,
-            None => state.onboarding > 0,
+            None => self.onboarding > 0,
         };
         if updated {
             tracing::info!("updated to {version}");
-            effects.push(Effect::Notify {
-                title: format!("Nightcap updated to {version}"),
-                body: "Click to see what’s new.".to_owned(),
-                opens: Some(format!("https://nightcap.choco.me/changelog/#v{version}")),
+            outcome.events.push(Event::Updated {
+                from: self.last_version.clone(),
+                to: version.to_owned(),
             });
         }
-        state.last_version = Some(version.to_owned());
-        state.offer_onboarding(&mut effects);
-        if state.manages_itself {
-            effects.push(Effect::StartUpdater);
+        self.last_version = Some(version.to_owned());
+        self.offer_onboarding(&mut outcome.effects);
+        if self.manages_itself {
+            outcome.effects.push(Effect::StartUpdater);
         }
-        state.apply_config_night_shift(&mut effects);
-        effects
+        self.apply_config_night_shift(&mut outcome.effects);
     }
 }
 

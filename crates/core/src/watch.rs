@@ -4,9 +4,9 @@
 
 use nightcap_protocol::BundleId;
 
+use crate::Effect;
 use crate::domain::Host;
-use crate::state::State;
-use crate::{Core, Effect};
+use crate::state::Inner;
 
 /// The front app's place in the shell's browser list, and the watch on it.
 #[derive(Default)]
@@ -30,7 +30,7 @@ impl Watching {
     }
 }
 
-impl State {
+impl Inner {
     /// An app came to the front, by its bundle ID and name if it has them.
     pub(crate) fn app_activated(
         &mut self,
@@ -64,27 +64,26 @@ impl State {
             _ => tracing::debug!("dropped a host from stale watch {generation}"),
         }
     }
-}
 
-impl Core {
     /// Watches the frontmost browser while website checking is on and its host could change
     /// anything: not on the way out, nor while its own place says off and no site could say on
     /// (ADR-0008, ADR-0012, ADR-0018).
-    pub(crate) fn rewatch(&self, state: &mut State, effects: &mut Vec<Effect>) {
-        let host_matters = state
+    pub(crate) fn rewatch(&mut self, effects: &mut Vec<Effect>) {
+        let host_matters = self
             .places
-            .look(&state.facts.world(self.clock.now()))
+            .look(&self.facts.world(self.clock.now()))
             .host_matters;
-        let wanted = state.facts.context.app.clone().filter(|_| {
-            state.watching.is_browser && state.facts.website_checking() && host_matters
-        });
-        match (&state.watching.watch, wanted) {
+        let wanted =
+            self.facts.context.app.clone().filter(|_| {
+                self.watching.is_browser && self.facts.website_checking() && host_matters
+            });
+        match (&self.watching.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {
-                state.watching.generation += 1;
-                let generation = state.watching.generation;
-                state.facts.context.host = None;
-                state.watching.watch = Some(Watch {
+                self.watching.generation += 1;
+                let generation = self.watching.generation;
+                self.facts.context.host = None;
+                self.watching.watch = Some(Watch {
                     bundle_id: bundle_id.clone(),
                     generation,
                     reported: false,
@@ -95,8 +94,8 @@ impl Core {
                 });
             }
             (Some(_), None) => {
-                state.facts.context.host = None;
-                state.watching.watch = None;
+                self.facts.context.host = None;
+                self.watching.watch = None;
                 effects.push(Effect::StopWatching);
             }
             (None, None) => {}

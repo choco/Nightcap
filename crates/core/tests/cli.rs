@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::Event;
+use nightcap_core::Fact;
 use nightcap_protocol::{
     Command, Decision, NightShift, NotificationPermission, OnOff, Payload, Permissions, Place,
     Reason, Response, RuleIdentity, Schedule,
@@ -17,7 +17,7 @@ use common::{
 fn the_status_reports_night_shift_as_last_observed() {
     let staged = noon().stage().unwrap();
 
-    staged.core().handle(reported(true, Schedule::Off));
+    staged.report(reported(true, Schedule::Off));
 
     assert_eq!(status(&staged).night_shift, NightShift::On);
 }
@@ -27,7 +27,7 @@ fn the_status_reports_the_strength_as_last_read() {
     let staged = noon().stage().unwrap();
     assert_eq!(status(&staged).strength, None);
 
-    staged.core().handle(Event::StrengthChanged { value: 60 });
+    staged.report(Fact::StrengthChanged { value: 60 });
 
     assert_eq!(status(&staged).strength, Some(60));
 }
@@ -92,7 +92,7 @@ fn the_rules_query_lists_every_rule_with_its_source() {
 fn the_status_reports_the_last_permission_change() {
     let staged = noon().stage().unwrap();
 
-    staged.core().handle(Event::PermissionsChanged {
+    staged.report(Fact::PermissionsChanged {
         accessibility: true,
         notifications: NotificationPermission::Denied,
     });

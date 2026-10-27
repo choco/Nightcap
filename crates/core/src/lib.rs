@@ -32,7 +32,10 @@ pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
-pub use shell::{CoreError, Effect, Event, LoginItem, Waker, is_bundle_id, normalize_domain};
+pub use shell::{
+    CoreError, Effect, Event, Fact, LoginItem, Outcome, UiCommand, Waker, is_bundle_id,
+    normalize_domain,
+};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
 };
@@ -43,38 +46,26 @@ pub use file::File;
 pub use staging::{Scenario, ScenarioError, Staged, Step};
 
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 
-use nightcap_protocol::{ExportFormat, Install, Instance};
+use nightcap_protocol::{Command, ExportFormat};
 
 #[cfg(not(any(test, debug_assertions)))]
 use file::File;
-use file::{Disk, Files, Paths};
-use start::{Clock, Setup, SystemClock, install_of, instance_of, zone_of};
-use state::State;
+use file::{Disk, Paths};
+use react::{Input, react};
+use start::{Setup, SystemClock, install_of, instance_of, zone_of};
+use state::Inner;
 
 #[derive(uniffi::Object)]
 pub struct Core {
-    instance: Instance,
-    install: Install,
-    socket: Option<PathBuf>,
-    files: Arc<dyn Files>,
-    store: state::Store,
-    ad_hoc_store: adhoc::Store,
-    clock: Arc<dyn Clock>,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
-    state: Mutex<State>,
+    inner: Mutex<Inner>,
 }
 
 impl fmt::Debug for Core {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Core")
-            .field("instance", &self.instance)
-            .field("install", &self.install)
-            .field("socket", &self.socket)
-            .finish_non_exhaustive()
+        formatter.debug_struct("Core").finish_non_exhaustive()
     }
 }
 
@@ -101,11 +92,10 @@ impl Core {
         let install = install_of(bundle_writable);
         // Before any file is read, so a second instance stops here.
         let requests = ipc::serve(&socket, waker)?;
-        let core = Self::start(Setup {
+        let inner = Inner::start(Setup {
             instance,
             install,
             socket: Some(socket),
-            requests,
             files: Arc::new(files),
             clock: Arc::new(SystemClock),
             zone,
@@ -114,27 +104,28 @@ impl Core {
             "core {} listening, {install:?} install",
             env!("CARGO_PKG_VERSION")
         );
-        Ok(Arc::new(core))
+        Ok(Arc::new(Self::serving(inner, requests)))
     }
 
-    pub fn handle(&self, event: Event) -> Vec<Effect> {
-        if let Event::CommandChosen { command } = &event {
-            let (effects, outcome) = self.choose(command);
-            if let Err(error) = outcome {
-                // The message can name a domain, so only the code is logged (ADR-0009).
-                tracing::warn!("a menu command was refused: {:?}", error.code);
-            }
-            return effects;
-        }
-        // The user is looking at whatever their own choice in Nightcap's UI got wrong.
-        let aloud = !matches!(
-            event,
-            Event::FixChosen { .. } | Event::OnboardingFinished { .. }
-        );
-        let (effects, ()) = self.turn(aloud, |state, effects| {
-            effects.extend(self.react(state, event));
-        });
-        effects
+    /// Something macOS observed.
+    pub fn report(&self, fact: Fact) -> Outcome {
+        react(&mut self.inner(), Input::Fact(fact))
+    }
+
+    /// A command from the menu-bar UI, which hears of a refusal as an event.
+    pub fn send(&self, command: Command) -> Outcome {
+        react(&mut self.inner(), Input::Command(command))
+    }
+
+    /// A command only the menu-bar UI sends.
+    pub fn send_ui(&self, command: UiCommand) -> Outcome {
+        react(&mut self.inner(), Input::UiCommand(command))
+    }
+
+    /// Releases every force as the app quits (ADR-0008), with what the shell must carry out
+    /// before it exits.
+    pub fn stop(&self) -> Outcome {
+        react(&mut self.inner(), Input::Terminating)
     }
 
     /// The ad-hoc rules, written for the config (ADR-0007).
@@ -143,58 +134,66 @@ impl Core {
         reason = "TOML refuses only shapes the rule lists never have, and the shell's call can't fail"
     )]
     pub fn export(&self, format: ExportFormat) -> String {
-        adhoc::export(&self.state().places.kept().ad_hoc, format).expect("rules always serialize")
+        adhoc::export(&self.inner().places.kept().ad_hoc, format).expect("rules always serialize")
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {
-        OnboardingSteps::new(&self.state())
+        OnboardingSteps::new(&self.inner())
     }
 
     pub fn settings(&self) -> Settings {
-        Settings::new(
-            &self.state(),
-            self.clock.now(),
-            &self.files.path(File::Config),
-        )
+        let inner = self.inner();
+        Settings::new(&inner, inner.clock.now(), &inner.files.path(File::Config))
     }
 
     pub fn menu(&self) -> Menu {
-        Menu::new(&self.state(), self.clock.now())
+        let inner = self.inner();
+        Menu::new(&inner, inner.clock.now())
     }
 
     /// What the tour's steps follow and the titles they quote, or None while no tour runs.
     pub fn tour(&self) -> Option<TourSnapshot> {
-        let state = self.state();
-        let tour = state.tour.as_ref()?;
-        Some(tour.report(&state.places.look(&state.facts.world(self.clock.now()))))
+        let inner = self.inner();
+        let tour = inner.tour.as_ref()?;
+        Some(tour.report(&inner.places.look(&inner.facts.world(inner.clock.now()))))
     }
 
+    /// Answers the CLI's requests waiting since the last tick, each in a turn of its own.
     #[expect(
         clippy::expect_used,
         reason = "panics abort (ADR-0002), so none can poison the lock"
     )]
-    pub fn tick(&self) -> Vec<Effect> {
+    pub fn tick(&self) -> Outcome {
         let requests = self
             .requests
             .lock()
             .expect("no panic happens while it's held");
-        // The CLI already printed what went wrong.
-        let (effects, ()) = self.turn(false, |state, effects| {
-            for pending in requests.try_iter() {
-                let response = self.answer(state, &pending.request, effects);
-                pending.reply(response);
-            }
-        });
-        effects
+        let mut inner = self.inner();
+        let mut outcome = Outcome::default();
+        for pending in requests.try_iter() {
+            let (answered, response) = inner.answer(&pending.request);
+            pending.reply(response);
+            outcome.effects.extend(answered.effects);
+            outcome.events.extend(answered.events);
+        }
+        outcome
     }
 }
 
 impl Core {
+    /// A core deciding from `inner`, answering the requests the IPC thread queues on each tick.
+    pub(crate) fn serving(inner: Inner, requests: mpsc::Receiver<ipc::Pending>) -> Self {
+        Self {
+            requests: Mutex::new(requests),
+            inner: Mutex::new(inner),
+        }
+    }
+
     #[expect(
         clippy::expect_used,
         reason = "panics abort (ADR-0002), so none can poison the lock"
     )]
-    fn state(&self) -> MutexGuard<'_, State> {
-        self.state.lock().expect("no panic happens while it's held")
+    pub(crate) fn inner(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().expect("no panic happens while it's held")
     }
 }

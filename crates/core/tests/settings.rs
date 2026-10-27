@@ -10,19 +10,19 @@ mod common;
 
 use jiff::SignedDuration;
 use nightcap_core::{
-    Effect, Event, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsLayers,
-    SettingsRule, SettingsSwitch, Staged, normalize_domain,
+    Event, Fact, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsLayers,
+    SettingsRule, SettingsSwitch, Staged, UiCommand, normalize_domain,
 };
 use nightcap_protocol::{
-    AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail, ExportFormat,
-    FileError, Length, NightShiftDetail, NotificationPermission, OnOff, Place, Request,
-    RuleIdentity, Schedule,
+    AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
+    ExportFormat, FileError, Length, NightShiftDetail, NotificationPermission, OnOff, Place,
+    Request, RuleIdentity, Schedule,
 };
 
 use common::{
-    add_rule, at, button, custom_hours, domain, figma, figma_app, mail, minutes, noon, notifies,
+    add_rule, at, button, custom_hours, domain, figma, figma_app, mail, minutes, noon,
     on_by_the_schedule, permissions, report_zurich_sun, reported, rows, send, set, settings_check,
-    status,
+    status, tells,
 };
 
 #[test]
@@ -43,9 +43,7 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
         staged.core().settings().website_checking,
         switch(false, false, Command::Websites(OnOff::On))
     );
-    staged.core().handle(Event::CommandChosen {
-        command: Command::Websites(OnOff::On),
-    });
+    _ = staged.send(Command::Websites(OnOff::On));
     assert_eq!(
         staged.core().settings().website_checking,
         switch(true, false, Command::Websites(OnOff::Off))
@@ -80,9 +78,7 @@ fn stands(state: CheckState, text: &str) -> Option<(CheckState, String)> {
 #[test]
 fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
     let staged = noon().stage().unwrap();
-    staged
-        .core()
-        .handle(permissions(false, NotificationPermission::Granted));
+    staged.report(permissions(false, NotificationPermission::Granted));
 
     assert_eq!(
         check_of(&staged, CheckKind::Accessibility),
@@ -96,9 +92,7 @@ fn missing_accessibility_is_a_problem_only_while_website_checking_is_on() {
             "Accessibility isn’t allowed, so website checking can’t read the front tab."
         )
     );
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Granted));
+    staged.report(permissions(true, NotificationPermission::Granted));
     assert_eq!(
         check_of(&staged, CheckKind::Accessibility),
         stands(CheckState::Ok, "Accessibility is allowed.")
@@ -110,20 +104,14 @@ fn notifications_switched_off_after_being_allowed_are_a_problem() {
     let staged = noon().stage().unwrap();
     let notifications = |staged: &Staged| check_of(staged, CheckKind::Notifications);
 
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Denied));
+    staged.report(permissions(true, NotificationPermission::Denied));
     assert_eq!(
         notifications(&staged),
         stands(CheckState::Off, "Notifications are off.")
     );
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Granted));
+    staged.report(permissions(true, NotificationPermission::Granted));
     assert_eq!(notifications(&staged), stands(CheckState::Ok, "Allowed."));
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Denied));
+    staged.report(permissions(true, NotificationPermission::Denied));
     let drifted = stands(
         CheckState::Drifted,
         "Notifications were allowed, but they’re switched off in System Settings.",
@@ -131,9 +119,7 @@ fn notifications_switched_off_after_being_allowed_are_a_problem() {
     assert_eq!(notifications(&staged), drifted);
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Denied));
+    staged.report(permissions(true, NotificationPermission::Denied));
     assert_eq!(notifications(&staged), drifted);
 }
 
@@ -282,12 +268,12 @@ fn night_shift_missing_on_this_mac_is_broken() {
             "Night Shift isn’t available on this Mac."
         )
     );
-    staged.core().handle(reported(false, Schedule::Off));
+    staged.report(reported(false, Schedule::Off));
     assert_eq!(
         check_of(&staged, CheckKind::NightShift),
         stands(CheckState::Ok, "Available, with no schedule.")
     );
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
     assert_eq!(
         check_of(&staged, CheckKind::NightShift),
         stands(
@@ -300,12 +286,8 @@ fn night_shift_missing_on_this_mac_is_broken() {
 #[test]
 fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
     let staged = noon().config("").stage().unwrap();
-    staged.core().handle(Event::CommandChosen {
-        command: Command::Websites(OnOff::On),
-    });
-    staged
-        .core()
-        .handle(permissions(false, NotificationPermission::Granted));
+    _ = staged.send(Command::Websites(OnOff::On));
+    staged.report(permissions(false, NotificationPermission::Granted));
 
     assert_eq!(
         settings_check(&staged, CheckKind::Accessibility),
@@ -318,9 +300,7 @@ fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
             accept: button("Stop Checking Websites", Fix::StopCheckingWebsites),
         })
     );
-    staged.core().handle(Event::FixChosen {
-        fix: Fix::StopCheckingWebsites,
-    });
+    staged.send_ui(UiCommand::Fix(Fix::StopCheckingWebsites));
     assert!(!staged.core().settings().website_checking.on);
     assert_eq!(
         settings_check(&staged, CheckKind::Accessibility),
@@ -337,12 +317,8 @@ fn settings_offer_to_allow_accessibility_or_stop_checking_websites() {
 #[test]
 fn settings_offer_to_allow_notifications_or_keep_them_off() {
     let staged = noon().stage().unwrap();
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Granted));
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Denied));
+    staged.report(permissions(true, NotificationPermission::Granted));
+    staged.report(permissions(true, NotificationPermission::Denied));
 
     assert_eq!(
         settings_check(&staged, CheckKind::Notifications),
@@ -355,9 +331,7 @@ fn settings_offer_to_allow_notifications_or_keep_them_off() {
             accept: button("Keep Notifications Off", Fix::KeepNotificationsOff),
         })
     );
-    staged.core().handle(Event::FixChosen {
-        fix: Fix::KeepNotificationsOff,
-    });
+    staged.send_ui(UiCommand::Fix(Fix::KeepNotificationsOff));
     let kept_off = Some(SettingsCheck {
         kind: CheckKind::Notifications,
         state: CheckState::Off,
@@ -368,15 +342,13 @@ fn settings_offer_to_allow_notifications_or_keep_them_off() {
     assert_eq!(settings_check(&staged, CheckKind::Notifications), kept_off);
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Denied));
+    staged.report(permissions(true, NotificationPermission::Denied));
     assert_eq!(settings_check(&staged, CheckKind::Notifications), kept_off);
 }
 
 /// Night Shift as CoreBrightness reports it while macOS has sunset to sunrise set aside.
-fn reported_set_aside(enabled: bool, schedule: Schedule) -> Event {
-    Event::StatusChanged {
+fn reported_set_aside(enabled: bool, schedule: Schedule) -> Fact {
+    Fact::StatusChanged {
         enabled,
         schedule,
         sun_schedule_set_aside: true,
@@ -411,17 +383,16 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
         .stage()
         .unwrap();
     report_zurich_sun(&staged);
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
 
-    let effects = staged
-        .core()
-        .handle(reported_set_aside(false, Schedule::Off));
-    assert!(effects.contains(&Effect::Notify {
-        title: "Sunset to sunrise needs Location Services".to_owned(),
-        body: "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off.".to_owned(),
-        opens: None,
+    let events = staged
+        .report(reported_set_aside(false, Schedule::Off))
+        .events;
+    assert!(events.contains(&Event::ProblemAppeared {
+        check: Check {
+            detail: CheckDetail::NightShift(NightShiftDetail::SetAside),
+            state: CheckState::Drifted,
+        },
     }));
     assert_eq!(settings_check(&staged, CheckKind::NightShift), set_aside());
     assert_eq!(
@@ -432,9 +403,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
         })
     );
 
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(
         settings_check(&staged, CheckKind::NightShift),
         night_shift_check(
@@ -450,9 +419,7 @@ fn nightcap_opening_with_sunset_to_sunrise_set_aside_shows_the_problem() {
         .stage()
         .unwrap();
 
-    staged
-        .core()
-        .handle(reported_set_aside(false, Schedule::Off));
+    staged.report(reported_set_aside(false, Schedule::Off));
 
     assert_eq!(settings_check(&staged, CheckKind::NightShift), set_aside());
 }
@@ -462,31 +429,21 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
     let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))
         .stage()
         .unwrap();
-    staged
-        .core()
-        .handle(reported_set_aside(false, Schedule::Off));
+    staged.report(reported_set_aside(false, Schedule::Off));
 
-    staged.core().handle(Event::FixChosen {
-        fix: Fix::KeepScheduleOff,
-    });
+    staged.send_ui(UiCommand::Fix(Fix::KeepScheduleOff));
 
     let no_schedule = night_shift_check(CheckState::Ok, "Available, with no schedule.");
     assert_eq!(settings_check(&staged, CheckKind::NightShift), no_schedule);
     let staged = staged.restart_at(at("2026-10-16T01:45:00+02:00"));
-    assert!(!notifies(
-        &staged
-            .core()
-            .handle(reported_set_aside(false, Schedule::Off))
+    assert!(!tells(
+        &staged.report(reported_set_aside(false, Schedule::Off))
     ));
     assert_eq!(settings_check(&staged, CheckKind::NightShift), no_schedule);
 
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
-    assert!(notifies(
-        &staged
-            .core()
-            .handle(reported_set_aside(false, Schedule::Off))
+    staged.report(reported(true, Schedule::SunsetToSunrise));
+    assert!(tells(
+        &staged.report(reported_set_aside(false, Schedule::Off))
     ));
     assert_eq!(settings_check(&staged, CheckKind::NightShift), set_aside());
 }
@@ -496,13 +453,9 @@ fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
     let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))
         .stage()
         .unwrap();
-    staged
-        .core()
-        .handle(reported_set_aside(false, Schedule::Off));
+    staged.report(reported_set_aside(false, Schedule::Off));
 
-    staged
-        .core()
-        .handle(reported_set_aside(true, custom_hours()));
+    staged.report(reported_set_aside(true, custom_hours()));
 
     assert_eq!(
         settings_check(&staged, CheckKind::NightShift),
@@ -518,24 +471,30 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
     let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))
         .stage()
         .unwrap();
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
     let following = night_shift_check(
         CheckState::Ok,
         "Available, following its schedule: sunset to sunrise.",
     );
 
     staged.set_now(at("2026-10-16T01:49:00+02:00"));
-    assert!(!notifies(&staged.core().handle(Event::TimerFired)));
+    assert!(!tells(&staged.report(Fact::TimerFired)));
     assert_eq!(settings_check(&staged, CheckKind::NightShift), following);
 
     staged.set_now(at("2026-10-16T01:50:00+02:00"));
-    assert!(staged.core().handle(Event::TimerFired).contains(&Effect::Notify {
-        title: "Nightcap can’t follow sunset to sunrise".to_owned(),
-        body: "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them.".to_owned(),
-        opens: None,
-    }));
+    assert!(
+        staged
+            .report(Fact::TimerFired)
+            .events
+            .contains(&Event::ProblemAppeared {
+                check: Check {
+                    detail: CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                        waited: SignedDuration::from_mins(10),
+                    }),
+                    state: CheckState::Broken,
+                },
+            })
+    );
     assert_eq!(
         settings_check(&staged, CheckKind::NightShift),
         night_shift_check(
@@ -552,7 +511,7 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
 
     staged.set_now(at("2026-10-16T01:51:00+02:00"));
     report_zurich_sun(&staged);
-    staged.core().handle(Event::TimerFired);
+    staged.report(Fact::TimerFired);
     assert_eq!(settings_check(&staged, CheckKind::NightShift), following);
 }
 
@@ -567,7 +526,7 @@ fn settings_offer_to_reload_a_broken_config() {
     assert_eq!(broken.state, CheckState::Broken);
     assert_eq!(broken.restore, button("Reload", Fix::Reload));
     staged.write_config(Some("[rules.off]\ndomain = [\"figma.com\"]\n"));
-    staged.core().handle(Event::FixChosen { fix: Fix::Reload });
+    staged.send_ui(UiCommand::Fix(Fix::Reload));
     assert_eq!(
         settings_check(&staged, CheckKind::ConfigFile),
         Some(SettingsCheck {

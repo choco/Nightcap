@@ -6,14 +6,16 @@ The shell observes facts (app switches, hosts, status changes, sun times, menu c
 
 The core exposes a single `Core` object through UniFFI, called synchronously and only from the main thread:
 
-- `handle(Event) -> Vec<Effect>` is called for every fact the shell observes.
-- `tick() -> Vec<Effect>` is called when the core's own threads have work. A `Waker` foreign trait lets the IPC thread ask for a tick, and the shell merges those requests into one `DispatchQueue.main.async { tick() }`. This is Ghostty's wakeup pattern.
-- Effects are plain data, such as setting Night Shift, posting a notification, watching a browser or scheduling the next wakeup. The core computes when to wake (the next schedule transition or the end of a timer); the shell owns the wall-clock timer, because Rust's portable clocks stop while the Mac sleeps.
-- What the menu and the settings window show is pulled: `menu()` and `settings()` return a snapshot, which the shell draws after each `handle` and `tick`, so no effect carries UI.
+- `report(Fact)` is called for every fact the shell observes, `send(Command)` for every command the menu, Settings, onboarding and the shortcut send, the same commands as the CLI's, and `send_ui(UiCommand)` for the UI's own: the tour's start and end, onboarding's finish and the fixes. Each returns an `Outcome`: the effects and the events it led to, in the order the core decided them.
+- `tick() -> Outcome` is called when the core's own threads have work. A `Waker` foreign trait lets the IPC thread ask for a tick, and the shell merges those requests into one `DispatchQueue.main.async { tick() }`. This is Ghostty's wakeup pattern.
+- Effects are plain data, such as setting Night Shift, watching a browser or scheduling the next wakeup. The core computes when to wake (the next schedule transition or the end of a timer); the shell owns the wall-clock timer, because Rust's portable clocks stop while the Mac sleeps.
+- Events are what happened, told once, as facts rather than sentences: an external change adopted, the first launch after an update, a problem that appeared, a command refused. The shell words the notifications they call for.
+- `stop()` releases every force as the app quits (ADR-0008), and returns what the shell carries out before it exits.
+- What the menu and the settings window show is pulled: `menu()` and `settings()` return a snapshot, which the shell draws after each outcome, so no effect carries UI.
 - The browser watcher hops its results to the main thread before they reach the core.
 - The core mirrors the last observed Night Shift status, so the CLI's `status` never needs a round trip into Swift.
 
-It wins because the core can be tested as a pure state machine on Linux, by replaying events and checking effects.
+It wins because the core can be tested as a pure state machine on Linux, by replaying facts and commands and checking outcomes.
 
 ## Consequences
 

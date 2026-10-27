@@ -12,7 +12,7 @@ use crate::domain::Host;
 use crate::places::{Context, Kept, Look, Places, Refusal, Stack, World};
 use crate::rows::{MenuItem, PlaceRow, RowItem, Rows};
 use crate::schedule::{SunTimes, Timeline};
-use crate::state::State;
+use crate::state::Inner;
 
 /// An app the tour names: its bundle ID, which a rule names it by, and its name, which the menu
 /// calls it by.
@@ -88,7 +88,7 @@ pub fn tour_titles(sample: TourApp, site: Option<TourSite>, example: TourApp) ->
     titles(&sample, site.as_ref(), &example)
 }
 
-/// What `TourStarted` named, which the tour's steps follow until it ends.
+/// What `UiCommand::StartTour` named, which the tour's steps follow until it ends.
 #[derive(Debug)]
 pub(crate) struct Tour {
     sample: BundleId,
@@ -134,7 +134,7 @@ impl Tour {
     }
 }
 
-impl State {
+impl Inner {
     /// Starts the tour, unless one runs, with what its steps follow (ADR-0016). It stands in for
     /// the schedule with Night Shift on if it finds Night Shift off.
     pub(crate) fn tour_started(

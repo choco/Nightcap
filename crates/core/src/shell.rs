@@ -1,13 +1,16 @@
-//! What crosses between the shell and the core (ADR-0002): the events the shell reports, the
-//! effects it carries out, the waker the core's threads ask for a tick with, and the protocol's
-//! types as the shell sees them.
+//! What crosses between the shell and the core (ADR-0002): the facts the shell reports, the
+//! commands only its UI sends, the outcome of each, with the effects it carries out and the
+//! events it tells, the waker the core's threads ask for a tick with, and the protocol's types
+//! as the shell sees them.
 
 use std::time::SystemTime;
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    BundleId, CheckKind, CheckState, Command, Domain, ExportFormat, Length, NotificationPermission,
-    OnOff, Place, RuleIdentity, Schedule, TimeOfDay,
+    AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind, CheckState,
+    Command, ConfigFileDetail, Domain, ErrorCode, ErrorReply, ExportFormat, FileError, Length,
+    NightShiftDetail, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail, Place,
+    RuleIdentity, Schedule, TimeOfDay,
 };
 
 use crate::{Fix, TourApp, TourSite};
@@ -62,6 +65,95 @@ pub enum CheckState {
     Drifted,
     Broken,
 }
+
+#[uniffi::remote(Record)]
+pub struct Check {
+    pub detail: CheckDetail,
+    pub state: CheckState,
+}
+
+#[uniffi::remote(Enum)]
+pub enum CheckDetail {
+    NightShift(NightShiftDetail),
+    Accessibility(AccessibilityDetail),
+    Notifications(NotificationsDetail),
+    OpenAtLogin(OpenAtLoginDetail),
+    ConfigFile(ConfigFileDetail),
+    AdHocRules(AdHocRulesDetail),
+}
+
+#[uniffi::remote(Enum)]
+pub enum NightShiftDetail {
+    Available { schedule: Option<Schedule> },
+    Unavailable,
+    SetAside,
+    NoSunTimes { waited: SignedDuration },
+}
+
+#[uniffi::remote(Enum)]
+pub enum AccessibilityDetail {
+    Allowed,
+    NotAllowed,
+    NotNeeded,
+}
+
+#[uniffi::remote(Enum)]
+pub enum NotificationsDetail {
+    Allowed,
+    SwitchedOff,
+    Off,
+}
+
+#[uniffi::remote(Enum)]
+pub enum OpenAtLoginDetail {
+    Opens,
+    AwaitingApproval,
+    Removed,
+    Off,
+}
+
+#[uniffi::remote(Enum)]
+pub enum ConfigFileDetail {
+    Valid { rules: usize },
+    Missing,
+    Error(FileError),
+}
+
+#[uniffi::remote(Enum)]
+pub enum AdHocRulesDetail {
+    On { rules: usize },
+    Off(FileError),
+}
+
+#[uniffi::remote(Enum)]
+pub enum FileError {
+    Unreadable {
+        path: String,
+        message: String,
+    },
+    Malformed {
+        path: String,
+        line: Option<usize>,
+        message: String,
+    },
+    Invalid {
+        path: String,
+        line: Option<usize>,
+        message: String,
+    },
+    Newer {
+        path: String,
+        version: u32,
+    },
+}
+
+// A check's counts and lines cross as u64, which holds any usize on the 64-bit Macs Nightcap runs
+// on (ADR-0013).
+uniffi::custom_type!(usize, u64, {
+    remote,
+    lower: |count| u64::try_from(count).unwrap_or(u64::MAX),
+    try_lift: |count| Ok(usize::try_from(count)?),
+});
 
 #[uniffi::remote(Enum)]
 pub enum ExportFormat {
@@ -146,14 +238,37 @@ pub enum Command {
     SetSchedule(Schedule),
 }
 
+#[uniffi::remote(Enum)]
+pub enum ErrorCode {
+    ProtocolMismatch,
+    BadRequest,
+    NightShiftUnavailable,
+    StrengthUnavailable,
+    InvalidConfig,
+    NoUpdater,
+    ConfigRule,
+    NoSuchRule,
+    AdHocRulesOff,
+    SetInConfig,
+    NoLoginItem,
+    Internal,
+}
+
+#[uniffi::remote(Record)]
+pub struct ErrorReply {
+    pub code: ErrorCode,
+    pub message: String,
+}
+
 /// Lets the core's own threads ask the shell for a `tick()` on the main thread (ADR-0002).
 #[uniffi::export(foreign)]
 pub trait Waker: Send + Sync {
     fn wake(&self);
 }
 
+/// Something macOS observed, which the shell reports.
 #[derive(Debug, uniffi::Enum)]
-pub enum Event {
+pub enum Fact {
     Launched,
     /// An app came to the front; some processes have no bundle ID. `is_browser` says whether
     /// it's in the shell's browser list, so its host can be watched.
@@ -201,28 +316,6 @@ pub enum Event {
     TimeZoneChanged {
         iana_id: String,
     },
-    /// The user went through onboarding, choosing whether to check websites.
-    OnboardingFinished {
-        websites: bool,
-    },
-    /// The tour started (ADR-0016), with its sample, the site where it has a site step, and
-    /// the app its steps give as an example of a rule that says on.
-    TourStarted {
-        sample: TourApp,
-        site: Option<TourSite>,
-        example: TourApp,
-    },
-    /// The tour ended, or the user ended it.
-    TourEnded,
-    /// The user chose one of the core's fixes in Settings.
-    FixChosen {
-        fix: Fix,
-    },
-    /// The user chose a menu item or flipped a switch in Settings, which carries the command to
-    /// run.
-    CommandChosen {
-        command: Command,
-    },
     /// The wakeup the core last asked for came due.
     TimerFired,
     /// The Mac woke from sleep, so schedule transitions may have passed unseen.
@@ -231,7 +324,25 @@ pub enum Event {
     SessionChanged {
         active: bool,
     },
-    Terminating,
+}
+
+/// A command only the menu-bar UI sends, which never goes on the wire: the CLI has no tour
+/// (ADR-0016), no onboarding and no fixes.
+#[derive(Debug, uniffi::Enum)]
+pub enum UiCommand {
+    /// Starts the tour (ADR-0016), with its sample, the site where it has a site step, and the
+    /// app its steps give as an example of a rule that says on.
+    StartTour {
+        sample: TourApp,
+        site: Option<TourSite>,
+        example: TourApp,
+    },
+    /// Ends the tour, as it finishes or the user leaves it.
+    EndTour,
+    /// Finishes onboarding, with whether the user chose to check websites.
+    FinishOnboarding { websites: bool },
+    /// Carries out one of the core's fixes, which the user chose in Settings.
+    Fix(Fix),
 }
 
 /// Nightcap's login item, as macOS reports it.
@@ -284,12 +395,38 @@ pub enum Effect {
         at: SystemTime,
     },
     CancelWakeup,
-    Notify {
-        title: String,
-        body: String,
-        /// A page to open when the notification is clicked.
-        opens: Option<String>,
+}
+
+/// Something that happened, which a client may tell the user, once.
+#[derive(Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum Event {
+    /// Night Shift switched outside Nightcap, taken as flipping what the user sees (ADR-0018):
+    /// `place` holds `state` until `until`, or until turned back, snoozing its rule, if one
+    /// decided.
+    Adopted {
+        place: Place,
+        snoozed: Option<RuleIdentity>,
+        state: OnOff,
+        until: Option<Timestamp>,
     },
+    /// The first launch of `to` after an update from `from`, which is None for a run from
+    /// before versions were kept.
+    Updated { from: Option<String>, to: String },
+    /// A check became a problem the user didn't cause, to announce once: what it found, and
+    /// where that leaves it. Night Shift being unavailable, notifications switched off and a
+    /// login item waiting for approval never are.
+    ProblemAppeared { check: Check },
+    /// The core refused a command from the menu-bar UI; the CLI hears its refusal as the reply.
+    Refused { command: Command, why: ErrorReply },
+}
+
+/// What one fact or command led to, in the order the core decided it.
+#[derive(Debug, Default, PartialEq, Eq, uniffi::Record)]
+pub struct Outcome {
+    /// What macOS must do, in order.
+    pub effects: Vec<Effect>,
+    /// What happened, for the clients to tell.
+    pub events: Vec<Event>,
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]

@@ -145,7 +145,7 @@ The running Nightcap app, as the CLI sees it: the only writer of Night Shift, re
 _Avoid_: server, service
 
 **Command**:
-A request to change something, such as the switch, a timer on a place or adding a rule. The menu, Settings and the CLI send the same commands.
+A request to change something, such as the switch, a timer on a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
 
 **Status**:
 The daemon's report of its decision and everything behind it: the context, rules, each place's layers, grants and problems.

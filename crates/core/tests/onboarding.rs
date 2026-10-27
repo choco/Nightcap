@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, OnboardingNightShift, OnboardingSteps};
+use nightcap_core::{Effect, Fact, OnboardingNightShift, OnboardingSteps, UiCommand};
 use nightcap_protocol::{Install, Instance, OnOff, Request, Schedule};
 
 use common::{at, noon, report_night_shift, status};
@@ -14,20 +14,18 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
 
     assert!(
         staged
-            .core()
-            .handle(Event::Launched)
+            .report(Fact::Launched)
+            .effects
             .contains(&Effect::ShowOnboarding { completed: 0 })
     );
-    staged
-        .core()
-        .handle(Event::OnboardingFinished { websites: true });
+    staged.send_ui(UiCommand::FinishOnboarding { websites: true });
     assert_eq!(status(&staged).website_checking.state, OnOff::On);
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     assert!(
         !staged
-            .core()
-            .handle(Event::Launched)
+            .report(Fact::Launched)
+            .effects
             .iter()
             .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
     );
@@ -37,9 +35,7 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
 fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
     let staged = noon().config("websites = false\n").stage().unwrap();
 
-    staged
-        .core()
-        .handle(Event::OnboardingFinished { websites: true });
+    staged.send_ui(UiCommand::FinishOnboarding { websites: true });
 
     let checking = status(&staged).website_checking;
     assert_eq!(checking.state, OnOff::Off);
@@ -108,7 +104,7 @@ fn a_config_that_sets_website_checking_and_night_shift_leaves_onboarding_nothing
         .unwrap();
     report_night_shift(&staged, Schedule::Off, 60);
 
-    assert!(!shows_onboarding(&staged.core().handle(Event::Launched)));
+    assert!(!shows_onboarding(&staged.report(Fact::Launched).effects));
 }
 
 #[test]
@@ -116,7 +112,7 @@ fn a_config_that_sets_only_website_checking_still_leaves_night_shift_to_ask() {
     let staged = noon().config("websites = false\n").stage().unwrap();
     report_night_shift(&staged, Schedule::Off, 60);
 
-    assert!(shows_onboarding(&staged.core().handle(Event::Launched)));
+    assert!(shows_onboarding(&staged.report(Fact::Launched).effects));
 }
 
 #[test]
@@ -125,8 +121,8 @@ fn a_config_that_sets_website_checking_leaves_onboarding_nothing_to_ask_without_
 
     assert!(
         !staged
-            .core()
-            .handle(Event::Launched)
+            .report(Fact::Launched)
+            .effects
             .iter()
             .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
     );
@@ -143,8 +139,8 @@ fn a_self_managed_release_still_asks_about_opening_at_login_when_the_config_sets
 
     assert!(
         staged
-            .core()
-            .handle(Event::Launched)
+            .report(Fact::Launched)
+            .effects
             .contains(&Effect::ShowOnboarding { completed: 0 })
     );
 }

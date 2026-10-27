@@ -9,7 +9,7 @@
 mod common;
 
 use nightcap_core::{
-    Effect, Event, MenuEntry, MenuIcon, MenuItem, NightShiftItem, PlaceRow, ProblemLine, RowImage,
+    Effect, Fact, MenuEntry, MenuIcon, MenuItem, NightShiftItem, PlaceRow, ProblemLine, RowImage,
     RowItem, Scenario, Staged,
 };
 use nightcap_protocol::{Command, Length, NotificationPermission, OnOff, Place, Schedule};
@@ -24,7 +24,7 @@ use common::{
 #[test]
 fn with_no_schedule_the_night_shift_item_says_so() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(false, Schedule::Off));
+    staged.report(reported(false, Schedule::Off));
 
     assert_eq!(
         staged.core().menu().night_shift.reason.as_deref(),
@@ -45,7 +45,7 @@ fn night_shift_item(on: bool, reason: &str, command: Command) -> NightShiftItem 
 #[test]
 fn the_menu_says_what_night_shift_is_doing_and_why() {
     let staged = forced();
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
         is_browser: false,
@@ -116,7 +116,7 @@ fn choice(title: &str, command: Command) -> RowItem {
 #[test]
 fn the_menu_has_everywheres_row_then_the_apps_and_the_sites() {
     let staged = on_figma().stage().unwrap();
-    staged.core().handle(Event::StrengthChanged { value: 60 });
+    staged.report(Fact::StrengthChanged { value: 60 });
 
     let entries = staged.core().menu().entries;
 
@@ -181,7 +181,7 @@ fn everywheres_row_has_every_length_but_the_switchs() {
 fn until_note(time: &str, enabled: bool, schedule: Schedule, title: &str) -> Option<String> {
     let staged = Scenario::at(at(time)).stage().unwrap();
     report_zurich_sun(&staged);
-    staged.core().handle(reported(enabled, schedule));
+    staged.report(reported(enabled, schedule));
     choice_titled(&everywhere_row(&staged).unwrap(), title).subtitle
 }
 
@@ -254,9 +254,9 @@ fn the_menus_lengths_come_from_the_config() {
 #[test]
 fn everywheres_row_names_the_place_that_keeps_the_other_way() {
     let staged = noon().config("[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\n").stage().unwrap();
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
     let front = |bundle_id: &str, name: &str| {
-        staged.core().handle(Event::AppActivated {
+        staged.report(Fact::AppActivated {
             bundle_id: Some(bundle_id.to_owned()),
             name: Some(name.to_owned()),
             is_browser: false,
@@ -274,7 +274,7 @@ fn everywheres_row_names_the_place_that_keeps_the_other_way() {
     assert_eq!(front("com.apple.iBooksX", "Books"), row("Turn On", None));
     // At night, turning it off everywhere leaves Books on, and Figma off as it is.
     staged.set_now(at("2026-10-16T23:00:00+02:00"));
-    staged.core().handle(Event::Woke);
+    staged.report(Fact::Woke);
     assert_eq!(
         front("com.apple.iBooksX", "Books"),
         row("Turn Off", Some("Everywhere but in Books"))
@@ -285,8 +285,8 @@ fn everywheres_row_names_the_place_that_keeps_the_other_way() {
 #[test]
 fn by_day_the_rows_turn_on_and_by_night_off() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(false, custom_hours()));
-    staged.core().handle(Event::AppActivated {
+    staged.report(reported(false, custom_hours()));
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.apple.mail".to_owned()),
         name: Some("Mail".to_owned()),
         is_browser: false,
@@ -297,26 +297,22 @@ fn by_day_the_rows_turn_on_and_by_night_off() {
 
     assert_eq!(titles_of(&staged), ["Turn On", "Turn On in Mail"]);
     staged.set_now(at("2026-10-16T23:00:00+02:00"));
-    staged.core().handle(Event::Woke);
+    staged.report(Fact::Woke);
     assert_eq!(titles_of(&staged), ["Turn Off", "Turn Off in Mail"]);
 }
 
 #[test]
 fn without_the_sun_times_an_apps_row_turns_night_shift_the_other_way_from_how_it_is() {
     let staged = late().stage().unwrap();
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.googlecode.iterm2".to_owned()),
         name: Some("iTerm2".to_owned()),
         is_browser: false,
     });
 
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(app_row(&staged).unwrap().title, "Turn Off in iTerm2");
-    staged
-        .core()
-        .handle(reported(false, Schedule::SunsetToSunrise));
+    staged.report(reported(false, Schedule::SunsetToSunrise));
     assert_eq!(app_row(&staged).unwrap().title, "Turn On in iTerm2");
 }
 
@@ -324,9 +320,7 @@ fn without_the_sun_times_an_apps_row_turns_night_shift_the_other_way_from_how_it
 fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
     let staged = late().stage().unwrap();
 
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
 
     let menu = staged.core().menu();
     assert!(menu.night_shift.on);
@@ -342,10 +336,9 @@ fn without_the_sun_times_the_menu_follows_the_schedule_as_macos_applies_it() {
     );
     assert!(
         staged
-            .core()
-            .handle(Event::CommandChosen {
-                command: choice_titled(&row, "For 30 Minutes").command,
-            })
+            .send(choice_titled(&row, "For 30 Minutes").command)
+            .0
+            .effects
             .contains(&Effect::SetNightShift { enabled: false })
     );
 }
@@ -377,7 +370,7 @@ fn undoing_is_offered_where_it_goes_the_right_way_and_a_rule_of_yours_can_always
     );
     // By day removing it changes nothing on screen, but the rule is still the user's to remove.
     staged.set_now(at("2026-10-17T12:00:00+02:00"));
-    staged.core().handle(Event::Woke);
+    staged.report(Fact::Woke);
     assert_eq!(
         choice_titled(&app_row(&staged).unwrap(), "Remove Your Rule").command,
         Command::RemoveRule(mail())
@@ -431,7 +424,7 @@ fn a_config_rules_always_is_greyed() {
 fn custom_is_offered_beside_the_lengths_with_its_place_and_way() {
     let staged = forced();
     staged.set_now(at("2026-10-16T23:10:00+02:00"));
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
         is_browser: false,
@@ -486,7 +479,7 @@ fn the_site_row_is_the_tab_domain_or_the_most_specific_covering_rules() {
 #[test]
 fn a_site_goes_back_to_its_browsers_say_by_the_browsers_name() {
     let staged = on_by_the_schedule().config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n").stage().unwrap();
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.apple.Safari".to_owned()),
         name: Some("Safari".to_owned()),
         is_browser: true,
@@ -562,7 +555,7 @@ fn the_site_row_snoozes_a_config_rule() {
 #[test]
 fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(false, Schedule::Off));
+    staged.report(reported(false, Schedule::Off));
     assert!(
         !staged
             .core()
@@ -572,7 +565,7 @@ fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
             .any(|entry| matches!(entry, MenuEntry::Strength { .. }))
     );
 
-    staged.core().handle(Event::StrengthChanged { value: 60 });
+    staged.report(Fact::StrengthChanged { value: 60 });
 
     assert_eq!(
         staged.core().menu().entries[0],
@@ -583,7 +576,7 @@ fn the_menu_opens_with_a_strength_slider_once_the_strength_is_known() {
 #[test]
 fn the_menu_adds_and_removes_an_ad_hoc_rule_for_the_frontmost_app() {
     let staged = on_by_the_schedule().stage().unwrap();
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
         is_browser: false,
@@ -608,9 +601,7 @@ fn choosing_a_menu_item_runs_its_command() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
 
-    let effects = staged.core().handle(Event::CommandChosen {
-        command: add_rule(figma()),
-    });
+    let effects = staged.send(add_rule(figma())).0.effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
 }
@@ -618,7 +609,7 @@ fn choosing_a_menu_item_runs_its_command() {
 #[test]
 fn the_menu_shows_a_problem_line_while_any_problem_exists() {
     let staged = noon().config("websites = true\n").stage().unwrap();
-    staged.core().handle(reported(false, Schedule::Off));
+    staged.report(reported(false, Schedule::Off));
     let line = |title: &str, subtitle: Option<&str>| {
         Some(ProblemLine {
             title: title.to_owned(),
@@ -627,16 +618,12 @@ fn the_menu_shows_a_problem_line_while_any_problem_exists() {
     };
 
     assert_eq!(staged.core().menu().problem_line, None);
-    staged
-        .core()
-        .handle(permissions(false, NotificationPermission::Granted));
+    staged.report(permissions(false, NotificationPermission::Granted));
     assert_eq!(
         staged.core().menu().problem_line,
         line("1 Thing Needs Attention…", Some("Accessibility"))
     );
-    staged
-        .core()
-        .handle(permissions(false, NotificationPermission::Denied));
+    staged.report(permissions(false, NotificationPermission::Denied));
     assert_eq!(
         staged.core().menu().problem_line,
         line(
@@ -644,9 +631,7 @@ fn the_menu_shows_a_problem_line_while_any_problem_exists() {
             Some("Accessibility and notifications")
         )
     );
-    staged
-        .core()
-        .handle(permissions(true, NotificationPermission::Granted));
+    staged.report(permissions(true, NotificationPermission::Granted));
     assert_eq!(staged.core().menu().problem_line, None);
 }
 

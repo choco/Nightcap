@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event};
+use nightcap_core::{Effect, Fact};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, Length, OnOff, Payload, Place, Reason, Response, Schedule,
 };
@@ -68,7 +68,7 @@ fn off_with_no_schedule() -> Response {
 #[test]
 fn on_turns_night_shift_on_everywhere_until_turned_back() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(false, Schedule::Off));
+    staged.report(reported(false, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::On);
 
@@ -80,7 +80,7 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
 fn off_takes_off_everywheres_hold_where_that_is_enough() {
     let staged = noon().stage().unwrap();
     // Found on with no schedule, which the core takes as the user's own on.
-    staged.core().handle(reported(true, Schedule::Off));
+    staged.report(reported(true, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::Off);
 
@@ -91,7 +91,7 @@ fn off_takes_off_everywheres_hold_where_that_is_enough() {
 #[test]
 fn on_while_everywhere_says_on_writes_nothing() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(true, Schedule::Off));
+    staged.report(reported(true, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::On);
 
@@ -102,7 +102,7 @@ fn on_while_everywhere_says_on_writes_nothing() {
 #[test]
 fn toggle_turns_everywhere_the_other_way() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(reported(true, Schedule::Off));
+    staged.report(reported(true, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::Toggle);
 
@@ -114,7 +114,7 @@ fn toggle_turns_everywhere_the_other_way() {
 fn two_flips_leave_nothing_behind() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Toggle);
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     let (effects, response) = send(&staged, Command::Toggle);
 
@@ -138,12 +138,12 @@ fn on_while_the_schedule_says_on_holds_nothing() {
 fn a_hold_with_no_end_outlasts_sunrise_and_sunset() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     staged.set_now(at("2026-10-17T07:00:00+02:00"));
-    staged.core().handle(Event::TimerFired);
+    staged.report(Fact::TimerFired);
     // macOS performs its own transition, and Nightcap puts Night Shift back on.
-    let effects = staged.core().handle(reported(false, custom_hours()));
+    let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(
@@ -165,7 +165,7 @@ fn a_hold_until_the_schedule_turns_ends_at_its_turn_even_asleep() {
     );
 
     staged.set_now(at("2026-10-17T08:00:00+02:00"));
-    let effects = staged.core().handle(Event::Woke);
+    let effects = staged.report(Fact::Woke).effects;
 
     assert_eq!(
         effects,
@@ -190,11 +190,11 @@ fn a_timer_gives_back_what_was_under_it() {
             },
         ]
     );
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
     assert_eq!(
-        staged.core().handle(Event::TimerFired),
+        staged.report(Fact::TimerFired).effects,
         vec![
             Effect::SetNightShift { enabled: true },
             Effect::ScheduleWakeup {
@@ -305,7 +305,7 @@ fn until_a_picked_time_is_a_timer_that_ends_then() {
 #[test]
 fn lengths_that_cant_be_are_refused() {
     let staged = late().stage().unwrap();
-    staged.core().handle(reported(true, Schedule::Off));
+    staged.report(reported(true, Schedule::Off));
 
     for command in [
         set(Place::Everywhere, OnOff::Off, minutes(0)),
@@ -371,7 +371,7 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
         .stage()
         .unwrap();
     report(&staged, true);
-    staged.core().handle(Event::AppActivated {
+    staged.report(Fact::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
         name: Some("Figma".to_owned()),
         is_browser: false,

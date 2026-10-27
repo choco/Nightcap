@@ -89,7 +89,7 @@ final class Tour {
     private let current: () -> (tour: TourSnapshot?, moon: MenuIcon)
     private let press: () -> Void
     private let release: () -> Void
-    private let begin: (_ started: Event) -> Void
+    private let begin: (_ start: UiCommand) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
     /// `current` gives the core's report on the tour and the moon's look; `press` and `release`
@@ -102,7 +102,7 @@ final class Tour {
         current: @escaping () -> (tour: TourSnapshot?, moon: MenuIcon),
         press: @escaping () -> Void,
         release: @escaping () -> Void,
-        begin: @escaping (_ started: Event) -> Void,
+        begin: @escaping (_ start: UiCommand) -> Void,
         onEnd: @escaping (_ begun: Bool) -> Void
     ) {
         self.shortcut = shortcut
@@ -231,7 +231,7 @@ final class Tour {
     private func advance() {
         if step == .moon, !begun {
             begun = true
-            begin(.tourStarted(sample: Self.sample, site: site, example: Self.example))
+            begin(.startTour(sample: Self.sample, site: site, example: Self.example))
         }
         let hadSample = usesSample
         index += 1

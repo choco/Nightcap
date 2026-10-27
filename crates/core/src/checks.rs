@@ -1,6 +1,6 @@
 //! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
 //! the status carries and in the words Settings shows it in, with its fixes; the menu's problem
-//! line; and the notification that announces a problem when it appears.
+//! line; and the event that announces a problem when it appears.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
@@ -12,8 +12,8 @@ use nightcap_protocol::{
 use crate::adhoc::AdHocError;
 use crate::config::ConfigError;
 use crate::rows::capitalized;
-use crate::state::State;
-use crate::{Core, Effect, LoginItem};
+use crate::state::Inner;
+use crate::{Effect, Event, LoginItem};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
@@ -49,7 +49,7 @@ pub enum Fix {
     OpenLoginItems,
     /// The shell's: Location Services in System Settings.
     OpenLocationServices,
-    /// The core's, like the rest: sent back as `Event::FixChosen`.
+    /// The core's, like the rest: sent back as `UiCommand::Fix`.
     StopCheckingWebsites,
     KeepNotificationsOff,
     KeepScheduleOff,
@@ -66,51 +66,40 @@ pub struct ProblemLine {
     pub subtitle: Option<String>,
 }
 
-impl Core {
-    /// Posts one notification when a problem appears, unless `aloud` is false because the user
+impl Inner {
+    /// Announces each problem once as it appears, unless `aloud` is false because the user
     /// caused it themselves. A problem that ends and comes back is announced again.
-    pub(crate) fn announce(&self, state: &mut State, aloud: bool, effects: &mut Vec<Effect>) {
-        let problems: Vec<_> = state
+    pub(crate) fn announce(&mut self, aloud: bool, events: &mut Vec<Event>) {
+        let problems: Vec<_> = self
             .checks(self.clock.now())
             .into_iter()
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-            .map(|check| check.detail.kind())
             .collect();
-        state
-            .grants
+        self.grants
             .announced
-            .retain(|kind| problems.contains(kind));
-        for kind in problems {
-            if state.grants.announced.contains(&kind) {
+            .retain(|kind| problems.iter().any(|check| check.detail.kind() == *kind));
+        for check in problems {
+            let kind = check.detail.kind();
+            if self.grants.announced.contains(&kind) {
                 continue;
             }
-            state.grants.announced.push(kind);
-            if let Some((title, body)) = state.notice(kind).filter(|_| aloud) {
-                effects.push(Effect::Notify {
-                    title,
-                    body,
-                    opens: None,
-                });
+            self.grants.announced.push(kind);
+            if aloud && announced(&check.detail) {
+                events.push(Event::ProblemAppeared { check });
             }
         }
     }
 
     /// Carries out a fix the user chose in Settings; the shell carries out its own.
-    pub(crate) fn run_fix(&self, state: &mut State, fix: Fix) -> Vec<Effect> {
-        let mut effects = Vec::new();
-        let mut run = |state: &mut State, command| {
-            if let Err(error) = self.run_command(state, &command, &mut effects) {
-                tracing::warn!("a fix was refused: {:?}", error.code);
-            }
-        };
+    pub(crate) fn run_fix(&mut self, fix: Fix, effects: &mut Vec<Effect>) {
         match fix {
-            Fix::StopCheckingWebsites => run(state, Command::Websites(OnOff::Off)),
-            Fix::DontOpenAtLogin => run(state, Command::OpenAtLogin(OnOff::Off)),
-            Fix::KeepNotificationsOff => state.grants.notifications_wanted = false,
-            Fix::KeepScheduleOff => state.grants.schedule_off_accepted = true,
+            Fix::StopCheckingWebsites => self.fix_by(&Command::Websites(OnOff::Off), effects),
+            Fix::DontOpenAtLogin => self.fix_by(&Command::OpenAtLogin(OnOff::Off), effects),
+            Fix::KeepNotificationsOff => self.grants.notifications_wanted = false,
+            Fix::KeepScheduleOff => self.grants.schedule_off_accepted = true,
             Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
             // An invalid config shows in its check again.
-            Fix::Reload => _ = self.reload(state, &mut effects),
+            Fix::Reload => _ = self.reload(effects),
             Fix::AskForAccessibility
             | Fix::AllowNotifications
             | Fix::OpenLoginItems
@@ -118,7 +107,13 @@ impl Core {
                 tracing::debug!("{fix:?} is the shell's to carry out");
             }
         }
-        effects
+    }
+
+    /// Carries out a fix by running `command`.
+    fn fix_by(&mut self, command: &Command, effects: &mut Vec<Effect>) {
+        if let Err(error) = self.run_command(command, effects) {
+            tracing::warn!("a fix was refused: {:?}", error.code);
+        }
     }
 }
 
@@ -178,7 +173,7 @@ impl Grants {
     }
 }
 
-impl State {
+impl Inner {
     /// The checks as Settings shows them, each with its fixes.
     pub(crate) fn settings_checks(&self, now: Timestamp) -> Vec<SettingsCheck> {
         self.checks(now)
@@ -355,49 +350,6 @@ impl State {
             })
             .collect()
     }
-
-    /// The notification for a problem that appeared on its own; Night Shift being unavailable is
-    /// a fact about the Mac, and switched-off notifications can't announce themselves.
-    fn notice(&self, kind: CheckKind) -> Option<(String, String)> {
-        match kind {
-            CheckKind::NightShift if self.facts.night_shift == NightShift::Unavailable => None,
-            CheckKind::NightShift if self.grants.schedule_set_aside => Some((
-                "Sunset to sunrise needs Location Services".to_owned(),
-                "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off."
-                    .to_owned(),
-            )),
-            CheckKind::NightShift => Some((
-                "Nightcap can’t follow sunset to sunrise".to_owned(),
-                "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work without them."
-                    .to_owned(),
-            )),
-            CheckKind::Accessibility => Some((
-                "Website checking needs Accessibility".to_owned(),
-                "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
-            )),
-            CheckKind::ConfigFile => self
-                .loaded
-                .config_error
-                .as_ref()
-                .map(|error| ("Nightcap’s config is invalid".to_owned(), error.to_string())),
-            CheckKind::AdHocRules => self
-                .loaded
-                .ad_hoc_error
-                .as_ref()
-                .map(|error| ("Ad-hoc rules are off".to_owned(), error.to_string())),
-            // Waiting for approval follows the user's own choice, which macOS announces itself.
-            CheckKind::OpenAtLogin => {
-                (self.grants.login_item == Some(LoginItem::NotRegistered)).then(|| {
-                    (
-                        "Nightcap no longer opens at login".to_owned(),
-                        "Open Nightcap’s settings to turn it back on, or to keep it off."
-                            .to_owned(),
-                    )
-                })
-            }
-            CheckKind::Notifications => None,
-        }
-    }
 }
 
 /// Where what a check found leaves it: drift is what the user set up that stopped working, and
@@ -425,6 +377,34 @@ fn state(detail: &CheckDetail) -> CheckState {
         )
         | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
         | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => CheckState::Broken,
+    }
+}
+
+/// Whether a problem with what a check found is announced as it appears on its own. Night Shift
+/// being unavailable is a fact about the Mac, switched-off notifications can't announce
+/// themselves, and a login item waiting for approval follows the user's own choice, which macOS
+/// announces itself.
+fn announced(detail: &CheckDetail) -> bool {
+    match detail {
+        CheckDetail::NightShift(
+            NightShiftDetail::SetAside | NightShiftDetail::NoSunTimes { .. },
+        )
+        | CheckDetail::Accessibility(AccessibilityDetail::NotAllowed)
+        | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed)
+        | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
+        | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => true,
+        CheckDetail::NightShift(
+            NightShiftDetail::Unavailable | NightShiftDetail::Available { .. },
+        )
+        | CheckDetail::Accessibility(
+            AccessibilityDetail::Allowed | AccessibilityDetail::NotNeeded,
+        )
+        | CheckDetail::Notifications(_)
+        | CheckDetail::OpenAtLogin(
+            OpenAtLoginDetail::AwaitingApproval | OpenAtLoginDetail::Opens | OpenAtLoginDetail::Off,
+        )
+        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. } | ConfigFileDetail::Missing)
+        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => false,
     }
 }
 

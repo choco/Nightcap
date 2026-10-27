@@ -7,24 +7,27 @@ use nightcap_protocol::{
 };
 
 use crate::commands::refused;
-use crate::state::State;
-use crate::{Core, Effect, adhoc};
+use crate::state::Inner;
+use crate::{Effect, Outcome, adhoc};
 
-impl Core {
-    pub(crate) fn answer(
-        &self,
-        state: &mut State,
-        request: &Request,
-        effects: &mut Vec<Effect>,
-    ) -> Response {
+impl Inner {
+    /// Answers a CLI request in a turn of its own. A problem it causes isn't announced: the CLI
+    /// already printed what went wrong.
+    pub(crate) fn answer(&mut self, request: &Request) -> (Outcome, Response) {
+        self.turn(false, |inner, outcome| {
+            inner.respond(request, &mut outcome.effects)
+        })
+    }
+
+    fn respond(&mut self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
-            Request::Command(command) => match self.run_command(state, command, effects) {
+            Request::Command(command) => match self.run_command(command, effects) {
                 Ok(decision) => Response::Ok(Payload::Decision(decision)),
                 Err(error) => Response::Error(error),
             },
-            Request::Query(Query::Status) => self.status(state),
+            Request::Query(Query::Status) => self.status(),
             Request::Query(Query::Rules) => {
-                let look = state.places.look(&state.facts.world(self.clock.now()));
+                let look = self.places.look(&self.facts.world(self.clock.now()));
                 Response::Ok(Payload::Rules(
                     look.rules
                         .into_iter()
@@ -33,7 +36,7 @@ impl Core {
                 ))
             }
             Request::Query(Query::Export(format)) => {
-                match adhoc::export(&state.places.kept().ad_hoc, *format) {
+                match adhoc::export(&self.places.kept().ad_hoc, *format) {
                     Ok(text) => Response::Ok(Payload::Export(text)),
                     Err(error) => Response::Error(refused(
                         ErrorCode::Internal,
@@ -42,7 +45,7 @@ impl Core {
                 }
             }
             Request::Update => {
-                if state.manages_itself {
+                if self.manages_itself {
                     tracing::info!("checking for updates");
                     effects.push(Effect::CheckForUpdates);
                     return Response::Ok(Payload::UpdateCheckStarted);
@@ -58,32 +61,32 @@ impl Core {
                     .to_owned(),
                 })
             }
-            Request::Reload => match self.reload(state, effects) {
-                Ok(()) => self.status(state),
+            Request::Reload => match self.reload(effects) {
+                Ok(()) => self.status(),
                 Err(error) => Response::Error(error),
             },
         }
     }
 
-    pub(crate) fn status(&self, state: &State) -> Response {
-        let facts = &state.facts;
-        let look = state.places.look(&facts.world(self.clock.now()));
+    pub(crate) fn status(&self) -> Response {
+        let facts = &self.facts;
+        let look = self.places.look(&facts.world(self.clock.now()));
         Response::Ok(Payload::Status(Box::new(Status {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: self.install,
             night_shift: facts.night_shift,
-            strength: state.strength,
-            config_strength: state.loaded.config_night_shift.strength,
+            strength: self.strength,
+            config_strength: self.loaded.config_night_shift.strength,
             decision: look.decision,
             schedule: facts.timeline.schedule.map(Schedule::from),
-            config_schedule: state.loaded.config_night_shift.schedule,
+            config_schedule: self.loaded.config_night_shift.schedule,
             scheduled_state: facts
                 .timeline
                 .scheduled_state(facts.applied_until)
                 .map(OnOff::from),
             next_transition: facts.timeline.next_transition(facts.applied_until),
             frontmost_app: facts.context.app.clone().map(String::from),
-            watching: state.watching.is_watching(),
+            watching: self.watching.is_watching(),
             host: facts
                 .context
                 .host
@@ -94,18 +97,18 @@ impl Core {
                 .into_iter()
                 .map(|(rule, _)| rule.clone())
                 .collect(),
-            config_error: state.loaded.config_error.as_ref().map(ToString::to_string),
-            ad_hoc_error: state.loaded.ad_hoc_error.as_ref().map(ToString::to_string),
+            config_error: self.loaded.config_error.as_ref().map(ToString::to_string),
+            ad_hoc_error: self.loaded.ad_hoc_error.as_ref().map(ToString::to_string),
             website_checking: WebsiteChecking {
                 state: OnOff::from(facts.website_checking()),
                 from_config: facts.config_websites.is_some(),
             },
             layers: look.layers.to_vec(),
             permissions: Permissions {
-                accessibility: state.grants.accessibility == Some(true),
-                notifications: state.grants.notifications,
+                accessibility: self.grants.accessibility == Some(true),
+                notifications: self.grants.notifications,
             },
-            checks: state.checks(self.clock.now()),
+            checks: self.checks(self.clock.now()),
         })))
     }
 }

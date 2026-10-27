@@ -1,4 +1,4 @@
-//! The menu, which the shell pulls after each event and tick (ADR-0002): the moon, the Night
+//! The menu, which the shell pulls after each outcome (ADR-0002): the moon, the Night
 //! Shift item with what decides the screen, the problem line, the strength and the place rows.
 
 use jiff::Timestamp;
@@ -8,7 +8,7 @@ use crate::ProblemLine;
 use crate::places::Stack;
 use crate::rows::{PlaceRow, Rows, capitalized, clock_time, here, until_text, whose};
 use crate::schedule::CheckedSchedule;
-use crate::state::State;
+use crate::state::Inner;
 
 /// What the menu shows. The core decides it; the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -55,9 +55,9 @@ pub enum MenuEntry {
 }
 
 impl Menu {
-    /// The menu as `state` has it at `now`.
-    pub(crate) fn new(state: &State, now: Timestamp) -> Self {
-        if state.facts.night_shift == NightShift::Unavailable {
+    /// The menu as `inner` has it at `now`.
+    pub(crate) fn new(inner: &Inner, now: Timestamp) -> Self {
+        if inner.facts.night_shift == NightShift::Unavailable {
             return Menu {
                 icon: MenuIcon::Unavailable,
                 night_shift: NightShiftItem {
@@ -69,16 +69,16 @@ impl Menu {
                 entries: Vec::new(),
             };
         }
-        let world = state.facts.world(now);
-        let look = state.places.look(&world);
+        let world = inner.facts.world(now);
+        let look = inner.places.look(&world);
         let rows = Rows {
             look: &look,
             world: &world,
-            lengths: &state.loaded.lengths,
+            lengths: &inner.loaded.lengths,
         };
         let everywhere = look.everywhere.gives;
         let mut entries = Vec::new();
-        if let Some(value) = state.strength {
+        if let Some(value) = inner.strength {
             entries.push(MenuEntry::Strength { value });
         }
         if let Some(row) = rows.everywhere() {
@@ -105,19 +105,19 @@ impl Menu {
             },
             night_shift: NightShiftItem {
                 on: everywhere == OnOff::On,
-                reason: state.menu_reason(&look.decision),
+                reason: inner.menu_reason(&look.decision),
                 command: Some(match everywhere {
                     OnOff::On => Command::Off,
                     OnOff::Off => Command::On,
                 }),
             },
-            problem_line: state.problem_line(now),
+            problem_line: inner.problem_line(now),
             entries,
         }
     }
 }
 
-impl State {
+impl Inner {
     /// The reason under the menu's Night Shift item: what decides the screen.
     fn menu_reason(&self, decision: &Decision) -> Option<String> {
         let Some(top) = decision.reasons.first() else {

@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use nightcap_protocol::{Command, Layer, OnOff, Place, Rule, RuleIdentity, RuleSource};
 
 use crate::rows::{layer_text, until_text};
-use crate::state::State;
+use crate::state::Inner;
 use crate::{LoginItem, SettingsCheck};
 
 /// What the settings window shows, pulled like the menu: the shell only draws it.
@@ -50,14 +50,14 @@ pub struct SettingsRule {
     pub action: Option<RuleAction>,
 }
 
-/// Choosing it sends `command` back as `Event::CommandChosen`.
+/// Choosing it sends `command` back with `Core::send`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct RuleAction {
     pub title: String,
     pub command: Command,
 }
 
-/// Flipping it sends `command` back as `Event::CommandChosen`.
+/// Flipping it sends `command` back with `Core::send`.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SettingsSwitch {
     pub on: bool,
@@ -67,21 +67,21 @@ pub struct SettingsSwitch {
 }
 
 impl Settings {
-    /// Settings as `state` has them at `now`, with the config read from `config_path`.
-    pub(crate) fn new(state: &State, now: Timestamp, config_path: &Path) -> Self {
-        let look = state.places.look(&state.facts.world(now));
-        let on = state.facts.website_checking();
+    /// Settings as `inner` has them at `now`, with the config read from `config_path`.
+    pub(crate) fn new(inner: &Inner, now: Timestamp, config_path: &Path) -> Self {
+        let look = inner.places.look(&inner.facts.world(now));
+        let on = inner.facts.website_checking();
         Settings {
             website_checking: SettingsSwitch {
                 on,
-                locked: state.facts.config_websites.is_some(),
+                locked: inner.facts.config_websites.is_some(),
                 command: Command::Websites(OnOff::from(!on)),
             },
             config_path: config_path.display().to_string(),
             rules: look
                 .rules
                 .iter()
-                .filter_map(|(rule, snooze)| state.settings_rule(rule, *snooze))
+                .filter_map(|(rule, snooze)| inner.settings_rule(rule, *snooze))
                 .collect(),
             for_now: look
                 .layers
@@ -100,7 +100,7 @@ impl Settings {
                         layer_text(
                             layers.timer.as_ref(),
                             layers.hold.as_ref(),
-                            &state.facts.timeline.zone
+                            &inner.facts.timeline.zone
                         )
                     ),
                     action: RuleAction {
@@ -110,10 +110,10 @@ impl Settings {
                 })
                 .collect(),
             // Registered but waiting for approval counts as on; its check explains the rest.
-            open_at_login: state
+            open_at_login: inner
                 .grants
                 .login_item
-                .filter(|_| state.manages_itself)
+                .filter(|_| inner.manages_itself)
                 .map(|item| {
                     let on = item != LoginItem::NotRegistered;
                     SettingsSwitch {
@@ -122,12 +122,12 @@ impl Settings {
                         command: Command::OpenAtLogin(OnOff::from(!on)),
                     }
                 }),
-            checks: state.settings_checks(now),
+            checks: inner.settings_checks(now),
         }
     }
 }
 
-impl State {
+impl Inner {
     /// A rule's row in the Rules tab: a snooze can be put back, an ad-hoc rule removed, and a
     /// config rule changed only in the config (ADR-0006). The tour's rules have none
     /// (ADR-0016).

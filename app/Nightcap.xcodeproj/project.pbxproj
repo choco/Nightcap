@@ -51,6 +51,7 @@
 		4E1C0A00000000000000002B /* Exceptions for "Nightcap" folder in "NightcapTests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Notifications/Notice.swift,
 				OnboardingFlow.swift,
 			);
 			target = 4E1C0A00000000000000002C /* NightcapTests */;

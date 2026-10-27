@@ -5,7 +5,7 @@ mod common;
 
 use std::time::Duration;
 
-use nightcap_core::{Effect, Event, Scenario};
+use nightcap_core::{Effect, Fact, Scenario};
 use nightcap_protocol::{NightShift, OnOff, Schedule, TimeOfDay};
 
 use common::{at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, status};
@@ -24,9 +24,9 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
         },
     };
 
-    staged.core().handle(reported(true, hours));
+    staged.report(reported(true, hours));
     staged.set_now(at("2026-10-17T07:30:00+02:00"));
-    staged.core().handle(Event::TimerFired);
+    staged.report(Fact::TimerFired);
 
     let status = status(&staged);
     assert_eq!(status.night_shift, NightShift::On);
@@ -54,7 +54,7 @@ fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
         .stage()
         .unwrap();
 
-    let effects = staged.core().handle(reported(false, custom_hours()));
+    let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(
         effects,
@@ -71,7 +71,7 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
     staged.set_now(at("2026-10-16T21:59:59+02:00"));
 
     assert_eq!(
-        staged.core().handle(Event::TimerFired),
+        staged.report(Fact::TimerFired).effects,
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-16T22:00:00+02:00").into()
         }]
@@ -82,9 +82,11 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
 fn a_time_zone_change_moves_the_custom_hours() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    let effects = staged.core().handle(Event::TimeZoneChanged {
-        iana_id: "Europe/London".to_owned(),
-    });
+    let effects = staged
+        .report(Fact::TimeZoneChanged {
+            iana_id: "Europe/London".to_owned(),
+        })
+        .effects;
 
     assert_eq!(
         effects,
@@ -102,8 +104,8 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
 
     report_zurich_sun(&staged);
     let effects = staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+        .report(reported(true, Schedule::SunsetToSunrise))
+        .effects;
 
     assert_eq!(
         effects,
@@ -122,12 +124,10 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
         .stage()
         .unwrap();
     report_zurich_sun(&staged);
-    staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+    staged.report(reported(true, Schedule::SunsetToSunrise));
 
     let past_jiff = std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(400_000_000_000);
-    staged.core().handle(Event::SunTimesChanged {
+    staged.report(Fact::SunTimesChanged {
         sunrises: vec![past_jiff],
         sunsets: Vec::new(),
     });
@@ -144,8 +144,8 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
         .unwrap();
 
     let effects = staged
-        .core()
-        .handle(reported(true, Schedule::SunsetToSunrise));
+        .report(reported(true, Schedule::SunsetToSunrise))
+        .effects;
     assert_eq!(
         effects,
         vec![Effect::ScheduleWakeup {
@@ -153,11 +153,11 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
         }]
     );
     staged.set_now(at("2026-10-16T01:40:50+02:00"));
-    assert_eq!(staged.core().handle(Event::Woke), Vec::new());
+    assert_eq!(staged.report(Fact::Woke).effects, Vec::new());
 
     staged.set_now(at("2026-10-16T01:41:00+02:00"));
     assert_eq!(
-        staged.core().handle(Event::TimerFired),
+        staged.report(Fact::TimerFired).effects,
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-16T01:42:00+02:00").into()
         }]
@@ -166,7 +166,7 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
     staged.set_now(at("2026-10-16T01:42:00+02:00"));
     report_zurich_sun(&staged);
     assert_eq!(
-        staged.core().handle(Event::TimerFired),
+        staged.report(Fact::TimerFired).effects,
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-16T05:50:47Z").into()
         }]
@@ -178,7 +178,7 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
 fn turning_the_schedule_off_cancels_the_wakeup() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    let effects = staged.core().handle(reported(false, Schedule::Off));
+    let effects = staged.report(reported(false, Schedule::Off)).effects;
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
     let status = status(&staged);

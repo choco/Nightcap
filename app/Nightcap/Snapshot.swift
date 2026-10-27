@@ -27,20 +27,17 @@ enum Snapshot {
             scenario: Scenario(
                 now: today(21, 0), timeZone: TimeZone.current.identifier, bundleWritable: true, config: rules,
                 steps: [
-                    .event(.statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false)),
-                    .event(.permissionsChanged(accessibility: false, notifications: .granted)),
-                    .event(.permissionsChanged(accessibility: false, notifications: .denied)),
-                    .event(.loginItemChanged(item: .enabled)),
-                    .event(.onboardingFinished(websites: true)),
-                    .event(.commandChosen(command: .addRule(identity: .app("com.apple.Photos"), says: .off))),
-                    .event(.commandChosen(command: .addRule(identity: .app("com.apple.iBooksX"), says: .on))),
-                    .event(
-                        .commandChosen(command: .set(place: .domain("figma.com"), state: .on, length: .until(sunrise)))),
-                    .event(
-                        .commandChosen(
-                            command: .set(place: .app("com.apple.mail"), state: .off, length: .until(today(22, 0))))),
+                    .fact(.statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false)),
+                    .fact(.permissionsChanged(accessibility: false, notifications: .granted)),
+                    .fact(.permissionsChanged(accessibility: false, notifications: .denied)),
+                    .fact(.loginItemChanged(item: .enabled)),
+                    .uiCommand(.finishOnboarding(websites: true)),
+                    .command(.addRule(identity: .app("com.apple.Photos"), says: .off)),
+                    .command(.addRule(identity: .app("com.apple.iBooksX"), says: .on)),
+                    .command(.set(place: .domain("figma.com"), state: .on, length: .until(sunrise))),
+                    .command(.set(place: .app("com.apple.mail"), state: .off, length: .until(today(22, 0)))),
                     .config(rules + "\ndomian = [\"figma.com\"]"),
-                    .event(.fixChosen(fix: .reload)),
+                    .uiCommand(.fix(.reload)),
                 ]))
         // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
         let icons = SiteIcons(
@@ -67,9 +64,9 @@ enum Snapshot {
                     now: evening, timeZone: TimeZone.current.identifier, bundleWritable: true,
                     config: "[rules.off]\napp = [\"com.apple.Photos\"]",
                     steps: [
-                        .event(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
-                        .event(.strengthChanged(value: 60)),
-                        .event(.loginItemChanged(item: .notRegistered)),
+                        .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
+                        .fact(.strengthChanged(value: 60)),
+                        .fact(.loginItemChanged(item: .notRegistered)),
                     ]))
             return Onboarding(
                 steps: core.onboarding(),

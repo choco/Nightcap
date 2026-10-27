@@ -4,7 +4,7 @@ The tour, offered at the end of onboarding and from Settings, walks through the 
 
 ## Decision
 
-- The shell tells the core when the tour starts and ends. Neither is a command: the CLI has no tour. The start names the tour sample, the site where the tour has a site step, and the app its steps give as an example of a rule that says on.
+- The shell tells the core when the tour starts and ends, with commands only the menu-bar UI sends: the CLI has no tour. The start names the tour sample, the site where the tour has a site step, and the app its steps give as an example of a rule that says on.
 - While the tour runs, the core reports what its steps follow, whichever way the user made a change: whether the sample and the site are in front, what their rules say and whether they're snoozed, the switch's side, and whether the tour stands in for the schedule. It reports the menu titles the steps quote too, from the code that builds the menu's rows, so a step quotes what the menu shows.
 - The tour keeps the user's ad-hoc rules and every place's hold and timer as it found them, and its end puts them back, short of what would have ended meanwhile. So what the user changes during the tour, from the menu or the CLI, lasts only while it runs:
   - A rule added during the tour is the tour's: it has its own source, lives in memory only, and never reaches `rules.toml`, Settings' rule list or `rules export`.

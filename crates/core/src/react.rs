@@ -1,77 +1,76 @@
-//! What each event the shell reports means for the state, before the turn's pipeline runs
-//! (ADR-0002).
+//! What each input means for the core: one turn, deciding its outcome (ADR-0002).
 
 use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use nightcap_protocol::Command;
 
 use crate::schedule::SunTimes;
-use crate::state::State;
-use crate::{Core, Effect, Event};
+use crate::state::Inner;
+use crate::{Fact, Outcome, UiCommand};
 
-impl Core {
-    pub(crate) fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {
-        match event {
-            Event::Launched => self.launched(state),
-            Event::AppActivated {
+/// Something that changes the core: a fact the platform reports, a command from the menu-bar
+/// UI, or the app quitting. The CLI's requests are answered apart, since their response goes
+/// back over the socket (ADR-0010).
+#[derive(Debug)]
+pub(crate) enum Input {
+    Fact(Fact),
+    /// A command the UI sent, which hears of a refusal as an event.
+    Command(Command),
+    UiCommand(UiCommand),
+    /// The app is quitting, which releases every force (ADR-0008).
+    Terminating,
+}
+
+/// The outcome `input` leads to. Only a fact can announce a problem: a command, and quitting,
+/// are the user's own doing.
+pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
+    match input {
+        Input::Fact(fact) => {
+            inner
+                .turn(true, |inner, outcome| inner.fact(fact, outcome))
+                .0
+        }
+        Input::Command(command) => inner.choose(command).0,
+        Input::UiCommand(command) => {
+            inner
+                .turn(false, |inner, outcome| inner.ui_command(command, outcome))
+                .0
+        }
+        Input::Terminating => inner.turn(false, |inner, _| inner.terminating()).0,
+    }
+}
+
+impl Inner {
+    fn fact(&mut self, fact: Fact, outcome: &mut Outcome) {
+        match fact {
+            Fact::Launched => self.launched(outcome),
+            Fact::AppActivated {
                 bundle_id,
                 name,
                 is_browser,
-            } => {
-                state.app_activated(bundle_id, name, is_browser);
-                Vec::new()
-            }
-            Event::HostChanged { generation, host } => {
-                state.host_changed(generation, host);
-                Vec::new()
-            }
-            Event::LoginItemChanged { item } => {
-                state.grants.login_item_changed(item);
-                Vec::new()
-            }
-            Event::PermissionsChanged {
+            } => self.app_activated(bundle_id, name, is_browser),
+            Fact::HostChanged { generation, host } => self.host_changed(generation, host),
+            Fact::LoginItemChanged { item } => self.grants.login_item_changed(item),
+            Fact::PermissionsChanged {
                 accessibility,
                 notifications,
-            } => {
-                state
-                    .grants
-                    .permissions_changed(accessibility, notifications);
-                Vec::new()
-            }
-            Event::StatusChanged {
+            } => self
+                .grants
+                .permissions_changed(accessibility, notifications),
+            Fact::StatusChanged {
                 enabled,
                 schedule,
                 sun_schedule_set_aside,
-            } => self.status_changed(state, enabled, schedule, sun_schedule_set_aside),
-            Event::StrengthChanged { value } => {
-                state.strength = Some(value);
-                Vec::new()
-            }
-            Event::OnboardingFinished { websites } => {
-                state.onboarding_finished(websites);
-                Vec::new()
-            }
-            Event::TourStarted {
-                sample,
-                site,
-                example,
-            } => {
-                state.tour_started(&sample, site.as_ref(), &example);
-                Vec::new()
-            }
-            Event::TourEnded => {
-                state.tour_ended(self.clock.now());
-                Vec::new()
-            }
-            Event::FixChosen { fix } => self.run_fix(state, fix),
-            // `handle` runs it through `choose`.
-            Event::CommandChosen { .. } => Vec::new(),
-            Event::TimerFired => {
-                state.reconciling.timer_fired();
-                Vec::new()
-            }
-            Event::SunTimesChanged { sunrises, sunsets } => {
+            } => outcome.events.extend(self.status_changed(
+                enabled,
+                schedule,
+                sun_schedule_set_aside,
+            )),
+            Fact::StrengthChanged { value } => self.strength = Some(value),
+            Fact::TimerFired => self.reconciling.timer_fired(),
+            Fact::SunTimesChanged { sunrises, sunsets } => {
                 let timestamps = |times: Vec<SystemTime>| {
                     times
                         .into_iter()
@@ -87,42 +86,45 @@ impl Core {
                         SunTimes::default()
                     }
                 };
-                state.facts.timeline.sun_times = sun_times;
-                Vec::new()
+                self.facts.timeline.sun_times = sun_times;
             }
-            Event::TimeZoneChanged { iana_id } => {
-                match TimeZone::get(&iana_id) {
-                    Ok(zone) => {
-                        tracing::info!("time zone changed to {iana_id}");
-                        state.facts.timeline.zone = zone;
-                    }
-                    Err(error) => {
-                        tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}");
-                    }
+            Fact::TimeZoneChanged { iana_id } => match TimeZone::get(&iana_id) {
+                Ok(zone) => {
+                    tracing::info!("time zone changed to {iana_id}");
+                    self.facts.timeline.zone = zone;
                 }
-                Vec::new()
-            }
-            Event::SessionChanged { active } => {
-                state.reconciling.session_changed(active);
-                Vec::new()
-            }
-            Event::Woke => {
-                state.reconciling.woke(self.clock.now());
-                Vec::new()
-            }
-            Event::Terminating => {
-                // Nightcap can't tell a restart from being removed, so it never leaves a force
-                // behind (ADR-0008), nor Night Shift on for a tour (ADR-0016).
-                let now = self.clock.now();
-                state.places.release(now);
-                state.tour = None;
-                if let Some(socket) = &self.socket
-                    && let Err(error) = std::fs::remove_file(socket)
-                {
-                    tracing::warn!("couldn't remove {}: {error}", socket.display());
+                Err(error) => {
+                    tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}");
                 }
-                Vec::new()
-            }
+            },
+            Fact::SessionChanged { active } => self.reconciling.session_changed(active),
+            Fact::Woke => self.reconciling.woke(self.clock.now()),
+        }
+    }
+
+    fn ui_command(&mut self, command: UiCommand, outcome: &mut Outcome) {
+        match command {
+            UiCommand::StartTour {
+                sample,
+                site,
+                example,
+            } => self.tour_started(&sample, site.as_ref(), &example),
+            UiCommand::EndTour => self.tour_ended(self.clock.now()),
+            UiCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
+            UiCommand::Fix(fix) => self.run_fix(fix, &mut outcome.effects),
+        }
+    }
+
+    /// Nightcap can't tell a restart from being removed, so it never leaves a force behind
+    /// (ADR-0008), nor Night Shift on for a tour (ADR-0016).
+    fn terminating(&mut self) {
+        let now = self.clock.now();
+        self.places.release(now);
+        self.tour = None;
+        if let Some(socket) = &self.socket
+            && let Err(error) = std::fs::remove_file(socket)
+        {
+            tracing::warn!("couldn't remove {}: {error}", socket.display());
         }
     }
 }

@@ -12,8 +12,10 @@ use serde::de::DeserializeOwned;
 
 use crate::file::{File, Memory, Paths};
 use crate::ipc::Pending;
+use crate::react::{Input, react};
 use crate::start::{Clock, Setup, install_of, instance_of, zone_of};
-use crate::{Core, Effect, Event};
+use crate::state::Inner;
+use crate::{Core, Fact, Outcome, UiCommand};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in
 /// their own formats, then what happens, in order.
@@ -46,10 +48,32 @@ pub struct Scenario {
 
 #[derive(Debug, uniffi::Enum)]
 pub enum Step {
-    /// The shell reports an event. A menu command the core refuses fails the staging.
-    Event(Event),
+    /// The shell reports a fact.
+    Fact(Fact),
+    /// The menu-bar UI sends a command. One the core refuses fails the staging.
+    Command(Command),
+    /// The menu-bar UI sends a command of its own.
+    UiCommand(UiCommand),
     /// The config changes to this text, or goes: a reload reads it.
     Config(Option<String>),
+}
+
+impl From<Fact> for Step {
+    fn from(fact: Fact) -> Self {
+        Self::Fact(fact)
+    }
+}
+
+impl From<Command> for Step {
+    fn from(command: Command) -> Self {
+        Self::Command(command)
+    }
+}
+
+impl From<UiCommand> for Step {
+    fn from(command: UiCommand) -> Self {
+        Self::UiCommand(command)
+    }
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
@@ -57,7 +81,7 @@ pub enum ScenarioError {
     /// The scenario names an app or a time zone the core doesn't know.
     #[error("{message}")]
     Invalid { message: String },
-    /// The core refused the menu command at this step, counted from 0.
+    /// The core refused the command at this step, counted from 0.
     #[error("step {step} was refused: {message}")]
     Refused { step: u32, message: String },
 }
@@ -68,7 +92,7 @@ impl Core {
     /// touches no file. Dev builds only.
     #[uniffi::constructor]
     pub fn staged(scenario: Scenario) -> Result<Arc<Self>, ScenarioError> {
-        Ok(Arc::new(scenario.stage()?.core))
+        Ok(scenario.stage()?.core)
     }
 }
 
@@ -124,14 +148,15 @@ impl Scenario {
         }
     }
 
-    /// The scenario with the shell reporting `event` after its other steps.
-    pub fn then(mut self, event: Event) -> Self {
-        self.steps.push(Step::Event(event));
+    /// The scenario with `step` after its other steps: a fact, or a command from the menu-bar
+    /// UI.
+    pub fn then(mut self, step: impl Into<Step>) -> Self {
+        self.steps.push(step.into());
         self
     }
 
-    /// Starts the scenario's core on files in memory and replays its steps, with their effects
-    /// dropped.
+    /// Starts the scenario's core on files in memory and replays its steps, with their
+    /// outcomes dropped.
     pub fn stage(self) -> Result<Staged, ScenarioError> {
         let invalid = |error: crate::CoreError| ScenarioError::Invalid {
             message: error.to_string(),
@@ -157,15 +182,16 @@ impl Scenario {
         );
         for (step, happening) in (0..).zip(self.steps) {
             match happening {
-                Step::Event(Event::CommandChosen { command }) => {
-                    if let (_, Err(refusal)) = staged.choose(&command) {
+                Step::Fact(fact) => _ = staged.report(fact),
+                Step::Command(command) => {
+                    if let (_, Err(refusal)) = staged.send(command) {
                         return Err(ScenarioError::Refused {
                             step,
                             message: refusal.message,
                         });
                     }
                 }
-                Step::Event(event) => _ = staged.core.handle(event),
+                Step::UiCommand(command) => _ = staged.send_ui(command),
                 Step::Config(text) => staged.write_config(text.as_deref()),
             }
         }
@@ -174,10 +200,10 @@ impl Scenario {
 }
 
 /// A staged core with what it runs on in reach: its files, its clock, and the requests the IPC
-/// thread would queue. The crate's integration tests drive it.
+/// thread would queue. The crate's integration tests drive it, and read each input's outcome.
 #[derive(Debug)]
 pub struct Staged {
-    core: Core,
+    core: Arc<Core>,
     files: Arc<Memory>,
     clock: Arc<ManualClock>,
     requests: mpsc::Sender<Pending>,
@@ -196,17 +222,16 @@ impl Staged {
     ) -> Self {
         let clock = Arc::new(ManualClock::new(now));
         let (requests, receiver) = mpsc::channel();
-        let core = Core::start(Setup {
+        let inner = Inner::start(Setup {
             instance,
             install,
             socket: None,
-            requests: receiver,
             files: files.clone(),
             clock: clock.clone(),
             zone: zone.clone(),
         });
         Self {
-            core,
+            core: Arc::new(Core::serving(inner, receiver)),
             files,
             clock,
             requests,
@@ -221,25 +246,41 @@ impl Staged {
         &self.core
     }
 
-    /// Sends a request as the CLI does, and returns the tick's effects and the response. Both
-    /// cross the wire format, as over the socket.
+    /// Reports a fact as the shell does, and returns its outcome.
+    pub fn report(&self, fact: Fact) -> Outcome {
+        react(&mut self.core.inner(), Input::Fact(fact))
+    }
+
+    /// Sends a command as the menu-bar UI does, and returns its outcome, which tells of a
+    /// refusal as an event, and what the core answers.
+    pub fn send(&self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
+        self.core.inner().choose(command)
+    }
+
+    /// Sends a command only the menu-bar UI has, and returns its outcome.
+    pub fn send_ui(&self, command: UiCommand) -> Outcome {
+        react(&mut self.core.inner(), Input::UiCommand(command))
+    }
+
+    /// Quits as the shell does, and returns what it must carry out before it exits.
+    pub fn stop(&self) -> Outcome {
+        self.core.stop()
+    }
+
+    /// Sends a request as the CLI does, and returns its outcome and the response, which
+    /// crosses the wire format both ways, as over the socket.
     #[expect(
         clippy::expect_used,
         reason = "the core holds the receiver, and its tick answers every request it finds"
     )]
-    pub fn request(&self, request: Request) -> (Vec<Effect>, Response) {
+    pub fn request(&self, request: Request) -> (Outcome, Response) {
         let (pending, response) = Pending::new(over_the_wire(&request));
         self.requests
             .send(pending)
             .expect("the core is there to receive it");
-        let effects = self.core.tick();
+        let outcome = self.core.tick();
         let response = response.try_recv().expect("the tick answers the request");
-        (effects, over_the_wire(&response))
-    }
-
-    /// Runs a command as the menu does, with what the core answers.
-    pub fn choose(&self, command: &Command) -> (Vec<Effect>, Result<Decision, ErrorReply>) {
-        self.core.choose(command)
+        (outcome, over_the_wire(&response))
     }
 
     /// What `file` holds, or None where there's no such file.

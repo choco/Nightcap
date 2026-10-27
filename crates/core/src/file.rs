@@ -202,7 +202,7 @@ impl Files for Memory {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::sync::{Arc, mpsc};
+    use std::sync::Arc;
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
@@ -211,9 +211,11 @@ mod tests {
     };
 
     use super::{Disk, File, Files, Owned, Paths};
+    use crate::Fact;
+    use crate::react::{Input, react};
     use crate::staging::ManualClock;
     use crate::start::Setup;
-    use crate::{Core, Event};
+    use crate::state::Inner;
 
     fn disk(folder: &Path) -> Disk {
         Disk(Paths::in_folder(folder))
@@ -268,11 +270,10 @@ mod tests {
     fn a_rule_rules_toml_cant_keep_is_refused_and_changes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         // Night Shift on at 23:00 by the custom hours until 07:00, with Mail snoozed.
-        let core = Core::start(Setup {
+        let mut inner = Inner::start(Setup {
             instance: Instance::Release,
             install: Install::Managed,
             socket: None,
-            requests: mpsc::channel().1,
             files: Arc::new(disk(dir.path())),
             clock: Arc::new(ManualClock::new(
                 "2026-10-16T23:00:00+02:00".parse().unwrap(),
@@ -286,27 +287,30 @@ mod tests {
             },
             to: TimeOfDay { hour: 7, minute: 0 },
         };
-        core.handle(Event::StatusChanged {
-            enabled: true,
-            schedule: hours,
-            sun_schedule_set_aside: false,
-        });
+        react(
+            &mut inner,
+            Input::Fact(Fact::StatusChanged {
+                enabled: true,
+                schedule: hours,
+                sun_schedule_set_aside: false,
+            }),
+        );
         let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
         let snooze = Command::Set {
             place: Place::from(mail.clone()),
             state: OnOff::Off,
             length: Length::For(jiff::SignedDuration::from_mins(30)),
         };
-        core.choose(&snooze).1.unwrap();
+        inner.choose(snooze).1.unwrap();
         std::fs::create_dir(dir.path().join("rules.toml")).unwrap();
 
-        let (_, outcome) = core.choose(&Command::AddRule {
+        let (_, answer) = inner.choose(Command::AddRule {
             identity: mail.clone(),
             says: OnOff::Off,
         });
 
-        assert_eq!(outcome.unwrap_err().code, ErrorCode::AdHocRulesOff);
-        let Response::Ok(Payload::Status(status)) = core.status(&core.state()) else {
+        assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
+        let Response::Ok(Payload::Status(status)) = inner.status() else {
             panic!("expected a status");
         };
         assert_eq!(status.rules, Vec::new());

@@ -4,7 +4,7 @@
 use nightcap_protocol::{NightShift, Schedule};
 
 use crate::schedule::CheckedSchedule;
-use crate::state::State;
+use crate::state::Inner;
 use crate::{Effect, LoginItem};
 
 /// The current onboarding version: welcome, notifications, and website checking.
@@ -35,21 +35,21 @@ pub struct OnboardingNightShift {
 }
 
 impl OnboardingSteps {
-    /// What onboarding asks, as `state` has it.
-    pub(crate) fn new(state: &State) -> Self {
+    /// What onboarding asks, as `inner` has it.
+    pub(crate) fn new(inner: &Inner) -> Self {
         OnboardingSteps {
-            night_shift: state.onboarding_night_shift(),
-            websites_from_config: state.facts.config_websites,
-            opens_at_login: state
+            night_shift: inner.onboarding_night_shift(),
+            websites_from_config: inner.facts.config_websites,
+            opens_at_login: inner
                 .grants
                 .login_item
-                .filter(|_| state.manages_itself)
+                .filter(|_| inner.manages_itself)
                 .map(|item| item != LoginItem::NotRegistered),
         }
     }
 }
 
-impl State {
+impl Inner {
     fn onboarding_night_shift(&self) -> OnboardingNightShift {
         let available = self.facts.night_shift != NightShift::Unavailable;
         let ask_strength =

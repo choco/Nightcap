@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Staged};
+use nightcap_core::{Effect, Staged};
 use nightcap_protocol::{Command, Length, OnOff, Place};
 
 use common::{
@@ -29,7 +29,7 @@ fn holds_and_timers_survive_a_restart() {
     let staged = staged.restart_at(at("2026-10-16T23:30:00+02:00"));
 
     assert_eq!(
-        launch(&staged),
+        launch(&staged).effects,
         vec![Effect::ScheduleWakeup {
             at: at("2026-10-17T00:00:00+02:00").into()
         }]
@@ -66,12 +66,12 @@ fn holds_and_timers_that_ended_while_nightcap_was_stopped_are_dropped_on_start()
 fn on_the_way_out_only_everywheres_hold_still_applies() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     assert_eq!(
-        staged.core().handle(Event::Terminating),
+        staged.stop().effects,
         vec![Effect::SetNightShift { enabled: false }]
     );
 }
@@ -81,7 +81,7 @@ fn terminating_releases_every_force() {
     let staged = forced();
 
     assert_eq!(
-        staged.core().handle(Event::Terminating),
+        staged.stop().effects,
         vec![Effect::SetNightShift { enabled: true }]
     );
 }
@@ -95,10 +95,10 @@ fn terminating_watches_no_browser_its_own_app_rule_kept_unwatched() {
         .stage()
         .unwrap();
     activate_browser(&staged, "com.apple.Safari");
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     assert_eq!(
-        staged.core().handle(Event::Terminating),
+        staged.stop().effects,
         vec![Effect::SetNightShift { enabled: true }]
     );
     assert!(!status(&staged).watching);
@@ -120,7 +120,7 @@ fn terminating_stops_watching_and_releases_without_waiting_for_the_host() {
     );
 
     assert_eq!(
-        staged.core().handle(Event::Terminating),
+        staged.stop().effects,
         vec![
             Effect::StopWatching,
             Effect::SetNightShift { enabled: true }
@@ -134,7 +134,7 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
 
     let staged = crashed.restart_at(at("2026-10-16T23:10:00+02:00"));
     activate(&staged, "com.apple.Terminal");
-    let effects = staged.core().handle(reported(false, custom_hours()));
+    let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(
         effects,
@@ -151,11 +151,11 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
 #[test]
 fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
     let stopped = forced();
-    stopped.core().handle(Event::Terminating);
+    stopped.stop();
 
     let staged = stopped.restart_at(at("2026-10-16T23:10:00+02:00"));
     activate(&staged, "com.apple.Terminal");
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
 
     assert_eq!(
         status(&staged).layers,
@@ -170,12 +170,12 @@ fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
 #[test]
 fn after_a_clean_exit_a_force_still_in_place_comes_back() {
     let stopped = forced();
-    stopped.core().handle(Event::Terminating);
+    stopped.stop();
 
     let staged = stopped.restart_at(at("2026-10-16T23:10:00+02:00"));
     activate(&staged, "com.figma.Desktop");
     // Night Shift as the release on exit left it.
-    let effects = staged.core().handle(reported(true, custom_hours()));
+    let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(
         effects,
@@ -199,10 +199,10 @@ fn a_rule_that_says_on_is_released_on_a_clean_exit() {
             says: OnOff::On,
         },
     );
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     assert_eq!(
-        staged.core().handle(Event::Terminating),
+        staged.stop().effects,
         vec![Effect::SetNightShift { enabled: false }]
     );
 }

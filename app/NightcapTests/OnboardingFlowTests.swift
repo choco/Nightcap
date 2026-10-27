@@ -22,9 +22,9 @@ private func core(
         scenario: Scenario(
             now: Date(), bundleWritable: bundleWritable, config: config, rules: rules,
             steps: [
-                .event(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
-                .event(.strengthChanged(value: 60)),
-                .event(.loginItemChanged(item: .notRegistered)),
+                .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
+                .fact(.strengthChanged(value: 60)),
+                .fact(.loginItemChanged(item: .notRegistered)),
             ]))
 }
 
@@ -40,7 +40,7 @@ private func onboarding(
         rules: { core.settings().rules }, accessibilityGranted: { true }, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
-            _ = core.handle(event: .commandChosen(command: command))
+            _ = core.send(command: command)
         },
         notifications: notifications, askForNotifications: {}, onFinish: onFinish)
 }

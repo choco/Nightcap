@@ -8,7 +8,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Staged};
+use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
     Command, ErrorCode, Length, NotificationPermission, OnOff, Place, Reason, RuleIdentity,
     WebsiteChecking,
@@ -22,7 +22,7 @@ use common::{
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
 fn grant_accessibility(staged: &Staged) {
-    staged.core().handle(accessibility_granted());
+    staged.report(accessibility_granted());
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn leaving_the_browser_stops_watching_and_lifts_the_force() {
 fn with_website_checking_on_the_front_browser_is_watched_without_any_domain_rule() {
     let staged = late().config("websites = true\n").stage().unwrap();
     grant_accessibility(&staged);
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
 
     assert_eq!(
         activate_browser(&staged, "com.apple.Safari"),
@@ -103,10 +103,12 @@ fn a_new_watch_leaves_night_shift_alone_until_its_first_read() {
 fn an_unreadable_host_leaves_only_app_rules() {
     let staged = on_figma().stage().unwrap();
 
-    let effects = staged.core().handle(Event::HostChanged {
-        generation: 1,
-        host: None,
-    });
+    let effects = staged
+        .report(Fact::HostChanged {
+            generation: 1,
+            host: None,
+        })
+        .effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     let status = status(&staged);
@@ -132,7 +134,7 @@ fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
         .stage()
         .unwrap();
     grant_accessibility(&staged);
-    staged.core().handle(reported(true, custom_hours()));
+    staged.report(reported(true, custom_hours()));
     let safari_app = Place::App("com.apple.Safari".parse().unwrap());
 
     assert_eq!(
@@ -222,7 +224,7 @@ fn the_config_decides_website_checking_when_it_sets_it() {
 #[test]
 fn turning_website_checking_on_without_accessibility_asks_for_it() {
     let staged = noon().stage().unwrap();
-    staged.core().handle(Event::PermissionsChanged {
+    staged.report(Fact::PermissionsChanged {
         accessibility: false,
         notifications: NotificationPermission::Granted,
     });

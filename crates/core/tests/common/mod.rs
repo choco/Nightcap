@@ -13,7 +13,7 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_core::{
-    Effect, Event, File, Fix, FixButton, MenuEntry, MenuItem, PlaceRow, RowImage, RowItem,
+    Effect, Fact, File, Fix, FixButton, MenuEntry, MenuItem, Outcome, PlaceRow, RowImage, RowItem,
     Scenario, SettingsCheck, Staged,
 };
 use nightcap_protocol::{
@@ -59,7 +59,7 @@ pub(crate) fn forced() -> Staged {
         activate(&staged, "com.figma.Desktop"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    staged.core().handle(reported(false, custom_hours()));
+    staged.report(reported(false, custom_hours()));
     staged
 }
 
@@ -87,15 +87,16 @@ pub(crate) fn in_books_at_noon() -> Scenario {
         .then(activate_event("com.apple.iBooksX"))
 }
 
-/// Sends a command as the CLI does.
+/// Sends a command as the CLI does, with its effects and the response.
 pub(crate) fn send(staged: &Staged, command: Command) -> (Vec<Effect>, Response) {
-    staged.request(Request::Command(command))
+    let (outcome, response) = staged.request(Request::Command(command));
+    (outcome.effects, response)
 }
 
 /// The status, as `nightcap status` asks for it; asking changes nothing.
 pub(crate) fn status(staged: &Staged) -> Status {
-    let (effects, response) = staged.request(Request::Query(Query::Status));
-    assert_eq!(effects, Vec::new());
+    let (outcome, response) = staged.request(Request::Query(Query::Status));
+    assert_eq!(outcome, Outcome::default());
     let Response::Ok(Payload::Status(status)) = response else {
         panic!("expected a status, got {response:?}");
     };
@@ -128,8 +129,8 @@ pub(crate) fn kept_ad_hoc(staged: &Staged) -> Vec<Rule> {
 }
 
 /// Night Shift as CoreBrightness reports it, with sunset to sunrise not set aside.
-pub(crate) fn reported(enabled: bool, schedule: Schedule) -> Event {
-    Event::StatusChanged {
+pub(crate) fn reported(enabled: bool, schedule: Schedule) -> Fact {
+    Fact::StatusChanged {
         enabled,
         schedule,
         sun_schedule_set_aside: false,
@@ -148,21 +149,19 @@ pub(crate) fn custom_hours() -> Schedule {
 }
 
 pub(crate) fn report(staged: &Staged, enabled: bool) -> Vec<Effect> {
-    staged.core().handle(reported(enabled, custom_hours()))
+    staged.report(reported(enabled, custom_hours())).effects
 }
 
 /// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
 /// `Launched`.
 pub(crate) fn report_night_shift(staged: &Staged, schedule: Schedule, strength: u8) {
-    staged.core().handle(reported(false, schedule));
-    staged
-        .core()
-        .handle(Event::StrengthChanged { value: strength });
+    staged.report(reported(false, schedule));
+    staged.report(Fact::StrengthChanged { value: strength });
 }
 
 /// The sun times CoreBrightness reported in Zurich around the night of 15 October 2026.
 pub(crate) fn report_zurich_sun(staged: &Staged) {
-    staged.core().handle(Event::SunTimesChanged {
+    staged.report(Fact::SunTimesChanged {
         sunrises: [
             "2026-10-15T05:49:20Z",
             "2026-10-16T05:50:47Z",
@@ -180,23 +179,22 @@ pub(crate) fn report_zurich_sun(staged: &Staged) {
     });
 }
 
-/// The launch's effects, leaving out onboarding, which only its own tests look at.
-pub(crate) fn launch(staged: &Staged) -> Vec<Effect> {
-    staged
-        .core()
-        .handle(Event::Launched)
-        .into_iter()
-        .filter(|effect| !matches!(effect, Effect::ShowOnboarding { .. }))
-        .collect()
+/// The launch's outcome, leaving out onboarding, which only its own tests look at.
+pub(crate) fn launch(staged: &Staged) -> Outcome {
+    let mut outcome = staged.report(Fact::Launched);
+    outcome
+        .effects
+        .retain(|effect| !matches!(effect, Effect::ShowOnboarding { .. }));
+    outcome
 }
 
 pub(crate) fn activate(staged: &Staged, bundle_id: &str) -> Vec<Effect> {
-    staged.core().handle(activate_event(bundle_id))
+    staged.report(activate_event(bundle_id)).effects
 }
 
 /// An app that isn't a browser comes to the front.
-pub(crate) fn activate_event(bundle_id: &str) -> Event {
-    Event::AppActivated {
+pub(crate) fn activate_event(bundle_id: &str) -> Fact {
+    Fact::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
         name: None,
         is_browser: false,
@@ -204,12 +202,12 @@ pub(crate) fn activate_event(bundle_id: &str) -> Event {
 }
 
 pub(crate) fn activate_browser(staged: &Staged, bundle_id: &str) -> Vec<Effect> {
-    staged.core().handle(activate_browser_event(bundle_id))
+    staged.report(activate_browser_event(bundle_id)).effects
 }
 
 /// A browser comes to the front.
-pub(crate) fn activate_browser_event(bundle_id: &str) -> Event {
-    Event::AppActivated {
+pub(crate) fn activate_browser_event(bundle_id: &str) -> Fact {
+    Fact::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
         name: None,
         is_browser: true,
@@ -217,26 +215,26 @@ pub(crate) fn activate_browser_event(bundle_id: &str) -> Event {
 }
 
 pub(crate) fn report_host(staged: &Staged, generation: u64, host: &str) -> Vec<Effect> {
-    staged.core().handle(host_event(generation, host))
+    staged.report(host_event(generation, host)).effects
 }
 
 /// The watched browser's host, read under `generation`.
-pub(crate) fn host_event(generation: u64, host: &str) -> Event {
-    Event::HostChanged {
+pub(crate) fn host_event(generation: u64, host: &str) -> Fact {
+    Fact::HostChanged {
         generation,
         host: Some(host.to_owned()),
     }
 }
 
-pub(crate) fn accessibility_granted() -> Event {
-    Event::PermissionsChanged {
+pub(crate) fn accessibility_granted() -> Fact {
+    Fact::PermissionsChanged {
         accessibility: true,
         notifications: NotificationPermission::Granted,
     }
 }
 
-pub(crate) fn permissions(accessibility: bool, notifications: NotificationPermission) -> Event {
-    Event::PermissionsChanged {
+pub(crate) fn permissions(accessibility: bool, notifications: NotificationPermission) -> Fact {
+    Fact::PermissionsChanged {
         accessibility,
         notifications,
     }
@@ -249,10 +247,9 @@ pub(crate) fn watch(bundle_id: &str, generation: u64) -> Effect {
     }
 }
 
-pub(crate) fn notifies(effects: &[Effect]) -> bool {
-    effects
-        .iter()
-        .any(|effect| matches!(effect, Effect::Notify { .. }))
+/// Whether an outcome tells the user anything.
+pub(crate) fn tells(outcome: &Outcome) -> bool {
+    !outcome.events.is_empty()
 }
 
 pub(crate) fn figma() -> RuleIdentity {

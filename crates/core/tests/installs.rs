@@ -3,9 +3,13 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fix, FixButton, LoginItem, SettingsCheck, SettingsSwitch};
+use nightcap_core::{
+    Effect, Event, Fact, Fix, FixButton, LoginItem, Outcome, SettingsCheck, SettingsSwitch,
+    UiCommand,
+};
 use nightcap_protocol::{
-    CheckKind, CheckState, Command, ErrorCode, Install, Instance, OnOff, Payload, Request, Response,
+    Check, CheckDetail, CheckKind, CheckState, Command, ErrorCode, Install, Instance, OnOff,
+    OpenAtLoginDetail, Payload, Request, Response,
 };
 
 use common::{button, launch, noon, refusal, send, settings_check};
@@ -17,9 +21,9 @@ fn update_in_a_self_managed_release_starts_sparkles_check() {
         .stage()
         .unwrap();
 
-    let (effects, response) = staged.request(Request::Update);
+    let (outcome, response) = staged.request(Request::Update);
 
-    assert_eq!(effects, vec![Effect::CheckForUpdates]);
+    assert_eq!(outcome.effects, vec![Effect::CheckForUpdates]);
     assert_eq!(response, Response::Ok(Payload::UpdateCheckStarted));
 }
 
@@ -31,9 +35,9 @@ fn update_is_refused_where_nightcap_doesnt_update_itself() {
     ] {
         let staged = noon().installed(instance, install).stage().unwrap();
 
-        let (effects, response) = staged.request(Request::Update);
+        let (outcome, response) = staged.request(Request::Update);
 
-        assert_eq!(effects, Vec::new());
+        assert_eq!(outcome.effects, Vec::new());
         let Response::Error(error) = response else {
             panic!("expected an error, got {response:?}");
         };
@@ -48,7 +52,7 @@ fn a_self_managed_release_starts_its_updater_at_launch_and_registers_nothing() {
         .stage()
         .unwrap();
 
-    assert_eq!(launch(&staged), vec![Effect::StartUpdater]);
+    assert_eq!(launch(&staged).effects, vec![Effect::StartUpdater]);
 }
 
 #[test]
@@ -58,7 +62,7 @@ fn a_managed_install_leaves_starting_at_login_to_its_installer() {
         .stage()
         .unwrap();
 
-    assert_eq!(launch(&staged), Vec::new());
+    assert_eq!(launch(&staged).effects, Vec::new());
 }
 
 #[test]
@@ -68,7 +72,7 @@ fn a_dev_build_never_registers_a_login_item() {
         .stage()
         .unwrap();
 
-    assert_eq!(launch(&staged), Vec::new());
+    assert_eq!(launch(&staged).effects, Vec::new());
 }
 
 #[test]
@@ -80,7 +84,7 @@ fn only_an_install_that_updates_itself_opens_itself_at_login() {
         (Instance::Dev, Install::Managed, false),
     ] {
         let staged = noon().installed(instance, install).stage().unwrap();
-        staged.core().handle(login_item(LoginItem::NotRegistered));
+        staged.report(login_item(LoginItem::NotRegistered));
 
         let (_, update) = staged.request(Request::Update);
         let (_, login) = send(&staged, Command::OpenAtLogin(OnOff::On));
@@ -96,8 +100,8 @@ fn only_an_install_that_updates_itself_opens_itself_at_login() {
     }
 }
 
-fn login_item(item: LoginItem) -> Event {
-    Event::LoginItemChanged { item }
+fn login_item(item: LoginItem) -> Fact {
+    Fact::LoginItemChanged { item }
 }
 
 #[test]
@@ -113,7 +117,7 @@ fn settings_switch_opening_at_login_in_a_self_managed_install() {
             command,
         })
     };
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    staged.report(login_item(LoginItem::NotRegistered));
 
     assert_eq!(
         staged.core().settings().open_at_login,
@@ -121,23 +125,21 @@ fn settings_switch_opening_at_login_in_a_self_managed_install() {
     );
     assert!(
         staged
-            .core()
-            .handle(Event::CommandChosen {
-                command: Command::OpenAtLogin(OnOff::On),
-            })
+            .send(Command::OpenAtLogin(OnOff::On))
+            .0
+            .effects
             .contains(&Effect::RegisterLoginItem)
     );
-    staged.core().handle(login_item(LoginItem::Enabled));
+    staged.report(login_item(LoginItem::Enabled));
     assert_eq!(
         staged.core().settings().open_at_login,
         switch(true, Command::OpenAtLogin(OnOff::Off))
     );
     assert!(
         staged
-            .core()
-            .handle(Event::CommandChosen {
-                command: Command::OpenAtLogin(OnOff::Off),
-            })
+            .send(Command::OpenAtLogin(OnOff::Off))
+            .0
+            .effects
             .contains(&Effect::UnregisterLoginItem)
     );
 }
@@ -148,14 +150,14 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_switch() {
         .installed(Instance::Release, Install::Managed)
         .stage()
         .unwrap();
-    managed.core().handle(login_item(LoginItem::NotRegistered));
+    managed.report(login_item(LoginItem::NotRegistered));
     assert_eq!(managed.core().settings().open_at_login, None);
 
     let dev = noon()
         .installed(Instance::Dev, Install::SelfManaged)
         .stage()
         .unwrap();
-    dev.core().handle(login_item(LoginItem::NotRegistered));
+    dev.report(login_item(LoginItem::NotRegistered));
     assert_eq!(dev.core().settings().open_at_login, None);
     let (_, response) = send(&dev, Command::OpenAtLogin(OnOff::On));
     assert_eq!(refusal(response), ErrorCode::NoLoginItem);
@@ -188,13 +190,11 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
         None,
         None,
     );
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    staged.report(login_item(LoginItem::NotRegistered));
 
     assert_eq!(settings_check(&staged, CheckKind::OpenAtLogin), off);
-    staged.core().handle(Event::CommandChosen {
-        command: Command::OpenAtLogin(OnOff::On),
-    });
-    staged.core().handle(login_item(LoginItem::Enabled));
+    _ = staged.send(Command::OpenAtLogin(OnOff::On));
+    staged.report(login_item(LoginItem::Enabled));
     assert_eq!(
         settings_check(&staged, CheckKind::OpenAtLogin),
         login_check(
@@ -204,7 +204,7 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
             None
         )
     );
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    staged.report(login_item(LoginItem::NotRegistered));
     assert_eq!(
         settings_check(&staged, CheckKind::OpenAtLogin),
         login_check(
@@ -216,19 +216,15 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
     );
     assert!(
         staged
-            .core()
-            .handle(Event::FixChosen {
-                fix: Fix::OpenAtLogin
-            })
+            .send_ui(UiCommand::Fix(Fix::OpenAtLogin))
+            .effects
             .contains(&Effect::RegisterLoginItem)
     );
-    staged.core().handle(Event::FixChosen {
-        fix: Fix::DontOpenAtLogin,
-    });
+    staged.send_ui(UiCommand::Fix(Fix::DontOpenAtLogin));
     assert_eq!(settings_check(&staged, CheckKind::OpenAtLogin), off);
 
     let staged = staged.restart();
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    staged.report(login_item(LoginItem::NotRegistered));
     assert_eq!(settings_check(&staged, CheckKind::OpenAtLogin), off);
 }
 
@@ -238,12 +234,8 @@ fn opening_at_login_waiting_for_approval_offers_login_items() {
         .installed(Instance::Release, Install::SelfManaged)
         .stage()
         .unwrap();
-    staged.core().handle(Event::CommandChosen {
-        command: Command::OpenAtLogin(OnOff::On),
-    });
-    staged
-        .core()
-        .handle(login_item(LoginItem::RequiresApproval));
+    _ = staged.send(Command::OpenAtLogin(OnOff::On));
+    staged.report(login_item(LoginItem::RequiresApproval));
 
     assert_eq!(
         settings_check(&staged, CheckKind::OpenAtLogin),
@@ -256,10 +248,8 @@ fn opening_at_login_waiting_for_approval_offers_login_items() {
     );
     assert!(
         staged
-            .core()
-            .handle(Event::FixChosen {
-                fix: Fix::DontOpenAtLogin
-            })
+            .send_ui(UiCommand::Fix(Fix::DontOpenAtLogin))
+            .effects
             .contains(&Effect::UnregisterLoginItem)
     );
 }
@@ -270,15 +260,13 @@ fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
         .installed(Instance::Release, Install::SelfManaged)
         .stage()
         .unwrap();
-    staged.core().handle(Event::CommandChosen {
-        command: Command::OpenAtLogin(OnOff::On),
-    });
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    _ = staged.send(Command::OpenAtLogin(OnOff::On));
+    staged.report(login_item(LoginItem::NotRegistered));
 
-    let (effects, outcome) = staged.choose(&Command::OpenAtLogin(OnOff::Off));
+    let (outcome, answer) = staged.send(Command::OpenAtLogin(OnOff::Off));
 
-    assert_eq!(effects, Vec::new());
-    assert!(outcome.is_ok());
+    assert_eq!(outcome, Outcome::default());
+    assert!(answer.is_ok());
     assert_eq!(
         settings_check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),
         Some(CheckState::Off)
@@ -292,8 +280,8 @@ fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
         .stage()
         .unwrap();
 
-    staged.core().handle(login_item(LoginItem::Enabled));
-    staged.core().handle(login_item(LoginItem::NotRegistered));
+    staged.report(login_item(LoginItem::Enabled));
+    staged.report(login_item(LoginItem::NotRegistered));
     assert_eq!(
         settings_check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),
         Some(CheckState::Drifted)
@@ -306,19 +294,18 @@ fn opening_at_login_removed_in_system_settings_is_announced() {
         .installed(Instance::Release, Install::SelfManaged)
         .stage()
         .unwrap();
-    staged.core().handle(Event::CommandChosen {
-        command: Command::OpenAtLogin(OnOff::On),
-    });
-    staged.core().handle(login_item(LoginItem::Enabled));
+    _ = staged.send(Command::OpenAtLogin(OnOff::On));
+    staged.report(login_item(LoginItem::Enabled));
 
     assert!(
         staged
-            .core()
-            .handle(login_item(LoginItem::NotRegistered))
-            .contains(&Effect::Notify {
-                title: "Nightcap no longer opens at login".to_owned(),
-                body: "Open Nightcap’s settings to turn it back on, or to keep it off.".to_owned(),
-                opens: None,
+            .report(login_item(LoginItem::NotRegistered))
+            .events
+            .contains(&Event::ProblemAppeared {
+                check: Check {
+                    detail: CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed),
+                    state: CheckState::Drifted,
+                },
             })
     );
 }

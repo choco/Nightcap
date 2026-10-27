@@ -120,10 +120,12 @@ pub(crate) struct Stack {
     pub after_reset: Option<OnOff>,
 }
 
-/// A rule an external change snoozed, which the user is told about (ADR-0018).
+/// What an external change was adopted as (ADR-0018): the deciding place holding `state`, and
+/// the rule that snoozes, if one decided.
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Snooze {
-    pub rule: RuleIdentity,
+pub(crate) struct Adoption {
+    pub place: Place,
+    pub snoozed: Option<RuleIdentity>,
     pub state: OnOff,
     pub until: Option<Timestamp>,
 }
@@ -287,8 +289,8 @@ impl Places {
     /// Takes an external change as flipping what the user sees (ADR-0018): takes off what the
     /// deciding place says, and holds `state` over a rule or the schedule until the schedule
     /// next turns it back, everywhere too where a rule decides and everywhere says otherwise.
-    /// Gives the rule that snoozes, if one does.
-    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Snooze> {
+    /// Gives what it held, unless taking off what said otherwise was enough.
+    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Adoption> {
         loop {
             let decision = self.decide(world);
             if decision.state == Some(state) || !self.peel(&decision.place, state) {
@@ -314,19 +316,19 @@ impl Places {
             layers.timer = None;
             layers.hold = Some(Layer { state, until, with });
         }
-        let rule = decision
+        let snoozed = decision
             .reasons
             .into_iter()
             .find_map(|reason| match reason {
-                Reason::Rule(rule) => Some(rule),
+                Reason::Rule(rule) => Some(rule.identity),
                 _ => None,
-            })?;
-        tracing::info!(
-            "snoozed {} after an external change",
-            loggable(&rule.identity)
-        );
-        Some(Snooze {
-            rule: rule.identity,
+            });
+        if let Some(identity) = &snoozed {
+            tracing::info!("snoozed {} after an external change", loggable(identity));
+        }
+        Some(Adoption {
+            place: deciding,
+            snoozed,
             state,
             until,
         })
@@ -1374,12 +1376,13 @@ mod tests {
         let world = lent.world();
         let mut places = with_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
 
-        let snooze = places.adopt(OnOff::On, &world);
+        let adoption = places.adopt(OnOff::On, &world);
 
         assert_eq!(
-            snooze,
-            Some(Snooze {
-                rule: identity("app:com.figma.Desktop"),
+            adoption,
+            Some(Adoption {
+                place: place("app:com.figma.Desktop"),
+                snoozed: Some(identity("app:com.figma.Desktop")),
                 state: OnOff::On,
                 until: Some(at(MORNING)),
             })

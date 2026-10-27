@@ -199,7 +199,8 @@ mod tests {
     use crate::file::{Memory, Paths};
     use crate::staging::ManualClock;
     use crate::start::Setup;
-    use crate::{Core, CoreError, Event, Waker};
+    use crate::state::Inner;
+    use crate::{Core, CoreError, Outcome, Waker};
 
     /// Stands in for the shell: every wake is reported on a channel the test can wait on.
     struct ChannelWaker(Mutex<mpsc::Sender<()>>);
@@ -230,18 +231,17 @@ mod tests {
     /// A core on files in memory at noon, answering what arrives at `socket` on each tick.
     fn served_core(socket: &Path) -> (Core, mpsc::Receiver<()>) {
         let (requests, wakes) = served(socket);
-        let core = Core::start(Setup {
+        let inner = Inner::start(Setup {
             instance: Instance::Release,
             install: Install::Managed,
             socket: Some(socket.to_owned()),
-            requests,
             files: Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap")))),
             clock: Arc::new(ManualClock::new(
                 "2026-10-16T12:00:00+02:00".parse().unwrap(),
             )),
             zone: TimeZone::get("Europe/Zurich").unwrap(),
         });
-        (core, wakes)
+        (Core::serving(inner, requests), wakes)
     }
 
     /// Speaks the wire protocol from the client side: a hello, then at most one request.
@@ -425,7 +425,7 @@ mod tests {
         wakes
             .recv_timeout(Duration::from_secs(5))
             .expect("the IPC thread asks for a tick");
-        assert_eq!(core.tick(), Vec::new());
+        assert_eq!(core.tick(), Outcome::default());
 
         let Response::Ok(Payload::Status(mut status)) = response.join().unwrap() else {
             panic!("expected a status");
@@ -475,7 +475,7 @@ mod tests {
         let socket = socket_in(&dir);
         let (core, _wakes) = served_core(&socket);
 
-        assert_eq!(core.handle(Event::Terminating), Vec::new());
+        assert_eq!(core.stop(), Outcome::default());
 
         assert!(!socket.exists());
     }

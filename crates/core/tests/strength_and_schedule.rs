@@ -9,7 +9,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Staged};
+use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
     Command, ErrorCode, OnOff, Payload, Place, Request, Response, Schedule, TimeOfDay,
 };
@@ -23,7 +23,7 @@ use common::{
 fn at_strength_60() -> Staged {
     noon()
         .then(reported(false, Schedule::Off))
-        .then(Event::StrengthChanged { value: 60 })
+        .then(Fact::StrengthChanged { value: 60 })
         .stage()
         .unwrap()
 }
@@ -112,7 +112,7 @@ fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
 
     send(&staged, Command::SetSchedule(Schedule::Off));
     // macOS switches Night Shift off along with the schedule.
-    let effects = staged.core().handle(reported(false, Schedule::Off));
+    let effects = staged.report(reported(false, Schedule::Off)).effects;
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
     assert_eq!(
@@ -161,7 +161,7 @@ fn the_configs_night_shift_values_are_applied_at_launch() {
     report_night_shift(&staged, Schedule::Off, 60);
 
     assert_eq!(
-        launch(&staged),
+        launch(&staged).effects,
         vec![
             Effect::SetStrength {
                 value: 40,
@@ -187,7 +187,7 @@ fn the_configs_night_shift_values_apply_once_and_a_change_made_since_stays() {
     let staged = staged.restart_at(at("2026-10-16T12:05:00+02:00"));
     report_night_shift(&staged, Schedule::SunsetToSunrise, 70);
 
-    assert_eq!(launch(&staged), Vec::new());
+    assert_eq!(launch(&staged).effects, Vec::new());
 }
 
 #[test]
@@ -222,10 +222,10 @@ fn reloading_applies_only_the_night_shift_value_that_changed() {
     staged.write_config(Some(
         "[night_shift]\nstrength = 50\nschedule = \"sunset-to-sunrise\"\n",
     ));
-    let (effects, _) = staged.request(Request::Reload);
+    let (outcome, _) = staged.request(Request::Reload);
 
     assert_eq!(
-        effects,
+        outcome.effects,
         vec![Effect::SetStrength {
             value: 50,
             commit: true
@@ -247,9 +247,9 @@ fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_
     staged.write_config(Some("[night_shift]\nstrength = 40\n"));
     let (put_back, _) = staged.request(Request::Reload);
 
-    assert_eq!(taken_out, Vec::new());
+    assert_eq!(taken_out.effects, Vec::new());
     assert_eq!(
-        put_back,
+        put_back.effects,
         vec![Effect::SetStrength {
             value: 40,
             commit: true
@@ -269,8 +269,8 @@ fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
         "schedule = \"24:00-07:00\"",
     ] {
         staged.write_config(Some(format!("[night_shift]\n{night_shift}\n").as_str()));
-        let (effects, response) = staged.request(Request::Reload);
-        assert_eq!(effects, Vec::new(), "{night_shift}");
+        let (outcome, response) = staged.request(Request::Reload);
+        assert_eq!(outcome.effects, Vec::new(), "{night_shift}");
         assert_eq!(refusal(response), ErrorCode::InvalidConfig, "{night_shift}");
     }
 }

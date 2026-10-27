@@ -6,8 +6,9 @@ import UserNotifications
 import os
 
 /// Between macOS and the core, on the main thread (ADR-0002): what macOS reports, read and handed
-/// to the core as events, and the effects the core answers with, carried out. Every event reaches
-/// the core through here, the UIs' commands too, so every effect is carried out here.
+/// to the core as facts, and the outcome the core answers with, its effects carried out and its
+/// events told. Every fact and command reaches the core through here, so every outcome is carried
+/// out here.
 final class Mac: NSObject {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let core: Core
@@ -32,8 +33,8 @@ final class Mac: NSObject {
     private var reportedLoginItem: LoginItem?
     private var reportedStrength: UInt8?
     private var observers: [NSObjectProtocol] = []
-    /// Calls into the core waiting for the effects before them to go out.
-    private var waiting: [() -> [Effect]] = []
+    /// Calls into the core waiting for the outcomes before them to go out.
+    private var waiting: [() -> Outcome] = []
     private var carryingOut = false
 
     /// `accessibilityChanged` runs as the grant flips; `notificationsChanged` as a read finds
@@ -96,15 +97,31 @@ final class Mac: NSObject {
         // Every 30 seconds from here; onboarding, which the launch can open, has the permissions
         // read every second.
         pollPermissions(every: 30)
-        handle(.launched)
+        report(.launched)
         // Once now, so status is right while the notification prompt waits for an answer.
         Task { await reportSystemState() }
         watchSystem()
     }
 
-    /// Hands `event` to the core and carries out the effects it answers with.
-    func handle(_ event: Event) {
-        run { [core] in core.handle(event: event) }
+    /// Hands `fact` to the core and carries out its outcome.
+    func report(_ fact: Fact) {
+        run { [core] in core.report(fact: fact) }
+    }
+
+    /// Sends the core a command from the menu, Settings, onboarding or the shortcut, and carries
+    /// out its outcome.
+    func send(_ command: Command) {
+        run { [core] in core.send(command: command) }
+    }
+
+    /// Sends the core a command only the UI has, and carries out its outcome.
+    func send(_ command: UiCommand) {
+        run { [core] in core.sendUi(command: command) }
+    }
+
+    /// Releases every force as the app quits (ADR-0008), carried out before it exits.
+    func stop() {
+        run { [core] in core.stop() }
     }
 
     /// The core's own threads have work for it, such as a CLI request (ADR-0002).
@@ -127,7 +144,7 @@ final class Mac: NSObject {
             let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
             NSWorkspace.shared.open(URL(string: pane)!)
         case .stopCheckingWebsites, .keepNotificationsOff, .keepScheduleOff, .openAtLogin, .dontOpenAtLogin, .reload:
-            handle(.fixChosen(fix: fix))
+            send(.fix(fix))
         }
     }
 
@@ -169,7 +186,7 @@ final class Mac: NSObject {
         if let reportedPermissions, reportedPermissions == permissions { return }
         let notificationsDiffer = read != notifications
         reportedPermissions = permissions
-        handle(
+        report(
             .permissionsChanged(accessibility: permissions.accessibility, notifications: permissions.notifications))
         if notificationsDiffer { notificationsChanged() }
     }
@@ -187,7 +204,7 @@ final class Mac: NSObject {
     // MARK: Facts in
 
     private func reportNightShift(_ status: NightShiftAdapter.Status) {
-        handle(
+        report(
             .statusChanged(
                 enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside))
     }
@@ -199,30 +216,30 @@ final class Mac: NSObject {
     private func reportStrength() {
         guard let strength = nightShift?.strength, strength != reportedStrength else { return }
         reportedStrength = strength
-        handle(.strengthChanged(value: strength))
+        report(.strengthChanged(value: strength))
     }
 
     /// CoreBrightness reports sun times only a day either side of now, so they're re-read
     /// whenever time may have moved on: at launch, on waking and before each wakeup.
     private func reportSunTimes() {
         guard let sunTimes = nightShift?.sunTimes else { return }
-        handle(.sunTimesChanged(sunrises: sunTimes.sunrises, sunsets: sunTimes.sunsets))
+        report(.sunTimesChanged(sunrises: sunTimes.sunrises, sunsets: sunTimes.sunsets))
     }
 
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
-        handle(.appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
+        report(.appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
     }
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0009).
     private func reportHost(generation: UInt64, host: String?) {
         run { [core, log] in
-            let effects = core.handle(event: .hostChanged(generation: generation, host: host))
-            if effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
+            let outcome = core.report(fact: .hostChanged(generation: generation, host: host))
+            if outcome.effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
                 log.info("the browser's host \(host ?? "(unknown)", privacy: .private) changed Night Shift")
             }
-            return effects
+            return outcome
         }
     }
 
@@ -236,7 +253,7 @@ final class Mac: NSObject {
             }
         guard item != reportedLoginItem else { return }
         reportedLoginItem = item
-        handle(.loginItemChanged(item: item))
+        report(.loginItemChanged(item: item))
     }
 
     private func watchSystem() {
@@ -258,7 +275,7 @@ final class Mac: NSObject {
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
                     self?.reportSunTimes()
-                    self?.handle(.woke)
+                    self?.report(.woke)
                 }
             })
         // Fast user switching: while another user is in front, the core writes nothing and
@@ -268,7 +285,7 @@ final class Mac: NSObject {
                 forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main
             ) { [weak self] _ in
                 MainActor.assumeIsolated {
-                    self?.handle(.sessionChanged(active: false))
+                    self?.report(.sessionChanged(active: false))
                 }
             })
         observers.append(
@@ -278,7 +295,7 @@ final class Mac: NSObject {
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     self.reportSunTimes()
-                    self.handle(.sessionChanged(active: true))
+                    self.report(.sessionChanged(active: true))
                     if let status = self.nightShift?.status {
                         self.reportNightShift(status)
                     }
@@ -291,7 +308,7 @@ final class Mac: NSObject {
                 MainActor.assumeIsolated {
                     // TimeZone.current caches the zone it first read.
                     NSTimeZone.resetSystemTimeZone()
-                    self?.handle(.timeZoneChanged(ianaId: TimeZone.current.identifier))
+                    self?.report(.timeZoneChanged(ianaId: TimeZone.current.identifier))
                 }
             })
     }
@@ -311,11 +328,11 @@ final class Mac: NSObject {
 
     // MARK: Effects out
 
-    /// Calls the core and carries out the effects it answers with. A call made meanwhile, as when
-    /// an effect reads back what it changed, waits until they're all out, so effects go out in the
+    /// Calls the core and carries out the outcome it answers with. A call made meanwhile, as when
+    /// an effect reads back what it changed, waits until it's all out, so effects go out in the
     /// order the core gave them and the UIs refresh once, after the last. No effect needs the core
     /// to have heard what the one before it changed.
-    private func run(_ call: @escaping () -> [Effect]) {
+    private func run(_ call: @escaping () -> Outcome) {
         waiting.append(call)
         guard !carryingOut else { return }
         carryingOut = true
@@ -326,8 +343,8 @@ final class Mac: NSObject {
         changed()
     }
 
-    private func carryOut(_ effects: [Effect]) {
-        for effect in effects {
+    private func carryOut(_ outcome: Outcome) {
+        for effect in outcome.effects {
             switch effect {
             case .registerLoginItem:
                 changeLoginItem { try $0.register() }
@@ -363,8 +380,6 @@ final class Mac: NSObject {
             case .cancelWakeup:
                 wakeup?.cancel()
                 wakeup = nil
-            case .notify(let title, let body, let opens):
-                notify(title: title, body: body, opens: opens)
             // Version 1 is the only onboarding so far, so `completed` is always 0.
             case .showOnboarding:
                 showOnboarding()
@@ -376,6 +391,21 @@ final class Mac: NSObject {
                 browserWatcher?.stop()
             }
         }
+        outcome.events.forEach(tell)
+    }
+
+    /// Posts the notification an event calls for. A refusal has none: the user is looking at
+    /// what they chose, and its message can name a domain, so only its code is logged.
+    private func tell(_ event: Event) {
+        if case .refused(_, let why) = event {
+            log.notice("the core refused a command: \(String(describing: why.code), privacy: .public)")
+            return
+        }
+        let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
+            app.bundleIdentifier.map { Notice.FrontApp(bundleId: $0, name: app.localizedName) }
+        }
+        guard let notice = Notice(event, frontApp: front, timeZone: .current) else { return }
+        notify(title: notice.title, body: notice.body, opens: notice.opens)
     }
 
     /// Registers or unregisters the login item, as the user chose (ADR-0011), then reports
@@ -416,7 +446,7 @@ final class Mac: NSObject {
             wakeup?.cancel()
             wakeup = nil
             reportSunTimes()
-            handle(.timerFired)
+            report(.timerFired)
         }
         timer.resume()
         wakeup = timer
@@ -425,11 +455,11 @@ final class Mac: NSObject {
     /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
     /// dropped while the prompt waits for an answer. A notification posted under an `id` replaces
     /// any earlier one under it.
-    private func notify(title: String, body: String, opens: String?, id: String = UUID().uuidString) {
+    private func notify(title: String, body: String, opens: URL?, id: String = UUID().uuidString) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
-        if let opens { content.userInfo = [pageKey: opens] }
+        if let opens { content.userInfo = [pageKey: opens.absoluteString] }
         let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         Task {
             let center = UNUserNotificationCenter.current()
