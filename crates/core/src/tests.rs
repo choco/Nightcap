@@ -1499,6 +1499,26 @@ fn reset_puts_a_snoozed_rule_back_early() {
     assert_eq!(core.status().layers, Vec::new());
 }
 
+#[test]
+fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
+    let core = forced();
+    core.send(set(figma_app(), OnOff::On, minutes(30)));
+    core.handle(reported(true, custom_hours()));
+
+    let (effects, response) = core.send(add_rule(figma()));
+
+    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Decision(Decision {
+            state: Some(OnOff::Off),
+            place: figma_app(),
+            reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
+        }))
+    );
+    assert_eq!(core.status().layers, Vec::new());
+}
+
 /// Snoozes the Figma rule until 07:00, then turns Night Shift off everywhere for an hour.
 fn snooze_figma_and_break(core: &Harness) {
     core.send(set(figma_app(), OnOff::On, Length::UntilScheduleTurns));
@@ -2100,6 +2120,25 @@ fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() 
         }]
     );
     assert_eq!(status.layers, Vec::new());
+}
+
+#[test]
+fn adding_your_rule_again_from_settings_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
+    let written = "version = 2\n[rules.off]\napp = [\"com.apple.mail\"]\n";
+    let core = on_by_the_schedule().rules(written).start();
+    activate(&core, "com.apple.mail");
+    core.handle(reported(false, custom_hours()));
+    core.choose(set(Place::from(mail()), OnOff::On, minutes(30)))
+        .1
+        .unwrap();
+    core.handle(reported(true, custom_hours()));
+
+    let (effects, outcome) = core.choose(add_rule(mail()));
+
+    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert_eq!(outcome.unwrap().place, Place::from(mail()));
+    assert_eq!(core.status().layers, Vec::new());
+    assert_eq!(core.file(File::Rules).as_deref(), Some(written));
 }
 
 /// At noon, off by the custom hours, with Books in front.
@@ -4426,6 +4465,29 @@ fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
     assert_eq!(core.status().rules, vec![app_rule("com.figma.Desktop")]);
     core.handle(Event::TourEnded);
     assert_eq!(core.status().rules, vec![app_rule("com.figma.Desktop")]);
+}
+
+#[test]
+fn adding_the_rule_a_snoozed_app_has_mid_tour_ends_the_snooze_only_while_it_runs() {
+    let core = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .start();
+    report(&core, true);
+    core.send(set(figma_app(), OnOff::On, minutes(30)));
+    start_tour(&core);
+
+    core.send(add_rule(figma()));
+    assert_eq!(core.status().layers, Vec::new());
+    core.handle(Event::TourEnded);
+
+    assert_eq!(
+        core.status().layers,
+        vec![layered(
+            figma_app(),
+            None,
+            Some(layer(OnOff::On, Some("2026-10-16T23:30:00+02:00")))
+        )]
+    );
 }
 
 #[test]

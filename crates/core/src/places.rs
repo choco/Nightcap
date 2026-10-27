@@ -331,22 +331,30 @@ impl Places {
         })
     }
 
-    /// Makes the user's rule for an app or domain say `says`, replacing one of theirs that said
-    /// the other, and takes off the place's hold and timer; a config rule changes only in the
-    /// config (ADR-0006). A rule added during the tour is the tour's, which nothing keeps past
-    /// it, and a change to one of the user's own lasts only while it runs (ADR-0016).
+    /// Makes the rule for an app or domain say `says` for good, and takes off the place's hold
+    /// and timer, which ends its snooze (ADR-0018): the user's rule, replacing one of theirs
+    /// that said the other, or the one that already says so, the config's too. A config rule
+    /// changes only in the config (ADR-0006). A rule added during the tour is the tour's, which
+    /// nothing keeps past it, and a change to one of the user's own lasts only while it runs
+    /// (ADR-0016).
     pub(crate) fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<(), Refusal> {
-        if let Some(rule) = self.rules.iter().find(|rule| rule.identity == *identity) {
-            if rule.says == says {
-                return Ok(());
-            }
-            if rule.source == RuleSource::Config {
+        match self.rules.iter().find(|rule| rule.identity == *identity) {
+            Some(rule) if rule.says == says => {}
+            Some(rule) if rule.source == RuleSource::Config => {
                 return Err(Refusal::ConfigSays {
                     identity: identity.clone(),
                     says: rule.says,
                 });
             }
+            _ => self.make_rule(identity, says),
         }
+        self.clear_layers(&Place::from(identity.clone()));
+        self.lay_out();
+        Ok(())
+    }
+
+    /// Makes the user's rule say `says`: the ad-hoc one, else during the tour the tour's.
+    fn make_rule(&mut self, identity: &RuleIdentity, says: OnOff) {
         if let Some((_, kept)) = self
             .live
             .ad_hoc
@@ -363,9 +371,6 @@ impl Places {
             self.live.ad_hoc.push((identity.clone(), says));
             tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
         }
-        self.clear_layers(&Place::from(identity.clone()));
-        self.lay_out();
-        Ok(())
     }
 
     /// Removes the user's rule or the tour's, and the place's hold and timer; a config rule
