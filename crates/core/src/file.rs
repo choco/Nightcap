@@ -1,9 +1,13 @@
 //! The files the core reads and keeps. Their stores read and write them here as bytes, so
 //! parsing, versions and graduation are the same whatever holds them.
 
+#[cfg(any(test, debug_assertions))]
+use std::collections::HashMap;
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+#[cfg(any(test, debug_assertions))]
+use std::sync::{Mutex, MutexGuard};
 
 use etcetera::BaseStrategy;
 use nightcap_protocol::Instance;
@@ -124,5 +128,60 @@ impl Files for Disk {
 
     fn path(&self, file: File) -> PathBuf {
         self.0.of(file).to_owned()
+    }
+}
+
+/// The files in memory, for a core staged without a disk. A write never fails.
+#[cfg(any(test, debug_assertions))]
+#[derive(Debug)]
+pub(crate) struct Memory {
+    paths: Paths,
+    contents: Mutex<HashMap<File, Vec<u8>>>,
+}
+
+#[cfg(any(test, debug_assertions))]
+impl Memory {
+    /// No files yet, at `paths`, which only Settings and messages show.
+    pub(crate) fn new(paths: Paths) -> Self {
+        Self {
+            paths,
+            contents: Mutex::default(),
+        }
+    }
+
+    /// Changes `file` from outside the core, as the user or their installer would, or takes it
+    /// away.
+    pub(crate) fn put(&self, file: File, contents: Option<Vec<u8>>) {
+        let mut files = self.contents();
+        match contents {
+            Some(contents) => files.insert(file, contents),
+            None => files.remove(&file),
+        };
+    }
+
+    #[expect(
+        clippy::expect_used,
+        reason = "panics abort (ADR-0002), so none can poison the lock"
+    )]
+    fn contents(&self) -> MutexGuard<'_, HashMap<File, Vec<u8>>> {
+        self.contents
+            .lock()
+            .expect("no panic happens while it's held")
+    }
+}
+
+#[cfg(any(test, debug_assertions))]
+impl Files for Memory {
+    fn read(&self, file: File) -> io::Result<Option<Vec<u8>>> {
+        Ok(self.contents().get(&file).cloned())
+    }
+
+    fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()> {
+        self.put(file.into(), Some(contents.to_owned()));
+        Ok(())
+    }
+
+    fn path(&self, file: File) -> PathBuf {
+        self.paths.of(file).to_owned()
     }
 }

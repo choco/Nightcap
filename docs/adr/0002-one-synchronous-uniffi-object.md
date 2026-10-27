@@ -19,6 +19,7 @@ It wins because the core can be tested as a pure state machine on Linux, by repl
 
 - Rust panics can't cross the FFI boundary, so the core builds with `panic = "abort"` and a panic hook that logs before the abort. Under a LaunchAgent, launchd then restarts the app (ADR-0008).
 - The generated bindings live in their own Swift module. UniFFI's generated code breaks when a module's default isolation is the main actor ([uniffi-rs#2818](https://github.com/mozilla/uniffi-rs/issues/2818)), and default isolation is set per module, so the app module keeps the main actor while the bindings module stays `nonisolated`.
+- A debug build of the core also exports `Core.staged(Scenario)`: a core in memory, with no socket, no IPC thread and no disk, brought to a scene by its own code from the files' text and a list of events. The Swift tests and the dev build's snapshots use it rather than copying what the core would say. It's compiled under `debug_assertions`, not behind a cargo feature, so every debug build has it and no release build does: the release bindings stay as they are, and release Swift code that names it doesn't compile.
 
 ## Rejected alternatives
 

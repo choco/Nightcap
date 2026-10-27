@@ -11,8 +11,15 @@ mod logging;
 mod places;
 mod rows;
 mod schedule;
+#[cfg(any(test, debug_assertions))]
+mod staging;
 mod state;
 mod tour;
+
+#[cfg(test)]
+mod harness;
+#[cfg(any(test, debug_assertions))]
+pub use staging::{Scenario, ScenarioError, Step};
 
 use std::fmt;
 use std::path::PathBuf;
@@ -791,31 +798,14 @@ impl Core {
         time_zone: String,
         waker: Arc<dyn Waker>,
     ) -> Result<Arc<Self>, CoreError> {
-        let instance =
-            Instance::from_bundle_id(&bundle_id).ok_or_else(|| CoreError::UnknownBundleId {
-                bundle_id: bundle_id.clone(),
-            })?;
+        let instance = instance_of(&bundle_id)?;
         logging::init(&bundle_id);
         let socket = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
         let files = Disk(Paths::xdg(instance)?);
-        let zone = TimeZone::get(&time_zone).map_err(|error| {
-            if jiff::tz::db().is_definitively_empty() {
-                CoreError::Io {
-                    message: format!("can't read the time zone database: {error}"),
-                }
-            } else {
-                CoreError::UnknownTimeZone {
-                    iana_id: time_zone.clone(),
-                }
-            }
-        })?;
-        let install = if bundle_writable {
-            Install::SelfManaged
-        } else {
-            Install::Managed
-        };
+        let zone = zone_of(&time_zone)?;
+        let install = install_of(bundle_writable);
         // Before any file is read, so a second instance stops here.
         let requests = ipc::serve(&socket, waker)?;
         let core = Self::start(Setup {
@@ -2442,6 +2432,37 @@ impl State {
             )),
         }
     }
+}
+
+/// The instance the app with this bundle ID is.
+fn instance_of(bundle_id: &str) -> Result<Instance, CoreError> {
+    Instance::from_bundle_id(bundle_id).ok_or_else(|| CoreError::UnknownBundleId {
+        bundle_id: bundle_id.to_owned(),
+    })
+}
+
+/// A bundle the user can replace makes a self-managed install (ADR-0011).
+fn install_of(bundle_writable: bool) -> Install {
+    if bundle_writable {
+        Install::SelfManaged
+    } else {
+        Install::Managed
+    }
+}
+
+/// The system's time zone, by its IANA ID.
+fn zone_of(iana_id: &str) -> Result<TimeZone, CoreError> {
+    TimeZone::get(iana_id).map_err(|error| {
+        if jiff::tz::db().is_definitively_empty() {
+            CoreError::Io {
+                message: format!("can't read the time zone database: {error}"),
+            }
+        } else {
+            CoreError::UnknownTimeZone {
+                iana_id: iana_id.to_owned(),
+            }
+        }
+    })
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.
