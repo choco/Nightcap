@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use nightcap_protocol::{ErrorCode, OnOff, Payload, Query, Response, RuleIdentity, Status};
 
 use crate::commands::refused;
-use crate::file::File;
 use crate::server::state::Inner;
-use crate::{Menu, OnboardingSteps, Settings, TourSnapshot, adhoc};
+use crate::storage::ad_hoc_rules;
+use crate::storage::file::File;
+use crate::{Menu, OnboardingSteps, Settings, TourSnapshot};
 
 /// The core after one input, as each read sees it.
 #[derive(Debug)]
@@ -45,7 +46,7 @@ impl Snapshot {
         match query {
             Query::Status => Response::Ok(Payload::Status(Box::new(self.status.clone()))),
             Query::Rules => Response::Ok(Payload::Rules(self.status.rules.clone())),
-            Query::Export(format) => match adhoc::export(&self.ad_hoc, *format) {
+            Query::Export(format) => match ad_hoc_rules::export(&self.ad_hoc, *format) {
                 Ok(text) => Response::Ok(Payload::Export(text)),
                 Err(error) => Response::Error(refused(
                     ErrorCode::Internal,

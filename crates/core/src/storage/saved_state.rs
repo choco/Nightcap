@@ -8,8 +8,8 @@ use jiff::Timestamp;
 use nightcap_protocol::{CheckKind, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
-use crate::config::NightShiftConfig;
-use crate::file::{self, Files, Owned};
+use crate::storage::config::NightShiftConfig;
+use crate::storage::file::{self, Files, Owned};
 
 const VERSION: u32 = 1;
 
@@ -131,7 +131,7 @@ mod tests {
     use nightcap_protocol::{Layer, Place, Schedule, TimeOfDay};
 
     use super::*;
-    use crate::file::{Memory, Paths};
+    use crate::storage::file::{Memory, Paths};
 
     /// Files in memory, with `state.json` holding `text`.
     fn holding(text: Option<&str>) -> Arc<Memory> {

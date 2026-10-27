@@ -9,10 +9,10 @@ use nightcap_protocol::{
     NotificationsDetail, OnOff, OpenAtLoginDetail, RuleSource, Schedule, TimeOfDay,
 };
 
-use crate::adhoc::AdHocError;
-use crate::config::ConfigError;
 use crate::rows::capitalized;
 use crate::server::state::Inner;
+use crate::storage::ad_hoc_rules::AdHocError;
+use crate::storage::config::ConfigError;
 use crate::{Effect, Event, LoginItem};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
@@ -123,17 +123,17 @@ pub(crate) struct Grants {
     /// None until the shell first reports it.
     pub(crate) accessibility: Option<bool>,
     pub(crate) notifications: NotificationPermission,
-    /// See `state::Persisted::notifications_wanted`.
+    /// See `saved_state::Persisted::notifications_wanted`.
     pub(crate) notifications_wanted: bool,
     /// None until the shell first reports it.
     pub(crate) login_item: Option<LoginItem>,
-    /// See `state::Persisted::open_at_login`.
+    /// See `saved_state::Persisted::open_at_login`.
     pub(crate) open_at_login: bool,
     /// macOS has sunset to sunrise set aside, and the schedule is off.
     pub(crate) schedule_set_aside: bool,
-    /// See `state::Persisted::schedule_off_accepted`.
+    /// See `saved_state::Persisted::schedule_off_accepted`.
     pub(crate) schedule_off_accepted: bool,
-    /// See `state::Persisted::announced`.
+    /// See `saved_state::Persisted::announced`.
     pub(crate) announced: Vec<CheckKind>,
 }
 

@@ -12,11 +12,11 @@ use nightcap_protocol::{Command, Decision, ErrorReply, Install, Instance, Reques
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-use crate::file::{File, Memory, Paths};
 use crate::server::react::{Input, react};
 use crate::server::start::{Clock, Setup, install_of, instance_of, zone_of};
 use crate::server::state::Inner;
 use crate::server::{Published, Snapshot};
+use crate::storage::file::{File, Memory, Paths};
 use crate::{Core, Fact, Outcome, Runs, UiCommand};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in

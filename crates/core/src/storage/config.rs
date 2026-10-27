@@ -11,8 +11,8 @@ use nightcap_protocol::{
 use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
-use crate::file::{self, Files};
 use crate::rules::schedule;
+use crate::storage::file::{self, Files};
 
 /// The file as toml reads it. What's checked after reading keeps its place in the file, so a
 /// problem with it names its line.

@@ -9,8 +9,8 @@ use std::sync::Arc;
 use nightcap_protocol::{ExportFormat, IdentityError, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
-use crate::config::Malformed;
-use crate::file::{self, Files, Owned};
+use crate::storage::config::Malformed;
+use crate::storage::file::{self, Files, Owned};
 
 /// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
@@ -208,7 +208,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::file::{Memory, Paths};
+    use crate::storage::file::{Memory, Paths};
 
     /// Files in memory, with `rules.toml` holding `text`.
     fn holding(text: Option<&str>) -> Arc<Memory> {

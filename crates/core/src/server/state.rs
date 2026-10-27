@@ -8,14 +8,15 @@ use nightcap_protocol::{Install, Instance, NightShift, OnOff};
 
 use crate::checks::Grants;
 use crate::commands::Loaded;
-use crate::file::Files;
 use crate::rules::places::{Context, Places, World};
 use crate::rules::schedule::Timeline;
 use crate::server::start::Clock;
 use crate::server::turn::{Reconciling, wanted};
 use crate::server::watch::Watching;
-use crate::state::{Persisted, Store};
-use crate::{adhoc, tour};
+use crate::storage::ad_hoc_rules;
+use crate::storage::file::Files;
+use crate::storage::saved_state::{Persisted, Store};
+use crate::tour;
 
 /// What the core decides from, which its thread alone owns (ADR-0002): what it believes about
 /// the system, as last reported by the shell, what it keeps across restarts, and the files and
@@ -27,7 +28,7 @@ pub(crate) struct Inner {
     pub(crate) socket: Option<PathBuf>,
     pub(crate) files: Arc<dyn Files>,
     pub(crate) store: Store,
-    pub(crate) ad_hoc_store: adhoc::Store,
+    pub(crate) ad_hoc_store: ad_hoc_rules::Store,
     pub(crate) clock: Arc<dyn Clock>,
     /// A self-managed release, which updates itself through Sparkle and opens itself at login
     /// if the user wants: an installer owns a managed one, and a dev build would shadow the

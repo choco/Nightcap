@@ -2,11 +2,8 @@
 
 uniffi::setup_scaffolding!();
 
-mod adhoc;
 mod checks;
 mod commands;
-mod config;
-mod file;
 mod ipc;
 mod logging;
 mod menu;
@@ -18,8 +15,8 @@ mod settings;
 mod shell;
 #[cfg(any(test, debug_assertions))]
 mod staging;
-mod state;
 mod status;
+mod storage;
 mod tour;
 
 pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
@@ -34,9 +31,9 @@ pub use tour::{
 };
 
 #[cfg(any(test, debug_assertions))]
-pub use file::File;
-#[cfg(any(test, debug_assertions))]
 pub use staging::{Scenario, ScenarioError, Staged, Step};
+#[cfg(any(test, debug_assertions))]
+pub use storage::file::File;
 
 use std::fmt;
 use std::os::unix::net::UnixListener;
@@ -44,13 +41,14 @@ use std::sync::{Arc, mpsc};
 
 use nightcap_protocol::{Command, ExportFormat};
 
-use file::{Disk, Paths};
 use server::react::Input;
 #[cfg(any(test, debug_assertions))]
 use server::react::react;
 use server::start::{Setup, SystemClock, install_of, instance_of, zone_of};
 use server::state::Inner;
 use server::{Mail, Mailbox, Published, Snapshot};
+use storage::ad_hoc_rules;
+use storage::file::{Disk, Paths};
 
 /// The core, a server on its own thread (ADR-0002): facts and commands go into its mailbox and
 /// return at once, its listener hears each one's outcome, and the reads answer from the snapshot
@@ -160,7 +158,8 @@ impl Core {
         reason = "TOML refuses only shapes the rule lists never have, and the shell's call can't fail"
     )]
     pub fn export(&self, format: ExportFormat) -> String {
-        adhoc::export(&self.published.latest().ad_hoc, format).expect("rules always serialize")
+        ad_hoc_rules::export(&self.published.latest().ad_hoc, format)
+            .expect("rules always serialize")
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {

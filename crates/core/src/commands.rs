@@ -7,12 +7,13 @@ use nightcap_protocol::{
     Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, Rule, RuleIdentity,
 };
 
-use crate::adhoc::AdHocError;
-use crate::config::{ConfigError, NightShiftConfig};
 use crate::rules::places::{Places, Refusal};
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
-use crate::{Effect, Event, LoginItem, Outcome, config};
+use crate::storage::ad_hoc_rules::AdHocError;
+use crate::storage::config;
+use crate::storage::config::{ConfigError, NightShiftConfig};
+use crate::{Effect, Event, LoginItem, Outcome};
 
 impl Inner {
     /// Runs a command the menu-bar UI sent, which answers as the CLI's would, and tells of its

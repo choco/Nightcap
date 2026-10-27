@@ -10,14 +10,15 @@ use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
 
 use crate::checks::Grants;
 use crate::commands::Loaded;
-use crate::config::{self, NightShiftConfig};
-use crate::file::Files;
 use crate::rules::places::{Context, Kept, Places};
 use crate::rules::schedule::{SunTimes, Timeline};
 use crate::server::state::{Facts, Inner};
 use crate::server::turn::Reconciling;
 use crate::server::watch::Watching;
-use crate::{CoreError, Effect, Event, Outcome, adhoc, state};
+use crate::storage::config::{self, NightShiftConfig};
+use crate::storage::file::Files;
+use crate::storage::{ad_hoc_rules, saved_state};
+use crate::{CoreError, Effect, Event, Outcome};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
@@ -46,7 +47,7 @@ impl Clock for SystemClock {
 impl Inner {
     /// The core as it finds its files, with nothing reported yet.
     pub(crate) fn start(setup: Setup) -> Self {
-        let store = state::Store::new(setup.files.clone());
+        let store = saved_state::Store::new(setup.files.clone());
         let mut persisted = store.load();
         persisted.expire(setup.clock.now());
         let (config, config_error) = match config::load(setup.files.as_ref()) {
@@ -66,7 +67,7 @@ impl Inner {
                 (config, Some(error))
             }
         };
-        let ad_hoc_store = adhoc::Store::new(setup.files.clone());
+        let ad_hoc_store = ad_hoc_rules::Store::new(setup.files.clone());
         let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
             Ok(rules) => (rules, None),
             Err(error) => {
