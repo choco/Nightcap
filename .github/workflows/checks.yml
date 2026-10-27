@@ -3,9 +3,9 @@ name: checks
 on:
   push:
     branches: ["**"]
-    paths-ignore: ["docs/**", "**.md"]
+    paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
   pull_request:
-    paths-ignore: ["docs/**", "**.md"]
+    paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
   workflow_call:
 
 permissions:

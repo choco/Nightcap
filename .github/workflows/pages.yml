@@ -3,7 +3,7 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "design/**", "app/icons/AppIcon.svg", "scripts/build-site", ".github/workflows/pages.yml"]
+    paths: ["site/**", "design/**", "app/icons/AppIcon.svg", "CHANGELOG.md", "scripts/build-site", ".github/workflows/pages.yml"]
   workflow_call:
   workflow_dispatch:
 
