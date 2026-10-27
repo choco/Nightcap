@@ -4,6 +4,8 @@ import Testing
 
 private let imovie = "com.apple.iMovieApp"
 private let photos = "com.apple.Photos"
+private let tv = "com.apple.TV"
+private let books = "com.apple.iBooksX"
 
 /// What onboarding sent the core, in order.
 private final class Sent {
@@ -11,11 +13,14 @@ private final class Sent {
 }
 
 /// A self-managed release, or a managed install, that has read the Mac's Night Shift at a strength
-/// of 60 and found Nightcap not opening at login, with `config` as its config.
-private func core(schedule: Schedule = .off, bundleWritable: Bool = true, config: String? = nil) throws -> Core {
+/// of 60 and found Nightcap not opening at login, with `config` as its config and `rules` as its
+/// ad-hoc rules file.
+private func core(
+    schedule: Schedule = .off, bundleWritable: Bool = true, config: String? = nil, rules: String? = nil
+) throws -> Core {
     try Core.staged(
         scenario: Scenario(
-            now: Date(), bundleWritable: bundleWritable, config: config,
+            now: Date(), bundleWritable: bundleWritable, config: config, rules: rules,
             steps: [
                 .event(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
                 .event(.strengthChanged(value: 60)),
@@ -100,6 +105,44 @@ struct OnboardingFlowTests {
         #expect(sent.commands == [.addRule(identity: .app(imovie), says: .off)])
         #expect(flow.addedApps == [OnboardingFlow.Suggestion(identity: .app(imovie), ruled: nil)])
         #expect(flow.step == .websites)
+    }
+
+    @Test func aChosenAppArrivesTickedAndAddSendsItsRule() throws {
+        let sent = Sent()
+        let flow = onboarding(try core(), sent: sent)
+        flow.go(to: try #require(flow.steps.firstIndex(of: .apps)))
+
+        flow.add(app: tv)
+
+        #expect(flow.apps.last == OnboardingFlow.Suggestion(identity: .app(tv), ruled: nil))
+        #expect(flow.isTicked(flow.apps[2]))
+        flow.perform(.addRules(count: 1))
+        #expect(sent.commands == [.addRule(identity: .app(tv), says: .off)])
+    }
+
+    @Test func aChosenAppWithARuleShowsItAndAddLeavesItBe() throws {
+        let sent = Sent()
+        let staged = try core(
+            config: "[rules.on]\napp = [\"\(tv)\"]", rules: "version = 2\n[rules.on]\napp = [\"\(books)\"]")
+        let flow = onboarding(staged, sent: sent)
+        flow.go(to: try #require(flow.steps.firstIndex(of: .apps)))
+
+        flow.add(app: books)
+        flow.add(app: tv)
+
+        #expect(
+            flow.apps.suffix(2) == [
+                OnboardingFlow.Suggestion(identity: .app(books), ruled: "Ad-hoc"),
+                OnboardingFlow.Suggestion(identity: .app(tv), ruled: "From your config"),
+            ])
+        #expect(flow.isTicked(flow.apps[2]))
+        #expect(flow.isTicked(flow.apps[3]))
+        #expect(flow.footer.primary == .addRules(count: 0))
+        flow.perform(.addRules(count: 0))
+        #expect(sent.commands == [])
+        let rules = staged.settings().rules
+        #expect(rules.first { $0.identity == .app(books) }?.says == .on)
+        #expect(rules.first { $0.identity == .app(tv) }?.says == .on)
     }
 
     @Test func theScheduleIsSentOnlyWhenItChanges() throws {

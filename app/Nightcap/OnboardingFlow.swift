@@ -327,11 +327,12 @@ final class OnboardingFlow {
         if ticked.remove(suggestion.identity) == nil { ticked.insert(suggestion.identity) }
     }
 
-    /// An app the user chose, added to the grid ticked.
+    /// An app the user chose, added to the grid ticked. One with a rule already shows where its rule
+    /// comes from and can't be changed, as a suggestion with one does.
     func add(app bundleId: String) {
         let identity = RuleIdentity.app(bundleId)
         if !apps.contains(where: { $0.identity == identity }) {
-            apps.append(Suggestion(identity: identity, ruled: nil))
+            apps.append(Suggestion(identity: identity, ruled: rules().first { $0.identity == identity }?.label))
         }
         ticked.insert(identity)
     }
