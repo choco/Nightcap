@@ -1,0 +1,21 @@
+# What `cargo deny check` holds the dependencies to: no known advisories, only the licences below,
+# and crates from crates.io alone.
+
+[advisories]
+ignore = [
+  { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained, and reaches us only inside askama's proc macro, through uniffi-bindgen" },
+]
+
+[licenses]
+# Each is a licence a dependency carries today. One that brings a new licence fails the check
+# until it's read and added here.
+allow = ["Apache-2.0", "MIT", "MPL-2.0", "Unicode-3.0", "Zlib"]
+private = { ignore = true }
+
+[bans]
+# The proc-macro crates are moving from syn 2 to syn 3, so both build for a while.
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

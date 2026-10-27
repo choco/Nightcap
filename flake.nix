@@ -30,28 +30,41 @@
         );
     in
     {
-      devShells = forAllSystems (pkgs: {
-        default = pkgs.mkShellNoCC {
-          packages = [
-            (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-            pkgs.gh
-            pkgs.librsvg
-            pkgs.jq
-            pkgs.nodejs_24
-            pkgs.pnpm
-            pkgs.python3Packages.dmgbuild
-          ];
-          # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo
-          # builds with Xcode's tools instead, matching CI and the Swift shell.
-          shellHook = ''
-            export PATH="$(git rev-parse --show-toplevel)/scripts:$PATH"
-          ''
-          + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
-            export CC=/usr/bin/cc CXX=/usr/bin/c++ AR=/usr/bin/ar
-            export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
-            export MACOSX_DEPLOYMENT_TARGET=15.0
-          '';
-        };
-      });
+      devShells = forAllSystems (
+        pkgs:
+        let
+          # The linters alone, for CI's lint job, which takes cargo from the runner.
+          lint = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.cargo-deny
+            ];
+          };
+        in
+        {
+          inherit lint;
+          default = pkgs.mkShellNoCC {
+            inputsFrom = [ lint ];
+            packages = [
+              (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+              pkgs.gh
+              pkgs.librsvg
+              pkgs.jq
+              pkgs.nodejs_24
+              pkgs.pnpm
+              pkgs.python3Packages.dmgbuild
+            ];
+            # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo
+            # builds with Xcode's tools instead, matching CI and the Swift shell.
+            shellHook = ''
+              export PATH="$(git rev-parse --show-toplevel)/scripts:$PATH"
+            ''
+            + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+              export CC=/usr/bin/cc CXX=/usr/bin/c++ AR=/usr/bin/ar
+              export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
+              export MACOSX_DEPLOYMENT_TARGET=15.0
+            '';
+          };
+        }
+      );
     };
 }
