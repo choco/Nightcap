@@ -1,0 +1,3 @@
+# The macOS jobs' runner (ADR-0003), a label actionlint doesn't know.
+self-hosted-runner:
+  labels: [xcode-27]

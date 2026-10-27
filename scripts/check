@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Runs what CI checks: every area by default, or only those named. CI's jobs call it by area.
-#   --rust  rustfmt, clippy, rustdoc and the tests
-#   --deps  cargo-deny's advisories, licences, bans and sources (deny.toml)
-#   --site  Biome, the type checker and the site's build (build-site)
-# Usage: check [--rust] [--deps] [--site]
+#   --rust     rustfmt, clippy, rustdoc and the tests
+#   --deps     cargo-deny's advisories, licences, bans and sources (deny.toml)
+#   --scripts  shellcheck on the shell scripts in scripts/ and release/, and actionlint on the
+#              workflows, with shellcheck on their run steps
+#   --site     Biome, the type checker and the site's build (build-site)
+# Usage: check [--rust] [--deps] [--scripts] [--site]
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -11,19 +13,22 @@ cd "$root"
 
 rust=
 deps=
+scripts=
 site=
 if [[ $# -eq 0 ]]; then
   rust=1
   deps=1
+  scripts=1
   site=1
 fi
 for area in "$@"; do
   case "$area" in
     --rust) rust=1 ;;
     --deps) deps=1 ;;
+    --scripts) scripts=1 ;;
     --site) site=1 ;;
     *)
-      echo "usage: check [--rust] [--deps] [--site]" >&2
+      echo "usage: check [--rust] [--deps] [--scripts] [--site]" >&2
       exit 1
       ;;
   esac
@@ -38,6 +43,18 @@ fi
 
 if [[ -n "$deps" ]]; then
   cargo deny check
+fi
+
+if [[ -n "$scripts" ]]; then
+  # The scripts have no extensions, so their shebangs pick them out. The C locale lets awk read
+  # past the images beside them.
+  shell_scripts=()
+  while IFS= read -r script; do
+    shell_scripts+=("$script")
+  done < <(LC_ALL=C find scripts release -type f -exec awk \
+    'FNR == 1 && /^#!.*[^a-z](ba)?sh( |$)/ { print FILENAME } { nextfile }' {} +)
+  shellcheck "${shell_scripts[@]}"
+  actionlint
 fi
 
 if [[ -n "$site" ]]; then

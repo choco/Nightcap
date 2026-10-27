@@ -36,7 +36,9 @@
           # The linters alone, for CI's lint job, which takes cargo from the runner.
           lint = pkgs.mkShellNoCC {
             packages = [
+              pkgs.actionlint
               pkgs.cargo-deny
+              pkgs.shellcheck
             ];
           };
         in
