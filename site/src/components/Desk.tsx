@@ -11,6 +11,13 @@ import { Poster } from "./Poster";
 // Until the reader picks an app, the desk shows each in turn, while it can be seen.
 const CYCLE: AppName[] = ["figma", "mail", "safari", "mail"];
 
+/** What the menu's Night Shift row says with the app in front. */
+function nightShiftSays(app: AppName) {
+	const row = MENUS[app].find((entry) => entry.kind === "nightShift");
+	if (!row) throw new Error(`${app}'s menu has no Night Shift row`);
+	return `Night Shift: ${row.reason.join(" ")}`;
+}
+
 /** The live Mac: the Nightcap menu as the app builds it, for whatever is in front. Figma has a
  *  config rule and youtube.com an ad-hoc one; Mail has none, so only Mail is warm. */
 export function Desk({ shiftOn }: { shiftOn: boolean }) {
@@ -123,6 +130,11 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 				</div>
 			</div>
 			<Menu className={styles.menuBelow} entries={MENUS[front]} look="night" />
+			{/* Says what a pick does to Night Shift, in the menu's words. The cycle says nothing, or
+			    it would speak every 3.2 s. */}
+			<p className="sr-only" aria-live="polite">
+				{picked && nightShiftSays(picked)}
+			</p>
 		</figure>
 	);
 }
