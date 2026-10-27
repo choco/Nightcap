@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dockIcon: dockIcon,
             frontmostChanged: { [weak self] bundleId in self?.tour?.frontmostChanged(bundleId) },
             accessibilityChanged: { [weak self] in self?.onboarding?.accessibilityChanged() },
+            notificationsChanged: { [weak self] in self?.onboarding?.notificationsChanged() },
             showOnboarding: { [weak self] in self?.showOnboarding() },
             changed: { [weak self] in self?.refresh() })
         self.mac = mac
@@ -173,13 +174,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
             choose: { command in mac.handle(.commandChosen(command: command)) },
-            onNotificationsRead: {
-                Task { await mac.reportSystemState() }
-            },
+            notifications: { mac.notifications },
+            askForNotifications: { mac.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }
                 mac.handle(.onboardingFinished(websites: websites))
                 self.onboarding = nil
+                mac.watchPermissions(closely: false)
                 showStatusMenu()
                 // The Dock icon goes once the popover is up, while Nightcap stays active with it.
                 statusMenu?.pointOut(
@@ -189,6 +190,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)
         onboarding.present()
+        mac.watchPermissions(closely: true)
     }
 
     /// Sparkle starts with the launch's effects, so by now it runs if it ever will.

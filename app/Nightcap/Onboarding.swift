@@ -1,7 +1,5 @@
 import AppKit
 import NightcapCore
-import UserNotifications
-import os
 
 /// Onboarding (ADR-0011, ADR-0012, ADR-0014): one step at a time under a stage that illustrates
 /// it. Night Shift comes first, set up or kept as it is, then Nightcap's own steps. Closing the
@@ -67,13 +65,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
         backing: .buffered,
         defer: false
     )
-    private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let setup: OnboardingSteps
     private let accessibilityGranted: () -> Bool
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
     private let onFinish: (_ websites: Bool) -> Void
-    private let onNotificationsRead: () -> Void
+    private let notifications: () -> NotificationPermission
+    private let askForNotifications: () -> Void
     private let sun: Sun?
     /// The window's lasting content: the stage, whose loops would restart if it were rebuilt, and
     /// the page under it, which is.
@@ -117,14 +115,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// The first app given a rule here, which the last step's notification names.
     private var firstApp: String?
     private var addedSites = 0
-    private var notifications = UNAuthorizationStatus.notDetermined
     private var wantsNotifications = false
     /// Whether Nightcap is to open at login; nil where it never opens itself.
     private var opensAtLogin: Bool?
-    private var poll: Timer?
 
-    /// `choose` sends a command to the core, as the menu does; `onFinish` runs once onboarding
-    /// ends, by Done or the close button.
+    /// `choose` sends a command to the core, as the menu does; `notifications` says whether
+    /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
+    /// onboarding ends, by Done or the close button.
     init(
         steps setup: OnboardingSteps,
         rules: [SettingsRule],
@@ -133,7 +130,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
-        onNotificationsRead: @escaping () -> Void,
+        notifications: @escaping () -> NotificationPermission,
+        askForNotifications: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool) -> Void
     ) {
         self.setup = setup
@@ -141,7 +139,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.askForAccessibility = askForAccessibility
         self.choose = choose
         self.onFinish = onFinish
-        self.onNotificationsRead = onNotificationsRead
+        self.notifications = notifications
+        self.askForNotifications = askForNotifications
         self.sun = sun
         opensAtLogin = setup.opensAtLogin
         self.icons = icons
@@ -177,39 +176,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         draw()
         window.center()
-        Task { await readNotifications() }
-        // macOS posts nothing when notifications are switched in System Settings, so they're
-        // re-read every second while onboarding is open.
-        let poll = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                _ = Task { await self?.readNotifications() }
-            }
-        }
-        poll.tolerance = 0.25
-        RunLoop.main.add(poll, forMode: .common)
-        self.poll = poll
     }
 
-    #if DEBUG
-    /// Notifications as snapshots show them, whatever this Mac's permission is.
-    private var frozen = false
-    #endif
-
-    private func readNotifications() async {
-        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
-        #if DEBUG
-        if frozen { return }
-        #endif
-        onNotificationsRead()
-        guard status != notifications else { return }
-        notifications = status
-        // Only the last step's rows depend on it; redrawing elsewhere could end a drag.
+    /// Only the last steps' rows depend on notifications; redrawing elsewhere could end a drag.
+    func notificationsChanged() {
         if step == .lastThings || step == .ready { draw() }
     }
 
-    private var notificationsAllowed: Bool {
-        notifications == .authorized || notifications == .provisional
-    }
+    private var notificationsAllowed: Bool { notifications() == .granted }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
     /// at launch, however long it waits (measured on macOS 27). Only the forcing call, which
@@ -239,15 +213,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     func windowWillClose(_ notification: Notification) {
-        poll?.invalidate()
         if closedByUser { onFinish(websites == true) }
     }
 
     #if DEBUG
     /// The window as a PNG at `step`, for comparing against the prototype.
     func snapshot(_ step: Step, page: WebsitesPage = .ask, reviewing: Bool = false) -> Data? {
-        frozen = true
-        notifications = .notDetermined
         self.reviewing = reviewing
         guard let index = steps.firstIndex(of: step) else { return nil }
         self.index = index
@@ -485,7 +456,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     + "Nightcap snoozes the rule until the schedule’s next change, and says so in a notification."
                 // macOS shows its prompt only once, so after a refusal only System Settings can.
                 options.append(
-                    notifications == .denied
+                    notifications() == .denied
                         ? option(
                             title, detail + " Notifications are switched off for Nightcap in System Settings.",
                             button: Look.button("Open Notification Settings…", .regular) {
@@ -864,17 +835,6 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
-    private func askForNotifications() {
-        Task {
-            do {
-                _ = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-            } catch {
-                log.error("couldn't request notification permission: \(error, privacy: .public)")
-            }
-            await readNotifications()
-        }
-    }
-
     private static func addRules(_ count: Int) -> String {
         count == 0 ? "Add Rules" : count == 1 ? "Add 1 Rule" : "Add \(count) Rules"
     }
@@ -1039,7 +999,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 Choice(title: "Continue") { [weak self] in
                     guard let self else { return }
                     if let opensAtLogin { choose(.openAtLogin(opensAtLogin ? .on : .off)) }
-                    if wantsNotifications, notifications == .notDetermined { askForNotifications() }
+                    if wantsNotifications, notifications() == .notRequested { askForNotifications() }
                     advance()
                 }
             )

@@ -5,15 +5,16 @@ import Sparkle
 import UserNotifications
 import os
 
-/// Nightcap's side of the Mac, on the main thread (ADR-0002): what macOS reports, handed to the
-/// core as events, and the effects the core answers with, carried out. Every event reaches the
-/// core through here, the UIs' commands too, so every effect is carried out here.
+/// Between macOS and the core, on the main thread (ADR-0002): what macOS reports, read and handed
+/// to the core as events, and the effects the core answers with, carried out. Every event reaches
+/// the core through here, the UIs' commands too, so every effect is carried out here.
 final class Mac: NSObject {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let core: Core
     private let dockIcon: DockIcon
     private let frontmostChanged: (_ bundleId: String?) -> Void
     private let accessibilityChanged: () -> Void
+    private let notificationsChanged: () -> Void
     private let showOnboarding: () -> Void
     private let changed: () -> Void
     private(set) var nightShift: NightShiftAdapter?
@@ -21,9 +22,11 @@ final class Mac: NSObject {
     private var browserWatcher: BrowserWatcher?
     private var wakeup: DispatchSourceTimer?
     private var updater: SPUStandardUpdaterController?
-    private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon)
-    /// Re-reads the permissions every second while Settings is open, and every 30 seconds
-    /// otherwise: macOS posts nothing when notifications are switched in System Settings.
+    private lazy var updateReminders = UpdateReminders(dockIcon: dockIcon) { [weak self] title, body, id in
+        self?.notify(title: title, body: body, opens: nil, id: id)
+    }
+    /// Re-reads the permissions every second while onboarding or Settings is open, and every 30
+    /// seconds otherwise: macOS posts nothing when notifications are switched in System Settings.
     private var permissionsPoll: Timer?
     /// What the core last heard, so an unchanged re-read sends nothing.
     private var reportedPermissions: (accessibility: Bool, notifications: NotificationPermission)?
@@ -35,14 +38,15 @@ final class Mac: NSObject {
     private var carryingOut = false
 
     /// `frontmostChanged` runs as an app comes to the front, before the core hears of it;
-    /// `accessibilityChanged` as the grant flips; `showOnboarding` when the core asks for
-    /// onboarding; and `changed` once a call into the core and the calls its effects led to are
-    /// all carried out.
+    /// `accessibilityChanged` as the grant flips; `notificationsChanged` as a read finds
+    /// notifications changed; `showOnboarding` when the core asks for onboarding; and `changed`
+    /// once a call into the core and the calls its effects led to are all carried out.
     init(
         core: Core,
         dockIcon: DockIcon,
         frontmostChanged: @escaping (_ bundleId: String?) -> Void,
         accessibilityChanged: @escaping () -> Void,
+        notificationsChanged: @escaping () -> Void,
         showOnboarding: @escaping () -> Void,
         changed: @escaping () -> Void
     ) {
@@ -50,6 +54,7 @@ final class Mac: NSObject {
         self.dockIcon = dockIcon
         self.frontmostChanged = frontmostChanged
         self.accessibilityChanged = accessibilityChanged
+        self.notificationsChanged = notificationsChanged
         self.showOnboarding = showOnboarding
         self.changed = changed
         super.init()
@@ -67,6 +72,10 @@ final class Mac: NSObject {
     /// Whether Sparkle runs, which the launch's effects decide.
     var updaterRunning: Bool { updater != nil }
 
+    /// Notifications as the core last heard of them; not asked for until the first read, as the
+    /// core starts.
+    var notifications: NotificationPermission { reportedPermissions?.notifications ?? .notRequested }
+
     /// The launch's facts, then the launch itself, whose effects can open onboarding.
     func launch() {
         // The context first, so a force still in place after a crash holds without a flash.
@@ -83,6 +92,8 @@ final class Mac: NSObject {
         // Onboarding, which the launch can open, asks about opening at login only where Nightcap
         // opens itself, and starts from where the login item stands.
         reportLoginItem()
+        // Every 30 seconds from here; onboarding, which the launch can open, has the permissions
+        // read every second.
         pollPermissions(every: 30)
         handle(.launched)
         // Once now, so status is right while the notification prompt waits for an answer.
@@ -119,8 +130,8 @@ final class Mac: NSObject {
         }
     }
 
-    /// Every second while a window that shows the permissions is open, and every 30 seconds
-    /// otherwise; `closely` reads them at once too.
+    /// `closely` while onboarding or Settings, which show the permissions, is open: they're read
+    /// at once, then every second, and every 30 seconds otherwise.
     func watchPermissions(closely: Bool) {
         if closely { Task { await reportSystemState() } }
         pollPermissions(every: closely ? 1 : 30)
@@ -139,24 +150,27 @@ final class Mac: NSObject {
         }
     }
 
-    /// The login item and the permissions, each reported only when it changed: macOS posts
-    /// nothing when the user switches either in System Settings.
+    /// The login item, the strength and the permissions, each reported only when it changed:
+    /// macOS posts nothing when the user switches the login item or notifications in System
+    /// Settings. Notifications are read here alone, for the core and onboarding both.
     func reportSystemState() async {
         reportLoginItem()
         reportStrength()
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        let notifications: NotificationPermission =
+        let read: NotificationPermission =
             switch settings.authorizationStatus {
             case .notDetermined: .notRequested
             case .denied: .denied
             default: .granted
             }
         guard let accessibility else { return }
-        let permissions = (accessibility: accessibility.granted, notifications: notifications)
+        let permissions = (accessibility: accessibility.granted, notifications: read)
         if let reportedPermissions, reportedPermissions == permissions { return }
+        let notificationsDiffer = read != notifications
         reportedPermissions = permissions
         handle(
             .permissionsChanged(accessibility: permissions.accessibility, notifications: permissions.notifications))
+        if notificationsDiffer { notificationsChanged() }
     }
 
     func checkForUpdates() {
@@ -410,13 +424,14 @@ final class Mac: NSObject {
     }
 
     /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
-    /// dropped while the prompt waits for an answer.
-    private func notify(title: String, body: String, opens: String?) {
+    /// dropped while the prompt waits for an answer. A notification posted under an `id` replaces
+    /// any earlier one under it.
+    private func notify(title: String, body: String, opens: String?, id: String = UUID().uuidString) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         if let opens { content.userInfo = [pageKey: opens] }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         Task {
             let center = UNUserNotificationCenter.current()
             do {
@@ -435,8 +450,8 @@ final class Mac: NSObject {
     /// that, so then Nightcap's page in Notification settings.
     private func allowNotifications() {
         Task {
-            guard await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined
-            else {
+            await reportSystemState()
+            guard notifications == .notRequested else {
                 let pane =
                     "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
                     + "?id=\(Bundle.main.bundleIdentifier!)"
