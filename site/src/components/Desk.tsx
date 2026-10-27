@@ -129,7 +129,16 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					<span />
 				</div>
 			</div>
-			<Menu className={styles.menuBelow} entries={MENUS[front]} look="night" />
+			<div className={styles.menusBelow}>
+				{(Object.keys(APPS) as AppName[]).map((app) => (
+					<Menu
+						key={app}
+						className={cx(styles.menuBelow, app !== front && styles.unseen)}
+						entries={MENUS[app]}
+						look="night"
+					/>
+				))}
+			</div>
 			{/* Says what a pick does to Night Shift, in the menu's words. The cycle says nothing, or
 			    it would speak every 3.2 s. */}
 			<p className="sr-only" aria-live="polite">

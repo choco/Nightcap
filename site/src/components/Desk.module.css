@@ -159,10 +159,20 @@
 	top: 32px;
 	width: 252px;
 }
-.menuBelow {
+/* On phones the menu sits below the screen. Every app's menu shares one cell, all but the front
+   one unseen, so the cell keeps the tallest menu's height whichever app is in front, and the
+   cycle moves nothing below it. */
+.menusBelow {
 	display: none;
 	align-self: flex-end;
 	width: min(272px, 100%);
+}
+.menuBelow {
+	grid-area: 1 / 1;
+	align-self: start;
+}
+.unseen {
+	visibility: hidden;
 }
 .dock {
 	position: absolute;
@@ -243,8 +253,8 @@
 	.menuInline {
 		display: none;
 	}
-	.menuBelow {
-		display: block;
+	.menusBelow {
+		display: grid;
 	}
 	.windowSlot {
 		top: 16%;
