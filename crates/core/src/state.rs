@@ -13,7 +13,7 @@ use crate::config::NightShiftConfig;
 
 const VERSION: u32 = 1;
 
-#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Persisted {
     /// Every place's hold and timer, each with its end (ADR-0018).

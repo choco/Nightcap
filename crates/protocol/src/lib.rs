@@ -619,6 +619,12 @@ impl OnOff {
     }
 }
 
+impl From<bool> for OnOff {
+    fn from(on: bool) -> Self {
+        if on { Self::On } else { Self::Off }
+    }
+}
+
 impl fmt::Display for OnOff {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {

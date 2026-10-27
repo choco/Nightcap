@@ -415,7 +415,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             return Ok(());
         }
         RulesAction::Add { identity, on } => {
-            let says = if on { OnOff::On } else { OnOff::Off };
+            let says = OnOff::from(on);
             let done = format!("Added {identity}, which turns Night Shift {says}.");
             (protocol::Command::AddRule { identity, says }, done)
         }
@@ -506,11 +506,16 @@ fn print_status(status: &Status) {
         status.decision.reasons.first(),
         None | Some(Reason::Schedule { .. })
     );
+    let observed = match status.night_shift {
+        NightShift::Unavailable => None,
+        NightShift::On => Some(OnOff::On),
+        NightShift::Off => Some(OnOff::Off),
+    };
     if says_state
         && status
             .decision
             .state
-            .is_some_and(|state| state.to_string() == night_shift)
+            .is_some_and(|state| Some(state) == observed)
     {
         println!("Night Shift: {decided}");
     } else {
@@ -641,7 +646,10 @@ fn request(
 
 /// Connects to the daemon, retrying for up to `wait` while it starts.
 fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> {
-    let deadline = Instant::now() + wait.unwrap_or_default();
+    let wait = wait.unwrap_or_default();
+    let deadline = Instant::now()
+        .checked_add(wait)
+        .with_context(|| format!("can't wait {wait:?} for Nightcap: that's too long"))?;
     loop {
         match UnixStream::connect(socket) {
             Ok(stream) => return Ok(stream),

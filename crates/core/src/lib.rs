@@ -154,7 +154,7 @@ pub enum Command {
 }
 
 /// What the menu shows. The core decides it; the shell only draws it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Menu {
     pub icon: MenuIcon,
     /// The menu's first item, after the problem line.
@@ -165,7 +165,7 @@ pub struct Menu {
 }
 
 /// The menu's Night Shift item: everywhere's switch, with what decides the screen (ADR-0018).
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct NightShiftItem {
     /// Checked while Night Shift is on everywhere.
     pub on: bool,
@@ -176,7 +176,7 @@ pub struct NightShiftItem {
 }
 
 /// What the settings window shows, pulled like the menu: the shell only draws it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Settings {
     /// "Check websites", locked while the config sets `websites`.
     pub website_checking: SettingsSwitch,
@@ -194,7 +194,7 @@ pub struct Settings {
 }
 
 /// An app's or site's temporary on or off as the Rules tab lists it, with ending it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SettingsLayers {
     pub place: Place,
     /// "Night Shift off until 20:00".
@@ -203,7 +203,7 @@ pub struct SettingsLayers {
 }
 
 /// What onboarding asks, pulled like the menu: the shell only draws it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OnboardingSteps {
     pub night_shift: OnboardingNightShift,
     /// Website checking as the config sets it, which answers its step for good.
@@ -213,7 +213,7 @@ pub struct OnboardingSteps {
 }
 
 /// Onboarding's Night Shift steps, which set the strength and the schedule (ADR-0014).
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct OnboardingNightShift {
     /// How warm, unless the config sets it or the strength can't be read.
     pub ask_strength: bool,
@@ -227,7 +227,7 @@ pub struct OnboardingNightShift {
 }
 
 /// A rule as the Rules tab lists it: what it says, its label and what can be done about it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SettingsRule {
     pub identity: RuleIdentity,
     pub says: OnOff,
@@ -239,7 +239,7 @@ pub struct SettingsRule {
 }
 
 /// Choosing it sends `command` back as `Event::CommandChosen`.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct RuleAction {
     pub title: String,
     pub command: Command,
@@ -259,7 +259,7 @@ pub fn is_bundle_id(text: String) -> bool {
 }
 
 /// A check as Settings shows it, with what can be done about it.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SettingsCheck {
     pub kind: CheckKind,
     pub state: CheckState,
@@ -270,7 +270,7 @@ pub struct SettingsCheck {
     pub accept: Option<FixButton>,
 }
 
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FixButton {
     pub title: String,
     pub fix: Fix,
@@ -297,7 +297,7 @@ pub enum Fix {
 }
 
 /// Flipping it sends `command` back as `Event::CommandChosen`.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct SettingsSwitch {
     pub on: bool,
     /// Set by the config, so Settings can't change it.
@@ -321,7 +321,7 @@ pub enum MenuIcon {
     Unavailable,
 }
 
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum MenuEntry {
     /// The strength's slider, 0 to 100, under the Night Shift item. Moving it sends
     /// `PreviewStrength`, and letting go sends `Strength`.
@@ -336,7 +336,7 @@ pub enum MenuEntry {
 }
 
 /// A place row: everywhere's under the Night Shift item, then the front app's and site's.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct PlaceRow {
     pub title: String,
     /// A site's domain, on a line of its own under the title, which says "This Site" so that a
@@ -362,7 +362,7 @@ pub enum RowImage {
     Site,
 }
 
-#[derive(Debug, Clone, PartialEq, uniffi::Enum)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
 pub enum RowItem {
     Choice {
         item: MenuItem,
@@ -379,7 +379,7 @@ pub enum RowItem {
 }
 
 /// Choosing it sends `command` back as `Event::CommandChosen`.
-#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct MenuItem {
     pub title: String,
     /// A line under the title, e.g. when a length ends.
@@ -480,7 +480,7 @@ pub enum LoginItem {
     NotRegistered,
 }
 
-#[derive(Debug, PartialEq, uniffi::Enum)]
+#[derive(Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum Effect {
     /// Registers Nightcap to open at login, as the user chose (ADR-0011).
     RegisterLoginItem,
@@ -797,7 +797,7 @@ impl Core {
             website_checking: SettingsSwitch {
                 on,
                 locked: state.config_websites.is_some(),
-                command: Command::Websites(on_off(!on)),
+                command: Command::Websites(OnOff::from(!on)),
             },
             // Registered but waiting for approval counts as on; its check explains the rest.
             config_path: self.config_file.display().to_string(),
@@ -829,7 +829,7 @@ impl Core {
                     SettingsSwitch {
                         on,
                         locked: false,
-                        command: Command::OpenAtLogin(on_off(!on)),
+                        command: Command::OpenAtLogin(OnOff::from(!on)),
                     }
                 }),
             checks: state
@@ -865,7 +865,7 @@ impl Core {
         }
         let now = self.clock.now();
         let decision = state.decide();
-        let observed = on_off(state.night_shift == NightShift::On);
+        let observed = OnOff::from(state.night_shift == NightShift::On);
         let screen = decision.state.unwrap_or(observed);
         let everywhere = state.says(&Place::Everywhere).unwrap_or(observed);
         let mut entries = Vec::new();
@@ -1465,7 +1465,7 @@ impl Core {
             Command::Toggle => {
                 let everywhere = state
                     .says(&Place::Everywhere)
-                    .unwrap_or(on_off(night_shift == NightShift::On));
+                    .unwrap_or(OnOff::from(night_shift == NightShift::On));
                 state.switch(everywhere.other());
                 Ok(())
             }
@@ -1550,7 +1550,7 @@ impl Core {
     /// transition; a match needs nothing; anything else is an external change, handled like the
     /// equivalent command (ADR-0018).
     fn reconcile(&self, state: &mut State, enabled: bool) -> Option<Effect> {
-        if state.left_by_last_run.take() == Some(on_off(enabled)) {
+        if state.left_by_last_run.take() == Some(OnOff::from(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
             return None;
         }
@@ -1583,11 +1583,9 @@ impl Core {
             state.applied_until = transition;
             return None;
         }
-        tracing::info!(
-            "Night Shift turned {} outside Nightcap",
-            if enabled { "on" } else { "off" }
-        );
-        state.adopt(on_off(enabled))
+        let observed = OnOff::from(enabled);
+        tracing::info!("Night Shift turned {observed} outside Nightcap");
+        state.adopt(observed)
     }
 
     /// Applies every schedule transition that came due since the last event, and ends the
@@ -1885,7 +1883,7 @@ impl Core {
             scheduled_state: state
                 .timeline
                 .scheduled_state(state.applied_until)
-                .map(on_off),
+                .map(OnOff::from),
             next_transition: state.timeline.next_transition(state.applied_until),
             frontmost_app: state.context.app.clone().map(String::from),
             watching: state.watch.is_some(),
@@ -1898,7 +1896,7 @@ impl Core {
             config_error: state.config_error.as_ref().map(ToString::to_string),
             ad_hoc_error: state.ad_hoc_error.as_ref().map(ToString::to_string),
             website_checking: WebsiteChecking {
-                state: on_off(state.website_checking()),
+                state: OnOff::from(state.website_checking()),
                 from_config: state.config_websites.is_some(),
             },
             layers: state.layers.clone(),
@@ -2085,7 +2083,7 @@ impl State {
     /// an off. None without a schedule.
     fn next_turn(&self, state: OnOff) -> Option<Timestamp> {
         let first = self.timeline.next_transition(self.applied_until)?;
-        if self.timeline.scheduled_state(first).map(on_off) != Some(state) {
+        if self.timeline.scheduled_state(first).map(OnOff::from) != Some(state) {
             return Some(first);
         }
         self.timeline.next_transition(first)
@@ -2224,7 +2222,7 @@ impl State {
             notifications_wanted: self.notifications_wanted,
             open_at_login: self.open_at_login,
             announced: self.announced.clone(),
-            night_shift: wanted(&self.decide()).map(on_off),
+            night_shift: wanted(&self.decide()).map(OnOff::from),
             until: self.timeline.next_transition(self.applied_until),
             applied_from_config: self.applied_from_config,
             schedule_off_accepted: self.schedule_off_accepted,
@@ -2282,7 +2280,7 @@ impl State {
         let place = Place::Everywhere;
         let state = self
             .says(&place)
-            .unwrap_or(on_off(self.night_shift == NightShift::On))
+            .unwrap_or(OnOff::from(self.night_shift == NightShift::On))
             .other();
         let mut items = Vec::new();
         let switched = self.after_switch(state);
@@ -2335,7 +2333,7 @@ impl State {
     fn place_row(&self, place: &Place, now: Timestamp) -> PlaceRow {
         let state = self
             .value_at(place)
-            .unwrap_or(on_off(self.night_shift == NightShift::On))
+            .unwrap_or(OnOff::from(self.night_shift == NightShift::On))
             .other();
         let rule = self.rule_at(place);
         let layered = self.layers_at(place).is_some();
@@ -2931,7 +2929,7 @@ impl State {
                 "website checking is set by `websites` in the config",
             ));
         }
-        tracing::info!("website checking {}", if on { "on" } else { "off" });
+        tracing::info!("website checking {}", OnOff::from(on));
         self.websites = on;
         Ok(())
     }
@@ -2988,7 +2986,7 @@ impl State {
             scheduled_state: self
                 .timeline
                 .scheduled_state(self.applied_until)
-                .map(on_off),
+                .map(OnOff::from),
             next_transition: self.timeline.next_transition(self.applied_until),
         }
     }
@@ -3007,7 +3005,7 @@ impl State {
         }
         self.timeline
             .scheduled_state(self.applied_until)
-            .map(on_off)
+            .map(OnOff::from)
     }
 
     fn has_schedule(&self) -> bool {
@@ -3222,10 +3220,6 @@ fn loggable(identity: &RuleIdentity) -> String {
         RuleIdentity::App(_) => identity.to_string(),
         RuleIdentity::Domain(_) => "a domain rule".to_owned(),
     }
-}
-
-fn on_off(on: bool) -> OnOff {
-    if on { OnOff::On } else { OnOff::Off }
 }
 
 #[cfg(test)]
