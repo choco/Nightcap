@@ -10,11 +10,13 @@ use nightcap_protocol::{
 use crate::domain::{self, Host};
 use crate::schedule::Timeline;
 
-/// What rules match against.
+/// What rules match against, and the front app's name, which the menu calls it by.
 #[derive(Default)]
 pub(crate) struct Context {
     /// The frontmost app's bundle ID, when it has one a rule could name.
     pub app: Option<BundleId>,
+    /// The frontmost app's name as the user sees it.
+    pub app_name: Option<String>,
     /// The frontmost browser's host, while it's watched and known.
     pub host: Option<Host>,
 }

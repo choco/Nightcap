@@ -9,6 +9,7 @@ mod file;
 mod ipc;
 mod logging;
 mod places;
+mod rows;
 mod schedule;
 mod state;
 
@@ -30,7 +31,8 @@ use nightcap_protocol::{
 
 use config::NightShiftConfig;
 use domain::Host;
-use places::{Context, Kept, Look, Places, Refusal, Stack, World, place_identity};
+use places::{Context, Kept, Places, Refusal, Stack, World};
+use rows::{Rows, clock_time, here, layer_text, name_in_front, until_text, whose};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
 
 #[uniffi::remote(Enum)]
@@ -626,8 +628,6 @@ struct State {
     /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
     /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
     keep_on_with_schedule_off: bool,
-    /// The frontmost app's name, for the menu.
-    app_name: Option<String>,
     /// Whether the frontmost app is in the shell's browser list.
     is_browser: bool,
     watch: Option<Watch>,
@@ -838,7 +838,11 @@ impl Core {
                     place: layers.place.clone(),
                     label: format!(
                         "Night Shift {}",
-                        state.layer_text(layers.timer.as_ref(), layers.hold.as_ref())
+                        layer_text(
+                            layers.timer.as_ref(),
+                            layers.hold.as_ref(),
+                            &state.facts.timeline.zone
+                        )
                     ),
                     action: RuleAction {
                         title: "End".to_owned(),
@@ -889,13 +893,19 @@ impl Core {
             };
         }
         let now = self.clock.now();
-        let look = state.places.look(&state.facts.world(now));
+        let world = state.facts.world(now);
+        let look = state.places.look(&world);
+        let rows = Rows {
+            look: &look,
+            world: &world,
+            lengths: &state.lengths,
+        };
         let everywhere = look.everywhere.gives;
         let mut entries = Vec::new();
         if let Some(value) = state.strength {
             entries.push(MenuEntry::Strength { value });
         }
-        if let Some(row) = state.everywhere_row(&look, now) {
+        if let Some(row) = rows.everywhere() {
             entries.push(MenuEntry::Row { row });
         }
         let front: Vec<&Stack> = look.app.iter().chain(&look.site).collect();
@@ -904,7 +914,7 @@ impl Core {
         }
         for stack in front {
             entries.push(MenuEntry::Row {
-                row: state.place_row(stack, now),
+                row: rows.place(stack),
             });
         }
         Menu {
@@ -1015,7 +1025,7 @@ impl Core {
                         .ok()
                 });
                 state.facts.context.app = bundle_id;
-                state.app_name = name;
+                state.facts.context.app_name = name;
                 state.is_browser = is_browser;
                 Vec::new()
             }
@@ -1306,7 +1316,6 @@ impl Core {
                 config_night_shift: config.night_shift,
                 applied_from_config: persisted.applied_from_config,
                 keep_on_with_schedule_off: false,
-                app_name: None,
                 is_browser: false,
                 watch: None,
                 generation: 0,
@@ -1592,8 +1601,8 @@ impl Core {
             title: format!("Night Shift turned {} outside Nightcap", snooze.state),
             body: format!(
                 "Snoozed the {} rule {}.",
-                state.name_in_front(&snooze.rule),
-                state.until_text(snooze.until, snooze.state)
+                name_in_front(&snooze.rule, &state.facts.context),
+                until_text(snooze.until, snooze.state, &state.facts.timeline.zone)
             ),
             opens: None,
         })
@@ -1974,259 +1983,6 @@ impl State {
         }
     }
 
-    /// The row under the Night Shift item (ADR-0018): everywhere, whatever is in front, with
-    /// everywhere's lengths but the switch's own, and none that would come to the same as
-    /// clicking the switch. None when it would offer nothing.
-    fn everywhere_row(&self, look: &Look<'_>, now: Timestamp) -> Option<PlaceRow> {
-        let everywhere = &look.everywhere;
-        let place = &everywhere.place;
-        let state = everywhere.gives.other();
-        let mut items = Vec::new();
-        // While the tour stands in, what's under everywhere's layers is the tour's on, which the
-        // switch gives back; the schedule isn't there to go back to.
-        let schedule_says_so = matches!(
-            everywhere.base,
-            Some(Reason::Schedule { state: scheduled, until: Some(_) }) if scheduled == state
-        );
-        if schedule_says_so
-            && (everywhere.timer.is_some() || everywhere.hold.is_some())
-            && look.after_switch.is_some()
-        {
-            items.push(choice(
-                "Back to the Schedule",
-                Command::Reset(place.clone()),
-            ));
-        }
-        let mut lengths = Vec::new();
-        if everywhere.after_timer != Some(state) {
-            lengths.extend(self.timers(place, state, now, "Turn {} Everywhere"));
-        }
-        if everywhere.after_reset != Some(state)
-            && let Some(until) = self
-                .facts
-                .timeline
-                .next_turn(self.facts.applied_until, state)
-        {
-            lengths.push(self.until_turn(place, state, until));
-        }
-        if !items.is_empty() && !lengths.is_empty() {
-            items.push(RowItem::Separator);
-        }
-        items.extend(lengths);
-        if items.is_empty() {
-            return None;
-        }
-        let decision = &look.decision;
-        Some(PlaceRow {
-            title: format!("Turn {}", capitalized(&state.to_string())),
-            site: None,
-            // The app or site in front keeps the other way, which the row can't change there.
-            subtitle: (decision.place != Place::Everywhere && decision.state != Some(state))
-                .then(|| format!("Everywhere but {}", self.here(&decision.place))),
-            image: RowImage::Everywhere,
-            indented: false,
-            items,
-        })
-    }
-
-    /// The row for an app or site in front (ADR-0018): that place alone, with undoing first:
-    /// putting its rule back where that goes the right way, and removing a rule of the user's;
-    /// then its lengths, then for good, which is a rule.
-    fn place_row(&self, stack: &Stack, now: Timestamp) -> PlaceRow {
-        let place = &stack.place;
-        let state = stack.gives.other();
-        let rule = rule_of(stack);
-        let mut items = Vec::new();
-        let below = stack.after_reset;
-        if (stack.timer.is_some() || stack.hold.is_some()) && below == Some(state) {
-            // A site follows its browser where the browser has its own say.
-            let title = match (rule, &stack.inherits) {
-                (Some(_), _) => "Put the Rule Back".to_owned(),
-                (None, Some((Place::App(bundle_id), _))) => format!(
-                    "Like the Rest of {}",
-                    self.name_in_front(&RuleIdentity::App(bundle_id.clone()))
-                ),
-                (None, _) => "Like Everywhere Else".to_owned(),
-            };
-            items.push(choice(&title, Command::Reset(place.clone())));
-        }
-        // Removing a rule is the user's to do whenever they like, even where nothing on screen
-        // would change.
-        if let Some(rule) = rule
-            && rule.source != RuleSource::Config
-        {
-            items.push(choice(
-                "Remove Your Rule",
-                Command::RemoveRule(rule.identity.clone()),
-            ));
-        }
-        let mut lengths = Vec::new();
-        if stack.after_timer != Some(state) {
-            let title = format!("Turn {{}} {}", self.here(place));
-            lengths.extend(self.timers(place, state, now, &title));
-        }
-        if below != Some(state)
-            && let Some(until) = self
-                .facts
-                .timeline
-                .next_turn(self.facts.applied_until, state)
-        {
-            lengths.push(self.until_turn(place, state, until));
-        }
-        let always = match rule {
-            Some(rule) if rule.says == state => None,
-            Some(rule) if rule.source == RuleSource::Config => Some(MenuItem {
-                title: "Always".to_owned(),
-                subtitle: Some("Your config decides".to_owned()),
-                enabled: false,
-                command: Command::AddRule {
-                    identity: rule.identity.clone(),
-                    says: state,
-                },
-            }),
-            _ => place_identity(place).map(|identity| MenuItem {
-                title: "Always".to_owned(),
-                subtitle: None,
-                enabled: true,
-                command: Command::AddRule {
-                    identity,
-                    says: state,
-                },
-            }),
-        };
-        if !items.is_empty() && !lengths.is_empty() {
-            items.push(RowItem::Separator);
-        }
-        items.extend(lengths);
-        if let Some(item) = always {
-            if !items.is_empty() {
-                items.push(RowItem::Separator);
-            }
-            items.push(RowItem::Choice { item });
-        }
-        let offers = items.iter().any(|item| match item {
-            RowItem::Choice { item } => item.enabled,
-            RowItem::PickTime { .. } => true,
-            RowItem::Separator => false,
-        });
-        let here = match place {
-            Place::Domain(_) => "at This Site".to_owned(),
-            _ => self.here(place),
-        };
-        PlaceRow {
-            title: if offers {
-                format!("Turn {} {here}", capitalized(&state.to_string()))
-            } else {
-                capitalized(&here)
-            },
-            site: match place {
-                Place::Domain(domain) => Some(domain.to_string()),
-                _ => None,
-            },
-            subtitle: self.stack_text(stack),
-            image: match place {
-                Place::App(bundle_id) => RowImage::App {
-                    bundle_id: bundle_id.to_string(),
-                },
-                Place::Domain(_) | Place::Everywhere => RowImage::Site,
-            },
-            indented: matches!(place, Place::Domain(_)),
-            items: if offers { items } else { Vec::new() },
-        }
-    }
-
-    /// The menu's lengths for a place, then Custom…, whose window `title` names, with `{}` for
-    /// on or off.
-    fn timers(&self, place: &Place, state: OnOff, now: Timestamp, title: &str) -> Vec<RowItem> {
-        let mut items: Vec<_> = self
-            .lengths
-            .iter()
-            .map(|duration| {
-                choice(
-                    &format!("For {}", length_title(*duration)),
-                    Command::Set {
-                        place: place.clone(),
-                        state,
-                        length: Length::For(*duration),
-                    },
-                )
-            })
-            .collect();
-        #[expect(
-            clippy::expect_used,
-            reason = "rounding fails only beside jiff's limits, millennia from any clock"
-        )]
-        let start = (now + SignedDuration::from_hours(1))
-            .round(
-                jiff::TimestampRound::new()
-                    .smallest(jiff::Unit::Minute)
-                    .increment(15)
-                    .mode(jiff::RoundMode::Ceil),
-            )
-            .expect("a quarter hour rounds any time");
-        items.push(RowItem::PickTime {
-            title: title.replace("{}", &capitalized(&state.to_string())),
-            place: place.clone(),
-            state,
-            start,
-        });
-        items
-    }
-
-    fn until_turn(&self, place: &Place, state: OnOff, until: Timestamp) -> RowItem {
-        // The time alone could be any clock's; the line under it says it's the schedule's.
-        let moment = match (&self.facts.timeline.schedule, state) {
-            (Some(CheckedSchedule::SunsetToSunrise), OnOff::On) => "At sunrise",
-            (Some(CheckedSchedule::SunsetToSunrise), OnOff::Off) => "At sunset",
-            (_, OnOff::On) => "When the schedule ends",
-            (_, OnOff::Off) => "When the schedule starts",
-        };
-        RowItem::Choice {
-            item: MenuItem {
-                title: format!("Until {}", self.clock_time(until)),
-                subtitle: Some(moment.to_owned()),
-                enabled: true,
-                command: Command::Set {
-                    place: place.clone(),
-                    state,
-                    length: Length::UntilScheduleTurns,
-                },
-            },
-        }
-    }
-
-    /// A place's timer and hold, top down: "on until 23:30, then off until 07:00".
-    fn layer_text(&self, timer: Option<&Layer>, hold: Option<&Layer>) -> String {
-        [timer, hold]
-            .into_iter()
-            .flatten()
-            .map(|layer| {
-                format!(
-                    "{} {}",
-                    layer.state,
-                    self.until_text(layer.until, layer.state)
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", then ")
-    }
-
-    /// What a place holds, top down, for its row: "On until 07:00, then your config’s rule".
-    fn stack_text(&self, stack: &Stack) -> Option<String> {
-        let mut parts: Vec<String> = (stack.timer.is_some() || stack.hold.is_some())
-            .then(|| self.layer_text(stack.timer.as_ref(), stack.hold.as_ref()))
-            .into_iter()
-            .collect();
-        match rule_of(stack) {
-            Some(rule) if parts.is_empty() => {
-                parts.push(format!("always {}: {}", rule.says, whose(rule)));
-            }
-            Some(rule) => parts.push(whose(rule).to_owned()),
-            None => {}
-        }
-        (!parts.is_empty()).then(|| capitalized(&parts.join(", then ")))
-    }
-
     /// The reason under the menu's Night Shift item: what decides the screen.
     fn menu_reason(&self, decision: &Decision) -> Option<String> {
         let Some(top) = decision.reasons.first() else {
@@ -2236,19 +1992,22 @@ impl State {
         };
         let at = match &decision.place {
             Place::Everywhere => String::new(),
-            place => format!(" {}", self.here(place)),
+            place => format!(" {}", here(place, &self.facts.context)),
         };
         let text = match top {
             Reason::Timer(layer) | Reason::Hold(layer) => format!(
                 "{}{at} {}",
                 layer.state,
-                self.until_text(layer.until, layer.state)
+                until_text(layer.until, layer.state, &self.facts.timeline.zone)
             ),
             Reason::Rule(rule) => format!("{}{at}: {}", rule.says, whose(rule)),
             Reason::Tour => "on for the tour".to_owned(),
             Reason::Schedule { until, .. } => match (until, self.facts.timeline.schedule) {
                 (Some(until), _) => {
-                    format!("following the schedule until {}", self.clock_time(*until))
+                    format!(
+                        "following the schedule until {}",
+                        clock_time(*until, &self.facts.timeline.zone)
+                    )
                 }
                 (None, Some(CheckedSchedule::Off)) => "no schedule".to_owned(),
                 (None, _) => "following the schedule".to_owned(),
@@ -2272,7 +2031,10 @@ impl State {
         let (label, action) = match (snooze, rule.source) {
             (_, RuleSource::Tour) => return None,
             (Some(layer), _) => (
-                format!("Snoozed {}", self.until_text(layer.until, layer.state)),
+                format!(
+                    "Snoozed {}",
+                    until_text(layer.until, layer.state, &self.facts.timeline.zone)
+                ),
                 action("Put Back", Command::Reset(place)),
             ),
             (None, RuleSource::Config) => ("From your config".to_owned(), None),
@@ -2288,21 +2050,6 @@ impl State {
             snoozed: snooze.is_some(),
             action,
         })
-    }
-
-    /// "until 07:00", or "until you turn it on" for an off with no end.
-    fn until_text(&self, until: Option<Timestamp>, state: OnOff) -> String {
-        match until {
-            Some(until) => format!("until {}", self.clock_time(until)),
-            None => format!("until you turn it {}", state.other()),
-        }
-    }
-
-    /// A time of day in the user's time zone, as the menu shows it.
-    fn clock_time(&self, at: Timestamp) -> String {
-        at.to_zoned(self.facts.timeline.zone.clone())
-            .strftime("%H:%M")
-            .to_string()
     }
 
     /// What Settings offers for a check: putting back what the user set up, and accepting
@@ -2531,18 +2278,6 @@ impl State {
         checks
     }
 
-    /// An app rule's app by its name when it's the frontmost one, and a domain rule's domain.
-    fn name_in_front(&self, identity: &RuleIdentity) -> String {
-        match identity {
-            RuleIdentity::App(bundle_id) => self
-                .app_name
-                .clone()
-                .filter(|_| self.facts.context.app.as_ref() == Some(bundle_id))
-                .unwrap_or_else(|| bundle_id.to_string()),
-            RuleIdentity::Domain(domain) => domain.to_string(),
-        }
-    }
-
     /// The notification for a problem that appeared on its own; Night Shift being unavailable is
     /// a fact about the Mac, and switched-off notifications can't announce themselves.
     fn notice(&self, kind: CheckKind) -> Option<(String, String)> {
@@ -2605,62 +2340,11 @@ impl State {
             )),
         }
     }
-
-    /// "in Figma" for the front app, by its name, "at figma.com" for a site, or "everywhere".
-    fn here(&self, place: &Place) -> String {
-        match place {
-            Place::Everywhere => "everywhere".to_owned(),
-            Place::App(bundle_id) => format!(
-                "in {}",
-                self.name_in_front(&RuleIdentity::App(bundle_id.clone()))
-            ),
-            Place::Domain(domain) => format!("at {domain}"),
-        }
-    }
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.
 fn wanted(decision: &Decision) -> Option<bool> {
     decision.state.map(|state| state == OnOff::On)
-}
-
-fn choice(title: &str, command: Command) -> RowItem {
-    RowItem::Choice {
-        item: MenuItem {
-            title: title.to_owned(),
-            subtitle: None,
-            enabled: true,
-            command,
-        },
-    }
-}
-
-/// "30 Minutes", "1 Hour", "1 Hour 30 Minutes".
-fn length_title(duration: SignedDuration) -> String {
-    let minutes = duration.as_mins();
-    let unit =
-        |count: i64, name: &str| format!("{count} {name}{}", if count == 1 { "" } else { "s" });
-    match (minutes / 60, minutes % 60) {
-        (0, minutes) => unit(minutes, "Minute"),
-        (hours, 0) => unit(hours, "Hour"),
-        (hours, minutes) => format!("{} {}", unit(hours, "Hour"), unit(minutes, "Minute")),
-    }
-}
-
-/// The rule at a place's base, which for everywhere is none.
-fn rule_of(stack: &Stack) -> Option<&Rule> {
-    match &stack.base {
-        Some(Reason::Rule(rule)) => Some(rule),
-        _ => None,
-    }
-}
-
-fn whose(rule: &Rule) -> &'static str {
-    match rule.source {
-        RuleSource::Config => "your config’s rule",
-        RuleSource::AdHoc => "your rule",
-        RuleSource::Tour => "the tour’s rule",
-    }
 }
 
 /// "a", "a and b", "a, b and c".
