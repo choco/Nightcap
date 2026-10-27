@@ -73,7 +73,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     /// The tab with the problem the menu points at: General's first, then Rules'.
     static func tab(for settings: Settings) -> Tab {
-        let problems = settings.checks.filter { $0.state == .drifted || $0.state == .broken }.map(\.kind)
+        let problems = settings.checks.filter(\.isProblem).map(\.kind)
         return problems.isEmpty || problems.contains(where: { checksByTab[.general]!.contains($0) })
             ? .general : .rules
     }
@@ -216,9 +216,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         for item in window?.toolbar?.items ?? [] {
             guard let tab = Tab(rawValue: item.itemIdentifier.rawValue) else { continue }
             let kinds = Self.checksByTab[tab] ?? []
-            let problem = settings.checks.contains {
-                kinds.contains($0.kind) && ($0.state == .drifted || $0.state == .broken)
-            }
+            let problem = settings.checks.contains { kinds.contains($0.kind) && $0.isProblem }
             item.badge = problem ? .indicator : nil
         }
     }
@@ -316,9 +314,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let toggle = NSSwitch()
         toggle.state = openAtLogin.on ? .on : .off
         Look.attach(toggle) { [choose] in choose(openAtLogin.command) }
-        let problem = settings.checks.first {
-            $0.kind == .openAtLogin && ($0.state == .drifted || $0.state == .broken)
-        }
+        let problem = settings.checks.first { $0.kind == .openAtLogin && $0.isProblem }
         return [cell(row(title: "Open at login", detail: nil, accessory: toggle), problem)]
     }
 
@@ -327,7 +323,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let path = (settings.configPath as NSString).abbreviatingWithTildeInPath
         var files = [cell(row(title: "Config file", detail: path, accessory: nil), check(.configFile))]
         // The ad-hoc rules file is mentioned only when something's wrong with it.
-        if let adHoc = check(.adHocRules), adHoc.state == .drifted || adHoc.state == .broken {
+        if let adHoc = check(.adHocRules), adHoc.isProblem {
             files.append(cell(row(title: "Ad-hoc rules", detail: nil, accessory: nil), adHoc))
         }
         let rules =
@@ -642,4 +638,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         }
         return Look.padded(status, top: 0, bottom: 11)
     }
+}
+
+extension SettingsCheck {
+    /// A check that needs the user: drift, or broken.
+    var isProblem: Bool { state == .drifted || state == .broken }
 }
