@@ -1686,6 +1686,7 @@ impl Core {
         // Mid-tour, rules.toml keeps the rules the tour's end puts back.
         let graduated = match &mut state.tour {
             Some(tour) => {
+                tour.rules.retain(outside_config);
                 let before = tour.ad_hoc.len();
                 tour.ad_hoc.retain(outside_config);
                 before - tour.ad_hoc.len()

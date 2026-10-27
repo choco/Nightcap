@@ -5798,6 +5798,32 @@ fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
 }
 
 #[test]
+fn a_config_rule_reloaded_mid_tour_replaces_the_tours_rule_for_its_app() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
+    start_tour(&core);
+    send(&core, &socket, &wakes, add_rule(sample_rule().identity));
+    write_config(&socket, &format!("[rules.on]\napp = [\"{SAMPLE}\"]\n"));
+
+    exchange(&core, &socket, &wakes, Request::Reload);
+
+    let config_rule = Rule {
+        source: RuleSource::Config,
+        says: OnOff::On,
+        ..sample_rule()
+    };
+    assert_eq!(status_of(&core, &socket, &wakes).rules, vec![config_rule]);
+    let (_, response) = send(
+        &core,
+        &socket,
+        &wakes,
+        Command::RemoveRule(sample_rule().identity),
+    );
+    assert_eq!(refusal(response), ErrorCode::ConfigRule);
+}
+
+#[test]
 fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
