@@ -14,7 +14,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -504,13 +504,131 @@ pub struct Status {
     pub checks: Vec<Check>,
 }
 
-/// One thing Nightcap depends on, compared with what the user set up.
+/// One thing Nightcap depends on, compared with what the user set up: what it found, which each
+/// client words itself, and where that leaves it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
-    pub kind: CheckKind,
+    /// Written as the check's `kind` and, beside it, its `detail`.
+    #[serde(flatten)]
+    pub detail: CheckDetail,
     pub state: CheckState,
-    /// One line on how it stands, for Settings and `status`.
-    pub text: String,
+}
+
+/// What a check found, by its kind.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
+pub enum CheckDetail {
+    NightShift(NightShiftDetail),
+    Accessibility(AccessibilityDetail),
+    Notifications(NotificationsDetail),
+    OpenAtLogin(OpenAtLoginDetail),
+    ConfigFile(ConfigFileDetail),
+    AdHocRules(AdHocRulesDetail),
+}
+
+impl CheckDetail {
+    pub fn kind(&self) -> CheckKind {
+        match self {
+            Self::NightShift(_) => CheckKind::NightShift,
+            Self::Accessibility(_) => CheckKind::Accessibility,
+            Self::Notifications(_) => CheckKind::Notifications,
+            Self::OpenAtLogin(_) => CheckKind::OpenAtLogin,
+            Self::ConfigFile(_) => CheckKind::ConfigFile,
+            Self::AdHocRules(_) => CheckKind::AdHocRules,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NightShiftDetail {
+    /// Night Shift works on this Mac, with this schedule; None until the shell first reports it.
+    Available { schedule: Option<Schedule> },
+    /// This Mac has no Night Shift.
+    Unavailable,
+    /// macOS has sunset to sunrise set aside, and the schedule off, while Location Services is
+    /// off.
+    SetAside,
+    /// Sunset to sunrise has gone this long without sun times, so Nightcap can't follow it.
+    NoSunTimes { waited: SignedDuration },
+}
+
+/// Accessibility, which website checking needs to read the front tab.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AccessibilityDetail {
+    Allowed,
+    /// Not allowed, with website checking on.
+    NotAllowed,
+    /// Not needed, with website checking off.
+    NotNeeded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationsDetail {
+    Allowed,
+    /// Allowed, then switched off in System Settings.
+    SwitchedOff,
+    /// Off by the user's choice.
+    Off,
+}
+
+/// Opening at login, in self-managed installs (ADR-0011).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpenAtLoginDetail {
+    /// Nightcap opens when the user logs in.
+    Opens,
+    /// The user wants it, and macOS is waiting for their approval in Login Items.
+    AwaitingApproval,
+    /// The user wanted it, and it was removed in System Settings.
+    Removed,
+    /// Off by the user's choice.
+    Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigFileDetail {
+    /// Valid, with this many rules.
+    Valid { rules: usize },
+    /// There's no config file, which is an empty config.
+    Missing,
+    /// It can't be used; the rules are the ones loaded before, or none.
+    Error(FileError),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdHocRulesDetail {
+    /// In use, with this many rules.
+    On { rules: usize },
+    /// Off, because `rules.toml` can't be used.
+    Off(FileError),
+}
+
+/// Why one of Nightcap's files, the config or `rules.toml`, can't be used, with where it is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FileError {
+    /// It can't be read, for the reason macOS gives.
+    Unreadable { path: String, message: String },
+    /// It isn't TOML in the shape Nightcap reads: toml's message, and its line where toml knows
+    /// it.
+    Malformed {
+        path: String,
+        line: Option<usize>,
+        message: String,
+    },
+    /// Well-formed, but an entry or a value can't be: why, and its line where Nightcap knows it.
+    Invalid {
+        path: String,
+        line: Option<usize>,
+        message: String,
+    },
+    /// It's from a newer Nightcap, which wrote this version of it.
+    Newer { path: String, version: u32 },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -742,13 +860,119 @@ mod tests {
                     notifications: NotificationPermission::NotRequested,
                 },
                 checks: vec![Check {
-                    kind: CheckKind::Accessibility,
+                    detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
                     state: CheckState::Drifted,
-                    text: "x".to_owned(),
                 }],
             })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[{"place":{"app":"com.figma.Desktop"},"hold":null,"timer":{"state":"on","until":"2026-10-16T19:30:00Z"}}],"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","state":"drifted","text":"x"}]}}}"#
+            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[{"place":{"app":"com.figma.Desktop"},"hold":null,"timer":{"state":"on","until":"2026-10-16T19:30:00Z"}}],"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}]}}}"#
         );
+    }
+
+    #[test]
+    fn checks_match_the_documented_wire_format_and_read_back() {
+        let config = "/Users/me/.config/nightcap/config.toml".to_owned();
+        let rules = "/Users/me/.local/share/nightcap/rules.toml".to_owned();
+        let checks = [
+            (
+                CheckDetail::NightShift(NightShiftDetail::Available {
+                    schedule: Some(Schedule::SunsetToSunrise),
+                }),
+                CheckState::Ok,
+                r#"{"kind":"night_shift","detail":{"available":{"schedule":"sunset_to_sunrise"}},"state":"ok"}"#,
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::Available { schedule: None }),
+                CheckState::Ok,
+                r#"{"kind":"night_shift","detail":{"available":{"schedule":null}},"state":"ok"}"#,
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::Unavailable),
+                CheckState::Broken,
+                r#"{"kind":"night_shift","detail":"unavailable","state":"broken"}"#,
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::SetAside),
+                CheckState::Drifted,
+                r#"{"kind":"night_shift","detail":"set_aside","state":"drifted"}"#,
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                    waited: SignedDuration::from_mins(12),
+                }),
+                CheckState::Broken,
+                r#"{"kind":"night_shift","detail":{"no_sun_times":{"waited":"PT12M"}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::Accessibility(AccessibilityDetail::NotNeeded),
+                CheckState::Off,
+                r#"{"kind":"accessibility","detail":"not_needed","state":"off"}"#,
+            ),
+            (
+                CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
+                CheckState::Drifted,
+                r#"{"kind":"notifications","detail":"switched_off","state":"drifted"}"#,
+            ),
+            (
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval),
+                CheckState::Drifted,
+                r#"{"kind":"open_at_login","detail":"awaiting_approval","state":"drifted"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Valid { rules: 2 }),
+                CheckState::Ok,
+                r#"{"kind":"config_file","detail":{"valid":{"rules":2}},"state":"ok"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Missing),
+                CheckState::Off,
+                r#"{"kind":"config_file","detail":"missing","state":"off"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
+                    path: config.clone(),
+                    line: Some(4),
+                    message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Unreadable {
+                    path: config.clone(),
+                    message: "Permission denied (os error 13)".to_owned(),
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"unreadable":{"path":"/Users/me/.config/nightcap/config.toml","message":"Permission denied (os error 13)"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config,
+                    line: None,
+                    message: "night_shift.strength is 0 to 100, not 101".to_owned(),
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":null,"message":"night_shift.strength is 0 to 100, not 101"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 0 }),
+                CheckState::Ok,
+                r#"{"kind":"ad_hoc_rules","detail":{"on":{"rules":0}},"state":"ok"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Newer {
+                    path: rules,
+                    version: 3,
+                })),
+                CheckState::Broken,
+                r#"{"kind":"ad_hoc_rules","detail":{"off":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}},"state":"broken"}"#,
+            ),
+        ];
+
+        for (detail, state, wire) in checks {
+            let check = Check { detail, state };
+            assert_eq!(json(&check), wire);
+            assert_eq!(serde_json::from_str::<Check>(wire).unwrap(), check);
+        }
     }
 
     #[test]

@@ -8,13 +8,15 @@
 
 mod common;
 
+use jiff::SignedDuration;
 use nightcap_core::{
     Effect, Event, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsLayers,
     SettingsRule, SettingsSwitch, Staged, normalize_domain,
 };
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, Command, ExportFormat, Length, NotificationPermission, OnOff,
-    Place, Request, RuleIdentity, Schedule,
+    AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail, ExportFormat,
+    FileError, Length, NightShiftDetail, NotificationPermission, OnOff, Place, Request,
+    RuleIdentity, Schedule,
 };
 
 use common::{
@@ -57,13 +59,18 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
     );
 }
 
-/// The check of `kind` in the status, if the core reports one.
+/// The check of `kind` as Settings words it, if the core reports one.
 fn check_of(staged: &Staged, kind: CheckKind) -> Option<(CheckState, String)> {
+    settings_check(staged, kind).map(|check| (check.state, check.text))
+}
+
+/// What the check of `kind` found, as the status carries it.
+fn found(staged: &Staged, kind: CheckKind) -> Option<CheckDetail> {
     status(staged)
         .checks
         .into_iter()
-        .find(|check| check.kind == kind)
-        .map(|Check { state, text, .. }| (state, text))
+        .map(|check| check.detail)
+        .find(|detail| detail.kind() == kind)
 }
 
 fn stands(state: CheckState, text: &str) -> Option<(CheckState, String)> {
@@ -135,12 +142,25 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     let staged = noon().stage().unwrap();
     let config = |staged: &Staged| check_of(staged, CheckKind::ConfigFile);
 
+    let found = |staged: &Staged| found(staged, CheckKind::ConfigFile);
+    let path = staged.core().settings().config_path;
+
     assert_eq!(config(&staged), stands(CheckState::Off, "No config file."));
+    assert_eq!(
+        found(&staged),
+        Some(CheckDetail::ConfigFile(ConfigFileDetail::Missing))
+    );
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
     staged.request(Request::Reload);
     assert_eq!(
         config(&staged),
         stands(CheckState::Ok, "Valid, with 1 rule.")
+    );
+    assert_eq!(
+        found(&staged),
+        Some(CheckDetail::ConfigFile(ConfigFileDetail::Valid {
+            rules: 1
+        }))
     );
     staged.write_config(Some("[rules.off]\ndomian = [\"figma.com\"]\n"));
     staged.request(Request::Reload);
@@ -151,6 +171,16 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
             "Line 2: unknown field `domian`, expected `app` or `domain`."
         )
     );
+    assert_eq!(
+        found(&staged),
+        Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(
+            FileError::Malformed {
+                path: path.clone(),
+                line: Some(2),
+                message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
+            }
+        )))
+    );
     staged.write_config(Some("[night_shift]\nstrength = 101\n"));
     staged.request(Request::Reload);
     assert_eq!(
@@ -159,6 +189,16 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
             CheckState::Broken,
             "night_shift.strength is 0 to 100, not 101."
         )
+    );
+    assert_eq!(
+        found(&staged),
+        Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(
+            FileError::Invalid {
+                path,
+                line: None,
+                message: "night_shift.strength is 0 to 100, not 101".to_owned(),
+            }
+        )))
     );
 }
 
@@ -176,10 +216,34 @@ fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
         stands(CheckState::Ok, "1 ad-hoc rule.")
     );
 
+    assert_eq!(
+        found(&staged, CheckKind::AdHocRules),
+        Some(CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 1 }))
+    );
+    let path = etcetera::BaseStrategy::data_dir(&etcetera::base_strategy::Xdg::new().unwrap())
+        .join("nightcap/rules.toml")
+        .display()
+        .to_string();
+
     let staged = noon().rules("version = 3\n").stage().unwrap();
-    let (state, text) = check_of(&staged, CheckKind::AdHocRules).unwrap();
-    assert_eq!(state, CheckState::Broken);
-    assert!(text.starts_with("Ad-hoc rules are off: "), "{text}");
+    assert_eq!(
+        check_of(&staged, CheckKind::AdHocRules),
+        stands(
+            CheckState::Broken,
+            &format!(
+                "Ad-hoc rules are off: {path} is version 3, from a newer Nightcap than this one."
+            )
+        )
+    );
+    assert_eq!(
+        found(&staged, CheckKind::AdHocRules),
+        Some(CheckDetail::AdHocRules(AdHocRulesDetail::Off(
+            FileError::Newer {
+                path: path.clone(),
+                version: 3
+            }
+        )))
+    );
 
     let staged = noon()
         .rules("version = 2\n[rules.off]\napp = \"com.figma.Desktop\"\n")
@@ -190,12 +254,20 @@ fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
         stands(
             CheckState::Broken,
             &format!(
-                "Ad-hoc rules are off: {}: line 3: invalid type: string \"com.figma.Desktop\", expected a sequence.",
-                etcetera::BaseStrategy::data_dir(&etcetera::base_strategy::Xdg::new().unwrap())
-                    .join("nightcap/rules.toml")
-                    .display()
+                "Ad-hoc rules are off: {path}: line 3: invalid type: string \"com.figma.Desktop\", expected a sequence."
             )
         )
+    );
+    assert_eq!(
+        found(&staged, CheckKind::AdHocRules),
+        Some(CheckDetail::AdHocRules(AdHocRulesDetail::Off(
+            FileError::Malformed {
+                path,
+                line: Some(3),
+                message: "invalid type: string \"com.figma.Desktop\", expected a sequence"
+                    .to_owned(),
+            }
+        )))
     );
 }
 
@@ -470,6 +542,12 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
             CheckState::Broken,
             "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
         )
+    );
+    assert_eq!(
+        found(&staged, CheckKind::NightShift),
+        Some(CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+            waited: SignedDuration::from_mins(10)
+        }))
     );
 
     staged.set_now(at("2026-10-16T01:51:00+02:00"));

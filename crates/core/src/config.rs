@@ -11,7 +11,6 @@ use nightcap_protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::file::{self, Files};
-use crate::rows::capitalized;
 use crate::schedule;
 
 #[derive(Deserialize)]
@@ -111,25 +110,15 @@ impl ConfigError {
             Self::Invalid { .. } => "is invalid",
         }
     }
-
-    /// Where and what, in a sentence without the path, which Settings shows above it: "Line 4:
-    /// unknown field `domian`, expected `app` or `domain`." A problem keeps its first letter: it
-    /// starts with the key or entry it names, as the file writes it.
-    pub(crate) fn sentence(&self) -> String {
-        match self {
-            Self::Unreadable { error, .. } => format!("Couldn't read it: {error}."),
-            Self::Malformed { error, .. } => format!("{}.", capitalized(&error.to_string())),
-            Self::Invalid { problem, .. } => format!("{problem}."),
-        }
-    }
 }
 
 /// Why toml can't read a file as what it holds, in one line: the line, where toml knows it,
 /// then what.
 #[derive(Debug, thiserror::Error)]
 pub(crate) struct Malformed {
-    line: Option<usize>,
-    message: String,
+    pub(crate) line: Option<usize>,
+    /// toml's message.
+    pub(crate) message: String,
 }
 
 impl Malformed {

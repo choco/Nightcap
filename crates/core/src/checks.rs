@@ -1,13 +1,16 @@
-//! The checks: each thing Nightcap depends on, compared with what the user set up, in the words
-//! Settings shows it in, with its fixes; the menu's problem line; and the notification that
-//! announces a problem when it appears.
+//! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
+//! the status carries and in the words Settings shows it in, with its fixes; the menu's problem
+//! line; and the notification that announces a problem when it appears.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, Command, NightShift, NotificationPermission, OnOff, RuleSource,
-    Schedule, TimeOfDay,
+    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
+    ConfigFileDetail, FileError, NightShift, NightShiftDetail, NotificationPermission,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, RuleSource, Schedule, TimeOfDay,
 };
 
+use crate::adhoc::AdHocError;
+use crate::config::ConfigError;
 use crate::rows::capitalized;
 use crate::state::State;
 use crate::{Core, Effect, LoginItem};
@@ -71,7 +74,7 @@ impl Core {
             .checks(self.clock.now())
             .into_iter()
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-            .map(|check| check.kind)
+            .map(|check| check.detail.kind())
             .collect();
         state
             .grants
@@ -190,11 +193,11 @@ impl State {
         self.checks(now)
             .into_iter()
             .map(|check| {
-                let (restore, accept) = self.fixes(&check);
+                let (restore, accept) = self.fixes(&check.detail);
                 SettingsCheck {
-                    kind: check.kind,
+                    kind: check.detail.kind(),
                     state: check.state,
-                    text: check.text,
+                    text: sentence(&check.detail),
                     restore,
                     accept,
                 }
@@ -202,44 +205,47 @@ impl State {
             .collect()
     }
 
-    /// What Settings offers for a check: putting back what the user set up, and accepting
-    /// the change as their choice.
-    fn fixes(&self, check: &Check) -> (Option<FixButton>, Option<FixButton>) {
+    /// What Settings offers for what a check found: putting back what the user set up, and
+    /// accepting the change as their choice.
+    fn fixes(&self, detail: &CheckDetail) -> (Option<FixButton>, Option<FixButton>) {
         let button = |title: &str, fix| {
             Some(FixButton {
                 title: title.to_owned(),
                 fix,
             })
         };
-        match (check.kind, check.state) {
-            (CheckKind::Accessibility, CheckState::Drifted) => (
+        let dont_open_at_login = || button("Don’t Open at Login", Fix::DontOpenAtLogin);
+        match detail {
+            CheckDetail::Accessibility(AccessibilityDetail::NotAllowed) => (
                 button("Allow…", Fix::AskForAccessibility),
                 // Only the config can turn off what the config turned on.
                 button("Stop Checking Websites", Fix::StopCheckingWebsites)
                     .filter(|_| self.facts.config_websites.is_none()),
             ),
-            (CheckKind::Notifications, CheckState::Drifted) => (
+            CheckDetail::Notifications(NotificationsDetail::SwitchedOff) => (
                 button("Allow Notifications…", Fix::AllowNotifications),
                 button("Keep Notifications Off", Fix::KeepNotificationsOff),
             ),
-            (CheckKind::Notifications, CheckState::Off) => (
+            CheckDetail::Notifications(NotificationsDetail::Off) => (
                 button("Allow Notifications…", Fix::AllowNotifications),
                 None,
             ),
-            (CheckKind::NightShift, CheckState::Drifted) => (
+            CheckDetail::NightShift(NightShiftDetail::SetAside) => (
                 button("Open Location Services…", Fix::OpenLocationServices),
                 button("Keep the Schedule Off", Fix::KeepScheduleOff),
             ),
-            (CheckKind::OpenAtLogin, CheckState::Drifted) => (
-                // Registering again doesn't help an item that's waiting for approval.
-                if self.grants.login_item == Some(LoginItem::RequiresApproval) {
-                    button("Open Login Items…", Fix::OpenLoginItems)
-                } else {
-                    button("Open at Login", Fix::OpenAtLogin)
-                },
-                button("Don’t Open at Login", Fix::DontOpenAtLogin),
+            // Registering again doesn't help an item that's waiting for approval.
+            CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval) => (
+                button("Open Login Items…", Fix::OpenLoginItems),
+                dont_open_at_login(),
             ),
-            (CheckKind::ConfigFile, CheckState::Broken) => (button("Reload", Fix::Reload), None),
+            CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed) => (
+                button("Open at Login", Fix::OpenAtLogin),
+                dont_open_at_login(),
+            ),
+            CheckDetail::ConfigFile(ConfigFileDetail::Error(_)) => {
+                (button("Reload", Fix::Reload), None)
+            }
             _ => (None, None),
         }
     }
@@ -250,7 +256,7 @@ impl State {
             .checks(now)
             .into_iter()
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-            .map(|check| check.kind)
+            .map(|check| check.detail.kind())
             .collect();
         if problems.is_empty() {
             return None;
@@ -287,152 +293,80 @@ impl State {
                 .filter(|(rule, _)| rule.source == source)
                 .count()
         };
-        let check = |kind, state, text: &str| Check {
-            kind,
-            state,
-            text: text.to_owned(),
-        };
-        let mut checks = vec![if self.facts.night_shift == NightShift::Unavailable {
-            check(
-                CheckKind::NightShift,
-                CheckState::Broken,
-                "Night Shift isn’t available on this Mac.",
-            )
-        } else if self.grants.schedule_set_aside && !self.grants.schedule_off_accepted {
-            check(
-                CheckKind::NightShift,
-                CheckState::Drifted,
-                "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
-            )
-        } else if self
+        let sun_times_waited = self
             .reconciling
             .sun_times_awaited_since()
-            .is_some_and(|since| now.duration_since(since) >= SUN_TIMES_PATIENCE)
-        {
-            check(
-                CheckKind::NightShift,
-                CheckState::Broken,
-                "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
-            )
-        } else {
-            let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
-            check(
-                CheckKind::NightShift,
-                CheckState::Ok,
-                &match self.facts.timeline.schedule.map(Schedule::from) {
-                    None => "Available.".to_owned(),
-                    Some(Schedule::Off) => "Available, with no schedule.".to_owned(),
-                    Some(Schedule::SunsetToSunrise) => {
-                        "Available, following its schedule: sunset to sunrise.".to_owned()
-                    }
-                    Some(Schedule::Custom { from, to }) => format!(
-                        "Available, following its schedule: {} to {}.",
-                        time(from),
-                        time(to)
-                    ),
-                },
-            )
-        }];
+            .map(|since| now.duration_since(since))
+            .filter(|waited| *waited >= SUN_TIMES_PATIENCE);
+        let mut found = vec![CheckDetail::NightShift(
+            if self.facts.night_shift == NightShift::Unavailable {
+                NightShiftDetail::Unavailable
+            } else if self.grants.schedule_set_aside && !self.grants.schedule_off_accepted {
+                NightShiftDetail::SetAside
+            } else if let Some(waited) = sun_times_waited {
+                NightShiftDetail::NoSunTimes { waited }
+            } else {
+                NightShiftDetail::Available {
+                    schedule: self.facts.timeline.schedule.map(Schedule::from),
+                }
+            },
+        )];
         // Nothing is said about the permissions until the shell first reports them.
         if let Some(granted) = self.grants.accessibility {
-            checks.push(match (self.facts.website_checking(), granted) {
-                (false, _) => check(
-                    CheckKind::Accessibility,
-                    CheckState::Off,
-                    "Not needed while website checking is off.",
-                ),
-                (true, true) => check(
-                    CheckKind::Accessibility,
-                    CheckState::Ok,
-                    "Accessibility is allowed.",
-                ),
-                (true, false) => check(
-                    CheckKind::Accessibility,
-                    CheckState::Drifted,
-                    "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                ),
-            });
-            checks.push(
+            found.push(CheckDetail::Accessibility(
+                match (self.facts.website_checking(), granted) {
+                    (false, _) => AccessibilityDetail::NotNeeded,
+                    (true, true) => AccessibilityDetail::Allowed,
+                    (true, false) => AccessibilityDetail::NotAllowed,
+                },
+            ));
+            found.push(CheckDetail::Notifications(
                 match (
                     self.grants.notifications == NotificationPermission::Granted,
                     self.grants.notifications_wanted,
                 ) {
-                    (true, _) => check(CheckKind::Notifications, CheckState::Ok, "Allowed."),
-                    (false, true) => check(
-                        CheckKind::Notifications,
-                        CheckState::Drifted,
-                        "Notifications were allowed, but they’re switched off in System Settings.",
-                    ),
-                    (false, false) => check(
-                        CheckKind::Notifications,
-                        CheckState::Off,
-                        "Notifications are off.",
-                    ),
+                    (true, _) => NotificationsDetail::Allowed,
+                    (false, true) => NotificationsDetail::SwitchedOff,
+                    (false, false) => NotificationsDetail::Off,
                 },
-            );
+            ));
         }
         if let Some(item) = self
             .grants
             .login_item
             .filter(|_| self.grants.opens_itself_at_login)
         {
-            checks.push(match (item, self.grants.open_at_login) {
-                (LoginItem::Enabled, _) => check(
-                    CheckKind::OpenAtLogin,
-                    CheckState::Ok,
-                    "Nightcap opens when you log in.",
-                ),
-                (LoginItem::RequiresApproval, true) => check(
-                    CheckKind::OpenAtLogin,
-                    CheckState::Drifted,
-                    "macOS is waiting for your approval in Login Items.",
-                ),
-                (LoginItem::NotRegistered, true) => check(
-                    CheckKind::OpenAtLogin,
-                    CheckState::Drifted,
-                    "Nightcap no longer opens at login: it was removed in System Settings.",
-                ),
-                (_, false) => check(
-                    CheckKind::OpenAtLogin,
-                    CheckState::Off,
-                    "Nightcap doesn’t open at login.",
-                ),
-            });
+            found.push(CheckDetail::OpenAtLogin(
+                match (item, self.grants.open_at_login) {
+                    (LoginItem::Enabled, _) => OpenAtLoginDetail::Opens,
+                    (LoginItem::RequiresApproval, true) => OpenAtLoginDetail::AwaitingApproval,
+                    (LoginItem::NotRegistered, true) => OpenAtLoginDetail::Removed,
+                    (_, false) => OpenAtLoginDetail::Off,
+                },
+            ));
         }
-        checks.push(
+        found.push(CheckDetail::ConfigFile(
             match (&self.loaded.config_error, self.loaded.config_found) {
-                (Some(error), _) => {
-                    check(CheckKind::ConfigFile, CheckState::Broken, &error.sentence())
-                }
-                (None, true) => check(
-                    CheckKind::ConfigFile,
-                    CheckState::Ok,
-                    &match rules_from(RuleSource::Config) {
-                        0 => "Valid, with no rules.".to_owned(),
-                        1 => "Valid, with 1 rule.".to_owned(),
-                        count => format!("Valid, with {count} rules."),
-                    },
-                ),
-                (None, false) => check(CheckKind::ConfigFile, CheckState::Off, "No config file."),
+                (Some(error), _) => ConfigFileDetail::Error(error.into()),
+                (None, true) => ConfigFileDetail::Valid {
+                    rules: rules_from(RuleSource::Config),
+                },
+                (None, false) => ConfigFileDetail::Missing,
             },
-        );
-        checks.push(
-            match (&self.loaded.ad_hoc_error, rules_from(RuleSource::AdHoc)) {
-                (Some(error), _) => check(
-                    CheckKind::AdHocRules,
-                    CheckState::Broken,
-                    &format!("Ad-hoc rules are off: {error}."),
-                ),
-                (None, 0) => check(CheckKind::AdHocRules, CheckState::Ok, "No ad-hoc rules."),
-                (None, 1) => check(CheckKind::AdHocRules, CheckState::Ok, "1 ad-hoc rule."),
-                (None, count) => check(
-                    CheckKind::AdHocRules,
-                    CheckState::Ok,
-                    &format!("{count} ad-hoc rules."),
-                ),
+        ));
+        found.push(CheckDetail::AdHocRules(match &self.loaded.ad_hoc_error {
+            Some(error) => AdHocRulesDetail::Off(error.into()),
+            None => AdHocRulesDetail::On {
+                rules: rules_from(RuleSource::AdHoc),
             },
-        );
-        checks
+        }));
+        found
+            .into_iter()
+            .map(|detail| Check {
+                state: state(&detail),
+                detail,
+            })
+            .collect()
     }
 
     /// The notification for a problem that appeared on its own; Night Shift being unavailable is
@@ -475,6 +409,218 @@ impl State {
                 })
             }
             CheckKind::Notifications => None,
+        }
+    }
+}
+
+/// Where what a check found leaves it: drift is what the user set up that stopped working, and
+/// broken what can only be fixed.
+fn state(detail: &CheckDetail) -> CheckState {
+    match detail {
+        CheckDetail::NightShift(NightShiftDetail::Available { .. })
+        | CheckDetail::Accessibility(AccessibilityDetail::Allowed)
+        | CheckDetail::Notifications(NotificationsDetail::Allowed)
+        | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens)
+        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. })
+        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => CheckState::Ok,
+        CheckDetail::Accessibility(AccessibilityDetail::NotNeeded)
+        | CheckDetail::Notifications(NotificationsDetail::Off)
+        | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Off)
+        | CheckDetail::ConfigFile(ConfigFileDetail::Missing) => CheckState::Off,
+        CheckDetail::NightShift(NightShiftDetail::SetAside)
+        | CheckDetail::Accessibility(AccessibilityDetail::NotAllowed)
+        | CheckDetail::Notifications(NotificationsDetail::SwitchedOff)
+        | CheckDetail::OpenAtLogin(
+            OpenAtLoginDetail::AwaitingApproval | OpenAtLoginDetail::Removed,
+        ) => CheckState::Drifted,
+        CheckDetail::NightShift(
+            NightShiftDetail::Unavailable | NightShiftDetail::NoSunTimes { .. },
+        )
+        | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
+        | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => CheckState::Broken,
+    }
+}
+
+/// What a check found, in the words Settings shows it in.
+fn sentence(detail: &CheckDetail) -> String {
+    match detail {
+        CheckDetail::NightShift(found) => night_shift_sentence(found),
+        CheckDetail::Accessibility(found) => match found {
+            AccessibilityDetail::Allowed => "Accessibility is allowed.",
+            AccessibilityDetail::NotAllowed => {
+                "Accessibility isn’t allowed, so website checking can’t read the front tab."
+            }
+            AccessibilityDetail::NotNeeded => "Not needed while website checking is off.",
+        }
+        .to_owned(),
+        CheckDetail::Notifications(found) => match found {
+            NotificationsDetail::Allowed => "Allowed.",
+            NotificationsDetail::SwitchedOff => {
+                "Notifications were allowed, but they’re switched off in System Settings."
+            }
+            NotificationsDetail::Off => "Notifications are off.",
+        }
+        .to_owned(),
+        CheckDetail::OpenAtLogin(found) => match found {
+            OpenAtLoginDetail::Opens => "Nightcap opens when you log in.",
+            OpenAtLoginDetail::AwaitingApproval => {
+                "macOS is waiting for your approval in Login Items."
+            }
+            OpenAtLoginDetail::Removed => {
+                "Nightcap no longer opens at login: it was removed in System Settings."
+            }
+            OpenAtLoginDetail::Off => "Nightcap doesn’t open at login.",
+        }
+        .to_owned(),
+        CheckDetail::ConfigFile(found) => match found {
+            ConfigFileDetail::Valid { rules: 0 } => "Valid, with no rules.".to_owned(),
+            ConfigFileDetail::Valid { rules: 1 } => "Valid, with 1 rule.".to_owned(),
+            ConfigFileDetail::Valid { rules } => format!("Valid, with {rules} rules."),
+            ConfigFileDetail::Missing => "No config file.".to_owned(),
+            ConfigFileDetail::Error(error) => in_the_file(error),
+        },
+        CheckDetail::AdHocRules(found) => match found {
+            AdHocRulesDetail::On { rules: 0 } => "No ad-hoc rules.".to_owned(),
+            AdHocRulesDetail::On { rules: 1 } => "1 ad-hoc rule.".to_owned(),
+            AdHocRulesDetail::On { rules } => format!("{rules} ad-hoc rules."),
+            AdHocRulesDetail::Off(error) => format!("Ad-hoc rules are off: {}.", located(error)),
+        },
+    }
+}
+
+/// Night Shift's check, in the words Settings shows it in.
+fn night_shift_sentence(found: &NightShiftDetail) -> String {
+    let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
+    match found {
+        NightShiftDetail::Available { schedule } => match schedule {
+            None => "Available.".to_owned(),
+            Some(Schedule::Off) => "Available, with no schedule.".to_owned(),
+            Some(Schedule::SunsetToSunrise) => {
+                "Available, following its schedule: sunset to sunrise.".to_owned()
+            }
+            Some(Schedule::Custom { from, to }) => format!(
+                "Available, following its schedule: {} to {}.",
+                time(*from),
+                time(*to)
+            ),
+        },
+        NightShiftDetail::Unavailable => "Night Shift isn’t available on this Mac.".to_owned(),
+        NightShiftDetail::SetAside => {
+            "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on."
+                .to_owned()
+        }
+        NightShiftDetail::NoSunTimes { .. } => {
+            "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them."
+                .to_owned()
+        }
+    }
+}
+
+/// Where in the file and what, in a sentence without the path, which Settings shows above the
+/// config's check: "Line 4: unknown field `domian`, expected `app` or `domain`." An invalid entry
+/// or value with no line keeps its first letter: it starts with the key or entry it names, as
+/// the file writes it.
+fn in_the_file(error: &FileError) -> String {
+    match error {
+        FileError::Unreadable { message, .. } => format!("Couldn't read it: {message}."),
+        FileError::Malformed {
+            line: Some(line),
+            message,
+            ..
+        }
+        | FileError::Invalid {
+            line: Some(line),
+            message,
+            ..
+        } => format!("Line {line}: {message}."),
+        FileError::Malformed {
+            line: None,
+            message,
+            ..
+        } => format!("{}.", capitalized(message)),
+        FileError::Invalid {
+            line: None,
+            message,
+            ..
+        } => format!("{message}."),
+        FileError::Newer { version, .. } => {
+            format!("It’s version {version}, from a newer Nightcap than this one.")
+        }
+    }
+}
+
+/// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
+fn located(error: &FileError) -> String {
+    match error {
+        FileError::Unreadable { path, message } => format!("couldn't read {path}: {message}"),
+        FileError::Malformed {
+            path,
+            line: Some(line),
+            message,
+        }
+        | FileError::Invalid {
+            path,
+            line: Some(line),
+            message,
+        } => format!("{path}: line {line}: {message}"),
+        FileError::Malformed {
+            path,
+            line: None,
+            message,
+        }
+        | FileError::Invalid {
+            path,
+            line: None,
+            message,
+        } => format!("{path}: {message}"),
+        FileError::Newer { path, version } => {
+            format!("{path} is version {version}, from a newer Nightcap than this one")
+        }
+    }
+}
+
+impl From<&ConfigError> for FileError {
+    fn from(error: &ConfigError) -> Self {
+        match error {
+            ConfigError::Unreadable { path, error } => Self::Unreadable {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            },
+            ConfigError::Malformed { path, error } => Self::Malformed {
+                path: path.display().to_string(),
+                line: error.line,
+                message: error.message.clone(),
+            },
+            ConfigError::Invalid { path, problem } => Self::Invalid {
+                path: path.display().to_string(),
+                line: None,
+                message: problem.to_string(),
+            },
+        }
+    }
+}
+
+impl From<&AdHocError> for FileError {
+    fn from(error: &AdHocError) -> Self {
+        match error {
+            AdHocError::Unreadable { path, error } => Self::Unreadable {
+                path: path.display().to_string(),
+                message: error.to_string(),
+            },
+            AdHocError::Malformed { path, error } => Self::Malformed {
+                path: path.display().to_string(),
+                line: error.line,
+                message: error.message.clone(),
+            },
+            AdHocError::Newer { path, version } => Self::Newer {
+                path: path.display().to_string(),
+                version: *version,
+            },
+            AdHocError::Invalid { path, error } => Self::Invalid {
+                path: path.display().to_string(),
+                line: None,
+                message: error.to_string(),
+            },
         }
     }
 }
