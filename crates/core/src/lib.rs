@@ -876,7 +876,6 @@ impl Core {
                 locked: state.facts.config_websites.is_some(),
                 command: Command::Websites(OnOff::from(!on)),
             },
-            // Registered but waiting for approval counts as on; its check explains the rest.
             config_path: self.files.path(file::File::Config).display().to_string(),
             rules: look
                 .rules
@@ -909,6 +908,7 @@ impl Core {
                     },
                 })
                 .collect(),
+            // Registered but waiting for approval counts as on; its check explains the rest.
             open_at_login: state
                 .login_item
                 .filter(|_| self.updates_itself())
