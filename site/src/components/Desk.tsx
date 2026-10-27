@@ -129,7 +129,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					<span />
 				</div>
 			</div>
-			<div className={styles.menusBelow}>
+			<div className={styles.menusBelow} aria-hidden="true">
 				{(Object.keys(APPS) as AppName[]).map((app) => (
 					<Menu
 						key={app}
