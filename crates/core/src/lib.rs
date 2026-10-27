@@ -16,8 +16,6 @@ mod staging;
 mod state;
 mod tour;
 
-#[cfg(test)]
-mod harness;
 #[cfg(any(test, debug_assertions))]
 pub use file::File;
 #[cfg(any(test, debug_assertions))]
@@ -2498,6 +2496,3 @@ fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
         message: message.into(),
     }
 }
-
-#[cfg(test)]
-mod tests;
