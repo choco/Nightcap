@@ -58,11 +58,13 @@ enum Snapshot {
                 try! png.write(to: url)
             }
         }
-        // A self-managed release that doesn't open at login yet, with Photos' rule in its config.
+        // A self-managed release that doesn't open at login yet, with Photos' rule in its config, at
+        // 21:42, the evening the stage's mocks show.
+        let evening = today(21, 42)
         let steps = { (schedule: Schedule) in
             let core = try! Core.staged(
                 scenario: Scenario(
-                    now: Date(), timeZone: TimeZone.current.identifier, bundleWritable: true,
+                    now: evening, timeZone: TimeZone.current.identifier, bundleWritable: true,
                     config: "[rules.off]\napp = [\"com.apple.Photos\"]",
                     steps: [
                         .event(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
@@ -74,6 +76,7 @@ enum Snapshot {
                 rules: { core.settings().rules },
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
+                now: { evening },
                 shortcut: shortcut,
                 accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
                 notifications: { .notRequested }, askForNotifications: {}, onFinish: { _ in })

@@ -170,6 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
                 return Sun(sunset: sunset, sunrise: sunrise)
             },
+            now: { Date() },
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },

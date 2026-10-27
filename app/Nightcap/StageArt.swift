@@ -23,12 +23,14 @@ struct Sun: Equatable {
 }
 
 enum StageArt {
-    /// The scene's view, sized to its content. `strength` warms the mocks of a screen, and the menu
-    /// shows `shortcut`.
-    static func view(for scene: Scene, strength: UInt8, sun: Sun?, shortcut: KeyboardShortcuts.Shortcut?) -> NSView {
+    /// The scene's view, sized to its content. `strength` warms the mocks of a screen, the timeline
+    /// marks `now`, and the menu shows `shortcut`.
+    static func view(
+        for scene: Scene, strength: UInt8, sun: Sun?, now: Date, shortcut: KeyboardShortcuts.Shortcut?
+    ) -> NSView {
         switch scene {
         case .strength: StrengthArt(strength: strength)
-        case .timeline(let schedule): timeline(schedule, sun: sun)
+        case .timeline(let schedule): timeline(schedule, sun: sun, now: now)
         case .byHand: byHand()
         case .apps: apps(strength: strength)
         case .address: address()
@@ -42,7 +44,7 @@ enum StageArt {
     // MARK: The scenes
 
     /// The Night Shift steps' 24-hour bar: when it's on, with a marker for now.
-    private static func timeline(_ schedule: Schedule, sun: Sun?) -> NSView {
+    private static func timeline(_ schedule: Schedule, sun: Sun?, now date: Date) -> NSView {
         let (start, end, sunset): (TimeOfDay, TimeOfDay, Bool) =
             switch schedule {
             case .custom(let from, let to): (from, to, false)
@@ -52,7 +54,7 @@ enum StageArt {
                     sun.map { time(of: $0.sunrise) } ?? TimeOfDay(hour: 7, minute: 0), true
                 )
             }
-        let now = time(of: Date())
+        let now = time(of: date)
         let on = covers(start, end, now)
         let (from, to) = (Onboarding.clock(start), Onboarding.clock(end))
         let caption =
