@@ -10,10 +10,10 @@ name = "nightcap"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0.104"
+anyhow.workspace = true
 clap.workspace = true
 jiff.workspace = true
-libc = "0.2.190"
+libc.workspace = true
 nightcap-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true

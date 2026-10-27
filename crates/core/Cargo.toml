@@ -10,20 +10,20 @@ name = "nightcap_core"
 crate-type = ["lib", "staticlib"]
 
 [dependencies]
-etcetera = "0.11"
+etcetera.workspace = true
 jiff = { workspace = true, features = ["serde"] }
 nightcap-protocol.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
-tempfile = "3.27.0"
+tempfile.workspace = true
 thiserror.workspace = true
-toml = "1.1.8"
-tracing = "0.1.44"
+toml.workspace = true
+tracing.workspace = true
 uniffi.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-tracing-oslog = { version = "0.3.0", default-features = false }
-tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+tracing-oslog.workspace = true
+tracing-subscriber.workspace = true
 
 [lints]
 workspace = true
