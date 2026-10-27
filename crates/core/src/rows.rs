@@ -9,7 +9,59 @@ use nightcap_protocol::{
 
 use crate::places::{Context, Look, Stack, World, place_identity};
 use crate::schedule::CheckedSchedule;
-use crate::{MenuItem, PlaceRow, RowImage, RowItem, capitalized};
+
+/// A place row: everywhere's under the Night Shift item, then the front app's and site's.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct PlaceRow {
+    pub title: String,
+    /// A site's domain, on a line of its own under the title, which says "This Site" so that a
+    /// long domain doesn't widen the menu.
+    pub site: Option<String>,
+    /// What the place says, or for everywhere's row the place that keeps its own say.
+    pub subtitle: Option<String>,
+    pub image: RowImage,
+    /// Drawn one level in, under the row it belongs to: a site under its browser.
+    pub indented: bool,
+    /// The submenu; empty while there's nothing to offer, which greys the row.
+    pub items: Vec<RowItem>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum RowImage {
+    /// Everywhere: the timer, as the row under the switch.
+    Everywhere,
+    /// The app's own icon.
+    App {
+        bundle_id: String,
+    },
+    Site,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum RowItem {
+    Choice {
+        item: MenuItem,
+    },
+    /// Custom…: the shell asks for an end time in a window titled `title`, starting at
+    /// `start`, and sends `Set` for `place` and `state` until the time picked.
+    PickTime {
+        title: String,
+        place: Place,
+        state: OnOff,
+        start: Timestamp,
+    },
+    Separator,
+}
+
+/// Choosing it sends `command` back as `Event::CommandChosen`.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct MenuItem {
+    pub title: String,
+    /// A line under the title, e.g. when a length ends.
+    pub subtitle: Option<String>,
+    pub enabled: bool,
+    pub command: Command,
+}
 
 /// What the rows read: a look at the places, the world it was taken in, and the menu's lengths.
 pub(crate) struct Rows<'a> {
@@ -331,6 +383,18 @@ pub(crate) fn whose(rule: &Rule) -> &'static str {
         RuleSource::AdHoc => "your rule",
         RuleSource::Tour => "the tour’s rule",
     }
+}
+
+/// `text` with its first letter capitalized.
+pub(crate) fn capitalized(text: &str) -> String {
+    let mut letters = text.chars();
+    letters
+        .next()
+        .map(char::to_uppercase)
+        .into_iter()
+        .flatten()
+        .chain(letters)
+        .collect()
 }
 
 fn choice(title: &str, command: Command) -> RowItem {

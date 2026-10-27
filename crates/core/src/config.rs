@@ -11,7 +11,8 @@ use nightcap_protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::file::{self, Files};
-use crate::{capitalized, schedule};
+use crate::rows::capitalized;
+use crate::schedule;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

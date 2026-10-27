@@ -17,6 +17,7 @@ mod staging;
 mod state;
 mod tour;
 
+pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use shell::{CoreError, Effect, Event, LoginItem, Waker, is_bundle_id, normalize_domain};
 pub use tour::{
     MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
@@ -48,7 +49,7 @@ use domain::Host;
 use file::File;
 use file::{Disk, Files, Paths};
 use places::{Context, Kept, Places, Refusal, Stack, World};
-use rows::{Rows, clock_time, here, layer_text, name_in_front, until_text, whose};
+use rows::{Rows, capitalized, clock_time, here, layer_text, name_in_front, until_text, whose};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
 
 /// What the menu shows. The core decides it; the shell only draws it.
@@ -218,59 +219,6 @@ pub enum MenuEntry {
         row: PlaceRow,
     },
     Separator,
-}
-
-/// A place row: everywhere's under the Night Shift item, then the front app's and site's.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct PlaceRow {
-    pub title: String,
-    /// A site's domain, on a line of its own under the title, which says "This Site" so that a
-    /// long domain doesn't widen the menu.
-    pub site: Option<String>,
-    /// What the place says, or for everywhere's row the place that keeps its own say.
-    pub subtitle: Option<String>,
-    pub image: RowImage,
-    /// Drawn one level in, under the row it belongs to: a site under its browser.
-    pub indented: bool,
-    /// The submenu; empty while there's nothing to offer, which greys the row.
-    pub items: Vec<RowItem>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum RowImage {
-    /// Everywhere: the timer, as the row under the switch.
-    Everywhere,
-    /// The app's own icon.
-    App {
-        bundle_id: String,
-    },
-    Site,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
-pub enum RowItem {
-    Choice {
-        item: MenuItem,
-    },
-    /// Custom…: the shell asks for an end time in a window titled `title`, starting at
-    /// `start`, and sends `Set` for `place` and `state` until the time picked.
-    PickTime {
-        title: String,
-        place: Place,
-        state: OnOff,
-        start: Timestamp,
-    },
-    Separator,
-}
-
-/// Choosing it sends `command` back as `Event::CommandChosen`.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct MenuItem {
-    pub title: String,
-    /// A line under the title, e.g. when a length ends.
-    pub subtitle: Option<String>,
-    pub enabled: bool,
-    pub command: Command,
 }
 
 /// The current onboarding version: welcome, notifications, and website checking.
@@ -2116,18 +2064,6 @@ fn listed(parts: &[String]) -> String {
         [only] => only.clone(),
         [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
     }
-}
-
-/// `text` with its first letter capitalized.
-fn capitalized(text: &str) -> String {
-    let mut letters = text.chars();
-    letters
-        .next()
-        .map(char::to_uppercase)
-        .into_iter()
-        .flatten()
-        .chain(letters)
-        .collect()
 }
 
 fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
