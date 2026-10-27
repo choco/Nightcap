@@ -381,33 +381,39 @@ impl State {
                 ),
             });
         }
-        checks.push(match (&self.config_error, self.config_found) {
-            (Some(error), _) => check(CheckKind::ConfigFile, CheckState::Broken, &error.sentence()),
-            (None, true) => check(
-                CheckKind::ConfigFile,
-                CheckState::Ok,
-                &match rules_from(RuleSource::Config) {
-                    0 => "Valid, with no rules.".to_owned(),
-                    1 => "Valid, with 1 rule.".to_owned(),
-                    count => format!("Valid, with {count} rules."),
-                },
-            ),
-            (None, false) => check(CheckKind::ConfigFile, CheckState::Off, "No config file."),
-        });
-        checks.push(match (&self.ad_hoc_error, rules_from(RuleSource::AdHoc)) {
-            (Some(error), _) => check(
-                CheckKind::AdHocRules,
-                CheckState::Broken,
-                &format!("Ad-hoc rules are off: {error}."),
-            ),
-            (None, 0) => check(CheckKind::AdHocRules, CheckState::Ok, "No ad-hoc rules."),
-            (None, 1) => check(CheckKind::AdHocRules, CheckState::Ok, "1 ad-hoc rule."),
-            (None, count) => check(
-                CheckKind::AdHocRules,
-                CheckState::Ok,
-                &format!("{count} ad-hoc rules."),
-            ),
-        });
+        checks.push(
+            match (&self.loaded.config_error, self.loaded.config_found) {
+                (Some(error), _) => {
+                    check(CheckKind::ConfigFile, CheckState::Broken, &error.sentence())
+                }
+                (None, true) => check(
+                    CheckKind::ConfigFile,
+                    CheckState::Ok,
+                    &match rules_from(RuleSource::Config) {
+                        0 => "Valid, with no rules.".to_owned(),
+                        1 => "Valid, with 1 rule.".to_owned(),
+                        count => format!("Valid, with {count} rules."),
+                    },
+                ),
+                (None, false) => check(CheckKind::ConfigFile, CheckState::Off, "No config file."),
+            },
+        );
+        checks.push(
+            match (&self.loaded.ad_hoc_error, rules_from(RuleSource::AdHoc)) {
+                (Some(error), _) => check(
+                    CheckKind::AdHocRules,
+                    CheckState::Broken,
+                    &format!("Ad-hoc rules are off: {error}."),
+                ),
+                (None, 0) => check(CheckKind::AdHocRules, CheckState::Ok, "No ad-hoc rules."),
+                (None, 1) => check(CheckKind::AdHocRules, CheckState::Ok, "1 ad-hoc rule."),
+                (None, count) => check(
+                    CheckKind::AdHocRules,
+                    CheckState::Ok,
+                    &format!("{count} ad-hoc rules."),
+                ),
+            },
+        );
         checks
     }
 
@@ -431,10 +437,12 @@ impl State {
                 "Open Nightcap’s settings to allow it, or to stop checking websites.".to_owned(),
             )),
             CheckKind::ConfigFile => self
+                .loaded
                 .config_error
                 .as_ref()
                 .map(|error| ("Nightcap’s config is invalid".to_owned(), error.to_string())),
             CheckKind::AdHocRules => self
+                .loaded
                 .ad_hoc_error
                 .as_ref()
                 .map(|error| ("Ad-hoc rules are off".to_owned(), error.to_string())),

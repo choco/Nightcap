@@ -2,10 +2,13 @@
 //! leads to; the rule commits they make; and reading the config again, which is how a change to
 //! it takes effect.
 
+use jiff::SignedDuration;
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, Rule, RuleIdentity,
 };
 
+use crate::adhoc::AdHocError;
+use crate::config::{ConfigError, NightShiftConfig};
 use crate::places::{Places, Refusal};
 use crate::schedule::CheckedSchedule;
 use crate::{Core, Effect, State, config};
@@ -199,11 +202,11 @@ impl Core {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
                 state.facts.config_websites = config.websites;
-                state.config_night_shift = config.night_shift;
-                state.lengths = config.lengths;
+                state.loaded.config_night_shift = config.night_shift;
+                state.loaded.lengths = config.lengths;
                 state.apply_config_night_shift(effects);
-                state.config_error = None;
-                state.config_found = config.found;
+                state.loaded.config_error = None;
+                state.loaded.config_found = config.found;
                 self.graduate(state, config.rules);
                 Ok(())
             }
@@ -213,7 +216,7 @@ impl Core {
                     error.kind()
                 );
                 let refusal = refused(ErrorCode::InvalidConfig, error.to_string());
-                state.config_error = Some(error);
+                state.loaded.config_error = Some(error);
                 Err(refusal)
             }
         }
@@ -234,7 +237,7 @@ impl State {
     }
 
     fn check_ad_hoc_rules_on(&self) -> Result<(), ErrorReply> {
-        match &self.ad_hoc_error {
+        match &self.loaded.ad_hoc_error {
             None => Ok(()),
             Some(error) => Err(refused(
                 ErrorCode::AdHocRulesOff,
@@ -249,8 +252,8 @@ impl State {
         if self.facts.night_shift == NightShift::Unavailable {
             return;
         }
-        let wanted = self.config_night_shift;
-        if wanted.strength != self.applied_from_config.strength && self.strength.is_some() {
+        let wanted = self.loaded.config_night_shift;
+        if wanted.strength != self.loaded.applied_from_config.strength && self.strength.is_some() {
             if let Some(value) = wanted.strength {
                 tracing::info!("strength set to {value} from the config");
                 effects.push(Effect::SetStrength {
@@ -258,16 +261,31 @@ impl State {
                     commit: true,
                 });
             }
-            self.applied_from_config.strength = wanted.strength;
+            self.loaded.applied_from_config.strength = wanted.strength;
         }
-        if wanted.schedule != self.applied_from_config.schedule {
+        if wanted.schedule != self.loaded.applied_from_config.schedule {
             if let Some(schedule) = wanted.schedule {
                 tracing::info!("schedule set from the config");
                 effects.push(Effect::SetSchedule { schedule });
             }
-            self.applied_from_config.schedule = wanted.schedule;
+            self.loaded.applied_from_config.schedule = wanted.schedule;
         }
     }
+}
+
+/// What the core read from its files: the config's lengths and `[night_shift]`, whether the
+/// config was found, and why it or `rules.toml` can't be used; with what of the config's
+/// `[night_shift]` was last applied (ADR-0014).
+pub(crate) struct Loaded {
+    pub(crate) config_error: Option<ConfigError>,
+    /// Whether the config file existed when it was last loaded.
+    pub(crate) config_found: bool,
+    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
+    pub(crate) lengths: Vec<SignedDuration>,
+    pub(crate) config_night_shift: NightShiftConfig,
+    pub(crate) applied_from_config: NightShiftConfig,
+    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
+    pub(crate) ad_hoc_error: Option<AdHocError>,
 }
 
 impl From<Refusal> for ErrorReply {

@@ -51,8 +51,9 @@ impl OnboardingSteps {
 impl State {
     pub(crate) fn onboarding_night_shift(&self) -> OnboardingNightShift {
         let available = self.facts.night_shift != NightShift::Unavailable;
-        let ask_strength = self.strength.is_some() && self.config_night_shift.strength.is_none();
-        let ask_schedule = available && self.config_night_shift.schedule.is_none();
+        let ask_strength =
+            self.strength.is_some() && self.loaded.config_night_shift.strength.is_none();
+        let ask_schedule = available && self.loaded.config_night_shift.schedule.is_none();
         OnboardingNightShift {
             ask_strength,
             ask_schedule,

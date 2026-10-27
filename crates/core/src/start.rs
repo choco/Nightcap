@@ -9,6 +9,7 @@ use jiff::tz::TimeZone;
 use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
 
 use crate::checks::Grants;
+use crate::commands::Loaded;
 use crate::config::{self, NightShiftConfig};
 use crate::file::Files;
 use crate::places::{Context, Kept, Places};
@@ -103,13 +104,15 @@ impl Core {
                     ad_hoc,
                 }),
                 strength: None,
-                config_error,
-                config_found: config.found,
-                lengths: config.lengths,
-                ad_hoc_error,
+                loaded: Loaded {
+                    config_error,
+                    config_found: config.found,
+                    lengths: config.lengths,
+                    config_night_shift: config.night_shift,
+                    applied_from_config: persisted.applied_from_config,
+                    ad_hoc_error,
+                },
                 onboarding: persisted.onboarding,
-                config_night_shift: config.night_shift,
-                applied_from_config: persisted.applied_from_config,
                 reconciling: Reconciling::new(persisted.night_shift),
                 watching: Watching::default(),
                 grants: Grants {

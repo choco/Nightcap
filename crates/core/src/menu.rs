@@ -73,7 +73,7 @@ impl Menu {
         let rows = Rows {
             look: &look,
             world: &world,
-            lengths: &state.lengths,
+            lengths: &state.loaded.lengths,
         };
         let everywhere = look.everywhere.gives;
         let mut entries = Vec::new();

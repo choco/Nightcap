@@ -5,18 +5,19 @@
 use std::io;
 use std::sync::Arc;
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use nightcap_protocol::{CheckKind, NightShift, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::checks::Grants;
+use crate::commands::Loaded;
 use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
 use crate::turn::{Reconciling, wanted};
 use crate::watch::Watching;
-use crate::{Core, adhoc, config, tour};
+use crate::{Core, tour};
 
 const VERSION: u32 = 1;
 
@@ -26,16 +27,8 @@ pub(crate) struct State {
     pub(crate) facts: Facts,
     pub(crate) places: Places,
     pub(crate) strength: Option<u8>,
-    pub(crate) config_error: Option<config::ConfigError>,
-    /// Whether the config file existed when it was last loaded.
-    pub(crate) config_found: bool,
-    /// The menu's preset lengths, from the config or else 30 minutes, 1 hour and 2 hours.
-    pub(crate) lengths: Vec<SignedDuration>,
-    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
-    pub(crate) ad_hoc_error: Option<adhoc::AdHocError>,
+    pub(crate) loaded: Loaded,
     pub(crate) onboarding: u32,
-    pub(crate) config_night_shift: NightShiftConfig,
-    pub(crate) applied_from_config: NightShiftConfig,
     pub(crate) reconciling: Reconciling,
     pub(crate) watching: Watching,
     pub(crate) grants: Grants,
@@ -93,7 +86,7 @@ impl State {
                 .facts
                 .timeline
                 .next_transition(self.facts.applied_until),
-            applied_from_config: self.applied_from_config,
+            applied_from_config: self.loaded.applied_from_config,
             schedule_off_accepted: self.grants.schedule_off_accepted,
             last_version: self.last_version.clone(),
         }

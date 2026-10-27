@@ -72,10 +72,10 @@ impl Core {
             install: self.install,
             night_shift: facts.night_shift,
             strength: state.strength,
-            config_strength: state.config_night_shift.strength,
+            config_strength: state.loaded.config_night_shift.strength,
             decision: look.decision,
             schedule: facts.timeline.schedule.map(Schedule::from),
-            config_schedule: state.config_night_shift.schedule,
+            config_schedule: state.loaded.config_night_shift.schedule,
             scheduled_state: facts
                 .timeline
                 .scheduled_state(facts.applied_until)
@@ -93,8 +93,8 @@ impl Core {
                 .into_iter()
                 .map(|(rule, _)| rule.clone())
                 .collect(),
-            config_error: state.config_error.as_ref().map(ToString::to_string),
-            ad_hoc_error: state.ad_hoc_error.as_ref().map(ToString::to_string),
+            config_error: state.loaded.config_error.as_ref().map(ToString::to_string),
+            ad_hoc_error: state.loaded.ad_hoc_error.as_ref().map(ToString::to_string),
             website_checking: WebsiteChecking {
                 state: OnOff::from(facts.website_checking()),
                 from_config: facts.config_websites.is_some(),
