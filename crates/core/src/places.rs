@@ -37,6 +37,7 @@ pub(crate) struct World<'a> {
 /// What `state.json` and `rules.toml` keep: every place's hold and timer, and the ad-hoc rules.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Kept {
+    /// At most one per place, and none empty.
     pub layers: Vec<PlaceLayers>,
     pub ad_hoc: Vec<(RuleIdentity, OnOff)>,
 }
@@ -44,14 +45,16 @@ pub(crate) struct Kept {
 /// Every place's layers and the rules under them (ADR-0018), with what a tour found, which its
 /// end puts back (ADR-0016), and the release on the way out (ADR-0008).
 ///
-/// Nothing ends by itself: each call expires what ended by its `now` before it changes or
-/// reads anything.
+/// Nothing ends by itself: a caller expires what ended by its `now` before it changes
+/// anything, so no change lands on a layer that already ended, and `look` shows the places as
+/// of the last `expire`.
 #[derive(Debug, Clone)]
 pub(crate) struct Places {
     /// What decides now, and outside a tour what's kept.
     live: Kept,
     config: Vec<Rule>,
-    /// The config's rules, then the ad-hoc ones, then the tour's.
+    /// The config's rules, then the ad-hoc ones, then the tour's: one per identity, the
+    /// config's where it has one (ADR-0006).
     rules: Vec<Rule>,
     tour: Option<Tour>,
     /// On the way out, the only layers that still decide: everywhere's hold.
@@ -69,6 +72,49 @@ struct Tour {
     /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
     /// as the tour started.
     stands_in: bool,
+}
+
+/// Everything the places show, as of one call.
+#[derive(Debug)]
+pub(crate) struct Look<'a> {
+    pub decision: Decision,
+    /// What's on screen: the decision's state, else Night Shift as last reported.
+    pub screen: OnOff,
+    pub everywhere: Stack,
+    /// The front app's, when it has a bundle ID a rule could name.
+    pub app: Option<Stack>,
+    /// The site in front, while website checking knows the host: the most specific domain with
+    /// a rule or layers covering it, else the tab domain (ADR-0017).
+    pub site: Option<Stack>,
+    /// Everywhere's hold after the switch the other way from what it gives, by the switch
+    /// itself, run on a copy. The switch never leaves a timer that way.
+    pub after_switch: Option<Layer>,
+    /// Whether the front app's own place says off and no site could say on, so a browser's host
+    /// doesn't matter (ADR-0012).
+    pub browser_holds_off: bool,
+    /// The config's rules, then the ad-hoc ones, then the tour's, each with its snooze: its
+    /// place's top layer, where that says the other way.
+    pub rules: Vec<(&'a Rule, Option<&'a Layer>)>,
+    /// Every place with a hold or a timer, as they decide now.
+    pub layers: &'a [PlaceLayers],
+}
+
+/// One place's stack (ADR-0018), and what it gives with the places in front after it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Stack {
+    pub place: Place,
+    pub timer: Option<Layer>,
+    pub hold: Option<Layer>,
+    /// Its rule, or for everywhere the tour standing in, else the schedule.
+    pub base: Option<Reason>,
+    /// Its own say, else the one it inherits, else Night Shift as last reported.
+    pub gives: OnOff,
+    /// The first less specific place in front that says something, and what.
+    pub inherits: Option<(Place, OnOff)>,
+    /// What it gives under its timer, if anything says something there.
+    pub after_timer: Option<OnOff>,
+    /// What it gives once reset: its base's say, else the one it inherits.
+    pub after_reset: Option<OnOff>,
 }
 
 /// A rule an external change snoozed, which the user is told about (ADR-0018).
@@ -141,17 +187,25 @@ impl Places {
     /// if the tour or the schedule still says otherwise, holds `to` until the user turns it
     /// back.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
-        self.peel_everywhere(to, world);
-        if self.says(&Place::Everywhere, world) != Some(to) {
+        if self.switched(to, world) {
             tracing::info!("switched {to} everywhere until turned back");
-            let layers = self.layers_mut(&Place::Everywhere);
-            layers.timer = None;
-            layers.hold = Some(Layer {
-                state: to,
-                until: None,
-                with: None,
-            });
         }
+    }
+
+    /// The switch, which `look` runs on a copy too: says whether it held `to`.
+    fn switched(&mut self, to: OnOff, world: &World<'_>) -> bool {
+        self.peel_everywhere(to, world);
+        if self.says(&Place::Everywhere, world) == Some(to) {
+            return false;
+        }
+        let layers = self.layers_mut(&Place::Everywhere);
+        layers.timer = None;
+        layers.hold = Some(Layer {
+            state: to,
+            until: None,
+            with: None,
+        });
+        true
     }
 
     /// Puts Night Shift on or off at a place for a length (ADR-0018): a timer for a time or
@@ -418,87 +472,124 @@ impl Places {
         );
     }
 
-    pub(crate) fn decide(&self, world: &World<'_>) -> Decision {
+    pub(crate) fn look<'a>(&'a self, world: &World<'_>) -> Look<'a> {
+        let decision = self.decide(world);
+        let everywhere = self.stack(Place::Everywhere, world);
+        let mut switched = self.clone();
+        switched.switched(everywhere.gives.other(), world);
+        Look {
+            screen: decision.state.unwrap_or(world.observed),
+            decision,
+            app: world
+                .context
+                .app
+                .clone()
+                .map(|app| self.stack(Place::App(app), world)),
+            site: self
+                .site_in_front(world)
+                .map(|site| self.stack(site, world)),
+            after_switch: switched
+                .layers_at(&Place::Everywhere)
+                .and_then(|layers| layers.hold.clone()),
+            everywhere,
+            browser_holds_off: self.browser_holds_off(world),
+            rules: self
+                .rules
+                .iter()
+                .map(|rule| (rule, self.snooze(rule)))
+                .collect(),
+            layers: &self.live.layers,
+        }
+    }
+
+    fn decide(&self, world: &World<'_>) -> Decision {
         decide(&self.inputs(world))
     }
 
     /// What a place itself says, or None when it has no layer.
-    pub(crate) fn says(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
+    fn says(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
         layers_of(&self.inputs(world), place).first().map(says)
     }
 
-    /// What everywhere says under its hold and timer: the tour standing in, or the schedule.
-    pub(crate) fn base_says(&self, world: &World<'_>) -> Option<OnOff> {
-        if self.stands_in() {
-            return Some(OnOff::On);
+    /// A place's layers and what it gives, from them and the places in front after it.
+    fn stack(&self, place: Place, world: &World<'_>) -> Stack {
+        let inputs = self.inputs(world);
+        let from: Vec<(Place, Vec<Reason>)> = self
+            .places_from(&place, world)
+            .into_iter()
+            .map(|each| {
+                let reasons = layers_of(&inputs, &each);
+                (each, reasons)
+            })
+            .collect();
+        let inherits = from
+            .iter()
+            .skip(1)
+            .find_map(|(each, reasons)| reasons.first().map(|top| (each.clone(), says(top))));
+        let gives = from
+            .iter()
+            .find_map(|(_, reasons)| reasons.first().map(says))
+            .unwrap_or(world.observed);
+        let after_timer = from.iter().enumerate().find_map(|(index, (_, reasons))| {
+            reasons
+                .iter()
+                .find(|reason| !(index == 0 && matches!(reason, Reason::Timer(_))))
+                .map(says)
+        });
+        let base = match &place {
+            Place::Everywhere if self.stands_in() => Some(Reason::Tour),
+            Place::Everywhere => inputs.scheduled_state.map(|state| Reason::Schedule {
+                state,
+                until: inputs.next_transition,
+            }),
+            Place::App(_) | Place::Domain(_) => self.rule_at(&place).cloned().map(Reason::Rule),
+        };
+        let after_reset = base
+            .as_ref()
+            .map(says)
+            .or(inherits.as_ref().map(|(_, says)| *says));
+        let layers = self.layers_at(&place);
+        Stack {
+            timer: layers.and_then(|layers| layers.timer.clone()),
+            hold: layers.and_then(|layers| layers.hold.clone()),
+            place,
+            base,
+            gives,
+            inherits,
+            after_timer,
+            after_reset,
         }
-        world
-            .timeline
-            .scheduled_state(world.applied_until)
-            .map(OnOff::from)
     }
 
     /// Whether a tour runs that stands in for the schedule.
-    pub(crate) fn stands_in(&self) -> bool {
+    fn stands_in(&self) -> bool {
         self.tour.as_ref().is_some_and(|tour| tour.stands_in)
     }
 
-    /// What a place gives: its own say, or the one it inherits.
-    pub(crate) fn value_at(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
-        self.places_from(place, world)
-            .iter()
-            .find_map(|place| self.says(place, world))
-    }
-
-    /// What a place would give if it said nothing itself.
-    pub(crate) fn inherited(&self, place: &Place, world: &World<'_>) -> Option<(Place, OnOff)> {
-        self.places_from(place, world)
-            .into_iter()
-            .skip(1)
-            .find_map(|place| self.says(&place, world).map(|says| (place, says)))
-    }
-
-    /// What a place gives under its timer.
-    pub(crate) fn value_below(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
-        let inputs = self.inputs(world);
-        self.places_from(place, world)
-            .iter()
-            .enumerate()
-            .find_map(|(index, each)| {
-                layers_of(&inputs, each)
-                    .iter()
-                    .find(|reason| !(index == 0 && matches!(reason, Reason::Timer(_))))
-                    .map(says)
-            })
-    }
-
     /// The rule for a place, if one says something there.
-    pub(crate) fn rule_at(&self, place: &Place) -> Option<&Rule> {
+    fn rule_at(&self, place: &Place) -> Option<&Rule> {
         self.rules
             .iter()
             .find(|rule| Place::from(rule.identity.clone()) == *place)
     }
 
-    pub(crate) fn layers_at(&self, place: &Place) -> Option<&PlaceLayers> {
+    /// A rule's snooze: its place's top layer, where that says the other way.
+    fn snooze(&self, rule: &Rule) -> Option<&Layer> {
+        self.layers_at(&Place::from(rule.identity.clone()))
+            .and_then(|layers| layers.timer.as_ref().or(layers.hold.as_ref()))
+            .filter(|layer| layer.state != rule.says)
+    }
+
+    fn layers_at(&self, place: &Place) -> Option<&PlaceLayers> {
         self.live
             .layers
             .iter()
             .find(|layers| layers.place == *place)
     }
 
-    /// The config's rules, then the ad-hoc ones, then the tour's.
-    pub(crate) fn rules(&self) -> &[Rule] {
-        &self.rules
-    }
-
-    /// Every place with a hold or a timer, as they decide now.
-    pub(crate) fn layers(&self) -> &[PlaceLayers] {
-        &self.live.layers
-    }
-
     /// The site in front, while website checking knows the host: the most specific domain with
     /// a rule or layers covering it, else the tab domain (ADR-0017).
-    pub(crate) fn site_in_front(&self, world: &World<'_>) -> Option<Place> {
+    fn site_in_front(&self, world: &World<'_>) -> Option<Place> {
         let host = world
             .context
             .host
@@ -512,9 +603,9 @@ impl Places {
         )
     }
 
-    /// Whether the front browser's own place says off and no site could say on, so its host
-    /// doesn't matter.
-    pub(crate) fn browser_holds_off(&self, world: &World<'_>) -> bool {
+    /// Whether the front app's own place says off and no site could say on, so a browser's host
+    /// doesn't matter (ADR-0012).
+    fn browser_holds_off(&self, world: &World<'_>) -> bool {
         let Some(app) = &world.context.app else {
             return false;
         };
@@ -531,42 +622,8 @@ impl Places {
         self.says(&Place::App(app.clone()), world) == Some(OnOff::Off) && !site_could_say_on
     }
 
-    /// Everywhere's hold and timer after the switch to `state`, as `switch` would leave them.
-    pub(crate) fn after_switch(&self, state: OnOff, world: &World<'_>) -> PlaceLayers {
-        let mut layers = self
-            .layers_at(&Place::Everywhere)
-            .cloned()
-            .unwrap_or(PlaceLayers {
-                place: Place::Everywhere,
-                hold: None,
-                timer: None,
-            });
-        loop {
-            match (&layers.timer, &layers.hold) {
-                (Some(timer), _) if timer.state != state => layers.timer = None,
-                (None, Some(hold)) if hold.state != state => layers.hold = None,
-                _ => break,
-            }
-        }
-        let says = layers
-            .timer
-            .as_ref()
-            .or(layers.hold.as_ref())
-            .map(|layer| layer.state)
-            .or(self.base_says(world));
-        if says != Some(state) {
-            layers.timer = None;
-            layers.hold = Some(Layer {
-                state,
-                until: None,
-                with: None,
-            });
-        }
-        layers
-    }
-
     /// What deciding reads. On the way out, only everywhere's hold still applies, with no rules
-    /// and no tour (ADR-0008).
+    /// and no tour (ADR-0008), though stacks still show each place's own rule and layers.
     fn inputs<'a>(&'a self, world: &'a World<'_>) -> Inputs<'a> {
         let released = self.released.as_ref();
         Inputs {
@@ -726,25 +783,26 @@ fn loggable_place(place: &Place) -> String {
 
 /// A rule identity as the log may show it: `tracing-oslog` logs everything as public, so a
 /// domain rule is named by its kind only (ADR-0009).
-pub(crate) fn loggable(identity: &RuleIdentity) -> String {
+fn loggable(identity: &RuleIdentity) -> String {
     match identity {
         RuleIdentity::App(_) => identity.to_string(),
         RuleIdentity::Domain(_) => "a domain rule".to_owned(),
     }
 }
 
-pub(crate) struct Inputs<'a> {
-    pub context: &'a Context,
-    pub rules: &'a [Rule],
+/// What deciding reads.
+struct Inputs<'a> {
+    context: &'a Context,
+    rules: &'a [Rule],
     /// Every place with a hold or a timer.
-    pub layers: &'a [PlaceLayers],
+    layers: &'a [PlaceLayers],
     /// A tour has Night Shift on for itself, in place of the schedule (ADR-0016).
-    pub tour_stands_in: bool,
-    pub scheduled_state: Option<OnOff>,
-    pub next_transition: Option<Timestamp>,
+    tour_stands_in: bool,
+    scheduled_state: Option<OnOff>,
+    next_transition: Option<Timestamp>,
 }
 
-pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
+fn decide(inputs: &Inputs<'_>) -> Decision {
     for place in in_front(inputs) {
         let reasons = layers_of(inputs, &place);
         if let Some(top) = reasons.first() {
@@ -764,7 +822,7 @@ pub(crate) fn decide(inputs: &Inputs<'_>) -> Decision {
 
 /// The places in front, most specific first: the domains covering the host, longest first,
 /// then the app, then everywhere.
-pub(crate) fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
+fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
     let mut domains: Vec<Domain> = Vec::new();
     if let Some(host) = &inputs.context.host {
         let ruled = inputs.rules.iter().filter_map(|rule| match &rule.identity {
@@ -798,7 +856,7 @@ pub(crate) fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
 
 /// What a place holds, top first: its timer, its hold, then its rule, or for everywhere the
 /// tour and the schedule. A place with none of them says nothing.
-pub(crate) fn layers_of(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
+fn layers_of(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
     let layers = inputs.layers.iter().find(|layers| layers.place == *place);
     let mut reasons: Vec<Reason> = layers
         .into_iter()
@@ -834,7 +892,7 @@ pub(crate) fn layers_of(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
 }
 
 /// What a layer says.
-pub(crate) fn says(reason: &Reason) -> OnOff {
+fn says(reason: &Reason) -> OnOff {
     match reason {
         Reason::Timer(layer) | Reason::Hold(layer) => layer.state,
         Reason::Rule(rule) => rule.says,
