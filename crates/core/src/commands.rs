@@ -3,7 +3,7 @@
 //! it takes effect.
 
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, Rule, RuleIdentity, Schedule,
+    Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, Rule, RuleIdentity,
 };
 
 use crate::places::{Places, Refusal};
@@ -118,8 +118,7 @@ impl Core {
                 Err(error) => Err(refused(ErrorCode::BadRequest, error.to_string())),
                 Ok(_) => {
                     tracing::info!("schedule set on command");
-                    state.keep_on_with_schedule_off =
-                        *schedule == Schedule::Off && night_shift == NightShift::On;
+                    state.reconciling.writing_schedule(*schedule, night_shift);
                     effects.push(Effect::SetSchedule {
                         schedule: *schedule,
                     });

@@ -13,7 +13,7 @@ use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
-use crate::turn::{Session, Unreported, wanted};
+use crate::turn::{Reconciling, wanted};
 use crate::watch::Watch;
 use crate::{Core, LoginItem, adhoc, config, tour};
 
@@ -35,24 +35,12 @@ pub(crate) struct State {
     pub(crate) onboarding: u32,
     pub(crate) config_night_shift: NightShiftConfig,
     pub(crate) applied_from_config: NightShiftConfig,
-    /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
-    /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
-    pub(crate) keep_on_with_schedule_off: bool,
+    pub(crate) reconciling: Reconciling,
     /// Whether the frontmost app is in the shell's browser list.
     pub(crate) is_browser: bool,
     pub(crate) watch: Option<Watch>,
     /// The generation of the last watch started.
     pub(crate) generation: u64,
-    /// The write the shell was last asked for, until a status callback reports the result.
-    pub(crate) pending_write: Option<bool>,
-    pub(crate) unreported: Option<Unreported>,
-    pub(crate) session: Session,
-    /// Where the last run left Night Shift, which the first status callback will show.
-    pub(crate) left_by_last_run: Option<OnOff>,
-    /// The wakeup the shell was last asked for.
-    pub(crate) wakeup: Option<Timestamp>,
-    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
-    pub(crate) sun_times_awaited_since: Option<Timestamp>,
     /// macOS has sunset to sunrise set aside, and the schedule is off.
     pub(crate) schedule_set_aside: bool,
     /// See `Persisted::schedule_off_accepted`.

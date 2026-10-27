@@ -193,7 +193,8 @@ impl State {
                 "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
             )
         } else if self
-            .sun_times_awaited_since
+            .reconciling
+            .sun_times_awaited_since()
             .is_some_and(|since| now.duration_since(since) >= SUN_TIMES_PATIENCE)
         {
             check(

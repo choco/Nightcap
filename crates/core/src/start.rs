@@ -12,7 +12,7 @@ use crate::config::{self, NightShiftConfig};
 use crate::file::Files;
 use crate::places::{Context, Kept, Places};
 use crate::schedule::{SunTimes, Timeline};
-use crate::turn::Session;
+use crate::turn::Reconciling;
 use crate::{Core, CoreError, Facts, State, adhoc, ipc, state};
 
 /// Where a core lives and what kind of install it serves.
@@ -108,16 +108,10 @@ impl Core {
                 onboarding: persisted.onboarding,
                 config_night_shift: config.night_shift,
                 applied_from_config: persisted.applied_from_config,
-                keep_on_with_schedule_off: false,
+                reconciling: Reconciling::new(persisted.night_shift),
                 is_browser: false,
                 watch: None,
                 generation: 0,
-                pending_write: None,
-                unreported: None,
-                session: Session::Active,
-                left_by_last_run: persisted.night_shift,
-                wakeup: None,
-                sun_times_awaited_since: None,
                 schedule_set_aside: false,
                 schedule_off_accepted: persisted.schedule_off_accepted,
                 accessibility: None,

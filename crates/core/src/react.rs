@@ -5,12 +5,11 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, NightShift, NotificationPermission, OnOff, Schedule};
+use nightcap_protocol::{Command, NightShift, NotificationPermission, OnOff};
 
 use crate::domain::Host;
 use crate::onboarding::ONBOARDING;
-use crate::schedule::{CheckedSchedule, SunTimes};
-use crate::turn::{POST_WAKE_GRACE, Session};
+use crate::schedule::SunTimes;
 use crate::{Core, Effect, Event, Fix, LoginItem, State, tour};
 
 impl Core {
@@ -116,51 +115,7 @@ impl Core {
                 enabled,
                 schedule,
                 sun_schedule_set_aside,
-            } => {
-                if state.session == Session::Away {
-                    tracing::debug!("ignored a status callback while dormant");
-                    return Vec::new();
-                }
-                state.facts.night_shift = if enabled {
-                    NightShift::On
-                } else {
-                    NightShift::Off
-                };
-                state.pending_write = None;
-                let keep_on = std::mem::take(&mut state.keep_on_with_schedule_off);
-                // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
-                let checked = CheckedSchedule::try_from(schedule)
-                    .inspect_err(|error| {
-                        tracing::error!("the shell reported a schedule it can't have: {error}");
-                    })
-                    .ok();
-                let previous = std::mem::replace(&mut state.facts.timeline.schedule, checked);
-                state.schedule_set_aside = sun_schedule_set_aside && schedule == Schedule::Off;
-                if !state.schedule_set_aside {
-                    state.schedule_off_accepted = false;
-                }
-                if state.session == Session::Back {
-                    // The shell's fresh read after returning: nobody could change Night Shift by
-                    // hand while the session was away.
-                    state.session = Session::Active;
-                    Vec::new()
-                } else if previous
-                    .zip(checked)
-                    .is_some_and(|(previous, checked)| previous != checked)
-                {
-                    // macOS applies an edited schedule at once, so the edit is a schedule
-                    // transition and whatever it switched isn't an external change.
-                    tracing::info!("schedule edited");
-                    state.places.schedule_edited();
-                    if keep_on && schedule == Schedule::Off && !enabled {
-                        let now = self.clock.now();
-                        state.places.switch(OnOff::On, &state.facts.world(now));
-                    }
-                    Vec::new()
-                } else {
-                    self.reconcile(state, enabled).into_iter().collect()
-                }
-            }
+            } => self.status_changed(state, enabled, schedule, sun_schedule_set_aside),
             Event::StrengthChanged { value } => {
                 state.strength = Some(value);
                 Vec::new()
@@ -234,8 +189,7 @@ impl Core {
             // `handle` runs it through `choose`.
             Event::CommandChosen { .. } => Vec::new(),
             Event::TimerFired => {
-                // The shell's timer is spent, whether or not its transition came due.
-                state.wakeup = None;
+                state.reconciling.timer_fired();
                 Vec::new()
             }
             Event::SunTimesChanged { sunrises, sunsets } => {
@@ -270,16 +224,11 @@ impl Core {
                 Vec::new()
             }
             Event::SessionChanged { active } => {
-                tracing::info!("session active: {active}");
-                state.session = if active { Session::Back } else { Session::Away };
+                state.reconciling.session_changed(active);
                 Vec::new()
             }
             Event::Woke => {
-                tracing::debug!("woke");
-                let now = self.clock.now();
-                if let Some(unreported) = &mut state.unreported {
-                    unreported.until = now + POST_WAKE_GRACE;
-                }
+                state.reconciling.woke(self.clock.now());
                 Vec::new()
             }
             Event::Terminating => {
