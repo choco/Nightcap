@@ -9,6 +9,11 @@
   - CI runs `lint --strict`.
 - **Long string literals:** swift-format can't break them, so split them by hand. Split copy into concatenated sentences, and a log message into a multiline literal with escaped line ends.
 
+## Layout
+
+- **Group files into folders by role or feature:** the app's composition, the adapters to the system, each window or flow, the shared UI kit, debug tools.
+- **Folder-synced groups:** a new folder joins its target by itself. A file that a second target also compiles is listed, by its path, in that target's exceptions.
+
 ## UI
 
 - **AppKit throughout.**

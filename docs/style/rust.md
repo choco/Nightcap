@@ -13,6 +13,12 @@
 - **rustdoc** runs with `-D warnings`.
 - **cargo-deny** checks licences, advisories, duplicate versions and sources.
 
+## Layout
+
+- **Group modules into directories by concept,** so the tree reads as the crate's map. For example: the domain model, the machinery that runs it, what is kept on disk, the transports.
+- **A module with submodules is a file plus a directory of the same name.** `src/server.rs` declares `mod mailbox;`, found at `src/server/mailbox.rs`. This is the Rust Book's layout (chapter 7.5), which calls `mod.rs` the older style. The one exception is `tests/common/mod.rs` (see Tests).
+- **A file is about one thing.** When one grows to hold several concepts, split it by concept, not by kind of code.
+
 ## Tests
 
 The layout is the one in the Rust Book's chapter 11.3, Test Organization:
