@@ -417,7 +417,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
                 return (bundleId, "Not installed on this Mac", Tile(symbol: "app"))
             }
-            let icon = NSImageView(image: NSWorkspace.shared.icon(forFile: url.path))
+            let icon = NSImageView(image: Apps.icon(at: url, side: 26))
             icon.imageScaling = .scaleProportionallyUpOrDown
             icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
             icon.heightAnchor.constraint(equalToConstant: 26).isActive = true

@@ -362,7 +362,7 @@ enum StageArt {
                     } else if case .app(let bundleId) = row.image,
                         let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
                     {
-                        NSWorkspace.shared.icon(forFile: app.path).draw(
+                        Apps.icon(at: app, side: 14).draw(
                             in: NSRect(x: centre.x - 7, y: centre.y - 7, width: 14, height: 14), from: .zero,
                             operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                     }

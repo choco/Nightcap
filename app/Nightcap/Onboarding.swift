@@ -1009,17 +1009,7 @@ struct GridItem {
         id = bundleId
         name = Apps.name(at: url)
         detail = kind
-        icon = .app(Self.loaded(NSWorkspace.shared.icon(forFile: url.path)))
-    }
-}
-
-extension GridItem {
-    /// An app's icon drawn once at the grid's size, since icons from an asset catalog arrive
-    /// blank until something asks for their pixels.
-    static func loaded(_ icon: NSImage) -> NSImage {
-        var rect = NSRect(x: 0, y: 0, width: 48, height: 48)
-        guard let pixels = icon.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return icon }
-        return NSImage(cgImage: pixels, size: NSSize(width: 24, height: 24))
+        icon = .app(Apps.icon(at: url, side: 24))
     }
 }
 

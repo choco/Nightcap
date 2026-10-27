@@ -1,13 +1,22 @@
 import AppKit
 import NightcapCore
 
-/// Apps on this Mac, as Settings, onboarding and the tour's site step name them, and let the user
-/// pick one.
+/// Apps on this Mac, as Settings, onboarding and the tour name them and draw their icons, and let
+/// the user pick one.
 enum Apps {
     /// The name Finder shows for the app at `url`, without ".app" unless Finder shows every
     /// extension.
     static func name(at url: URL) -> String {
         FileManager.default.displayName(atPath: url.path)
+    }
+
+    /// The icon of the app at `url`, drawn once at `side` points on a Retina screen, since icons
+    /// from an asset catalog fill in lazily, blank until something asks for their pixels.
+    static func icon(at url: URL, side: CGFloat) -> NSImage {
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        var rect = NSRect(x: 0, y: 0, width: side * 2, height: side * 2)
+        guard let pixels = icon.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return icon }
+        return NSImage(cgImage: pixels, size: NSSize(width: side, height: side))
     }
 
     /// A sheet over the Applications folder, which hands `chosen` the bundle ID of the app picked,
