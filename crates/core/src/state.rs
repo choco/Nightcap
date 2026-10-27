@@ -1,16 +1,15 @@
 //! Runtime state that survives restarts, in `$XDG_STATE_HOME/<instance>/state.json`
 //! (ADR-0008). Readers tolerate unknown keys, so only a breaking change bumps the version.
 
-use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::sync::Arc;
 
 use jiff::Timestamp;
 use nightcap_protocol::{CheckKind, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
 use crate::config::NightShiftConfig;
-use crate::file::write_whole;
+use crate::file::{self, Files, Owned};
 
 const VERSION: u32 = 1;
 
@@ -78,22 +77,23 @@ struct File {
 }
 
 pub(crate) struct Store {
-    path: PathBuf,
+    files: Arc<dyn Files>,
 }
 
 impl Store {
-    pub(crate) fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub(crate) fn new(files: Arc<dyn Files>) -> Self {
+        Self { files }
     }
 
     /// A missing, unreadable or newer file starts fresh: this state only carries intent
     /// that is cheap to lose.
     pub(crate) fn load(&self) -> Persisted {
-        let bytes = match fs::read(&self.path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Persisted::default(),
+        let path = self.files.path(file::File::State);
+        let bytes = match self.files.read(file::File::State) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => return Persisted::default(),
             Err(error) => {
-                tracing::warn!("couldn't read {}: {error}", self.path.display());
+                tracing::warn!("couldn't read {}: {error}", path.display());
                 return Persisted::default();
             }
         };
@@ -102,13 +102,13 @@ impl Store {
             Ok(file) => {
                 tracing::warn!(
                     "{} is version {}, newer than this build's {VERSION}; starting fresh",
-                    self.path.display(),
+                    path.display(),
                     file.version
                 );
                 Persisted::default()
             }
             Err(error) => {
-                tracing::warn!("couldn't parse {}: {error}", self.path.display());
+                tracing::warn!("couldn't parse {}: {error}", path.display());
                 Persisted::default()
             }
         }
@@ -119,6 +119,7 @@ impl Store {
             version: VERSION,
             state: state.clone(),
         };
-        write_whole(&self.path, &serde_json::to_vec_pretty(&file)?)
+        self.files
+            .write(Owned::State, &serde_json::to_vec_pretty(&file)?)
     }
 }

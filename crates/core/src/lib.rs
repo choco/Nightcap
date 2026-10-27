@@ -19,7 +19,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::time::SystemTime;
 
-use etcetera::BaseStrategy;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
@@ -32,6 +31,7 @@ use nightcap_protocol::{
 
 use config::NightShiftConfig;
 use domain::Host;
+use file::{Disk, Files, Paths};
 use places::{Context, Kept, Places, Refusal, Stack, World};
 use rows::{Rows, clock_time, here, layer_text, name_in_front, until_text, whose};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
@@ -658,8 +658,8 @@ pub struct Core {
     instance: Instance,
     install: Install,
     socket: PathBuf,
+    files: Arc<dyn Files>,
     store: state::Store,
-    config_file: PathBuf,
     ad_hoc_store: adhoc::Store,
     clock: Arc<dyn Clock>,
     requests: Mutex<mpsc::Receiver<ipc::Pending>>,
@@ -682,9 +682,7 @@ struct Setup {
     instance: Instance,
     install: Install,
     socket: PathBuf,
-    state_file: PathBuf,
-    config_file: PathBuf,
-    rules_file: PathBuf,
+    files: Arc<dyn Files>,
     clock: Arc<dyn Clock>,
     zone: TimeZone,
 }
@@ -798,12 +796,7 @@ impl Core {
         let socket = instance.socket_path().map_err(|error| CoreError::Io {
             message: error.to_string(),
         })?;
-        let xdg = etcetera::base_strategy::Xdg::new().map_err(|error| CoreError::Io {
-            message: format!("can't find the XDG base directories: {error}"),
-        })?;
-        let state_folder = xdg.state_dir().ok_or_else(|| CoreError::Io {
-            message: "can't find the XDG state directory".to_owned(),
-        })?;
+        let files = Disk(Paths::xdg(instance)?);
         let zone = TimeZone::get(&time_zone).map_err(|error| {
             if jiff::tz::db().is_definitively_empty() {
                 CoreError::Io {
@@ -825,17 +818,7 @@ impl Core {
                 instance,
                 install,
                 socket,
-                state_file: state_folder
-                    .join(instance.xdg_folder_name())
-                    .join("state.json"),
-                config_file: xdg
-                    .config_dir()
-                    .join(instance.xdg_folder_name())
-                    .join("config.toml"),
-                rules_file: xdg
-                    .data_dir()
-                    .join(instance.xdg_folder_name())
-                    .join("rules.toml"),
+                files: Arc::new(files),
                 clock: Arc::new(SystemClock),
                 zone,
             },
@@ -900,7 +883,7 @@ impl Core {
                 command: Command::Websites(OnOff::from(!on)),
             },
             // Registered but waiting for approval counts as on; its check explains the rest.
-            config_path: self.config_file.display().to_string(),
+            config_path: self.files.path(file::File::Config).display().to_string(),
             rules: look
                 .rules
                 .iter()
@@ -1346,10 +1329,10 @@ impl Core {
 
     fn start(setup: Setup, waker: Arc<dyn Waker>) -> Result<Self, CoreError> {
         let requests = ipc::serve(&setup.socket, waker)?;
-        let store = state::Store::new(setup.state_file);
+        let store = state::Store::new(setup.files.clone());
         let mut persisted = store.load();
         persisted.expire(setup.clock.now());
-        let (config, config_error) = match config::load(&setup.config_file) {
+        let (config, config_error) = match config::load(setup.files.as_ref()) {
             Ok(config) => (config, None),
             Err(error) => {
                 tracing::warn!(
@@ -1366,7 +1349,7 @@ impl Core {
                 (config, Some(error))
             }
         };
-        let ad_hoc_store = adhoc::Store::new(setup.rules_file);
+        let ad_hoc_store = adhoc::Store::new(setup.files.clone());
         let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
             Ok(rules) => (rules, None),
             Err(error) => {
@@ -1381,8 +1364,8 @@ impl Core {
             instance: setup.instance,
             install: setup.install,
             socket: setup.socket,
+            files: setup.files,
             store,
-            config_file: setup.config_file,
             ad_hoc_store,
             clock: setup.clock.clone(),
             requests: Mutex::new(requests),
@@ -1506,7 +1489,7 @@ impl Core {
     /// Loads the config again; an invalid one keeps the rules loaded before, and its check says
     /// why.
     fn reload(&self, state: &mut State, effects: &mut Vec<Effect>) -> Result<(), ErrorReply> {
-        match config::load(&self.config_file) {
+        match config::load(self.files.as_ref()) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
                 state.facts.config_websites = config.websites;

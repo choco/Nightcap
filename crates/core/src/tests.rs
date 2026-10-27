@@ -16,6 +16,7 @@ use nightcap_protocol::{
 
 use crate::adhoc;
 use crate::config::NightShiftConfig;
+use crate::file::{Disk, Files, Paths};
 use crate::state::{Persisted, Store};
 use crate::{
     Clock, Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon,
@@ -110,18 +111,21 @@ fn restart_at(socket: &Path, now: &str) -> (Core, PathBuf, mpsc::Receiver<()>, A
     (core, restarted, wakes, clock)
 }
 
-/// Keeps the state file beside the socket, inside the test's temporary folder.
+/// Keeps the files beside the socket's folder, in the test's temporary folder.
 fn setup(socket: &Path, instance: Instance, install: Install) -> Setup {
     Setup {
         instance,
         install,
         socket: socket.to_owned(),
-        state_file: socket.with_file_name("state.json"),
-        config_file: config_beside(socket),
-        rules_file: socket.parent().unwrap().with_file_name("rules.toml"),
+        files: on_disk(socket.parent().unwrap().parent().unwrap()),
         clock: TestClock::at("2026-10-16T12:00:00+02:00"),
         zone: TimeZone::get("Europe/Zurich").unwrap(),
     }
+}
+
+/// The core's files, each straight in `folder`.
+fn on_disk(folder: &Path) -> Arc<dyn Files> {
+    Arc::new(Disk(Paths::in_folder(folder)))
 }
 
 fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
@@ -3084,7 +3088,7 @@ fn an_ad_hoc_rule_graduates_whatever_either_says() {
         rules_of(&core, &socket, &wakes),
         vec![app_rule("com.figma.desktop")]
     );
-    let store = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
+    let store = adhoc::Store::new(on_disk(dir.path()));
     assert_eq!(store.load().unwrap(), Vec::new());
 }
 
@@ -4190,7 +4194,7 @@ fn update_notice() -> Effect {
 /// Leaves the state an earlier run saved after onboarding, by a version that kept its own, or
 /// by one from before versions were kept.
 fn saved_by(socket: &Path, last_version: Option<&str>) {
-    Store::new(socket.with_file_name("state.json"))
+    Store::new(on_disk(socket.parent().unwrap().parent().unwrap()))
         .save(&Persisted {
             onboarding: 1,
             last_version: last_version.map(str::to_owned),
@@ -4561,7 +4565,7 @@ fn a_dev_build_never_registers_a_login_item() {
 #[test]
 fn saved_ad_hoc_rules_load_back() {
     let dir = tempfile::tempdir().unwrap();
-    let store = adhoc::Store::new(dir.path().join("nightcap").join("rules.toml"));
+    let store = adhoc::Store::new(on_disk(&dir.path().join("nightcap")));
     let rules = vec![
         (figma(), OnOff::Off),
         (
@@ -4586,7 +4590,7 @@ fn ad_hoc_rules_from_a_newer_build_are_refused() {
     .unwrap();
 
     assert!(matches!(
-        adhoc::Store::new(path).load(),
+        adhoc::Store::new(on_disk(dir.path())).load(),
         Err(adhoc::AdHocError::Newer { version: 3, .. })
     ));
 }
@@ -4602,7 +4606,7 @@ fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
     .unwrap();
 
     assert_eq!(
-        adhoc::Store::new(path).load().unwrap(),
+        adhoc::Store::new(on_disk(dir.path())).load().unwrap(),
         vec![(figma(), OnOff::Off)]
     );
 }
@@ -4610,7 +4614,7 @@ fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
 #[test]
 fn saved_state_loads_back() {
     let dir = tempfile::tempdir().unwrap();
-    let store = Store::new(dir.path().join("nightcap").join("state.json"));
+    let store = Store::new(on_disk(&dir.path().join("nightcap")));
     let state = Persisted {
         layers: vec![
             layered(
@@ -4662,7 +4666,7 @@ fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_d
     )
     .unwrap();
 
-    let state = Store::new(path).load();
+    let state = Store::new(on_disk(dir.path())).load();
 
     assert_eq!(state.layers, Vec::new());
     assert!(state.websites);
@@ -4673,10 +4677,7 @@ fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_d
 fn missing_state_starts_fresh() {
     let dir = tempfile::tempdir().unwrap();
 
-    assert_eq!(
-        Store::new(dir.path().join("state.json")).load(),
-        Persisted::default()
-    );
+    assert_eq!(Store::new(on_disk(dir.path())).load(), Persisted::default());
 }
 
 #[test]
@@ -4685,7 +4686,7 @@ fn state_from_a_newer_build_starts_fresh() {
     let path = dir.path().join("state.json");
     std::fs::write(&path, r#"{"version":2,"login_item_registered":true}"#).unwrap();
 
-    assert_eq!(Store::new(path).load(), Persisted::default());
+    assert_eq!(Store::new(on_disk(dir.path())).load(), Persisted::default());
 }
 
 #[test]
@@ -4698,7 +4699,7 @@ fn state_with_keys_this_build_doesnt_know_still_loads() {
     )
     .unwrap();
 
-    assert!(Store::new(path).load().websites);
+    assert!(Store::new(on_disk(dir.path())).load().websites);
 }
 
 /// The check of `kind` in the status, if the core reports one.
@@ -5855,7 +5856,7 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
         !kept.contains(SAMPLE) && !kept.contains("choco.me"),
         "{kept}"
     );
-    let saved = std::fs::read_to_string(socket.with_file_name("state.json")).unwrap();
+    let saved = std::fs::read_to_string(dir.path().join("state.json")).unwrap();
     assert!(!saved.contains(SAMPLE), "{saved}");
 
     core.handle(Event::TourEnded);
@@ -5923,7 +5924,7 @@ fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
 
     send(&core, &socket, &wakes, Command::RemoveRule(mail.clone()));
     assert_eq!(status_of(&core, &socket, &wakes).rules, Vec::new());
-    let kept = adhoc::Store::new(socket.parent().unwrap().with_file_name("rules.toml"));
+    let kept = adhoc::Store::new(on_disk(dir.path()));
     assert_eq!(kept.load().unwrap(), vec![(mail.clone(), OnOff::Off)]);
     core.handle(Event::TourEnded);
 

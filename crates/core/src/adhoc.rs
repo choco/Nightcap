@@ -2,14 +2,14 @@
 //! (ADR-0007). Only the core writes it. It has the config's rule tables plus a version, and
 //! readers tolerate unknown keys, so only a breaking change bumps the version.
 
-use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use nightcap_protocol::{ExportFormat, IdentityError, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
-use crate::file::write_whole_synced;
+use crate::file::{self, Files, Owned};
 
 /// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
@@ -78,22 +78,22 @@ impl AdHocError {
 }
 
 pub(crate) struct Store {
-    path: PathBuf,
+    files: Arc<dyn Files>,
 }
 
 impl Store {
-    pub(crate) fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub(crate) fn new(files: Arc<dyn Files>) -> Self {
+        Self { files }
     }
 
     /// The ad-hoc rules and what each says, or why there are none to use: an invalid file, or
     /// one from a newer Nightcap, which must never be overwritten. A missing file means no
     /// rules.
     pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, AdHocError> {
-        let path = || self.path.clone();
-        let text = match fs::read_to_string(&self.path) {
-            Ok(text) => text,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        let path = || self.files.path(file::File::Rules);
+        let contents = match self.files.read(file::File::Rules) {
+            Ok(Some(contents)) => contents,
+            Ok(None) => return Ok(Vec::new()),
             Err(error) => {
                 return Err(AdHocError::Unreadable {
                     path: path(),
@@ -101,7 +101,7 @@ impl Store {
                 });
             }
         };
-        let file: File = toml::from_str(&text).map_err(|error| AdHocError::Malformed {
+        let file: File = toml::from_slice(&contents).map_err(|error| AdHocError::Malformed {
             path: path(),
             error,
         })?;
@@ -145,8 +145,8 @@ impl Store {
             rules: Rules::from(rules),
         };
         let text = toml::to_string(&file).map_err(io::Error::other)?;
-        write_whole_synced(
-            &self.path,
+        self.files.write(
+            Owned::Rules,
             format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}").as_bytes(),
         )
     }

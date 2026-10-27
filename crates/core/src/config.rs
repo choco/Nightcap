@@ -1,9 +1,8 @@
 //! `config.toml`: the config rules, declared by the user or their installer (ADR-0007,
 //! ADR-0006). It is strict, so a typo is an error rather than a rule that silently never matches.
 
-use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
@@ -11,6 +10,7 @@ use nightcap_protocol::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::file::{self, Files};
 use crate::schedule;
 
 #[derive(Deserialize)]
@@ -136,11 +136,12 @@ pub(crate) enum Problem {
     Lengths(Vec<String>),
 }
 
-/// The config in `path`. A missing file means no rules, as on a fresh brew install.
-pub(crate) fn load(path: &Path) -> Result<Config, ConfigError> {
-    let text = match fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+/// The config. A missing file means no rules, as on a fresh brew install.
+pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
+    let path = || files.path(file::File::Config);
+    let contents = match files.read(file::File::Config) {
+        Ok(Some(contents)) => contents,
+        Ok(None) => {
             return Ok(Config {
                 rules: Vec::new(),
                 websites: None,
@@ -151,17 +152,17 @@ pub(crate) fn load(path: &Path) -> Result<Config, ConfigError> {
         }
         Err(error) => {
             return Err(ConfigError::Unreadable {
-                path: path.to_owned(),
+                path: path(),
                 error,
             });
         }
     };
-    let file = toml::from_str(&text).map_err(|error| ConfigError::Malformed {
-        path: path.to_owned(),
+    let file = toml::from_slice(&contents).map_err(|error| ConfigError::Malformed {
+        path: path(),
         error,
     })?;
     checked(file).map_err(|problem| ConfigError::Invalid {
-        path: path.to_owned(),
+        path: path(),
         problem,
     })
 }
