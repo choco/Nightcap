@@ -40,8 +40,7 @@ pub(crate) struct World<'a> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Kept {
     /// Each place's temporary rules and everywhere's indefinite one, a place's together and its
-    /// shortest first: at most one of each length at a place, where everywhere's indefinite rule
-    /// and its rule until the schedule turns take each other's place.
+    /// shortest first, at most one of each length.
     pub rules: Vec<Rule>,
     /// The place an external change set a rule until the schedule turns at together with
     /// everywhere's: taking off either takes off both (ADR-0018).
@@ -776,13 +775,11 @@ impl Places {
     }
 }
 
-/// Where a rule's length puts it among its place's, shortest first. Everywhere's indefinite rule
-/// shares its place with its rule until the schedule turns, so either replaces the other.
+/// Where a rule's length puts it among its place's, shortest first.
 fn rank(rule: &Rule) -> u8 {
     match rule.length {
         Length::Until { .. } => 0,
         Length::UntilScheduleTurns { .. } => 1,
-        Length::Indefinite if rule.place == Place::Everywhere => 1,
         Length::Indefinite => 2,
     }
 }
@@ -1776,6 +1773,21 @@ mod tests {
                 vec![
                     everywhere(OnOff::Off, until(soon)),
                     everywhere(OnOff::On, Length::Indefinite),
+                ],
+                false,
+            ),
+            (
+                vec![
+                    everywhere(OnOff::On, until_turn(MORNING)),
+                    everywhere(OnOff::Off, Length::Indefinite),
+                ],
+                false,
+            ),
+            (
+                vec![
+                    everywhere(OnOff::Off, until(soon)),
+                    everywhere(OnOff::On, until_turn(MORNING)),
+                    everywhere(OnOff::Off, Length::Indefinite),
                 ],
                 false,
             ),

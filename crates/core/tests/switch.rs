@@ -263,7 +263,7 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
 }
 
 #[test]
-fn until_the_schedule_turns_replaces_everywheres_indefinite_rule_and_ends_its_shorter_one() {
+fn until_the_schedule_turns_sits_over_everywheres_indefinite_rule_and_ends_its_shorter_one() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
@@ -275,12 +275,51 @@ fn until_the_schedule_turns_replaces_everywheres_indefinite_rule_and_ends_its_sh
 
     assert_eq!(
         resettable(&staged),
-        vec![yours(
-            Place::Everywhere,
-            OnOff::Off,
-            until_turn("2026-10-17T22:00:00+02:00")
-        )]
+        vec![
+            yours(
+                Place::Everywhere,
+                OnOff::Off,
+                until_turn("2026-10-17T22:00:00+02:00")
+            ),
+            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+        ]
     );
+}
+
+#[test]
+fn everywheres_indefinite_rule_comes_back_when_a_temporary_one_over_it_ends() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    send(&staged, Command::Off);
+    staged.report(reported(false, custom_hours()));
+    send(
+        &staged,
+        set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
+    );
+    staged.report(reported(true, custom_hours()));
+
+    assert_eq!(
+        resettable(&staged),
+        vec![
+            yours(
+                Place::Everywhere,
+                OnOff::On,
+                until_turn("2026-10-17T07:00:00+02:00")
+            ),
+            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+        ]
+    );
+    staged.set_now(at("2026-10-17T07:00:00+02:00"));
+    staged.report(Fact::TimerFired);
+    staged.report(reported(false, custom_hours()));
+    assert_eq!(
+        resettable(&staged),
+        vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)]
+    );
+    staged.set_now(at("2026-10-17T22:00:00+02:00"));
+    staged.report(Fact::TimerFired);
+    // macOS performs its own transition, and Nightcap puts Night Shift back off.
+    let effects = staged.report(reported(true, custom_hours())).effects;
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
 }
 
 #[test]

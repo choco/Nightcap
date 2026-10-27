@@ -21,7 +21,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 
 **Which rule decides**
 
-- At one place, there's one rule of each length at most, and the shortest decides: until a time, then until the schedule turns, then indefinitely. When one ends, the next takes over. Everywhere's indefinite rule and its rule until the schedule turns take each other's place.
+- At one place, there's one rule of each length at most, and the shortest decides: until a time, then until the schedule turns, then indefinitely. When one ends, the next takes over, everywhere as at an app or a site.
 - A new rule takes off its place's rules of its length and shorter.
 - Across places, the most specific place in front that says something decides what Night Shift does: the site, then the app, then everywhere. Under everywhere's rules lies the schedule, which says something once it's known.
 
@@ -57,6 +57,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 
 - A tap in front of a rule can change nothing on screen, since the switch has one meaning everywhere. The menu bar's moon still shows the change.
 - An indefinite rule for everywhere keeps Night Shift where the user put it through every sunrise and sunset. Nightcap sets it back after each of macOS's own transitions, as it does for an app's rule.
+- A temporary rule for everywhere, such as on until sunrise over the switch's off, gives the indefinite rule back when it ends.
 - Turning Night Shift off everywhere leaves a snoozed rule's app warm, since the snooze is more specific.
 - A browser whose own place says off is still watched while a site in it could say on (ADR-0012).
 - Telling the user what an external change was taken as needs notification permission. If it is denied, only `status` and the logs say so.
@@ -64,6 +65,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 ## Rejected alternatives
 
 - **Layers: a place's rule under a hold and a timer, with the schedule under everywhere's**: three names, in the storage's terms, for what differ only in how long they last.
+- **Everywhere's indefinite rule and its rule until the schedule turns in one place, each replacing the other**: on until sunrise over the switch's off lost the off for good, where at an app or a site the indefinite rule comes back.
 - **The switch until the schedule's next change, with the overrides it made in front of rules tied to it** (the first prototype): a rule in front took over the switch, and its overrides outlived what the user saw.
 - **The switch flipping what the user sees, snoozing a rule in front**: changing everywhere would then act on the rule too, hiding everywhere exactly when a rule was in front.
 - **The switch until the schedule next turns it back**: a forgotten flip would right itself at sunrise or sunset, but the switch would mean something different from an indefinite rule.
