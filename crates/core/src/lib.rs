@@ -21,6 +21,7 @@ mod shell;
 mod staging;
 mod start;
 mod state;
+mod status;
 mod tour;
 
 pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
@@ -47,12 +48,10 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    BundleId, Command, Decision, ErrorCode, ErrorReply, ExportFormat, Install, Instance,
-    NightShift, NotificationPermission, OnOff, Payload, Permissions, Query, Request, Response,
-    Schedule, Status, WebsiteChecking,
+    BundleId, Command, Decision, ExportFormat, Install, Instance, NightShift,
+    NotificationPermission, OnOff, Schedule,
 };
 
-use commands::refused;
 use domain::Host;
 #[cfg(not(any(test, debug_assertions)))]
 use file::File;
@@ -520,55 +519,6 @@ impl Core {
         self.state.lock().expect("no panic happens while it's held")
     }
 
-    fn answer(&self, state: &mut State, request: &Request, effects: &mut Vec<Effect>) -> Response {
-        match request {
-            Request::Command(command) => match self.run_command(state, command, effects) {
-                Ok(decision) => Response::Ok(Payload::Decision(decision)),
-                Err(error) => Response::Error(error),
-            },
-            Request::Query(Query::Status) => self.status(state),
-            Request::Query(Query::Rules) => {
-                let look = state.places.look(&state.facts.world(self.clock.now()));
-                Response::Ok(Payload::Rules(
-                    look.rules
-                        .into_iter()
-                        .map(|(rule, _)| rule.clone())
-                        .collect(),
-                ))
-            }
-            Request::Query(Query::Export(format)) => {
-                match adhoc::export(&state.places.kept().ad_hoc, *format) {
-                    Ok(text) => Response::Ok(Payload::Export(text)),
-                    Err(error) => Response::Error(refused(
-                        ErrorCode::Internal,
-                        format!("couldn't write the rules as TOML: {error}"),
-                    )),
-                }
-            }
-            Request::Update => {
-                if self.updates_itself() {
-                    tracing::info!("checking for updates");
-                    effects.push(Effect::CheckForUpdates);
-                    return Response::Ok(Payload::UpdateCheckStarted);
-                }
-                Response::Error(ErrorReply {
-                    code: ErrorCode::NoUpdater,
-                    message: match self.instance {
-                        Instance::Dev => "Dev builds don't update themselves; rebuild instead",
-                        Instance::Release => {
-                            "This install is managed by its installer, which keeps it up to date"
-                        }
-                    }
-                    .to_owned(),
-                })
-            }
-            Request::Reload => match self.reload(state, effects) {
-                Ok(()) => self.status(state),
-                Err(error) => Response::Error(error),
-            },
-        }
-    }
-
     /// Reconciles a status callback with what the core wants (ADR-0004). macOS catching up on a
     /// transition the core already applied, or running just ahead of the next one, is that
     /// transition; a match needs nothing; anything else is an external change, handled like the
@@ -757,50 +707,6 @@ impl Core {
             effects.push(Effect::SetNightShift { enabled: wanted });
         }
     }
-
-    fn status(&self, state: &State) -> Response {
-        let facts = &state.facts;
-        let look = state.places.look(&facts.world(self.clock.now()));
-        Response::Ok(Payload::Status(Box::new(Status {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            install: self.install,
-            night_shift: facts.night_shift,
-            strength: state.strength,
-            config_strength: state.config_night_shift.strength,
-            decision: look.decision,
-            schedule: facts.timeline.schedule.map(Schedule::from),
-            config_schedule: state.config_night_shift.schedule,
-            scheduled_state: facts
-                .timeline
-                .scheduled_state(facts.applied_until)
-                .map(OnOff::from),
-            next_transition: facts.timeline.next_transition(facts.applied_until),
-            frontmost_app: facts.context.app.clone().map(String::from),
-            watching: state.watch.is_some(),
-            host: facts
-                .context
-                .host
-                .as_ref()
-                .map(|host| host.as_str().to_owned()),
-            rules: look
-                .rules
-                .into_iter()
-                .map(|(rule, _)| rule.clone())
-                .collect(),
-            config_error: state.config_error.as_ref().map(ToString::to_string),
-            ad_hoc_error: state.ad_hoc_error.as_ref().map(ToString::to_string),
-            website_checking: WebsiteChecking {
-                state: OnOff::from(facts.website_checking()),
-                from_config: facts.config_websites.is_some(),
-            },
-            layers: look.layers.to_vec(),
-            permissions: Permissions {
-                accessibility: state.accessibility == Some(true),
-                notifications: state.notifications,
-            },
-            checks: state.checks(self.clock.now()),
-        })))
-    }
 }
 
 /// A schedule transition the core applied on its own clock that macOS hasn't reported
@@ -830,8 +736,6 @@ struct Watch {
     generation: u64,
     reported: bool,
 }
-
-impl State {}
 
 /// The Night Shift state a decision asks for, if it asks for one.
 fn wanted(decision: &Decision) -> Option<bool> {
