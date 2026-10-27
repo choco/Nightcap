@@ -8,7 +8,8 @@ use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
 
 use crate::rows::{name_in_front, until_text};
 use crate::schedule::CheckedSchedule;
-use crate::{Core, Effect, State};
+use crate::state::State;
+use crate::{Core, Effect};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).

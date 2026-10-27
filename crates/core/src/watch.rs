@@ -5,7 +5,8 @@
 use nightcap_protocol::BundleId;
 
 use crate::domain::Host;
-use crate::{Core, Effect, State};
+use crate::state::State;
+use crate::{Core, Effect};
 
 /// The front app's place in the shell's browser list, and the watch on it.
 #[derive(Default)]

@@ -7,7 +7,8 @@ use nightcap_protocol::{
 };
 
 use crate::commands::refused;
-use crate::{Core, Effect, State, adhoc};
+use crate::state::State;
+use crate::{Core, Effect, adhoc};
 
 impl Core {
     pub(crate) fn answer(

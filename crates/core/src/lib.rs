@@ -52,7 +52,7 @@ use nightcap_protocol::{ExportFormat, Install, Instance};
 use file::File;
 use file::{Disk, Files, Paths};
 use start::{Clock, Setup, SystemClock, install_of, instance_of, zone_of};
-use state::{Facts, State};
+use state::State;
 
 #[derive(uniffi::Object)]
 pub struct Core {

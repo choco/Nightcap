@@ -11,7 +11,8 @@ use crate::adhoc::AdHocError;
 use crate::config::{ConfigError, NightShiftConfig};
 use crate::places::{Places, Refusal};
 use crate::schedule::CheckedSchedule;
-use crate::{Core, Effect, State, config};
+use crate::state::State;
+use crate::{Core, Effect, config};
 
 impl Core {
     /// Runs a command the user chose in the menu or Settings, which answers as the CLI's would.

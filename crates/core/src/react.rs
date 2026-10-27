@@ -7,7 +7,8 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 
 use crate::schedule::SunTimes;
-use crate::{Core, Effect, Event, State};
+use crate::state::State;
+use crate::{Core, Effect, Event};
 
 impl Core {
     pub(crate) fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {

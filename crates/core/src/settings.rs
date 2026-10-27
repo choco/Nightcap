@@ -8,7 +8,8 @@ use jiff::Timestamp;
 use nightcap_protocol::{Command, Layer, OnOff, Place, Rule, RuleIdentity, RuleSource};
 
 use crate::rows::{layer_text, until_text};
-use crate::{LoginItem, SettingsCheck, State};
+use crate::state::State;
+use crate::{LoginItem, SettingsCheck};
 
 /// What the settings window shows, pulled like the menu: the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]

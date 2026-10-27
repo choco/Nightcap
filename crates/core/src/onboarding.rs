@@ -4,7 +4,8 @@
 use nightcap_protocol::{NightShift, Schedule};
 
 use crate::schedule::CheckedSchedule;
-use crate::{Effect, LoginItem, State};
+use crate::state::State;
+use crate::{Effect, LoginItem};
 
 /// The current onboarding version: welcome, notifications, and website checking.
 const ONBOARDING: u32 = 1;

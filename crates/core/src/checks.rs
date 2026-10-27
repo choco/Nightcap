@@ -9,7 +9,8 @@ use nightcap_protocol::{
 };
 
 use crate::rows::capitalized;
-use crate::{Core, Effect, LoginItem, State};
+use crate::state::State;
+use crate::{Core, Effect, LoginItem};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
