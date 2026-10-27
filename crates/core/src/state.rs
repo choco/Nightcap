@@ -13,7 +13,8 @@ use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
-use crate::{Core, LoginItem, Session, Unreported, Watch, adhoc, config, tour, wanted};
+use crate::watch::Watch;
+use crate::{Core, LoginItem, Session, Unreported, adhoc, config, tour, wanted};
 
 const VERSION: u32 = 1;
 

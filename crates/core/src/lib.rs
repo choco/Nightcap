@@ -23,6 +23,7 @@ mod start;
 mod state;
 mod status;
 mod tour;
+mod watch;
 
 pub use checks::{Fix, FixButton, ProblemLine, SettingsCheck};
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
@@ -48,8 +49,8 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use nightcap_protocol::{
-    BundleId, Command, Decision, ExportFormat, Install, Instance, NightShift,
-    NotificationPermission, OnOff, Schedule,
+    Command, Decision, ExportFormat, Install, Instance, NightShift, NotificationPermission, OnOff,
+    Schedule,
 };
 
 use domain::Host;
@@ -603,45 +604,6 @@ impl Core {
         state.facts.applied_until = now;
     }
 
-    /// Watches the frontmost browser while website checking is on and its host could change
-    /// anything: not on the way out, nor while its own place says off and no site could say on
-    /// (ADR-0008, ADR-0012, ADR-0018).
-    fn rewatch(&self, state: &mut State, effects: &mut Vec<Effect>) {
-        let host_matters = state
-            .places
-            .look(&state.facts.world(self.clock.now()))
-            .host_matters;
-        let wanted = state
-            .facts
-            .context
-            .app
-            .clone()
-            .filter(|_| state.is_browser && state.facts.website_checking() && host_matters);
-        match (&state.watch, wanted) {
-            (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
-            (_, Some(bundle_id)) => {
-                state.generation += 1;
-                let generation = state.generation;
-                state.facts.context.host = None;
-                state.watch = Some(Watch {
-                    bundle_id: bundle_id.clone(),
-                    generation,
-                    reported: false,
-                });
-                effects.push(Effect::WatchBrowser {
-                    bundle_id: bundle_id.into(),
-                    generation,
-                });
-            }
-            (Some(_), None) => {
-                state.facts.context.host = None;
-                state.watch = None;
-                effects.push(Effect::StopWatching);
-            }
-            (None, None) => {}
-        }
-    }
-
     /// Keeps the shell's one wakeup at the next schedule transition or the end of a timer or
     /// hold, whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
     /// times, which CoreBrightness can take a minute or two after login to work out, so the
@@ -728,13 +690,6 @@ enum Session {
     Away,
     /// Back in front, waiting for the shell's fresh read of a status that went unwatched.
     Back,
-}
-
-/// The browser being watched, and whether its first read under this generation has arrived.
-struct Watch {
-    bundle_id: BundleId,
-    generation: u64,
-    reported: bool,
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.
