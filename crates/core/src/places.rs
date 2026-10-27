@@ -91,9 +91,10 @@ pub(crate) struct Look<'a> {
     /// Everywhere's hold after the switch the other way from what it gives, by the switch
     /// itself, run on a copy. The switch never leaves a timer that way.
     pub after_switch: Option<Layer>,
-    /// Whether the front app's own place says off and no site could say on, so a browser's host
-    /// doesn't matter (ADR-0012).
-    pub browser_holds_off: bool,
+    /// Whether a browser's host could change anything: not on the way out, where only
+    /// everywhere's hold decides (ADR-0008), nor while the front app's own place says off and
+    /// no site could say on (ADR-0012).
+    pub host_matters: bool,
     /// The config's rules, then the ad-hoc ones, then the tour's, each with its snooze: its
     /// place's top layer, where that says the other way.
     pub rules: Vec<(&'a Rule, Option<&'a Layer>)>,
@@ -511,7 +512,7 @@ impl Places {
                 .layers_at(&Place::Everywhere)
                 .and_then(|layers| layers.hold.clone()),
             everywhere,
-            browser_holds_off: self.browser_holds_off(world),
+            host_matters: self.host_matters(world),
             rules: self
                 .rules
                 .iter()
@@ -622,11 +623,14 @@ impl Places {
         )
     }
 
-    /// Whether the front app's own place says off and no site could say on, so a browser's host
-    /// doesn't matter (ADR-0012).
-    fn browser_holds_off(&self, world: &World<'_>) -> bool {
-        let Some(app) = &world.context.app else {
+    /// Whether a browser's host could change anything: not on the way out (ADR-0008), nor
+    /// while the front app's own place says off and no site could say on (ADR-0012).
+    fn host_matters(&self, world: &World<'_>) -> bool {
+        if self.released.is_some() {
             return false;
+        }
+        let Some(app) = &world.context.app else {
+            return true;
         };
         let site_could_say_on =
             self.rules.iter().any(|rule| {
@@ -638,7 +642,7 @@ impl Places {
                         .flatten()
                         .any(|layer| layer.state == OnOff::On)
             });
-        self.says(&Place::App(app.clone()), world) == Some(OnOff::Off) && !site_could_say_on
+        site_could_say_on || self.says(&Place::App(app.clone()), world) != Some(OnOff::Off)
     }
 
     /// What deciding reads. On the way out, only everywhere's hold still applies, with no rules

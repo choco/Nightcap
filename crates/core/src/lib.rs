@@ -1754,19 +1754,20 @@ impl Core {
         }
     }
 
-    /// Watches the frontmost browser while website checking is on, unless its own place says
-    /// off and no site could say on (ADR-0012, ADR-0018).
+    /// Watches the frontmost browser while website checking is on and its host could change
+    /// anything: not on the way out, nor while its own place says off and no site could say on
+    /// (ADR-0008, ADR-0012, ADR-0018).
     fn rewatch(&self, state: &mut State, effects: &mut Vec<Effect>) {
-        let holds_off = state
+        let host_matters = state
             .places
             .look(&state.facts.world(self.clock.now()))
-            .browser_holds_off;
+            .host_matters;
         let wanted = state
             .facts
             .context
             .app
             .clone()
-            .filter(|_| state.is_browser && state.facts.website_checking() && !holds_off);
+            .filter(|_| state.is_browser && state.facts.website_checking() && host_matters);
         match (&state.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {

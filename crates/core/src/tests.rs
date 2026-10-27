@@ -1591,6 +1591,46 @@ fn terminating_releases_every_force() {
 }
 
 #[test]
+fn terminating_watches_no_browser_its_own_app_rule_kept_unwatched() {
+    let core = late()
+        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
+        .then(accessibility_granted())
+        .then(reported(true, custom_hours()))
+        .start();
+    activate_browser(&core, "com.apple.Safari");
+    core.handle(reported(false, custom_hours()));
+
+    assert_eq!(
+        core.handle(Event::Terminating),
+        vec![Effect::SetNightShift { enabled: true }]
+    );
+    assert!(!core.status().watching);
+}
+
+#[test]
+fn terminating_stops_watching_and_releases_without_waiting_for_the_host() {
+    let core = late()
+        .config("websites = true\n[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .then(accessibility_granted())
+        .then(reported(true, custom_hours()))
+        .then(activate_event("com.figma.Desktop"))
+        .then(reported(false, custom_hours()))
+        .start();
+    assert_eq!(
+        activate_browser(&core, "com.apple.Safari"),
+        vec![watch("com.apple.Safari", 1)]
+    );
+
+    assert_eq!(
+        core.handle(Event::Terminating),
+        vec![
+            Effect::StopWatching,
+            Effect::SetNightShift { enabled: true }
+        ]
+    );
+}
+
+#[test]
 fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
     let crashed = forced();
 
