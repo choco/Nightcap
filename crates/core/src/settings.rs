@@ -121,20 +121,7 @@ impl Settings {
                         command: Command::OpenAtLogin(OnOff::from(!on)),
                     }
                 }),
-            checks: state
-                .checks(now)
-                .into_iter()
-                .map(|check| {
-                    let (restore, accept) = state.fixes(&check);
-                    SettingsCheck {
-                        kind: check.kind,
-                        state: check.state,
-                        text: check.text,
-                        restore,
-                        accept,
-                    }
-                })
-                .collect(),
+            checks: state.settings_checks(now),
         }
     }
 }

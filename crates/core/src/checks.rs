@@ -184,9 +184,26 @@ impl Grants {
 }
 
 impl State {
+    /// The checks as Settings shows them, each with its fixes.
+    pub(crate) fn settings_checks(&self, now: Timestamp) -> Vec<SettingsCheck> {
+        self.checks(now)
+            .into_iter()
+            .map(|check| {
+                let (restore, accept) = self.fixes(&check);
+                SettingsCheck {
+                    kind: check.kind,
+                    state: check.state,
+                    text: check.text,
+                    restore,
+                    accept,
+                }
+            })
+            .collect()
+    }
+
     /// What Settings offers for a check: putting back what the user set up, and accepting
     /// the change as their choice.
-    pub(crate) fn fixes(&self, check: &Check) -> (Option<FixButton>, Option<FixButton>) {
+    fn fixes(&self, check: &Check) -> (Option<FixButton>, Option<FixButton>) {
         let button = |title: &str, fix| {
             Some(FixButton {
                 title: title.to_owned(),
