@@ -15,8 +15,16 @@ use tempfile::NamedTempFile;
 
 use crate::CoreError;
 
+/// One of the core's files.
+#[cfg_attr(
+    not(any(test, debug_assertions)),
+    expect(
+        unreachable_pub,
+        reason = "only a staged core, which debug builds have, names them"
+    )
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum File {
+pub enum File {
     /// `config.toml`: the config rules, which the user or their installer writes (ADR-0007).
     Config,
     /// `rules.toml`: the ad-hoc rules.
@@ -149,6 +157,11 @@ impl Memory {
         }
     }
 
+    /// What `file` holds, or None where there's no such file.
+    pub(crate) fn get(&self, file: File) -> Option<Vec<u8>> {
+        self.contents().get(&file).cloned()
+    }
+
     /// Changes `file` from outside the core, as the user or their installer would, or takes it
     /// away.
     pub(crate) fn put(&self, file: File, contents: Option<Vec<u8>>) {
@@ -173,7 +186,7 @@ impl Memory {
 #[cfg(any(test, debug_assertions))]
 impl Files for Memory {
     fn read(&self, file: File) -> io::Result<Option<Vec<u8>>> {
-        Ok(self.contents().get(&file).cloned())
+        Ok(self.get(file))
     }
 
     fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()> {

@@ -19,7 +19,9 @@ mod tour;
 #[cfg(test)]
 mod harness;
 #[cfg(any(test, debug_assertions))]
-pub use staging::{Scenario, ScenarioError, Step};
+pub use file::File;
+#[cfg(any(test, debug_assertions))]
+pub use staging::{Scenario, ScenarioError, Staged, Step};
 
 use std::fmt;
 use std::path::PathBuf;
@@ -38,6 +40,8 @@ use nightcap_protocol::{
 
 use config::NightShiftConfig;
 use domain::Host;
+#[cfg(not(any(test, debug_assertions)))]
+use file::File;
 use file::{Disk, Files, Paths};
 use places::{Context, Kept, Places, Refusal, Stack, World};
 use rows::{Rows, clock_time, here, layer_text, name_in_front, until_text, whose};
@@ -876,7 +880,7 @@ impl Core {
                 locked: state.facts.config_websites.is_some(),
                 command: Command::Websites(OnOff::from(!on)),
             },
-            config_path: self.files.path(file::File::Config).display().to_string(),
+            config_path: self.files.path(File::Config).display().to_string(),
             rules: look
                 .rules
                 .iter()

@@ -26,12 +26,12 @@ fn at(instant: &str) -> Timestamp {
 
 /// Noon in Zurich, with no files and nothing reported yet.
 fn noon() -> Scenario {
-    Scenario::at("2026-10-16T12:00:00+02:00")
+    Scenario::at(at("2026-10-16T12:00:00+02:00"))
 }
 
 /// 23:00 in Zurich, inside the custom hours.
 fn late() -> Scenario {
-    Scenario::at("2026-10-16T23:00:00+02:00")
+    Scenario::at(at("2026-10-16T23:00:00+02:00"))
 }
 
 /// Night Shift as CoreBrightness reports it, with sunset to sunrise not set aside.
@@ -923,7 +923,7 @@ fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition()
 
 #[test]
 fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
-    let core = Scenario::at("2026-10-16T20:00:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T20:00:00+02:00")).start();
 
     let effects = core.handle(reported(false, custom_hours()));
 
@@ -1027,7 +1027,7 @@ fn report_zurich_sun(core: &Core) {
 
 #[test]
 fn sunset_to_sunrise_follows_the_reported_sun_times() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
 
     report_zurich_sun(&core);
     let effects = core.handle(reported(true, Schedule::SunsetToSunrise));
@@ -1045,7 +1045,7 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
 
 #[test]
 fn sun_times_the_shell_reports_out_of_range_count_as_none() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
     report_zurich_sun(&core);
     core.handle(reported(true, Schedule::SunsetToSunrise));
 
@@ -1062,7 +1062,7 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
 
 #[test]
 fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute() {
-    let core = Scenario::at("2026-10-16T01:40:20+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:20+02:00")).start();
 
     let effects = core.handle(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(
@@ -1225,7 +1225,7 @@ fn a_command_answers_with_the_resulting_decision() {
 
 #[test]
 fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_external_change() {
-    let core = Scenario::at("2026-10-16T21:00:00+02:00")
+    let core = Scenario::at(at("2026-10-16T21:00:00+02:00"))
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .start();
     core.handle(reported(false, custom_hours()));
@@ -1242,7 +1242,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_extern
 
 #[test]
 fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_change() {
-    let core = Scenario::at("2026-10-16T21:00:00+02:00")
+    let core = Scenario::at(at("2026-10-16T21:00:00+02:00"))
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .start();
     core.handle(reported(false, custom_hours()));
@@ -2525,7 +2525,7 @@ fn everywheres_row_has_every_length_but_the_switchs() {
 /// The line under everywhere's "Until" item at `time`, with Night Shift `enabled` as the
 /// schedule has it then.
 fn until_note(time: &str, enabled: bool, schedule: Schedule, title: &str) -> Option<String> {
-    let core = Scenario::at(time).start();
+    let core = Scenario::at(at(time)).start();
     report_zurich_sun(&core);
     core.handle(reported(enabled, schedule));
     choice_titled(&everywhere_row(&core).unwrap(), title).subtitle
@@ -3742,7 +3742,7 @@ fn set_aside() -> Option<SettingsCheck> {
 
 #[test]
 fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
     report_zurich_sun(&core);
     core.handle(reported(true, Schedule::SunsetToSunrise));
 
@@ -3773,7 +3773,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
 
 #[test]
 fn nightcap_opening_with_sunset_to_sunrise_set_aside_shows_the_problem() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
 
     core.handle(reported_set_aside(false, Schedule::Off));
 
@@ -3782,7 +3782,7 @@ fn nightcap_opening_with_sunset_to_sunrise_set_aside_shows_the_problem() {
 
 #[test]
 fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
     core.handle(reported_set_aside(false, Schedule::Off));
 
     core.handle(Event::FixChosen {
@@ -3806,7 +3806,7 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
 
 #[test]
 fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
     core.handle(reported_set_aside(false, Schedule::Off));
 
     core.handle(reported_set_aside(true, custom_hours()));
@@ -3822,7 +3822,7 @@ fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
 
 #[test]
 fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
-    let core = Scenario::at("2026-10-16T01:40:00+02:00").start();
+    let core = Scenario::at(at("2026-10-16T01:40:00+02:00")).start();
     core.handle(reported(true, Schedule::SunsetToSunrise));
     let following = night_shift_check(
         CheckState::Ok,
@@ -4240,7 +4240,7 @@ fn report(core: &Core, enabled: bool) -> Vec<Effect> {
 
 /// At 20:00, with Night Shift off by the custom hours until 22:00.
 fn off_by_the_schedule() -> Scenario {
-    Scenario::at("2026-10-16T20:00:00+02:00").then(reported(false, custom_hours()))
+    Scenario::at(at("2026-10-16T20:00:00+02:00")).then(reported(false, custom_hours()))
 }
 
 /// At 23:00, with Night Shift on by the custom hours until 07:00.
