@@ -6,16 +6,17 @@ use std::io;
 use std::sync::Arc;
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_protocol::{CheckKind, NightShift, NotificationPermission, OnOff, PlaceLayers};
+use nightcap_protocol::{CheckKind, NightShift, OnOff, PlaceLayers};
 use serde::{Deserialize, Serialize};
 
+use crate::checks::Grants;
 use crate::config::NightShiftConfig;
 use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
 use crate::turn::{Reconciling, wanted};
 use crate::watch::Watching;
-use crate::{Core, LoginItem, adhoc, config, tour};
+use crate::{Core, adhoc, config, tour};
 
 const VERSION: u32 = 1;
 
@@ -37,23 +38,7 @@ pub(crate) struct State {
     pub(crate) applied_from_config: NightShiftConfig,
     pub(crate) reconciling: Reconciling,
     pub(crate) watching: Watching,
-    /// macOS has sunset to sunrise set aside, and the schedule is off.
-    pub(crate) schedule_set_aside: bool,
-    /// See `Persisted::schedule_off_accepted`.
-    pub(crate) schedule_off_accepted: bool,
-    /// None until the shell first reports it.
-    pub(crate) accessibility: Option<bool>,
-    pub(crate) notifications: NotificationPermission,
-    /// See `Persisted::notifications_wanted`.
-    pub(crate) notifications_wanted: bool,
-    /// See `Persisted::announced`.
-    pub(crate) announced: Vec<CheckKind>,
-    /// None until the shell first reports it.
-    pub(crate) login_item: Option<LoginItem>,
-    /// See `Persisted::open_at_login`.
-    pub(crate) open_at_login: bool,
-    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
-    pub(crate) opens_itself_at_login: bool,
+    pub(crate) grants: Grants,
     /// See `Persisted::last_version`.
     pub(crate) last_version: Option<String>,
     /// What the running tour's steps follow, while one runs (ADR-0016).
@@ -99,9 +84,9 @@ impl State {
             layers: self.places.kept().layers.clone(),
             websites: self.facts.websites,
             onboarding: self.onboarding,
-            notifications_wanted: self.notifications_wanted,
-            open_at_login: self.open_at_login,
-            announced: self.announced.clone(),
+            notifications_wanted: self.grants.notifications_wanted,
+            open_at_login: self.grants.open_at_login,
+            announced: self.grants.announced.clone(),
             night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)
                 .map(OnOff::from),
             until: self
@@ -109,7 +94,7 @@ impl State {
                 .timeline
                 .next_transition(self.facts.applied_until),
             applied_from_config: self.applied_from_config,
-            schedule_off_accepted: self.schedule_off_accepted,
+            schedule_off_accepted: self.grants.schedule_off_accepted,
             last_version: self.last_version.clone(),
         }
     }

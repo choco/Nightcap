@@ -8,6 +8,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
 
+use crate::checks::Grants;
 use crate::config::{self, NightShiftConfig};
 use crate::file::Files;
 use crate::places::{Context, Kept, Places};
@@ -111,16 +112,18 @@ impl Core {
                 applied_from_config: persisted.applied_from_config,
                 reconciling: Reconciling::new(persisted.night_shift),
                 watching: Watching::default(),
-                schedule_set_aside: false,
-                schedule_off_accepted: persisted.schedule_off_accepted,
-                accessibility: None,
-                notifications: NotificationPermission::NotRequested,
-                notifications_wanted: persisted.notifications_wanted,
-                announced: persisted.announced.clone(),
-                login_item: None,
-                open_at_login: persisted.open_at_login,
-                opens_itself_at_login: setup.install == Install::SelfManaged
-                    && setup.instance == Instance::Release,
+                grants: Grants {
+                    accessibility: None,
+                    notifications: NotificationPermission::NotRequested,
+                    notifications_wanted: persisted.notifications_wanted,
+                    login_item: None,
+                    open_at_login: persisted.open_at_login,
+                    opens_itself_at_login: setup.install == Install::SelfManaged
+                        && setup.instance == Instance::Release,
+                    schedule_set_aside: false,
+                    schedule_off_accepted: persisted.schedule_off_accepted,
+                    announced: persisted.announced.clone(),
+                },
                 last_version: persisted.last_version.clone(),
                 tour: None,
                 saved: persisted,

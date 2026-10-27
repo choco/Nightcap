@@ -67,10 +67,9 @@ impl Core {
             })
             .ok();
         let previous = std::mem::replace(&mut state.facts.timeline.schedule, checked);
-        state.schedule_set_aside = sun_schedule_set_aside && schedule == Schedule::Off;
-        if !state.schedule_set_aside {
-            state.schedule_off_accepted = false;
-        }
+        state
+            .grants
+            .schedule_reported(sun_schedule_set_aside && schedule == Schedule::Off);
         if state.reconciling.session == Session::Back {
             // The shell's fresh read after returning: nobody could change Night Shift by
             // hand while the session was away.

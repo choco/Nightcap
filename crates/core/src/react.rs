@@ -5,11 +5,11 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, NightShift, NotificationPermission, OnOff};
+use nightcap_protocol::NightShift;
 
 use crate::onboarding::ONBOARDING;
 use crate::schedule::SunTimes;
-use crate::{Core, Effect, Event, Fix, LoginItem, State, tour};
+use crate::{Core, Effect, Event, State, tour};
 
 impl Core {
     pub(crate) fn react(&self, state: &mut State, event: Event) -> Vec<Effect> {
@@ -41,7 +41,7 @@ impl Core {
                         !night_shift.ask_strength && !night_shift.ask_schedule;
                     if state.facts.config_websites.is_some()
                         && night_shift_answered
-                        && !state.opens_itself_at_login
+                        && !state.grants.opens_itself_at_login
                     {
                         state.onboarding = ONBOARDING;
                     } else {
@@ -69,27 +69,16 @@ impl Core {
                 Vec::new()
             }
             Event::LoginItemChanged { item } => {
-                tracing::info!("login item: {item:?}");
-                state.login_item = Some(item);
-                // An enabled item becomes the user's wish, however it got enabled.
-                if item == LoginItem::Enabled {
-                    state.open_at_login = true;
-                }
+                state.grants.login_item_changed(item);
                 Vec::new()
             }
             Event::PermissionsChanged {
                 accessibility,
                 notifications,
             } => {
-                tracing::info!(
-                    "permissions: accessibility {accessibility}, notifications {notifications:?}"
-                );
-                state.accessibility = Some(accessibility);
-                state.notifications = notifications;
-                // Allowed notifications become the user's wish, however they got allowed.
-                if notifications == NotificationPermission::Granted {
-                    state.notifications_wanted = true;
-                }
+                state
+                    .grants
+                    .permissions_changed(accessibility, notifications);
                 Vec::new()
             }
             Event::StatusChanged {
@@ -136,37 +125,7 @@ impl Core {
                 state.tour = None;
                 Vec::new()
             }
-            Event::FixChosen { fix } => {
-                let mut effects = Vec::new();
-                match fix {
-                    Fix::StopCheckingWebsites => {
-                        if let Err(error) =
-                            self.run_command(state, &Command::Websites(OnOff::Off), &mut effects)
-                        {
-                            tracing::warn!("a fix was refused: {:?}", error.code);
-                        }
-                    }
-                    Fix::KeepNotificationsOff => state.notifications_wanted = false,
-                    Fix::KeepScheduleOff => state.schedule_off_accepted = true,
-                    Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
-                    Fix::DontOpenAtLogin => {
-                        state.open_at_login = false;
-                        // An item waiting for approval would still ask for it.
-                        if state.login_item != Some(LoginItem::NotRegistered) {
-                            effects.push(Effect::UnregisterLoginItem);
-                        }
-                    }
-                    // An invalid config shows in its check again.
-                    Fix::Reload => _ = self.reload(state, &mut effects),
-                    Fix::AskForAccessibility
-                    | Fix::AllowNotifications
-                    | Fix::OpenLoginItems
-                    | Fix::OpenLocationServices => {
-                        tracing::debug!("{fix:?} is the shell's to carry out");
-                    }
-                }
-                effects
-            }
+            Event::FixChosen { fix } => self.run_fix(state, fix),
             // `handle` runs it through `choose`.
             Event::CommandChosen { .. } => Vec::new(),
             Event::TimerFired => {

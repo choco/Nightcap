@@ -110,8 +110,9 @@ impl Settings {
                 .collect(),
             // Registered but waiting for approval counts as on; its check explains the rest.
             open_at_login: state
+                .grants
                 .login_item
-                .filter(|_| state.opens_itself_at_login)
+                .filter(|_| state.grants.opens_itself_at_login)
                 .map(|item| {
                     let on = item != LoginItem::NotRegistered;
                     SettingsSwitch {

@@ -101,8 +101,8 @@ impl Core {
             },
             layers: look.layers.to_vec(),
             permissions: Permissions {
-                accessibility: state.accessibility == Some(true),
-                notifications: state.notifications,
+                accessibility: state.grants.accessibility == Some(true),
+                notifications: state.grants.notifications,
             },
             checks: state.checks(self.clock.now()),
         })))

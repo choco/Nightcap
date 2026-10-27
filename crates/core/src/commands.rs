@@ -76,7 +76,7 @@ impl Core {
             Command::RemoveRule(identity) => self.remove_rule(state, identity),
             Command::OpenAtLogin(chosen) => {
                 if self.updates_itself() {
-                    state.open_at_login = *chosen == OnOff::On;
+                    state.grants.open_at_login = *chosen == OnOff::On;
                     effects.push(match chosen {
                         OnOff::On => Effect::RegisterLoginItem,
                         OnOff::Off => Effect::UnregisterLoginItem,
@@ -129,7 +129,7 @@ impl Core {
                 let on = *chosen == OnOff::On;
                 let turned_on = on && !state.facts.website_checking();
                 state.set_websites(on).map(|()| {
-                    if turned_on && state.accessibility != Some(true) {
+                    if turned_on && state.grants.accessibility != Some(true) {
                         effects.push(Effect::AskForAccessibility);
                     }
                 })

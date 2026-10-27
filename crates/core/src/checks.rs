@@ -4,8 +4,8 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Check, CheckKind, CheckState, NightShift, NotificationPermission, RuleSource, Schedule,
-    TimeOfDay,
+    Check, CheckKind, CheckState, Command, NightShift, NotificationPermission, OnOff, RuleSource,
+    Schedule, TimeOfDay,
 };
 
 use crate::rows::capitalized;
@@ -72,12 +72,15 @@ impl Core {
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
             .map(|check| check.kind)
             .collect();
-        state.announced.retain(|kind| problems.contains(kind));
+        state
+            .grants
+            .announced
+            .retain(|kind| problems.contains(kind));
         for kind in problems {
-            if state.announced.contains(&kind) {
+            if state.grants.announced.contains(&kind) {
                 continue;
             }
-            state.announced.push(kind);
+            state.grants.announced.push(kind);
             if let Some((title, body)) = state.notice(kind).filter(|_| aloud) {
                 effects.push(Effect::Notify {
                     title,
@@ -85,6 +88,97 @@ impl Core {
                     opens: None,
                 });
             }
+        }
+    }
+
+    /// Carries out a fix the user chose in Settings; the shell carries out its own.
+    pub(crate) fn run_fix(&self, state: &mut State, fix: Fix) -> Vec<Effect> {
+        let mut effects = Vec::new();
+        match fix {
+            Fix::StopCheckingWebsites => {
+                if let Err(error) =
+                    self.run_command(state, &Command::Websites(OnOff::Off), &mut effects)
+                {
+                    tracing::warn!("a fix was refused: {:?}", error.code);
+                }
+            }
+            Fix::KeepNotificationsOff => state.grants.notifications_wanted = false,
+            Fix::KeepScheduleOff => state.grants.schedule_off_accepted = true,
+            Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
+            Fix::DontOpenAtLogin => {
+                state.grants.open_at_login = false;
+                // An item waiting for approval would still ask for it.
+                if state.grants.login_item != Some(LoginItem::NotRegistered) {
+                    effects.push(Effect::UnregisterLoginItem);
+                }
+            }
+            // An invalid config shows in its check again.
+            Fix::Reload => _ = self.reload(state, &mut effects),
+            Fix::AskForAccessibility
+            | Fix::AllowNotifications
+            | Fix::OpenLoginItems
+            | Fix::OpenLocationServices => {
+                tracing::debug!("{fix:?} is the shell's to carry out");
+            }
+        }
+        effects
+    }
+}
+
+/// The grants and the login item as macOS last reported them, and sunset to sunrise set aside,
+/// each with the choice its check compares it with; and the problems already announced.
+pub(crate) struct Grants {
+    /// None until the shell first reports it.
+    pub(crate) accessibility: Option<bool>,
+    pub(crate) notifications: NotificationPermission,
+    /// See `state::Persisted::notifications_wanted`.
+    pub(crate) notifications_wanted: bool,
+    /// None until the shell first reports it.
+    pub(crate) login_item: Option<LoginItem>,
+    /// See `state::Persisted::open_at_login`.
+    pub(crate) open_at_login: bool,
+    /// A self-managed release, which opens itself at login if the user wants (ADR-0011).
+    pub(crate) opens_itself_at_login: bool,
+    /// macOS has sunset to sunrise set aside, and the schedule is off.
+    pub(crate) schedule_set_aside: bool,
+    /// See `state::Persisted::schedule_off_accepted`.
+    pub(crate) schedule_off_accepted: bool,
+    /// See `state::Persisted::announced`.
+    pub(crate) announced: Vec<CheckKind>,
+}
+
+impl Grants {
+    pub(crate) fn login_item_changed(&mut self, item: LoginItem) {
+        tracing::info!("login item: {item:?}");
+        self.login_item = Some(item);
+        // An enabled item becomes the user's wish, however it got enabled.
+        if item == LoginItem::Enabled {
+            self.open_at_login = true;
+        }
+    }
+
+    pub(crate) fn permissions_changed(
+        &mut self,
+        accessibility: bool,
+        notifications: NotificationPermission,
+    ) {
+        tracing::info!(
+            "permissions: accessibility {accessibility}, notifications {notifications:?}"
+        );
+        self.accessibility = Some(accessibility);
+        self.notifications = notifications;
+        // Allowed notifications become the user's wish, however they got allowed.
+        if notifications == NotificationPermission::Granted {
+            self.notifications_wanted = true;
+        }
+    }
+
+    /// Whether macOS has sunset to sunrise set aside, as a status callback reports it with the
+    /// schedule off. Accepting it ends once it isn't.
+    pub(crate) fn schedule_reported(&mut self, set_aside: bool) {
+        self.schedule_set_aside = set_aside;
+        if !self.schedule_set_aside {
+            self.schedule_off_accepted = false;
         }
     }
 }
@@ -120,7 +214,7 @@ impl State {
             ),
             (CheckKind::OpenAtLogin, CheckState::Drifted) => (
                 // Registering again doesn't help an item that's waiting for approval.
-                if self.login_item == Some(LoginItem::RequiresApproval) {
+                if self.grants.login_item == Some(LoginItem::RequiresApproval) {
                     button("Open Login Items…", Fix::OpenLoginItems)
                 } else {
                     button("Open at Login", Fix::OpenAtLogin)
@@ -186,7 +280,7 @@ impl State {
                 CheckState::Broken,
                 "Night Shift isn’t available on this Mac.",
             )
-        } else if self.schedule_set_aside && !self.schedule_off_accepted {
+        } else if self.grants.schedule_set_aside && !self.grants.schedule_off_accepted {
             check(
                 CheckKind::NightShift,
                 CheckState::Drifted,
@@ -222,7 +316,7 @@ impl State {
             )
         }];
         // Nothing is said about the permissions until the shell first reports them.
-        if let Some(granted) = self.accessibility {
+        if let Some(granted) = self.grants.accessibility {
             checks.push(match (self.facts.website_checking(), granted) {
                 (false, _) => check(
                     CheckKind::Accessibility,
@@ -242,8 +336,8 @@ impl State {
             });
             checks.push(
                 match (
-                    self.notifications == NotificationPermission::Granted,
-                    self.notifications_wanted,
+                    self.grants.notifications == NotificationPermission::Granted,
+                    self.grants.notifications_wanted,
                 ) {
                     (true, _) => check(CheckKind::Notifications, CheckState::Ok, "Allowed."),
                     (false, true) => check(
@@ -259,8 +353,12 @@ impl State {
                 },
             );
         }
-        if let Some(item) = self.login_item.filter(|_| self.opens_itself_at_login) {
-            checks.push(match (item, self.open_at_login) {
+        if let Some(item) = self
+            .grants
+            .login_item
+            .filter(|_| self.grants.opens_itself_at_login)
+        {
+            checks.push(match (item, self.grants.open_at_login) {
                 (LoginItem::Enabled, _) => check(
                     CheckKind::OpenAtLogin,
                     CheckState::Ok,
@@ -318,7 +416,7 @@ impl State {
     fn notice(&self, kind: CheckKind) -> Option<(String, String)> {
         match kind {
             CheckKind::NightShift if self.facts.night_shift == NightShift::Unavailable => None,
-            CheckKind::NightShift if self.schedule_set_aside => Some((
+            CheckKind::NightShift if self.grants.schedule_set_aside => Some((
                 "Sunset to sunrise needs Location Services".to_owned(),
                 "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off."
                     .to_owned(),
@@ -342,7 +440,7 @@ impl State {
                 .map(|error| ("Ad-hoc rules are off".to_owned(), error.to_string())),
             // Waiting for approval follows the user's own choice, which macOS announces itself.
             CheckKind::OpenAtLogin => {
-                (self.login_item == Some(LoginItem::NotRegistered)).then(|| {
+                (self.grants.login_item == Some(LoginItem::NotRegistered)).then(|| {
                     (
                         "Nightcap no longer opens at login".to_owned(),
                         "Open Nightcap’s settings to turn it back on, or to keep it off."

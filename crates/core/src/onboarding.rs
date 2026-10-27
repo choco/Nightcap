@@ -40,8 +40,9 @@ impl OnboardingSteps {
             night_shift: state.onboarding_night_shift(),
             websites_from_config: state.facts.config_websites,
             opens_at_login: state
+                .grants
                 .login_item
-                .filter(|_| state.opens_itself_at_login)
+                .filter(|_| state.grants.opens_itself_at_login)
                 .map(|item| item != LoginItem::NotRegistered),
         }
     }
