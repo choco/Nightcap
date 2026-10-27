@@ -1,125 +1,19 @@
+mod args;
+mod client;
 mod wording;
 
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
-use std::path::Path;
 use std::process::ExitCode;
-use std::thread;
-use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use jiff::tz::TimeZone;
-use jiff::{SignedDuration, Timestamp, Zoned};
+use jiff::{Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, BundleId, CheckState, Decision, Domain, ErrorReply, Hello, HelloMessage,
-    HelloReply, Install, Instance, Layer, Length, NightShift, NotificationPermission, OnOff,
-    Payload, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity, Schedule,
-    Status, TimeOfDay,
+    self as protocol, Decision, ErrorReply, Instance, Length, OnOff, Payload, Place, Query, Request,
 };
 
-/// How long the daemon may take to answer, including the core's turn at a command.
-const TIMEOUT: Duration = Duration::from_secs(10);
-
-#[derive(Parser)]
-#[command(
-    name = "nightcap",
-    version,
-    about = "Control Nightcap from the command line"
-)]
-struct Cli {
-    /// Talk to the dev build's daemon instead of the installed one.
-    #[arg(long, global = true)]
-    dev: bool,
-
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand)]
-enum Command {
-    /// Show what Nightcap is doing and why.
-    Status {
-        /// Print the status as JSON.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Turn Night Shift on. Alone, it's the switch: on everywhere, with the schedule if the
-    /// schedule has it on, else until you turn it off. With a length, a time or --until-schedule,
-    /// it's on that long, everywhere or in one app or on one site, over any rule there.
-    On(Change),
-    /// Turn Night Shift off, as `on` turns it on.
-    Off(Change),
-    /// Turn Night Shift the other way everywhere, until you turn it back.
-    Toggle,
-    /// Take off what you set for a place, everywhere unless you name an app or a site: its rule
-    /// comes back, or for everywhere the schedule.
-    Reset {
-        #[command(flatten)]
-        place: Where,
-    },
-    /// Show how warm Night Shift tints the display, or set it, from 0 to 100.
-    Strength {
-        /// 0 is the least warm, 100 the warmest.
-        #[arg(value_parser = clap::value_parser!(u8).range(0..=100))]
-        value: Option<u8>,
-    },
-    /// Check for an update now; Nightcap shows what it finds and offers to install it.
-    Update,
-    /// Turn website checking on or off: domain rules need it, and it needs Accessibility.
-    Websites {
-        #[arg(value_enum)]
-        state: Switch,
-    },
-    /// List, add or remove rules, or export the ad-hoc ones for the config.
-    Rules {
-        #[command(subcommand)]
-        action: RulesAction,
-    },
-    /// Read the config again, after changing it.
-    Reload {
-        /// Keep trying this long for Nightcap to start, e.g. 5s.
-        #[arg(long, value_parser = parse_duration)]
-        wait: Option<Duration>,
-    },
-}
-
-/// How long, and where: `on` or `off` alone is the switch, everywhere until turned back.
-#[derive(clap::Args)]
-struct Change {
-    /// For this long, e.g. 30m, 1h or 1h30m.
-    #[arg(long = "for", value_parser = parse_length, group = "how_long")]
-    length: Option<SignedDuration>,
-    /// Until this time of day, e.g. 23:30: today, or tomorrow once it has passed.
-    #[arg(long, value_parser = parse_time_of_day, group = "how_long")]
-    until: Option<jiff::civil::Time>,
-    /// Until the schedule next turns it back: when it ends for an on, when it starts for an off.
-    #[arg(long, group = "how_long")]
-    until_schedule: bool,
-    #[command(flatten)]
-    place: Where,
-}
-
-/// An app or a site; everywhere when neither is given.
-#[derive(clap::Args)]
-struct Where {
-    /// An app, by its bundle ID, e.g. com.figma.Desktop.
-    #[arg(long, group = "where")]
-    app: Option<BundleId>,
-    /// A site and its subdomains, e.g. figma.com.
-    #[arg(long, group = "where")]
-    domain: Option<Domain>,
-}
-
-impl Where {
-    fn place(&self) -> Place {
-        match (&self.app, &self.domain) {
-            (Some(bundle_id), _) => Place::App(bundle_id.clone()),
-            (None, Some(domain)) => Place::Domain(domain.clone()),
-            (None, None) => Place::Everywhere,
-        }
-    }
-}
+use args::{Change, Cli, Command, Format, RulesAction, Switch};
+use client::request;
 
 /// The command `on` or `off` sends, with the time read now in `zone`.
 fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Command, String> {
@@ -166,63 +60,6 @@ fn next_occurrence(time: jiff::civil::Time, now: &Zoned) -> Result<Timestamp, St
             .map_err(|error| error.to_string())?
     };
     Ok(next.timestamp())
-}
-
-#[derive(Subcommand)]
-enum RulesAction {
-    /// Show every rule and where it comes from.
-    List {
-        /// Print the rules as JSON.
-        #[arg(long)]
-        json: bool,
-    },
-    /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com, that turns Night Shift
-    /// off there, or on with --on. It replaces your own rule for the same app or site.
-    Add {
-        identity: RuleIdentity,
-        /// Keep Night Shift on there, even by day.
-        #[arg(long)]
-        on: bool,
-    },
-    /// Remove an ad-hoc rule; a config rule changes only in the config.
-    Remove { identity: RuleIdentity },
-    /// Print the ad-hoc rules, ready to paste into the config.
-    Export {
-        #[arg(long, value_enum)]
-        format: Format,
-    },
-}
-
-#[derive(Clone, Copy, clap::ValueEnum)]
-enum Switch {
-    On,
-    Off,
-}
-
-#[derive(Clone, Copy, clap::ValueEnum)]
-enum Format {
-    Nix,
-    Toml,
-}
-
-/// A length such as 30m, 1h or 1h30m, longer than zero.
-fn parse_length(text: &str) -> Result<SignedDuration, String> {
-    let length: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
-    if length <= SignedDuration::ZERO {
-        return Err("the length must be longer than zero".to_owned());
-    }
-    Ok(length)
-}
-
-/// A time of day such as 23:30.
-fn parse_time_of_day(text: &str) -> Result<jiff::civil::Time, String> {
-    jiff::civil::Time::strptime("%H:%M", text)
-        .map_err(|_| format!("{text:?} isn't a time of day like 23:30"))
-}
-
-fn parse_duration(text: &str) -> Result<Duration, String> {
-    let duration: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
-    Duration::try_from(duration).map_err(|error| format!("{error}"))
 }
 
 /// Why a command failed, which decides the exit code.
@@ -282,7 +119,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                     serde_json::to_string(&status).context("couldn't encode the status")?
                 );
             } else {
-                print_status(&status);
+                wording::print_status(&status);
             }
             return Ok(());
         }
@@ -290,7 +127,10 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Payload::Status(status) = request(instance, &Request::Reload, wait)? else {
                 return Err(unexpected_reply());
             };
-            println!("Reloaded the config. Rules: {}", rules(&status.rules));
+            println!(
+                "Reloaded the config. Rules: {}",
+                wording::rules(&status.rules)
+            );
             return Ok(());
         }
         Command::Rules { action } => return run_rules(instance, action),
@@ -367,7 +207,7 @@ fn set_elsewhere(
             length,
         } if *place != decision.place => Some(format!(
             "Set {place} {state} {}.",
-            length_text(length, zone)
+            wording::length_text(length, zone)
         )),
         _ => None,
     }
@@ -449,258 +289,10 @@ fn unexpected_reply() -> Failure {
     ))
 }
 
-fn schedule_text(schedule: Schedule) -> String {
-    match schedule {
-        Schedule::Off => "off".to_owned(),
-        Schedule::SunsetToSunrise => "sunset to sunrise".to_owned(),
-        Schedule::Custom { from, to } => format!("{} to {}", time_of_day(from), time_of_day(to)),
-    }
-}
-
-/// The config's value, when it sets one that differs from the Mac's (ADR-0014).
-fn from_config<T: PartialEq + Copy>(
-    config: Option<T>,
-    mac: Option<T>,
-    text: impl Fn(T) -> String,
-) -> String {
-    match config {
-        Some(value) if Some(value) != mac => format!(" (the config says {})", text(value)),
-        _ => String::new(),
-    }
-}
-
-/// How long a change lasts, as `on` and `off` were told.
-fn length_text(length: &Length, zone: &TimeZone) -> String {
-    match length {
-        Length::For(duration) => format!("for {duration:#}"),
-        Length::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
-        Length::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
-        Length::UntilTurnedBack => "until you turn it back".to_owned(),
-    }
-}
-
-fn print_status(status: &Status) {
-    let install = match status.install {
-        Install::Managed => "managed by its installer",
-        Install::SelfManaged => "self-managed",
-    };
-    let night_shift = match status.night_shift {
-        NightShift::Unavailable => "unavailable",
-        NightShift::On => "on",
-        NightShift::Off => "off",
-    };
-    let schedule = status.schedule.map_or("unknown".to_owned(), schedule_text);
-    let scheduled = match (status.schedule, status.scheduled_state) {
-        (Some(Schedule::Off), _) | (None, _) => String::new(),
-        (Some(_), None) => ", waiting for sun times".to_owned(),
-        (Some(_), Some(scheduled)) => {
-            format!(", {}{}", scheduled, until(status.next_transition))
-        }
-    };
-    let accessibility = if status.permissions.accessibility {
-        "granted"
-    } else {
-        "not granted"
-    };
-    let notifications = match status.permissions.notifications {
-        NotificationPermission::NotRequested => "not requested",
-        NotificationPermission::Denied => "denied",
-        NotificationPermission::Granted => "granted",
-    };
-    println!("Nightcap {}, {install}", status.version);
-    let decided = wording::decision(&status.decision, &TimeZone::system());
-    // A decision on a layer or a rule starts with the state it asks for, which needs saying again
-    // only while Night Shift isn't there yet.
-    let says_state = !matches!(
-        status.decision.reasons.first(),
-        None | Some(Reason::Schedule { .. })
-    );
-    let observed = match status.night_shift {
-        NightShift::Unavailable => None,
-        NightShift::On => Some(OnOff::On),
-        NightShift::Off => Some(OnOff::Off),
-    };
-    if says_state
-        && status
-            .decision
-            .state
-            .is_some_and(|state| Some(state) == observed)
-    {
-        println!("Night Shift: {decided}");
-    } else {
-        println!("Night Shift: {night_shift}, {decided}");
-    }
-    println!(
-        "Schedule: {schedule}{scheduled}{}",
-        from_config(status.config_schedule, status.schedule, schedule_text)
-    );
-    if let Some(strength) = status.strength {
-        println!(
-            "Strength: {strength}{}",
-            from_config(status.config_strength, status.strength, |value| value
-                .to_string())
-        );
-    }
-    let host = match (&status.host, status.watching) {
-        (Some(host), _) => format!(", on {host}"),
-        (None, true) => ", host unknown".to_owned(),
-        (None, false) => String::new(),
-    };
-    println!(
-        "Frontmost app: {}{host}",
-        status.frontmost_app.as_deref().unwrap_or("unknown")
-    );
-    println!("Rules: {}", rules(&status.rules));
-    let website_checking = status.website_checking;
-    println!(
-        "Website checking: {}{}",
-        website_checking.state,
-        if website_checking.from_config {
-            " (set in the config)"
-        } else {
-            ""
-        }
-    );
-    for layers in &status.layers {
-        println!("{}", layered(layers));
-    }
-    println!("Accessibility: {accessibility}");
-    println!("Notifications: {notifications}");
-    let problems = needs_attention(status);
-    if !problems.is_empty() {
-        println!("Needs attention:");
-        for problem in problems {
-            println!("  {problem}");
-        }
-    }
-}
-
-/// Each drifted or broken check's line.
-fn needs_attention(status: &Status) -> Vec<String> {
-    status
-        .checks
-        .iter()
-        .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-        .map(|check| wording::check(&check.detail))
-        .collect()
-}
-
-fn rules(rules: &[Rule]) -> String {
-    if rules.is_empty() {
-        return "none".to_owned();
-    }
-    rules
-        .iter()
-        .map(wording::rule)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-/// A place's timer and hold, top first: "app:com.figma.Desktop: on until 07:00".
-fn layered(layers: &PlaceLayers) -> String {
-    let layer = |layer: &Layer| match layer.until {
-        Some(end) => format!("{}{}", layer.state, until(Some(end))),
-        None => format!("{} until you turn it {}", layer.state, layer.state.other()),
-    };
-    let parts: Vec<_> = [&layers.timer, &layers.hold]
-        .into_iter()
-        .flatten()
-        .map(layer)
-        .collect();
-    let place = match &layers.place {
-        Place::Everywhere => "Everywhere".to_owned(),
-        place => place.to_string(),
-    };
-    format!("{place}: {}", parts.join(", then "))
-}
-
-/// " until 22:00" in local time, or nothing when no schedule transition is coming.
-fn until(transition: Option<Timestamp>) -> String {
-    transition.map_or_else(String::new, |transition| {
-        format!(
-            " until {}",
-            transition.to_zoned(TimeZone::system()).strftime("%H:%M")
-        )
-    })
-}
-
-fn time_of_day(time: TimeOfDay) -> String {
-    format!("{:02}:{:02}", time.hour, time.minute)
-}
-
-fn request(
-    instance: Instance,
-    request: &Request,
-    wait: Option<Duration>,
-) -> Result<Payload, Failure> {
-    let socket = instance
-        .socket_path()
-        .context("couldn't locate the socket")?;
-    let stream = connect(&socket, wait)?;
-    stream
-        .set_read_timeout(Some(TIMEOUT))
-        .context("couldn't set a timeout on the socket")?;
-    let mut reader = BufReader::new(stream.try_clone().context("couldn't read the socket")?);
-    let mut writer = stream;
-
-    send(
-        &mut writer,
-        &HelloMessage {
-            hello: Hello::current(),
-        },
-    )?;
-    if let HelloReply::Error(error) = receive(&mut reader)? {
-        return Err(Failure::Rejected(error));
-    }
-    send(&mut writer, request)?;
-    match receive(&mut reader)? {
-        Response::Ok(payload) => Ok(payload),
-        Response::Error(error) => Err(Failure::Rejected(error)),
-    }
-}
-
-/// Connects to the daemon, retrying for up to `wait` while it starts.
-fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> {
-    let wait = wait.unwrap_or_default();
-    let deadline = Instant::now()
-        .checked_add(wait)
-        .with_context(|| format!("can't wait {wait:?} for Nightcap: that's too long"))?;
-    loop {
-        match UnixStream::connect(socket) {
-            Ok(stream) => return Ok(stream),
-            Err(_) if Instant::now() < deadline => thread::sleep(Duration::from_millis(100)),
-            Err(error) => {
-                return Err(error).with_context(|| {
-                    format!(
-                        "Nightcap isn't running (nothing is listening at {})",
-                        socket.display()
-                    )
-                });
-            }
-        }
-    }
-}
-
-fn send(writer: &mut impl Write, message: &impl serde::Serialize) -> anyhow::Result<()> {
-    serde_json::to_writer(&mut *writer, message).context("couldn't send to Nightcap")?;
-    writer
-        .write_all(b"\n")
-        .and_then(|()| writer.flush())
-        .context("couldn't send to Nightcap")
-}
-
-fn receive<T: serde::de::DeserializeOwned>(reader: &mut impl BufRead) -> anyhow::Result<T> {
-    let mut line = String::new();
-    let read = reader
-        .read_line(&mut line)
-        .context("Nightcap didn't answer in time")?;
-    anyhow::ensure!(read > 0, "Nightcap closed the connection without answering");
-    serde_json::from_str(&line).context("Nightcap sent a message this CLI doesn't understand")
-}
-
 #[cfg(test)]
 mod tests {
     use clap::Parser;
+    use jiff::SignedDuration;
 
     use super::*;
 
@@ -806,30 +398,5 @@ mod tests {
             Ok("2026-10-17T21:00:00+02:00".parse().unwrap())
         );
         assert!(until("7am").is_err());
-    }
-
-    #[test]
-    fn lengths_read_as_30m_1h_or_1h30m() {
-        assert_eq!(parse_length("30m"), Ok(SignedDuration::from_mins(30)));
-        assert_eq!(parse_length("1h"), Ok(SignedDuration::from_hours(1)));
-        assert_eq!(parse_length("1h30m"), Ok(SignedDuration::from_mins(90)));
-        assert!(parse_length("0m").is_err());
-        assert!(parse_length("soon").is_err());
-    }
-
-    #[test]
-    fn needs_attention_lists_each_problem_as_the_status_carries_it() {
-        let status: Status = serde_json::from_str(
-            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[],"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}]}"#,
-        )
-        .unwrap();
-
-        assert_eq!(
-            needs_attention(&status),
-            [
-                "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",
-            ]
-        );
     }
 }

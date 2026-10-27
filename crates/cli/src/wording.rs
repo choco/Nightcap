@@ -1,12 +1,13 @@
 //! The CLI's own words for what Nightcap reports, which sends facts alone: its decisions, its
-//! rules and its checks.
+//! rules, its checks and its status.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, ConfigFileDetail, Decision, FileError,
-    NightShiftDetail, NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule,
-    RuleIdentity, RuleSource, Schedule, TimeOfDay,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, ConfigFileDetail, Decision,
+    FileError, Install, Layer, Length, NightShift, NightShiftDetail, NotificationPermission,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Place, PlaceLayers, Reason, Rule, RuleIdentity,
+    RuleSource, Schedule, Status, TimeOfDay,
 };
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
@@ -199,6 +200,181 @@ fn file_error(error: &FileError) -> String {
             format!("{path} is version {version}, from a newer Nightcap than this one")
         }
     }
+}
+
+fn schedule_text(schedule: Schedule) -> String {
+    match schedule {
+        Schedule::Off => "off".to_owned(),
+        Schedule::SunsetToSunrise => "sunset to sunrise".to_owned(),
+        Schedule::Custom { from, to } => format!("{} to {}", time_of_day(from), time_of_day(to)),
+    }
+}
+
+/// The config's value, when it sets one that differs from the Mac's (ADR-0014).
+fn from_config<T: PartialEq + Copy>(
+    config: Option<T>,
+    mac: Option<T>,
+    text: impl Fn(T) -> String,
+) -> String {
+    match config {
+        Some(value) if Some(value) != mac => format!(" (the config says {})", text(value)),
+        _ => String::new(),
+    }
+}
+
+/// How long a change lasts, as `on` and `off` were told.
+pub(crate) fn length_text(length: &Length, zone: &TimeZone) -> String {
+    match length {
+        Length::For(duration) => format!("for {duration:#}"),
+        Length::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+        Length::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
+        Length::UntilTurnedBack => "until you turn it back".to_owned(),
+    }
+}
+
+pub(crate) fn print_status(status: &Status) {
+    let install = match status.install {
+        Install::Managed => "managed by its installer",
+        Install::SelfManaged => "self-managed",
+    };
+    let night_shift = match status.night_shift {
+        NightShift::Unavailable => "unavailable",
+        NightShift::On => "on",
+        NightShift::Off => "off",
+    };
+    let schedule = status.schedule.map_or("unknown".to_owned(), schedule_text);
+    let scheduled = match (status.schedule, status.scheduled_state) {
+        (Some(Schedule::Off), _) | (None, _) => String::new(),
+        (Some(_), None) => ", waiting for sun times".to_owned(),
+        (Some(_), Some(scheduled)) => {
+            format!(", {}{}", scheduled, until(status.next_transition))
+        }
+    };
+    let accessibility = if status.permissions.accessibility {
+        "granted"
+    } else {
+        "not granted"
+    };
+    let notifications = match status.permissions.notifications {
+        NotificationPermission::NotRequested => "not requested",
+        NotificationPermission::Denied => "denied",
+        NotificationPermission::Granted => "granted",
+    };
+    println!("Nightcap {}, {install}", status.version);
+    let decided = decision(&status.decision, &TimeZone::system());
+    // A decision on a layer or a rule starts with the state it asks for, which needs saying again
+    // only while Night Shift isn't there yet.
+    let says_state = !matches!(
+        status.decision.reasons.first(),
+        None | Some(Reason::Schedule { .. })
+    );
+    let observed = match status.night_shift {
+        NightShift::Unavailable => None,
+        NightShift::On => Some(OnOff::On),
+        NightShift::Off => Some(OnOff::Off),
+    };
+    if says_state
+        && status
+            .decision
+            .state
+            .is_some_and(|state| Some(state) == observed)
+    {
+        println!("Night Shift: {decided}");
+    } else {
+        println!("Night Shift: {night_shift}, {decided}");
+    }
+    println!(
+        "Schedule: {schedule}{scheduled}{}",
+        from_config(status.config_schedule, status.schedule, schedule_text)
+    );
+    if let Some(strength) = status.strength {
+        println!(
+            "Strength: {strength}{}",
+            from_config(status.config_strength, status.strength, |value| value
+                .to_string())
+        );
+    }
+    let host = match (&status.host, status.watching) {
+        (Some(host), _) => format!(", on {host}"),
+        (None, true) => ", host unknown".to_owned(),
+        (None, false) => String::new(),
+    };
+    println!(
+        "Frontmost app: {}{host}",
+        status.frontmost_app.as_deref().unwrap_or("unknown")
+    );
+    println!("Rules: {}", rules(&status.rules));
+    let website_checking = status.website_checking;
+    println!(
+        "Website checking: {}{}",
+        website_checking.state,
+        if website_checking.from_config {
+            " (set in the config)"
+        } else {
+            ""
+        }
+    );
+    for layers in &status.layers {
+        println!("{}", layered(layers));
+    }
+    println!("Accessibility: {accessibility}");
+    println!("Notifications: {notifications}");
+    let problems = needs_attention(status);
+    if !problems.is_empty() {
+        println!("Needs attention:");
+        for problem in problems {
+            println!("  {problem}");
+        }
+    }
+}
+
+/// Each drifted or broken check's line.
+fn needs_attention(status: &Status) -> Vec<String> {
+    status
+        .checks
+        .iter()
+        .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+        .map(|check| self::check(&check.detail))
+        .collect()
+}
+
+pub(crate) fn rules(rules: &[Rule]) -> String {
+    if rules.is_empty() {
+        return "none".to_owned();
+    }
+    rules.iter().map(rule).collect::<Vec<_>>().join(", ")
+}
+
+/// A place's timer and hold, top first: "app:com.figma.Desktop: on until 07:00".
+fn layered(layers: &PlaceLayers) -> String {
+    let layer = |layer: &Layer| match layer.until {
+        Some(end) => format!("{}{}", layer.state, until(Some(end))),
+        None => format!("{} until you turn it {}", layer.state, layer.state.other()),
+    };
+    let parts: Vec<_> = [&layers.timer, &layers.hold]
+        .into_iter()
+        .flatten()
+        .map(layer)
+        .collect();
+    let place = match &layers.place {
+        Place::Everywhere => "Everywhere".to_owned(),
+        place => place.to_string(),
+    };
+    format!("{place}: {}", parts.join(", then "))
+}
+
+/// " until 22:00" in local time, or nothing when no schedule transition is coming.
+fn until(transition: Option<Timestamp>) -> String {
+    transition.map_or_else(String::new, |transition| {
+        format!(
+            " until {}",
+            transition.to_zoned(TimeZone::system()).strftime("%H:%M")
+        )
+    })
+}
+
+fn time_of_day(time: TimeOfDay) -> String {
+    format!("{:02}:{:02}", time.hour, time.minute)
 }
 
 #[cfg(test)]
@@ -536,6 +712,22 @@ mod tests {
                 Some(&there(RuleSource::AdHoc, OnOff::Off))
             ),
             "Changed the ad-hoc rule for app:com.figma.Desktop to turn Night Shift on."
+        );
+    }
+
+    #[test]
+    fn needs_attention_lists_each_problem_as_the_status_carries_it() {
+        let status: Status = serde_json::from_str(
+            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[],"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            needs_attention(&status),
+            [
+                "Accessibility isn’t allowed, so website checking can’t read the front tab.",
+                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",
+            ]
         );
     }
 }
