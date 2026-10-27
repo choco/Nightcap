@@ -723,7 +723,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
     }
 
-    private static func clock(_ time: TimeOfDay) -> String {
+    /// A time of day on the 24-hour clock, such as 07:52.
+    static func clock(_ time: TimeOfDay) -> String {
         String(format: "%02d:%02d", time.hour, time.minute)
     }
 

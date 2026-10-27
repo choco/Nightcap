@@ -303,18 +303,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return copy
     }
 
-    /// The image beside a place row: the timer for everywhere, under the switch, the app's own
-    /// icon, or a globe for a site.
+    /// The image beside a place row: its symbol, or the app's own icon, running or installed.
     private static func image(for image: RowImage) -> NSImage? {
-        switch image {
-        case .everywhere: return symbol("timer")
-        case .site: return symbol("globe")
-        case .app(let bundleId):
-            let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
-            let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
-                .map { NSWorkspace.shared.icon(forFile: $0.path) }
-            return (running ?? installed).map(menuSized)
-        }
+        guard case .app(let bundleId) = image else { return MenuArt.symbol(for: image).flatMap(symbol) }
+        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
+        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+            .map { NSWorkspace.shared.icon(forFile: $0.path) }
+        return (running ?? installed).map(menuSized)
     }
 
     /// A place row: a submenu that turns its place the other way, or a greyed item with only what

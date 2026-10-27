@@ -2,7 +2,8 @@ import AppKit
 import NightcapCore
 
 /// The menu's art, which the status item and its menu draw and onboarding's stage copies: the
-/// moons, the problem's dot and triangle, the strength's suns, and how a subtitle breaks.
+/// moons, the problem's dot and triangle, the strength's suns, the rows' symbols, and how a
+/// subtitle breaks.
 enum MenuArt {
     /// The mockup's moons, template images from the asset catalog.
     static func moon(for icon: MenuIcon) -> NSImage? {
@@ -91,6 +92,16 @@ enum MenuArt {
         }
         image.isTemplate = true
         return image
+    }
+
+    /// The SF Symbol beside a place row: the timer beside everywhere's, under the switch, and a
+    /// globe beside a site's; nil beside an app's, which shows the app's own icon.
+    static func symbol(for image: RowImage) -> String? {
+        switch image {
+        case .everywhere: "timer"
+        case .site: "globe"
+        case .app: nil
+        }
     }
 
     /// The widest a subtitle's line gets.

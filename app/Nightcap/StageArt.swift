@@ -53,17 +53,18 @@ enum StageArt {
             }
         let now = time(of: Date())
         let on = covers(start, end, now)
+        let (from, to) = (Onboarding.clock(start), Onboarding.clock(end))
         let caption =
-            (on ? "On now, until \(clock(end))." : "Comes on at \(clock(start)), and goes off at \(clock(end)).")
+            (on ? "On now, until \(to)." : "Comes on at \(from), and goes off at \(to).")
             + (sunset ? " The times follow your location." : "")
         return Drawn(NSSize(width: 600, height: 112)) { bounds in
             let width = bounds.width
             let x = { (time: TimeOfDay) in width * CGFloat(Int(time.hour) * 60 + Int(time.minute)) / 1440 }
             let label = NSFont.systemFont(ofSize: 11)
             Paint.glyph("moon.fill", 9, .labelColor, centredAt: NSPoint(x: x(start) - 18, y: 8))
-            Paint.text(clock(start), label, .labelColor, centredAt: NSPoint(x: x(start) + 6, y: 8))
+            Paint.text(from, label, .labelColor, centredAt: NSPoint(x: x(start) + 6, y: 8))
             Paint.glyph("sun.max.fill", 9, .labelColor, centredAt: NSPoint(x: x(end) - 18, y: 8))
-            Paint.text(clock(end), label, .labelColor, centredAt: NSPoint(x: x(end) + 6, y: 8))
+            Paint.text(to, label, .labelColor, centredAt: NSPoint(x: x(end) + 6, y: 8))
             let bar = NSRect(x: 0, y: 24, width: width, height: 40)
             Paint.lifted { Paint.rounded(bar, 9, .nightcapGroup) }
             NSGraphicsContext.saveGraphicsState()
@@ -353,15 +354,14 @@ enum StageArt {
                     strength(value, in: box, at: box.minY + middle, from: title)
                 case .row(let row):
                     let centre = NSPoint(x: image, y: box.minY + middle)
-                    switch row.image {
-                    case .everywhere: Paint.glyph("timer", 10, .labelColor, centredAt: centre)
-                    case .site: Paint.glyph("globe", 10, .labelColor, centredAt: centre)
-                    case .app(let bundleId):
-                        if let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-                            NSWorkspace.shared.icon(forFile: app.path).draw(
-                                in: NSRect(x: centre.x - 7, y: centre.y - 7, width: 14, height: 14), from: .zero,
-                                operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
-                        }
+                    if let symbol = MenuArt.symbol(for: row.image) {
+                        Paint.glyph(symbol, 10, .labelColor, centredAt: centre)
+                    } else if case .app(let bundleId) = row.image,
+                        let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+                    {
+                        NSWorkspace.shared.icon(forFile: app.path).draw(
+                            in: NSRect(x: centre.x - 7, y: centre.y - 7, width: 14, height: 14), from: .zero,
+                            operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                     }
                     line(row.title, item, .labelColor, title, middle)
                     if !row.items.isEmpty {
@@ -439,10 +439,6 @@ enum StageArt {
         let minutes = { (time: TimeOfDay) in Int(time.hour) * 60 + Int(time.minute) }
         let (from, to, at) = (minutes(start), minutes(end), minutes(now))
         return from <= to ? (from <= at && at < to) : (at >= from || at < to)
-    }
-
-    private static func clock(_ time: TimeOfDay) -> String {
-        String(format: "%02d:%02d", time.hour, time.minute)
     }
 }
 
