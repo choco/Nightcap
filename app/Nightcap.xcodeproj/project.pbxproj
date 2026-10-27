@@ -12,6 +12,7 @@
 		4E1C0A000000000000000018 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A000000000000000017 /* Sparkle */; };
 		4E1C0A00000000000000001B /* KeyboardShortcuts in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A00000000000000001A /* KeyboardShortcuts */; };
 		4E1C0A000000000000000027 /* Tour Sample.app in Copy Helpers */ = {isa = PBXBuildFile; fileRef = 4E1C0A00000000000000001D /* Tour Sample.app */; };
+		4E1C0A000000000000000030 /* NightcapCore in Frameworks */ = {isa = PBXBuildFile; productRef = 4E1C0A000000000000000031 /* NightcapCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,12 +44,31 @@
 		4E1C0A000000000000000004 /* Nightcap.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Nightcap.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4E1C0A000000000000000006 /* nightcap */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; name = nightcap; path = ../build/cli/nightcap; sourceTree = SOURCE_ROOT; };
 		4E1C0A00000000000000001D /* Tour Sample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Tour Sample.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		4E1C0A000000000000000029 /* NightcapTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NightcapTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		4E1C0A00000000000000002B /* Exceptions for "Nightcap" folder in "NightcapTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OnboardingFlow.swift,
+			);
+			target = 4E1C0A00000000000000002C /* NightcapTests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		4E1C0A000000000000000005 /* Nightcap */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				4E1C0A00000000000000002B /* Exceptions for "Nightcap" folder in "NightcapTests" target */,
+			);
 			path = Nightcap;
+			sourceTree = "<group>";
+		};
+		4E1C0A00000000000000002A /* NightcapTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = NightcapTests;
 			sourceTree = "<group>";
 		};
 		4E1C0A00000000000000001C /* TourSample */ = {
@@ -76,6 +96,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E1C0A00000000000000002E /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4E1C0A000000000000000030 /* NightcapCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -84,6 +112,7 @@
 			children = (
 				4E1C0A000000000000000005 /* Nightcap */,
 				4E1C0A00000000000000001C /* TourSample */,
+				4E1C0A00000000000000002A /* NightcapTests */,
 				4E1C0A000000000000000006 /* nightcap */,
 				4E1C0A000000000000000003 /* Products */,
 			);
@@ -94,6 +123,7 @@
 			children = (
 				4E1C0A000000000000000004 /* Nightcap.app */,
 				4E1C0A00000000000000001D /* Tour Sample.app */,
+				4E1C0A000000000000000029 /* NightcapTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -148,6 +178,29 @@
 			productReference = 4E1C0A00000000000000001D /* Tour Sample.app */;
 			productType = "com.apple.product-type.application";
 		};
+		4E1C0A00000000000000002C /* NightcapTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4E1C0A000000000000000032 /* Build configuration list for PBXNativeTarget "NightcapTests" */;
+			buildPhases = (
+				4E1C0A00000000000000002D /* Sources */,
+				4E1C0A00000000000000002E /* Frameworks */,
+				4E1C0A00000000000000002F /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4E1C0A00000000000000002A /* NightcapTests */,
+			);
+			name = NightcapTests;
+			packageProductDependencies = (
+				4E1C0A000000000000000031 /* NightcapCore */,
+			);
+			productName = NightcapTests;
+			productReference = 4E1C0A000000000000000029 /* NightcapTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -179,6 +232,7 @@
 			targets = (
 				4E1C0A000000000000000007 /* Nightcap */,
 				4E1C0A00000000000000001E /* Tour Sample */,
+				4E1C0A00000000000000002C /* NightcapTests */,
 			);
 		};
 /* End PBXProject section */
@@ -198,6 +252,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4E1C0A00000000000000002F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -209,6 +270,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		4E1C0A00000000000000001F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4E1C0A00000000000000002D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -334,6 +402,32 @@
 			};
 			name = Release;
 		};
+		4E1C0A000000000000000033 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		4E1C0A000000000000000034 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.choco.nightcap.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -360,6 +454,15 @@
 			buildConfigurations = (
 				4E1C0A000000000000000023 /* Debug */,
 				4E1C0A000000000000000024 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4E1C0A000000000000000032 /* Build configuration list for PBXNativeTarget "NightcapTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4E1C0A000000000000000033 /* Debug */,
+				4E1C0A000000000000000034 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -406,6 +509,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 4E1C0A000000000000000019 /* XCRemoteSwiftPackageReference "KeyboardShortcuts" */;
 			productName = KeyboardShortcuts;
+		};
+		4E1C0A000000000000000031 /* NightcapCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = NightcapCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -33,9 +33,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select --switch /Applications/Xcode_27.0.app
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      # Clippy and rustdoc reach the code behind cfg(target_os = "macos") only here.
+      # Clippy and rustdoc reach the code behind cfg(target_os = "macos") only here. The Swift
+      # checks build the debug core, which the dev build then links.
       - run: scripts/check --rust --swift
-      - run: scripts/build-core
       - run: scripts/build-app
 
   site:

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Runs the Swift tests, NightcapTests, into build/xcode-tests/. The bundle runs on its own,
+# with cores staged in memory, so it needs the debug core: run build-core first.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+# A clean environment keeps the Nix dev shell's compiler and SDK variables away from Xcode.
+env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" \
+  ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
+  xcodebuild test \
+  -project app/Nightcap.xcodeproj \
+  -scheme NightcapTests \
+  -destination platform=macOS \
+  -derivedDataPath "$root/build/xcode-tests" \
+  COMPILER_INDEX_STORE_ENABLE=NO

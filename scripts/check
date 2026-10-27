@@ -5,7 +5,8 @@
 #   --scripts  shellcheck on the shell scripts in scripts/ and release/, and actionlint on the
 #              workflows, with shellcheck on their run steps
 #   --site     Biome, the type checker and the site's build (build-site)
-#   --swift    swift-format against .swift-format; by default only on macOS, which has it
+#   --swift    swift-format against .swift-format, then the Swift tests on a debug core
+#              (build-core, test-app); by default only on macOS, which has them
 # Usage: check [--rust] [--deps] [--scripts] [--site] [--swift]
 set -euo pipefail
 
@@ -68,5 +69,8 @@ if [[ -n "$site" ]]; then
 fi
 
 if [[ -n "$swift" ]]; then
-  xcrun swift-format lint --strict --recursive app/Nightcap app/TourSample app/NightcapCore/Package.swift
+  xcrun swift-format lint --strict --recursive app/Nightcap app/NightcapTests app/TourSample \
+    app/NightcapCore/Package.swift
+  scripts/build-core
+  scripts/test-app
 fi
