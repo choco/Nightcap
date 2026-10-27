@@ -245,21 +245,32 @@ impl Places {
                     .timeline
                     .next_turn(world.applied_until, state)
                     .ok_or(Refusal::NoSchedule)?;
-                let layers = self.layers_mut(place);
-                layers.timer = None;
-                layers.hold = Some(layer(Some(until)));
+                self.hold(place, layer(Some(until)));
             }
             Length::UntilTurnedBack => {
                 if *place != Place::Everywhere {
                     return Err(Refusal::ForGoodIsARule);
                 }
-                let layers = self.layers_mut(place);
-                layers.timer = None;
-                layers.hold = Some(layer(None));
+                self.hold(place, layer(None));
             }
         }
         tracing::info!("{} {state} {length:?}", loggable_place(place));
         Ok(())
+    }
+
+    /// Replaces a place's hold and ends its timer. A hold an external change linked to the one
+    /// replaced stays, no longer linked.
+    fn hold(&mut self, place: &Place, hold: Layer) {
+        let layers = self.layers_mut(place);
+        layers.timer = None;
+        if let Some(partner) = layers.hold.replace(hold).and_then(|replaced| replaced.with)
+            && let Some(linked) = self
+                .layers_at_mut(&partner)
+                .and_then(|layers| layers.hold.as_mut())
+                .filter(|linked| linked.with.as_ref() == Some(place))
+        {
+            linked.with = None;
+        }
     }
 
     /// Takes off a place's hold and timer, which puts its rule back, or for everywhere the

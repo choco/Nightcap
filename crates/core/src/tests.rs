@@ -2083,6 +2083,40 @@ fn flipping_back_from_outside_takes_off_both_linked_holds() {
 }
 
 #[test]
+fn a_hold_set_over_a_linked_one_leaves_its_partner_unlinked() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir);
+    write_config(&socket, "[rules.off]\napp = [\"com.figma.Desktop\"]\n");
+    let (core, wakes, _clock) = start_at(&socket, "2026-10-16T12:00:00+02:00");
+    report(&core, false);
+    activate(&core, "com.figma.Desktop");
+    report(&core, true);
+
+    send(
+        &core,
+        &socket,
+        &wakes,
+        set(figma_app(), OnOff::Off, Length::UntilScheduleTurns),
+    );
+
+    assert_eq!(
+        status_of(&core, &socket, &wakes).layers,
+        vec![
+            layered(
+                figma_app(),
+                Some(layer(OnOff::Off, Some("2026-10-16T22:00:00+02:00"))),
+                None
+            ),
+            layered(
+                Place::Everywhere,
+                Some(layer(OnOff::On, Some("2026-10-17T07:00:00+02:00"))),
+                None
+            ),
+        ]
+    );
+}
+
+#[test]
 fn the_switch_first_takes_off_everywheres_layers_that_say_otherwise() {
     let dir = tempfile::tempdir().unwrap();
     let socket = socket_in(&dir);
