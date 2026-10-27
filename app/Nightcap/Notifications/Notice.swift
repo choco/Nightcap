@@ -15,30 +15,28 @@ struct Notice: Equatable {
         let name: String?
     }
 
-    /// The notice for `event`, or nil where the user isn't told: an adoption that snoozed no
-    /// rule, or a refused command, which the user is looking at already. Times read in
-    /// `timeZone`, as the core keeps them.
-    init?(_ event: Event, frontApp: FrontApp?, timeZone: TimeZone) {
+    /// The notice for `event`, in `words`, or nil where the user isn't told: an adoption that
+    /// snoozed no rule, or a refused command, which the user is looking at already.
+    init?(_ event: Event, frontApp: FrontApp?, words: Wording) {
         switch event {
         case .adopted(_, let snoozed, let state, let until):
             guard let snoozed else { return nil }
-            let rule: String =
+            let rule: Wording.Place =
                 switch snoozed {
                 case .app(let bundleId):
-                    frontApp.flatMap { app in
-                        app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
-                    } ?? bundleId
-                case .domain(let domain): domain
+                    .app(
+                        name: frontApp.flatMap { app in
+                            app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
+                        } ?? bundleId)
+                case .domain(let domain): .site(domain: domain)
                 }
-            self.init(
-                title: "Night Shift turned \(Self.word(state)) outside Nightcap",
-                body: "Snoozed the \(rule) rule \(Self.until(until, state, in: timeZone)).")
+            self.init(title: words.turnedOutsideNightcap(state), body: words.snoozed(rule, state, until: until))
         case .updated(_, let to):
             self.init(
-                title: "Nightcap updated to \(to)", body: "Click to see what’s new.",
+                title: words.updated(to: to), body: words.whatsNew,
                 opens: URL(string: "https://nightcap.choco.me/changelog/#v\(to)"))
         case .problemAppeared(let check):
-            self.init(problem: check.detail)
+            self.init(problem: check.detail, words: words)
         case .refused:
             return nil
         }
@@ -52,65 +50,20 @@ struct Notice: Equatable {
 
     /// A problem as the core announces it: never Night Shift unavailable, notifications switched
     /// off or a login item waiting for approval, nor a check that's no problem.
-    private init?(problem detail: CheckDetail) {
+    private init?(problem detail: CheckDetail, words: Wording) {
+        let notice: (title: String, body: String)
         switch detail {
-        case .nightShift(.setAside):
-            self.init(
-                title: "Sunset to sunrise needs Location Services",
-                body: "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location "
-                    + "Services back on, or to keep the schedule off.")
-        case .nightShift(.noSunTimes):
-            self.init(
-                title: "Nightcap can’t follow sunset to sunrise",
-                body: "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings "
-                    + "work without them.")
-        case .accessibility(.notAllowed):
-            self.init(
-                title: "Website checking needs Accessibility",
-                body: "Open Nightcap’s settings to allow it, or to stop checking websites.")
-        case .openAtLogin(.removed):
-            self.init(
-                title: "Nightcap no longer opens at login",
-                body: "Open Nightcap’s settings to turn it back on, or to keep it off.")
-        case .configFile(.error(let error)):
-            self.init(title: "Nightcap’s config is invalid", body: Self.located(error))
-        case .adHocRules(.off(let error)):
-            self.init(title: "Ad-hoc rules are off", body: Self.located(error))
+        case .nightShift(.setAside): notice = words.scheduleSetAside
+        case .nightShift(.noSunTimes): notice = words.noSunTimes
+        case .accessibility(.notAllowed): notice = words.accessibilityNotAllowed
+        case .openAtLogin(.removed): notice = words.openAtLoginRemoved
+        case .configFile(.error(let error)): notice = words.configInvalid(error)
+        case .adHocRules(.off(let error)): notice = words.adHocRulesOff(error)
         case .nightShift(.available), .nightShift(.unavailable), .accessibility(.allowed),
             .accessibility(.notNeeded), .notifications, .openAtLogin(.opens), .openAtLogin(.awaitingApproval),
             .openAtLogin(.off), .configFile(.valid), .configFile(.missing), .adHocRules(.on):
             return nil
         }
-    }
-
-    /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
-    private static func located(_ error: FileError) -> String {
-        switch error {
-        case .unreadable(let path, let message):
-            "couldn't read \(path): \(message)"
-        case .malformed(let path, let line?, let message), .invalid(let path, let line?, let message):
-            "\(path): line \(line): \(message)"
-        case .malformed(let path, nil, let message), .invalid(let path, nil, let message):
-            "\(path): \(message)"
-        case .newer(let path, let version):
-            "\(path) is version \(version), from a newer Nightcap than this one"
-        }
-    }
-
-    private static func word(_ state: OnOff) -> String {
-        switch state {
-        case .on: "on"
-        case .off: "off"
-        }
-    }
-
-    /// "until 07:00", or "until you turn it off" for a change with no end.
-    private static func until(_ end: Date?, _ state: OnOff, in timeZone: TimeZone) -> String {
-        guard let end else { return "until you turn it \(word(state == .on ? .off : .on))" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.dateFormat = "HH:mm"
-        return "until \(formatter.string(from: end))"
+        self.init(title: notice.title, body: notice.body)
     }
 }

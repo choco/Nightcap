@@ -2,7 +2,6 @@ import Foundation
 import NightcapCore
 import Testing
 
-private let zurich = TimeZone(identifier: "Europe/Zurich")!
 private let figma = Notice.FrontApp(bundleId: "com.figma.Desktop", name: "Figma")
 
 /// 07:00 on 17 October 2026 in Zurich.
@@ -10,7 +9,7 @@ private let morning = Date(timeIntervalSince1970: 1_792_213_200)
 
 /// The notice for a check that became a problem.
 private func problem(_ detail: CheckDetail, _ state: CheckState) -> Notice? {
-    Notice(.problemAppeared(check: Check(detail: detail, state: state)), frontApp: nil, timeZone: zurich)
+    Notice(.problemAppeared(check: Check(detail: detail, state: state)), frontApp: nil, words: .staged)
 }
 
 /// What each event from the core says as a notification.
@@ -19,7 +18,7 @@ struct NoticeTests {
         let adopted = Event.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: morning)
 
-        let notice = Notice(adopted, frontApp: figma, timeZone: zurich)
+        let notice = Notice(adopted, frontApp: figma, words: .staged)
 
         #expect(notice?.title == "Night Shift turned on outside Nightcap")
         #expect(notice?.body == "Snoozed the Figma rule until 07:00.")
@@ -32,19 +31,28 @@ struct NoticeTests {
             place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .on, until: morning)
 
         #expect(
-            Notice(app, frontApp: figma, timeZone: zurich)?.body
+            Notice(app, frontApp: figma, words: .staged)?.body
                 == "Snoozed the com.apple.mail rule until you turn it on.")
-        #expect(Notice(site, frontApp: figma, timeZone: zurich)?.body == "Snoozed the figma.com rule until 07:00.")
+        #expect(Notice(site, frontApp: figma, words: .staged)?.body == "Snoozed the figma.com rule until 07:00.")
+    }
+
+    @Test func anExternalChangeWithNoEndLastsUntilYouTurnItBack() {
+        let on = Event.adopted(
+            place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: nil)
+        let off = Event.adopted(place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .off, until: nil)
+
+        #expect(Notice(on, frontApp: figma, words: .staged)?.body == "Snoozed the Figma rule until you turn it off.")
+        #expect(Notice(off, frontApp: figma, words: .staged)?.title == "Night Shift turned off outside Nightcap")
     }
 
     @Test func anExternalChangeThatSnoozedNoRuleTellsNothing() {
         let adopted = Event.adopted(place: .everywhere, snoozed: nil, state: .on, until: morning)
 
-        #expect(Notice(adopted, frontApp: figma, timeZone: zurich) == nil)
+        #expect(Notice(adopted, frontApp: figma, words: .staged) == nil)
     }
 
     @Test func anUpdateOpensItsVersionInTheChangelog() {
-        let notice = Notice(.updated(from: "1.1.0", to: "1.2.0"), frontApp: nil, timeZone: zurich)
+        let notice = Notice(.updated(from: "1.1.0", to: "1.2.0"), frontApp: nil, words: .staged)
 
         #expect(notice?.title == "Nightcap updated to 1.2.0")
         #expect(notice?.body == "Click to see what’s new.")
@@ -108,6 +116,6 @@ struct NoticeTests {
     @Test func aRefusalTellsNothing() {
         let refused = Event.refused(command: .off, why: ErrorReply(code: .nightShiftUnavailable, message: ""))
 
-        #expect(Notice(refused, frontApp: nil, timeZone: zurich) == nil)
+        #expect(Notice(refused, frontApp: nil, words: .staged) == nil)
     }
 }

@@ -24,7 +24,7 @@ final class Notifications: NSObject {
         let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
             app.bundleIdentifier.map { Notice.FrontApp(bundleId: $0, name: app.localizedName) }
         }
-        guard let notice = Notice(event, frontApp: front, timeZone: .current) else { return }
+        guard let notice = Notice(event, frontApp: front, words: .system) else { return }
         post(notice)
     }
 

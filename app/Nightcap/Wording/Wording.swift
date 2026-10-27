@@ -1,10 +1,10 @@
 import Foundation
 import NightcapCore
 
-/// The sentences the menu and the tour show, from the String Catalog beside this file: in the
-/// user's language, with its plural rules, and times in the user's clock. Each takes what its
-/// sentence is about, such as a place by its name, on or off, a length or a time, never a snapshot
-/// of the core.
+/// The sentences the menu, the tour and the notifications show, from the String Catalog beside
+/// this file: in the user's language, with its plural rules, and times in the user's clock. Each
+/// takes what its sentence is about, such as a place by its name, on or off, a length or a time,
+/// never a snapshot of the core.
 struct Wording {
     /// Formats times and numbers, and picks a plural's form.
     let locale: Locale

@@ -55,6 +55,7 @@
 				Onboarding/OnboardingFlow.swift,
 				Wording/Localizable.xcstrings,
 				Wording/NightShiftItem.swift,
+				Wording/Notices.swift,
 				Wording/PlaceRows.swift,
 				Wording/TourQuotes.swift,
 				Wording/Wording.swift,

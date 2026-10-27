@@ -1,6 +1,16 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ is version %lld, from a newer Nightcap than this one" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ is version %2$lld, from a newer Nightcap than this one"
+          }
+        }
+      }
+    },
     "%@, then %@" : {
       "localizations" : {
         "en" : {
@@ -10,6 +20,29 @@
           }
         }
       }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
+    "%@: line %lld: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: line %2$lld: %3$@"
+          }
+        }
+      }
+    },
+    "Ad-hoc rules are off" : {
+
     },
     "Always" : {
 
@@ -30,6 +63,12 @@
 
     },
     "Back to the Schedule" : {
+
+    },
+    "Click to see what’s new." : {
+
+    },
+    "Custom hours in Night Shift’s settings work without them." : {
 
     },
     "Custom…" : {
@@ -152,6 +191,24 @@
     "Like the Rest of %@" : {
 
     },
+    "Night Shift turned off outside Nightcap" : {
+
+    },
+    "Night Shift turned on outside Nightcap" : {
+
+    },
+    "Nightcap can’t follow sunset to sunrise" : {
+
+    },
+    "Nightcap no longer opens at login" : {
+
+    },
+    "Nightcap updated to %@" : {
+
+    },
+    "Nightcap’s config is invalid" : {
+
+    },
     "No schedule" : {
 
     },
@@ -262,10 +319,38 @@
     "On until you turn it off" : {
 
     },
+    "Open Nightcap’s settings to allow it, or to stop checking websites." : {
+
+    },
+    "Open Nightcap’s settings to turn Location Services back on, or to keep the schedule off." : {
+
+    },
+    "Open Nightcap’s settings to turn it back on, or to keep it off." : {
+
+    },
     "Put the Rule Back" : {
 
     },
     "Remove Your Rule" : {
+
+    },
+    "Snoozed the %@ rule until %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Snoozed the %1$@ rule until %2$@."
+          }
+        }
+      }
+    },
+    "Snoozed the %@ rule until you turn it off." : {
+
+    },
+    "Snoozed the %@ rule until you turn it on." : {
+
+    },
+    "Sunset to sunrise needs Location Services" : {
 
     },
     "Turn Off" : {
@@ -304,6 +389,9 @@
     "Until %@" : {
 
     },
+    "Website checking needs Accessibility" : {
+
+    },
     "When the schedule ends" : {
 
     },
@@ -311,6 +399,22 @@
 
     },
     "Your config decides" : {
+
+    },
+    "couldn't read %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "couldn't read %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "macOS hasn’t worked out sunrise and sunset." : {
+
+    },
+    "macOS turned Night Shift’s schedule off." : {
 
     },
     "off until %@" : {
