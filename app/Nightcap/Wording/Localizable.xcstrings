@@ -1,0 +1,349 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@, then %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@, then %2$@"
+          }
+        }
+      }
+    },
+    "Always" : {
+
+    },
+    "Always off: %@" : {
+
+    },
+    "Always on: %@" : {
+
+    },
+    "At This Site" : {
+
+    },
+    "At sunrise" : {
+
+    },
+    "At sunset" : {
+
+    },
+    "Back to the Schedule" : {
+
+    },
+    "Custom…" : {
+
+    },
+    "Everywhere but at %@" : {
+
+    },
+    "Everywhere but in %@" : {
+
+    },
+    "Following the schedule" : {
+
+    },
+    "Following the schedule until %@" : {
+
+    },
+    "For %lld Hours" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "For %lld Hour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "For %lld Hours"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "For %lld Hours %lld Minutes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "For %#@hours@ %#@minutes@"
+          },
+          "substitutions" : {
+            "hours" : {
+              "argNum" : 1,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg Hour"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg Hours"
+                    }
+                  }
+                }
+              }
+            },
+            "minutes" : {
+              "argNum" : 2,
+              "formatSpecifier" : "lld",
+              "variations" : {
+                "plural" : {
+                  "one" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg Minute"
+                    }
+                  },
+                  "other" : {
+                    "stringUnit" : {
+                      "state" : "translated",
+                      "value" : "%arg Minutes"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "For %lld Minutes" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "For %lld Minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "For %lld Minutes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "In %@" : {
+
+    },
+    "Like Everywhere Else" : {
+
+    },
+    "Like the Rest of %@" : {
+
+    },
+    "No schedule" : {
+
+    },
+    "Off at %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Off at %1$@ until %2$@"
+          }
+        }
+      }
+    },
+    "Off at %@ until you turn it on" : {
+
+    },
+    "Off at %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Off at %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "Off in %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Off in %1$@ until %2$@"
+          }
+        }
+      }
+    },
+    "Off in %@ until you turn it on" : {
+
+    },
+    "Off in %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Off in %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "Off until %@" : {
+
+    },
+    "Off until you turn it on" : {
+
+    },
+    "On at %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On at %1$@ until %2$@"
+          }
+        }
+      }
+    },
+    "On at %@ until you turn it off" : {
+
+    },
+    "On at %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On at %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "On for the tour" : {
+
+    },
+    "On in %@ until %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On in %1$@ until %2$@"
+          }
+        }
+      }
+    },
+    "On in %@ until you turn it off" : {
+
+    },
+    "On in %@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "On in %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "On until %@" : {
+
+    },
+    "On until you turn it off" : {
+
+    },
+    "Put the Rule Back" : {
+
+    },
+    "Remove Your Rule" : {
+
+    },
+    "Turn Off" : {
+
+    },
+    "Turn Off Everywhere" : {
+
+    },
+    "Turn Off at %@" : {
+
+    },
+    "Turn Off at This Site" : {
+
+    },
+    "Turn Off in %@" : {
+
+    },
+    "Turn On" : {
+
+    },
+    "Turn On Everywhere" : {
+
+    },
+    "Turn On at %@" : {
+
+    },
+    "Turn On at This Site" : {
+
+    },
+    "Turn On in %@" : {
+
+    },
+    "Unavailable" : {
+
+    },
+    "Until %@" : {
+
+    },
+    "When the schedule ends" : {
+
+    },
+    "When the schedule starts" : {
+
+    },
+    "Your config decides" : {
+
+    },
+    "off until %@" : {
+
+    },
+    "off until you turn it on" : {
+
+    },
+    "on until %@" : {
+
+    },
+    "on until you turn it off" : {
+
+    },
+    "the tour’s rule" : {
+
+    },
+    "your config’s rule" : {
+
+    },
+    "your rule" : {
+
+    },
+    "“%@” › “%@”" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "“%1$@” › “%2$@”"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

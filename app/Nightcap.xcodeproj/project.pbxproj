@@ -53,6 +53,11 @@
 			membershipExceptions = (
 				Notifications/Notice.swift,
 				Onboarding/OnboardingFlow.swift,
+				Wording/Localizable.xcstrings,
+				Wording/NightShiftItem.swift,
+				Wording/PlaceRows.swift,
+				Wording/TourQuotes.swift,
+				Wording/Wording.swift,
 			);
 			target = 4E1C0A00000000000000002C /* NightcapTests */;
 		};
@@ -343,6 +348,7 @@
 				PRODUCT_NAME = "Nightcap Dev";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 6.0;
 			};
@@ -364,6 +370,7 @@
 				PRODUCT_NAME = Nightcap;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_TREAT_WARNINGS_AS_ERRORS = YES;
 				SWIFT_VERSION = 6.0;
 			};
