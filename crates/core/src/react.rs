@@ -7,7 +7,6 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{Command, NightShift, NotificationPermission, OnOff};
 
-use crate::domain::Host;
 use crate::onboarding::ONBOARDING;
 use crate::schedule::SunTimes;
 use crate::{Core, Effect, Event, Fix, LoginItem, State, tour};
@@ -62,29 +61,11 @@ impl Core {
                 name,
                 is_browser,
             } => {
-                tracing::debug!("frontmost app: {bundle_id:?}, browser: {is_browser}");
-                // An app whose bundle ID no rule could name counts as having none.
-                let bundle_id = bundle_id.and_then(|bundle_id| {
-                    bundle_id
-                        .parse()
-                        .inspect_err(|error| tracing::debug!("{error}; it counts as having none"))
-                        .ok()
-                });
-                state.facts.context.app = bundle_id;
-                state.facts.context.app_name = name;
-                state.is_browser = is_browser;
+                state.app_activated(bundle_id, name, is_browser);
                 Vec::new()
             }
-            // The host itself is never logged (ADR-0009).
             Event::HostChanged { generation, host } => {
-                match &mut state.watch {
-                    Some(watch) if watch.generation == generation => {
-                        watch.reported = true;
-                        state.facts.context.host = host.as_deref().and_then(Host::new);
-                        tracing::debug!("host reported for watch {generation}");
-                    }
-                    _ => tracing::debug!("dropped a host from stale watch {generation}"),
-                }
+                state.host_changed(generation, host);
                 Vec::new()
             }
             Event::LoginItemChanged { item } => {

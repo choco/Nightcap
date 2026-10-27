@@ -233,7 +233,7 @@ impl Core {
             return;
         }
         // A new watch keeps Night Shift as it is until its first read (ADR-0012).
-        if state.watch.as_ref().is_some_and(|watch| !watch.reported) {
+        if state.watching.awaits_first_read() {
             return;
         }
         let look = state.places.look(&state.facts.world(self.clock.now()));

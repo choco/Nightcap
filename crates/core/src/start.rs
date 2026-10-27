@@ -13,6 +13,7 @@ use crate::file::Files;
 use crate::places::{Context, Kept, Places};
 use crate::schedule::{SunTimes, Timeline};
 use crate::turn::Reconciling;
+use crate::watch::Watching;
 use crate::{Core, CoreError, Facts, State, adhoc, ipc, state};
 
 /// Where a core lives and what kind of install it serves.
@@ -109,9 +110,7 @@ impl Core {
                 config_night_shift: config.night_shift,
                 applied_from_config: persisted.applied_from_config,
                 reconciling: Reconciling::new(persisted.night_shift),
-                is_browser: false,
-                watch: None,
-                generation: 0,
+                watching: Watching::default(),
                 schedule_set_aside: false,
                 schedule_off_accepted: persisted.schedule_off_accepted,
                 accessibility: None,

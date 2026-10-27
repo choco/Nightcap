@@ -82,7 +82,7 @@ impl Core {
                 .map(OnOff::from),
             next_transition: facts.timeline.next_transition(facts.applied_until),
             frontmost_app: facts.context.app.clone().map(String::from),
-            watching: state.watch.is_some(),
+            watching: state.watching.is_watching(),
             host: facts
                 .context
                 .host

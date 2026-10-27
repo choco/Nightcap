@@ -14,7 +14,7 @@ use crate::file::{self, Files, Owned};
 use crate::places::{Context, Places, World};
 use crate::schedule::Timeline;
 use crate::turn::{Reconciling, wanted};
-use crate::watch::Watch;
+use crate::watch::Watching;
 use crate::{Core, LoginItem, adhoc, config, tour};
 
 const VERSION: u32 = 1;
@@ -36,11 +36,7 @@ pub(crate) struct State {
     pub(crate) config_night_shift: NightShiftConfig,
     pub(crate) applied_from_config: NightShiftConfig,
     pub(crate) reconciling: Reconciling,
-    /// Whether the frontmost app is in the shell's browser list.
-    pub(crate) is_browser: bool,
-    pub(crate) watch: Option<Watch>,
-    /// The generation of the last watch started.
-    pub(crate) generation: u64,
+    pub(crate) watching: Watching,
     /// macOS has sunset to sunrise set aside, and the schedule is off.
     pub(crate) schedule_set_aside: bool,
     /// See `Persisted::schedule_off_accepted`.
