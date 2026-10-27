@@ -9,6 +9,7 @@ use std::sync::Arc;
 use nightcap_protocol::{ExportFormat, IdentityError, OnOff, RuleIdentity};
 use serde::{Deserialize, Serialize};
 
+use crate::config::Malformed;
 use crate::file::{self, Files, Owned};
 
 /// Version 2 lists rules by what they say (ADR-0006).
@@ -55,10 +56,7 @@ pub(crate) enum AdHocError {
     #[error("couldn't read {}: {error}", .path.display())]
     Unreadable { path: PathBuf, error: io::Error },
     #[error("{}: {error}", .path.display())]
-    Malformed {
-        path: PathBuf,
-        error: toml::de::Error,
-    },
+    Malformed { path: PathBuf, error: Malformed },
     #[error("{} is version {version}, from a newer Nightcap than this one", .path.display())]
     Newer { path: PathBuf, version: u32 },
     #[error("{}: {error}", .path.display())]
@@ -103,7 +101,7 @@ impl Store {
         };
         let file: File = toml::from_slice(&contents).map_err(|error| AdHocError::Malformed {
             path: path(),
-            error,
+            error: Malformed::new(&error, &contents),
         })?;
         if file.version > VERSION {
             return Err(AdHocError::Newer {

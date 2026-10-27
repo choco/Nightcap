@@ -2338,11 +2338,7 @@ impl State {
             });
         }
         checks.push(match (&self.config_error, self.config_found) {
-            (Some(error), _) => check(
-                CheckKind::ConfigFile,
-                CheckState::Broken,
-                &format!("The config file is invalid: {error}"),
-            ),
+            (Some(error), _) => check(CheckKind::ConfigFile, CheckState::Broken, &error.sentence()),
             (None, true) => check(
                 CheckKind::ConfigFile,
                 CheckState::Ok,
@@ -2358,7 +2354,7 @@ impl State {
             (Some(error), _) => check(
                 CheckKind::AdHocRules,
                 CheckState::Broken,
-                &format!("Ad-hoc rules are off: {error}"),
+                &format!("Ad-hoc rules are off: {error}."),
             ),
             (None, 0) => check(CheckKind::AdHocRules, CheckState::Ok, "No ad-hoc rules."),
             (None, 1) => check(CheckKind::AdHocRules, CheckState::Ok, "1 ad-hoc rule."),

@@ -1,8 +1,8 @@
 //! `config.toml`: the config rules, declared by the user or their installer (ADR-0007,
 //! ADR-0006). It is strict, so a typo is an error rather than a rule that silently never matches.
 
-use std::io;
 use std::path::PathBuf;
+use std::{fmt, io};
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
@@ -11,7 +11,7 @@ use nightcap_protocol::{
 use serde::{Deserialize, Serialize};
 
 use crate::file::{self, Files};
-use crate::schedule;
+use crate::{capitalized, schedule};
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -96,10 +96,7 @@ pub(crate) enum ConfigError {
     #[error("couldn't read {}: {error}", .path.display())]
     Unreadable { path: PathBuf, error: io::Error },
     #[error("{}: {error}", .path.display())]
-    Malformed {
-        path: PathBuf,
-        error: toml::de::Error,
-    },
+    Malformed { path: PathBuf, error: Malformed },
     #[error("{}: {problem}", .path.display())]
     Invalid { path: PathBuf, problem: Problem },
 }
@@ -111,6 +108,51 @@ impl ConfigError {
             Self::Unreadable { .. } => "can't be read",
             Self::Malformed { .. } => "is malformed",
             Self::Invalid { .. } => "is invalid",
+        }
+    }
+
+    /// Where and what, in a sentence without the path, which Settings shows above it: "Line 4:
+    /// unknown field `domian`, expected `app` or `domain`." A problem keeps its first letter: it
+    /// starts with the key or entry it names, as the file writes it.
+    pub(crate) fn sentence(&self) -> String {
+        match self {
+            Self::Unreadable { error, .. } => format!("Couldn't read it: {error}."),
+            Self::Malformed { error, .. } => format!("{}.", capitalized(&error.to_string())),
+            Self::Invalid { problem, .. } => format!("{problem}."),
+        }
+    }
+}
+
+/// Why toml can't read a file as what it holds, in one line: the line, where toml knows it,
+/// then what.
+#[derive(Debug, thiserror::Error)]
+pub(crate) struct Malformed {
+    line: Option<usize>,
+    message: String,
+}
+
+impl Malformed {
+    /// `error`, which toml found in `contents`.
+    pub(crate) fn new(error: &toml::de::Error, contents: &[u8]) -> Self {
+        let line = error.span().map(|span| {
+            1 + contents
+                .iter()
+                .take(span.start)
+                .filter(|&&byte| byte == b'\n')
+                .count()
+        });
+        Self {
+            line,
+            message: error.message().to_owned(),
+        }
+    }
+}
+
+impl fmt::Display for Malformed {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.line {
+            Some(line) => write!(f, "line {line}: {}", self.message),
+            None => f.write_str(&self.message),
         }
     }
 }
@@ -159,7 +201,7 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
     };
     let file = toml::from_slice(&contents).map_err(|error| ConfigError::Malformed {
         path: path(),
-        error,
+        error: Malformed::new(&error, &contents),
     })?;
     checked(file).map_err(|problem| ConfigError::Invalid {
         path: path(),

@@ -10,7 +10,7 @@ use nightcap_protocol::{
 };
 
 use crate::config::NightShiftConfig;
-use crate::file::{File, Memory, Paths};
+use crate::file::{File, Files, Memory, Paths};
 use crate::harness::Harness;
 use crate::state::{Persisted, Store};
 use crate::{
@@ -1189,6 +1189,13 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         panic!("expected an error, got {response:?}");
     };
     assert_eq!(error.code, ErrorCode::InvalidConfig);
+    assert_eq!(
+        error.message,
+        format!(
+            "{}: line 2: invalid type: string \"com.figma.Desktop\", expected a sequence",
+            core.settings().config_path
+        )
+    );
     let status = core.status();
     assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
     assert_eq!(status.config_error, Some(error.message));
@@ -3135,10 +3142,14 @@ fn a_config_broken_at_launch_is_announced() {
         .config("[rules.off]\ndomian = [\"figma.com\"]\n")
         .start();
 
+    let body = format!(
+        "{}: line 2: unknown field `domian`, expected `app` or `domain`",
+        core.settings().config_path
+    );
     assert!(launch(&core).iter().any(|effect| matches!(
         effect,
-        Effect::Notify { title, body, .. }
-            if title == "Nightcap’s config is invalid" && body.contains("domian")
+        Effect::Notify { title, body: said, .. }
+            if title == "Nightcap’s config is invalid" && *said == body
     )));
 }
 
@@ -3536,11 +3547,21 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     assert_eq!(config(&core), stands(CheckState::Ok, "Valid, with 1 rule."));
     core.write_config("[rules.off]\ndomian = [\"figma.com\"]\n");
     core.request(Request::Reload);
-    let (state, text) = config(&core).unwrap();
-    assert_eq!(state, CheckState::Broken);
-    assert!(
-        text.starts_with("The config file is invalid: ") && text.contains("domian"),
-        "{text}"
+    assert_eq!(
+        config(&core),
+        stands(
+            CheckState::Broken,
+            "Line 2: unknown field `domian`, expected `app` or `domain`."
+        )
+    );
+    core.write_config("[night_shift]\nstrength = 101\n");
+    core.request(Request::Reload);
+    assert_eq!(
+        config(&core),
+        stands(
+            CheckState::Broken,
+            "night_shift.strength is 0 to 100, not 101."
+        )
     );
 }
 
@@ -3562,6 +3583,20 @@ fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
     let (state, text) = check_of(&core, CheckKind::AdHocRules).unwrap();
     assert_eq!(state, CheckState::Broken);
     assert!(text.starts_with("Ad-hoc rules are off: "), "{text}");
+
+    let core = noon()
+        .rules("version = 2\n[rules.off]\napp = \"com.figma.Desktop\"\n")
+        .start();
+    assert_eq!(
+        check_of(&core, CheckKind::AdHocRules),
+        stands(
+            CheckState::Broken,
+            &format!(
+                "Ad-hoc rules are off: {}: line 3: invalid type: string \"com.figma.Desktop\", expected a sequence.",
+                in_memory().path(File::Rules).display()
+            )
+        )
+    );
 }
 
 #[test]

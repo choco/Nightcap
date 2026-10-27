@@ -10,10 +10,10 @@ use clap::{Parser, Subcommand};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, BundleId, CheckState, Decision, Domain, ErrorReply, Hello, HelloMessage,
-    HelloReply, Install, Instance, Layer, Length, NightShift, NotificationPermission, OnOff,
-    Payload, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity, Schedule,
-    Status, TimeOfDay,
+    self as protocol, BundleId, CheckKind, CheckState, Decision, Domain, ErrorReply, Hello,
+    HelloMessage, HelloReply, Install, Instance, Layer, Length, NightShift, NotificationPermission,
+    OnOff, Payload, Place, PlaceLayers, Query, Reason, Request, Response, Rule, RuleIdentity,
+    Schedule, Status, TimeOfDay,
 };
 
 /// How long the daemon may take to answer, including its main thread's tick.
@@ -557,17 +557,27 @@ fn print_status(status: &Status) {
     }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
-    let problems: Vec<_> = status
+    let problems = needs_attention(status);
+    if !problems.is_empty() {
+        println!("Needs attention:");
+        for problem in problems {
+            println!("  {problem}");
+        }
+    }
+}
+
+/// Each drifted or broken check's line. Settings shows the config's path above its check, so
+/// here the config's problem is its error, which names the file.
+fn needs_attention(status: &Status) -> Vec<String> {
+    status
         .checks
         .iter()
         .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-        .collect();
-    if !problems.is_empty() {
-        println!("Needs attention:");
-        for check in problems {
-            println!("  {}", check.text);
-        }
-    }
+        .map(|check| match (check.kind, &status.config_error) {
+            (CheckKind::ConfigFile, Some(error)) => format!("The config file is invalid: {error}"),
+            _ => check.text.clone(),
+        })
+        .collect()
 }
 
 fn rules(rules: &[Rule]) -> String {
@@ -800,5 +810,21 @@ mod tests {
         assert_eq!(parse_length("1h30m"), Ok(SignedDuration::from_mins(90)));
         assert!(parse_length("0m").is_err());
         assert!(parse_length("soon").is_err());
+    }
+
+    #[test]
+    fn the_configs_problem_names_its_file_where_settings_shows_it_above() {
+        let status: Status = serde_json::from_str(
+            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"layers":[],"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","state":"drifted","text":"Accessibility isn’t allowed."},{"kind":"notifications","state":"ok","text":"Allowed."},{"kind":"config_file","state":"broken","text":"Line 4: unknown field `domian`, expected `app` or `domain`."}]}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            needs_attention(&status),
+            [
+                "Accessibility isn’t allowed.",
+                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",
+            ]
+        );
     }
 }
