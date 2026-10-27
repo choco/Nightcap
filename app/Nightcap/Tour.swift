@@ -45,10 +45,16 @@ final class Tour {
     /// front app as the menu opens, which a window of Nightcap's wouldn't (macOS 27 hands the
     /// focus on as a status item's own app opens its menu).
     private static let sampleURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Tour Sample.app")
-    /// The sample, by the ID its rule names and the name the menu calls it by.
-    static let sample = TourApp(
-        bundleId: Bundle(url: sampleURL)!.bundleIdentifier!,
-        name: FileManager.default.displayName(atPath: sampleURL.path))
+    /// The sample, by the ID its rule names and the name the menu calls it by once it's in front:
+    /// the front app's `NSRunningApplication.localizedName`, which is the bundle's localized
+    /// display name. Finder's name, `FileManager.displayName`, comes from the bundle's file name
+    /// and Finder's settings, and can differ.
+    static let sample: TourApp = {
+        let bundle = Bundle(url: sampleURL)!
+        return TourApp(
+            bundleId: bundle.bundleIdentifier!,
+            name: bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as! String)
+    }()
     /// The app the steps give as an example of a rule that says on.
     static let example = TourApp(bundleId: "com.apple.mail", name: "Mail")
     private static let siteURL = URL(string: "https://nightcap.choco.me")!
