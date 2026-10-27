@@ -9,6 +9,7 @@ mod file;
 mod ipc;
 mod logging;
 mod menu;
+mod onboarding;
 mod places;
 mod rows;
 mod schedule;
@@ -20,6 +21,7 @@ mod state;
 mod tour;
 
 pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
+pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use settings::{RuleAction, Settings, SettingsLayers, SettingsRule, SettingsSwitch};
 pub use shell::{CoreError, Effect, Event, LoginItem, Waker, is_bundle_id, normalize_domain};
@@ -52,33 +54,10 @@ use domain::Host;
 #[cfg(not(any(test, debug_assertions)))]
 use file::File;
 use file::{Disk, Files, Paths};
+use onboarding::ONBOARDING;
 use places::{Context, Kept, Places, Refusal, World};
 use rows::{capitalized, name_in_front, until_text};
 use schedule::{CheckedSchedule, SunTimes, Timeline};
-
-/// What onboarding asks, pulled like the menu: the shell only draws it.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct OnboardingSteps {
-    pub night_shift: OnboardingNightShift,
-    /// Website checking as the config sets it, which answers its step for good.
-    pub websites_from_config: Option<bool>,
-    /// Whether Nightcap opens at login now, or None where it never opens itself.
-    pub opens_at_login: Option<bool>,
-}
-
-/// Onboarding's Night Shift steps, which set the strength and the schedule (ADR-0014).
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct OnboardingNightShift {
-    /// How warm, unless the config sets it or the strength can't be read.
-    pub ask_strength: bool,
-    /// When it comes on, unless the config sets it or Night Shift is unavailable.
-    pub ask_schedule: bool,
-    /// On a schedule already, so onboarding offers to skip to Nightcap's part.
-    pub already_set_up: bool,
-    /// The Mac's values, which the steps start from.
-    pub strength: Option<u8>,
-    pub schedule: Option<Schedule>,
-}
 
 /// A check as Settings shows it, with what can be done about it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
@@ -125,9 +104,6 @@ pub struct ProblemLine {
     pub title: String,
     pub subtitle: Option<String>,
 }
-
-/// The current onboarding version: welcome, notifications, and website checking.
-const ONBOARDING: u32 = 1;
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
@@ -349,15 +325,7 @@ impl Core {
     }
 
     pub fn onboarding(&self) -> OnboardingSteps {
-        let state = self.state();
-        OnboardingSteps {
-            night_shift: state.onboarding_night_shift(),
-            websites_from_config: state.facts.config_websites,
-            opens_at_login: state
-                .login_item
-                .filter(|_| self.updates_itself())
-                .map(|item| item != LoginItem::NotRegistered),
-        }
+        OnboardingSteps::new(&self.state())
     }
 
     pub fn settings(&self) -> Settings {
@@ -1402,24 +1370,6 @@ impl State {
             applied_from_config: self.applied_from_config,
             schedule_off_accepted: self.schedule_off_accepted,
             last_version: self.last_version.clone(),
-        }
-    }
-
-    fn onboarding_night_shift(&self) -> OnboardingNightShift {
-        let available = self.facts.night_shift != NightShift::Unavailable;
-        let ask_strength = self.strength.is_some() && self.config_night_shift.strength.is_none();
-        let ask_schedule = available && self.config_night_shift.schedule.is_none();
-        OnboardingNightShift {
-            ask_strength,
-            ask_schedule,
-            already_set_up: (ask_strength || ask_schedule)
-                && self
-                    .facts
-                    .timeline
-                    .schedule
-                    .is_some_and(|schedule| schedule != CheckedSchedule::Off),
-            strength: self.strength,
-            schedule: self.facts.timeline.schedule.map(Schedule::from),
         }
     }
 
