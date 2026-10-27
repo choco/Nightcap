@@ -1159,7 +1159,12 @@ impl Core {
                     }
                     // An invalid config shows in its check again.
                     Fix::Reload => _ = self.reload(state, &mut effects),
-                    _ => tracing::debug!("{fix:?} is the shell's to carry out"),
+                    Fix::AskForAccessibility
+                    | Fix::AllowNotifications
+                    | Fix::OpenLoginItems
+                    | Fix::OpenLocationServices => {
+                        tracing::debug!("{fix:?} is the shell's to carry out");
+                    }
                 }
                 effects
             }
