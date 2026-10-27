@@ -185,3 +185,128 @@ impl Files for Memory {
         self.paths.of(file).to_owned()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::sync::{Arc, mpsc};
+
+    use jiff::tz::TimeZone;
+    use nightcap_protocol::{
+        Command, ErrorCode, Install, Instance, Layer, Length, OnOff, Payload, Place, PlaceLayers,
+        Response, RuleIdentity, Schedule, TimeOfDay,
+    };
+
+    use super::{Disk, File, Files, Owned, Paths};
+    use crate::staging::ManualClock;
+    use crate::{Core, Event, Setup};
+
+    fn disk(folder: &Path) -> Disk {
+        Disk(Paths::in_folder(folder))
+    }
+
+    #[test]
+    fn what_the_disk_keeps_reads_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let disk = disk(dir.path());
+
+        disk.write(Owned::Rules, b"version = 2\n").unwrap();
+        disk.write(Owned::State, b"{\"version\":1}").unwrap();
+
+        assert_eq!(
+            disk.read(File::Rules).unwrap().as_deref(),
+            Some(&b"version = 2\n"[..])
+        );
+        assert_eq!(
+            disk.read(File::State).unwrap().as_deref(),
+            Some(&b"{\"version\":1}"[..])
+        );
+    }
+
+    #[test]
+    fn a_missing_file_reads_as_none() {
+        let dir = tempfile::tempdir().unwrap();
+
+        assert_eq!(disk(dir.path()).read(File::Config).unwrap(), None);
+    }
+
+    #[test]
+    fn a_write_makes_the_folder_and_replaces_the_file_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("nightcap");
+        let disk = disk(&folder);
+
+        disk.write(Owned::State, b"a longer first version").unwrap();
+        disk.write(Owned::State, b"second").unwrap();
+
+        assert_eq!(
+            disk.read(File::State).unwrap().as_deref(),
+            Some(&b"second"[..])
+        );
+        let names: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["state.json"]);
+    }
+
+    #[test]
+    fn a_rule_rules_toml_cant_keep_is_refused_and_changes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        // Night Shift on at 23:00 by the custom hours until 07:00, with Mail snoozed.
+        let core = Core::start(Setup {
+            instance: Instance::Release,
+            install: Install::Managed,
+            socket: None,
+            requests: mpsc::channel().1,
+            files: Arc::new(disk(dir.path())),
+            clock: Arc::new(ManualClock::new(
+                "2026-10-16T23:00:00+02:00".parse().unwrap(),
+            )),
+            zone: TimeZone::get("Europe/Zurich").unwrap(),
+        });
+        let hours = Schedule::Custom {
+            from: TimeOfDay {
+                hour: 22,
+                minute: 0,
+            },
+            to: TimeOfDay { hour: 7, minute: 0 },
+        };
+        core.handle(Event::StatusChanged {
+            enabled: true,
+            schedule: hours,
+            sun_schedule_set_aside: false,
+        });
+        let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
+        let snooze = Command::Set {
+            place: Place::from(mail.clone()),
+            state: OnOff::Off,
+            length: Length::For(jiff::SignedDuration::from_mins(30)),
+        };
+        core.choose(&snooze).1.unwrap();
+        std::fs::create_dir(dir.path().join("rules.toml")).unwrap();
+
+        let (_, outcome) = core.choose(&Command::AddRule {
+            identity: mail.clone(),
+            says: OnOff::Off,
+        });
+
+        assert_eq!(outcome.unwrap_err().code, ErrorCode::AdHocRulesOff);
+        let Response::Ok(Payload::Status(status)) = core.status(&core.state()) else {
+            panic!("expected a status");
+        };
+        assert_eq!(status.rules, Vec::new());
+        assert_eq!(
+            status.layers,
+            vec![PlaceLayers {
+                place: Place::from(mail),
+                hold: None,
+                timer: Some(Layer {
+                    state: OnOff::Off,
+                    until: Some("2026-10-16T23:30:00+02:00".parse().unwrap()),
+                    with: None,
+                }),
+            }]
+        );
+    }
+}

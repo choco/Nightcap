@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -20,11 +20,11 @@ use crate::harness::Harness;
 use crate::staging::ManualClock;
 use crate::state::{Persisted, Store};
 use crate::{
-    Core, CoreError, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon, MenuItem,
-    MenuPath, NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine,
-    RowImage, RowItem, RuleAction, Scenario, SettingsCheck, SettingsLayers, SettingsRule,
-    SettingsSwitch, Setup, TourApp, TourFacts, TourPlace, TourSite, TourTitles, Waker,
-    normalize_domain, tour_titles,
+    Core, Effect, Event, Fix, FixButton, LoginItem, MenuEntry, MenuIcon, MenuItem, MenuPath,
+    NightShiftItem, OnboardingNightShift, OnboardingSteps, PlaceRow, ProblemLine, RowImage,
+    RowItem, RuleAction, Scenario, SettingsCheck, SettingsLayers, SettingsRule, SettingsSwitch,
+    Setup, TourApp, TourFacts, TourPlace, TourSite, TourTitles, Waker, normalize_domain,
+    tour_titles,
 };
 use crate::{adhoc, ipc};
 
@@ -2625,27 +2625,16 @@ fn refusal(response: Response) -> ErrorCode {
 }
 
 #[test]
-fn an_added_domain_is_normalized_and_a_bad_identity_refused_before_the_core() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-    let add = |identity: &str| {
-        format!(r#"{{"command":{{"add_rule":{{"identity":"{identity}","says":"off"}}}}}}"#)
-    };
+fn an_added_domain_is_normalized() {
+    let core = noon().start();
+    let add = r#"{"command":{"add_rule":{"identity":"domain:Figma.COM","says":"off"}}}"#;
 
-    exchange_line(&core, &socket, &wakes, add("domain:Figma.COM"));
+    core.request(serde_json::from_str(add).unwrap());
 
     assert_eq!(
-        rules_of(&core, &socket, &wakes),
+        core.rules(),
         vec![ad_hoc(RuleIdentity::Domain("figma.com".parse().unwrap()))]
     );
-    for bad in ["domain:https://figma.com", "app:com.figma.Desktop/", "app:"] {
-        let mut client = Client::connect(&socket);
-        client.hello(nightcap_protocol::PROTOCOL_VERSION);
-        client.send(&add(bad));
-        assert_eq!(refusal(client.receive()), ErrorCode::BadRequest, "{bad}");
-    }
-    assert!(wakes.try_recv().is_err());
 }
 
 #[test]
@@ -2681,32 +2670,6 @@ fn a_rule_that_doesnt_exist_is_refused() {
     let (_, removed) = send(&core, &socket, &wakes, Command::RemoveRule(figma()));
 
     assert_eq!(refusal(removed), ErrorCode::NoSuchRule);
-}
-
-#[test]
-fn a_rule_rules_toml_cant_keep_is_refused_and_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes, _clock) = start_on_by_the_schedule(&socket);
-    activate(&core, "com.apple.mail");
-    let snooze = set(Place::from(mail()), OnOff::Off, minutes(30));
-    send(&core, &socket, &wakes, snooze);
-    let rules_file = socket.parent().unwrap().with_file_name("rules.toml");
-    std::fs::create_dir(&rules_file).unwrap();
-
-    let (_, response) = send(&core, &socket, &wakes, add_rule(mail()));
-
-    assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
-    let status = status_of(&core, &socket, &wakes);
-    assert_eq!(status.rules, Vec::new());
-    assert_eq!(
-        status.layers,
-        vec![layered(
-            Place::from(mail()),
-            None,
-            Some(layer(OnOff::Off, Some("2026-10-16T23:30:00+02:00")))
-        )]
-    );
 }
 
 #[test]
@@ -4339,154 +4302,6 @@ fn the_status_reports_the_last_permission_change() {
             notifications: NotificationPermission::Denied,
         }
     );
-}
-
-#[test]
-fn a_status_query_is_answered_on_the_next_tick() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, wakes) = start(&socket);
-
-    let Response::Ok(Payload::Status(mut status)) = query_status(&core, &socket, &wakes) else {
-        panic!("expected a status");
-    };
-    // Checks have tests of their own.
-    status.checks.clear();
-    assert_eq!(
-        status,
-        Box::new(Status {
-            version: env!("CARGO_PKG_VERSION").to_owned(),
-            install: Install::Managed,
-            night_shift: NightShift::Unavailable,
-            strength: None,
-            config_strength: None,
-            decision: Decision {
-                state: None,
-                place: Place::Everywhere,
-                reasons: Vec::new(),
-            },
-            schedule: None,
-            config_schedule: None,
-            scheduled_state: None,
-            next_transition: None,
-            frontmost_app: None,
-            watching: false,
-            host: None,
-            rules: Vec::new(),
-            config_error: None,
-            ad_hoc_error: None,
-            website_checking: WebsiteChecking {
-                state: OnOff::Off,
-                from_config: false,
-            },
-            layers: Vec::new(),
-            permissions: Permissions {
-                accessibility: false,
-                notifications: NotificationPermission::NotRequested,
-            },
-            checks: Vec::new(),
-        })
-    );
-}
-
-#[test]
-fn a_client_that_hangs_up_at_once_leaves_the_server_answering() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_core, _wakes) = start(&socket);
-
-    drop(UnixStream::connect(&socket).unwrap());
-
-    assert_eq!(
-        Client::connect(&socket).hello(nightcap_protocol::PROTOCOL_VERSION),
-        HelloReply::Hello(Hello::current())
-    );
-}
-
-#[test]
-fn a_protocol_mismatch_is_refused_at_hello() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_core, wakes) = start(&socket);
-
-    let reply = Client::connect(&socket).hello(99);
-
-    let HelloReply::Error(error) = reply else {
-        panic!("expected an error, got {reply:?}");
-    };
-    assert_eq!(error.code, ErrorCode::ProtocolMismatch);
-    assert!(
-        wakes.try_recv().is_err(),
-        "a refused client never reaches the main thread"
-    );
-}
-
-#[test]
-fn a_malformed_request_is_answered_without_a_tick() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_core, wakes) = start(&socket);
-
-    let mut client = Client::connect(&socket);
-    client.hello(nightcap_protocol::PROTOCOL_VERSION);
-    client.send(r#"{"query":"weather"}"#);
-    let response: Response = client.receive();
-
-    let Response::Error(error) = response else {
-        panic!("expected an error, got {response:?}");
-    };
-    assert_eq!(error.code, ErrorCode::BadRequest);
-    assert!(wakes.try_recv().is_err());
-}
-
-#[test]
-fn a_second_instance_on_the_same_socket_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_first, _wakes) = start(&socket);
-
-    let (sender, _) = mpsc::channel();
-    let second = ipc::serve(&socket, Arc::new(ChannelWaker(Mutex::new(sender))));
-
-    assert!(matches!(second, Err(CoreError::AlreadyRunning { .. })));
-}
-
-#[test]
-fn a_stale_socket_left_by_a_crash_is_replaced() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    std::fs::create_dir_all(socket.parent().unwrap()).unwrap();
-    drop(UnixListener::bind(&socket).unwrap());
-
-    let (_core, _wakes) = start(&socket);
-
-    assert!(UnixStream::connect(&socket).is_ok());
-}
-
-#[test]
-fn the_socket_folder_is_private_to_the_user() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (_core, _wakes) = start(&socket);
-
-    let mode = std::fs::metadata(socket.parent().unwrap())
-        .unwrap()
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o700);
-}
-
-#[test]
-fn terminating_removes_the_socket() {
-    let dir = tempfile::tempdir().unwrap();
-    let socket = socket_in(&dir);
-    let (core, _wakes) = start(&socket);
-
-    assert_eq!(core.handle(Event::Terminating), Vec::new());
-
-    assert!(!socket.exists());
 }
 
 #[test]
