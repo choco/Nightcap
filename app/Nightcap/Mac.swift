@@ -30,10 +30,14 @@ final class Mac: NSObject {
     private var reportedLoginItem: LoginItem?
     private var reportedStrength: UInt8?
     private var observers: [NSObjectProtocol] = []
+    /// Calls into the core waiting for the effects before them to go out.
+    private var waiting: [() -> [Effect]] = []
+    private var carryingOut = false
 
     /// `frontmostChanged` runs as an app comes to the front, before the core hears of it;
     /// `accessibilityChanged` as the grant flips; `showOnboarding` when the core asks for
-    /// onboarding; and `changed` once the effects of a call into the core are carried out.
+    /// onboarding; and `changed` once a call into the core and the calls its effects led to are
+    /// all carried out.
     init(
         core: Core,
         dockIcon: DockIcon,
@@ -88,13 +92,13 @@ final class Mac: NSObject {
 
     /// Hands `event` to the core and carries out the effects it answers with.
     func handle(_ event: Event) {
-        apply(core.handle(event: event))
+        run { [core] in core.handle(event: event) }
     }
 
     /// The core's own threads have work for it, such as a CLI request (ADR-0002).
     func tick() {
         reportStrength()
-        apply(core.tick())
+        run { [core] in core.tick() }
     }
 
     /// The shell carries out its own fixes and hands the core's back to it, each named, so a new
@@ -200,11 +204,13 @@ final class Mac: NSObject {
 
     /// The host is logged, as private, only when it changed Night Shift (ADR-0009).
     private func reportHost(generation: UInt64, host: String?) {
-        let effects = core.handle(event: .hostChanged(generation: generation, host: host))
-        if effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
-            log.info("the browser's host \(host ?? "(unknown)", privacy: .private) changed Night Shift")
+        run { [core, log] in
+            let effects = core.handle(event: .hostChanged(generation: generation, host: host))
+            if effects.contains(where: { if case .setNightShift = $0 { true } else { false } }) {
+                log.info("the browser's host \(host ?? "(unknown)", privacy: .private) changed Night Shift")
+            }
+            return effects
         }
-        apply(effects)
     }
 
     private func reportLoginItem() {
@@ -292,7 +298,22 @@ final class Mac: NSObject {
 
     // MARK: Effects out
 
-    private func apply(_ effects: [Effect]) {
+    /// Calls the core and carries out the effects it answers with. A call made meanwhile, as when
+    /// an effect reads back what it changed, waits until they're all out, so effects go out in the
+    /// order the core gave them and the UIs refresh once, after the last. No effect needs the core
+    /// to have heard what the one before it changed.
+    private func run(_ call: @escaping () -> [Effect]) {
+        waiting.append(call)
+        guard !carryingOut else { return }
+        carryingOut = true
+        while !waiting.isEmpty {
+            carryOut(waiting.removeFirst()())
+        }
+        carryingOut = false
+        changed()
+    }
+
+    private func carryOut(_ effects: [Effect]) {
         for effect in effects {
             switch effect {
             case .registerLoginItem:
@@ -342,7 +363,6 @@ final class Mac: NSObject {
                 browserWatcher?.stop()
             }
         }
-        changed()
     }
 
     /// Registers or unregisters the login item, as the user chose (ADR-0011), then reports
