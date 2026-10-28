@@ -386,9 +386,11 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         preferences,
         checks,
     } = report;
-    let install = match about.install {
-        Install::Managed => "managed by its installer",
-        Install::SelfManaged => "self-managed",
+    // A self-managed install that doesn't manage itself is a dev build (ADR-0011).
+    let install = match (about.manages_itself, about.install) {
+        (true, _) => "self-managed",
+        (false, Install::Managed) => "managed by its installer",
+        (false, Install::SelfManaged) => "a dev build",
     };
     let state = match night_shift.state {
         NightShift::Unavailable => "unavailable",
@@ -727,11 +729,11 @@ mod tests {
         );
         assert_eq!(
             worded(
-                "app:io.github.choco.nightcap.TourSample",
+                "app:io.github.choco.nightcap.tour-sample",
                 SetBy::Trial,
                 OnOff::Off
             ),
-            "app:io.github.choco.nightcap.TourSample (tour rule, off)"
+            "app:io.github.choco.nightcap.tour-sample (tour rule, off)"
         );
     }
 
@@ -1174,9 +1176,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn status_reads_a_line_at_a_time_with_times_in_the_zone() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
+    /// Safari in front on figma.com, which a config rule keeps off while Night Shift is on by the
+    /// custom hours, with everywhere on until 23:30 and notifications switched off.
+    fn on_figma() -> Report {
         let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
         let figma = indefinite("domain:figma.com", OnOff::Off, SetBy::Config);
         let late = Rule {
@@ -1194,7 +1196,7 @@ mod tests {
             base: None,
             inherits: None,
         };
-        let report = Report {
+        Report {
             about: About {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
@@ -1265,10 +1267,15 @@ mod tests {
                     login_item: None,
                 },
             },
-        };
+        }
+    }
+
+    #[test]
+    fn status_reads_a_line_at_a_time_with_times_in_the_zone() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
 
         assert_eq!(
-            status(&report, &zone),
+            status(&on_figma(), &zone),
             [
                 "Nightcap 1.2.0, self-managed",
                 "Night Shift: on, off by the config rule for domain:figma.com",
@@ -1283,6 +1290,30 @@ mod tests {
                 "Needs attention:",
                 "  Notifications were allowed, but they’re switched off in System Settings.",
             ]
+        );
+    }
+
+    #[test]
+    fn status_says_whether_the_install_manages_itself() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let first_line = |install, manages_itself| {
+            let mut report = on_figma();
+            report.about.install = install;
+            report.about.manages_itself = manages_itself;
+            status(&report, &zone).swap_remove(0)
+        };
+
+        assert_eq!(
+            first_line(Install::SelfManaged, true),
+            "Nightcap 1.2.0, self-managed"
+        );
+        assert_eq!(
+            first_line(Install::Managed, false),
+            "Nightcap 1.2.0, managed by its installer"
+        );
+        assert_eq!(
+            first_line(Install::SelfManaged, false),
+            "Nightcap 1.2.0, a dev build"
         );
     }
 }
