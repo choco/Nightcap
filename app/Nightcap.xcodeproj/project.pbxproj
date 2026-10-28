@@ -55,6 +55,7 @@
 				Menu/Menu.swift,
 				Notifications/Notice.swift,
 				Onboarding/OnboardingFlow.swift,
+				Tour/TourFacts.swift,
 				Tour/TourScenes.swift,
 				Wording/Localizable.xcstrings,
 				Wording/MenuBar.swift,
@@ -62,6 +63,7 @@
 				Wording/Notices.swift,
 				Wording/PlaceRows.swift,
 				Wording/TourQuotes.swift,
+				Wording/TourSteps.swift,
 				Wording/Wording.swift,
 			);
 			target = 4E1C0A00000000000000002C /* NightcapTests */;

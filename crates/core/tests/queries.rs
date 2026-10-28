@@ -3,15 +3,10 @@
 //! snapshot the core published after its last input, and asking changes nothing (ADR-0002,
 //! ADR-0010).
 
-#![expect(
-    clippy::unwrap_used,
-    reason = "clippy.toml lets tests unwrap, but not the helpers beside them"
-)]
-
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{Fact, Scenario, Staged, TourApp, UiCommand};
+use nightcap_core::{Fact, Scenario, Staged, UiCommand};
 use nightcap_protocol::{
     About, AccessibilityDetail, Check, CheckDetail, CheckState, Checks, Command, ConfigState,
     Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, NightShift,
@@ -355,13 +350,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
             if tour {
                 scenario = scenario
                     .then(reported(false, schedule))
-                    .then(UiCommand::StartTour {
-                        sample: TourApp {
-                            bundle_id: "io.github.choco.nightcap.tour-sample".parse().unwrap(),
-                            name: "Tour Sample".to_owned(),
-                        },
-                        site: None,
-                    })
+                    .then(UiCommand::StartTour)
                     .then(reported(true, schedule))
                     .then(Command::Off);
             }
@@ -568,14 +557,7 @@ fn checks_answer_the_grants_once_reported() {
 }
 
 fn start_tour(staged: &Staged) {
-    let app = |bundle_id: &str, name: &str| TourApp {
-        bundle_id: bundle_id.parse().unwrap(),
-        name: name.to_owned(),
-    };
-    staged.send_ui(UiCommand::StartTour {
-        sample: app("io.github.choco.nightcap.tour-sample", "Tour Sample"),
-        site: None,
-    });
+    staged.send_ui(UiCommand::StartTour);
 }
 
 #[test]

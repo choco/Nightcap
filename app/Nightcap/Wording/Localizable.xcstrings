@@ -11,6 +11,9 @@
         }
       }
     },
+    "%@ has Nightcap’s site open." : {
+
+    },
     "%@ is version %lld, from a newer Nightcap than this one" : {
       "localizations" : {
         "en" : {
@@ -86,6 +89,22 @@
         }
       }
     },
+    "%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "A rule can take a break." : {
+
+    },
+    "A site’s rule covers all its pages, in Safari, Chrome, Firefox and more." : {
+
+    },
     "Accessibility" : {
 
     },
@@ -101,6 +120,12 @@
     "Always on: %@" : {
 
     },
+    "And it comes back" : {
+
+    },
+    "And the rule’s back" : {
+
+    },
     "At This Site" : {
 
     },
@@ -113,16 +138,59 @@
     "Back to the Schedule" : {
 
     },
+    "Bring %@ back to the front, on Nightcap’s site." : {
+
+    },
+    "Bring %@ back to the front, then choose %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Bring %1$@ back to the front, then choose %2$@."
+          }
+        }
+      }
+    },
+    "Bring %@ back to the front: click its window, or its icon in the Dock." : {
+
+    },
+    "Bring %@ to the front: click its window, or its icon in the Dock." : {
+
+    },
     "Cancel" : {
 
     },
+    "Choose %@ to give the sample its rule again." : {
+
+    },
+    "Click the moon to open the menu, then choose %@." : {
+
+    },
+    "Click the moon, then choose %@." : {
+
+    },
     "Click to see what’s new." : {
+
+    },
+    "Continue" : {
 
     },
     "Custom hours in Night Shift’s settings work without them." : {
 
     },
     "Custom…" : {
+
+    },
+    "Done" : {
+
+    },
+    "End Tour" : {
+
+    },
+    "Every rule works this way." : {
+
+    },
+    "Everything else is in the moon’s menu: turning Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and Settings, where you’ll find the tour again." : {
 
     },
     "Everywhere but at %@" : {
@@ -233,6 +301,21 @@
         }
       }
     },
+    "Forced off" : {
+
+    },
+    "Give it a rule" : {
+
+    },
+    "Hold %@ in any app to see true colour for as long as you hold it." : {
+
+    },
+    "Hold the keys on your keyboard, or here." : {
+
+    },
+    "Hold to see true colour, tap to turn Night Shift off or on" : {
+
+    },
     "In %@" : {
 
     },
@@ -246,7 +329,19 @@
         }
       }
     },
+    "It shows what Night Shift is doing right now." : {
+
+    },
     "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon." : {
+
+    },
+    "Leave the sample and Night Shift returns, as warm as before." : {
+
+    },
+    "Leave the site’s tab and Night Shift returns." : {
+
+    },
+    "Let go and the warmth comes back." : {
 
     },
     "Like Everywhere Else" : {
@@ -267,6 +362,27 @@
     "Night Shift forced off" : {
 
     },
+    "Night Shift is back in the sample until the time you chose, then the rule returns by itself." : {
+
+    },
+    "Night Shift is back on." : {
+
+    },
+    "Night Shift is off right now." : {
+
+    },
+    "Night Shift is off while its tab is in front." : {
+
+    },
+    "Night Shift is off while the sample is in front, and the moon shows a “z”." : {
+
+    },
+    "Night Shift is off." : {
+
+    },
+    "Night Shift is warming the screen." : {
+
+    },
     "Night Shift off" : {
 
     },
@@ -283,6 +399,9 @@
 
     },
     "Nightcap can’t follow sunset to sunrise" : {
+
+    },
+    "Nightcap is holding it off for an app or a site." : {
 
     },
     "Nightcap is up here" : {
@@ -303,7 +422,22 @@
     "No schedule" : {
 
     },
+    "Now a site" : {
+
+    },
+    "Now click another window, or the desktop." : {
+
+    },
+    "Now switch to another tab." : {
+
+    },
+    "Now try holding it." : {
+
+    },
     "OK" : {
+
+    },
+    "Off" : {
 
     },
     "Off at %@ until %@" : {
@@ -356,6 +490,9 @@
 
     },
     "Off until you turn it on" : {
+
+    },
+    "On" : {
 
     },
     "On at %@ until %@" : {
@@ -422,7 +559,13 @@
     "Open Nightcap’s settings to turn it back on, or to keep it off." : {
 
     },
+    "Peek at true colour" : {
+
+    },
     "Put the Rule Back" : {
+
+    },
+    "Put the rule back" : {
 
     },
     "Quit Nightcap" : {
@@ -434,7 +577,29 @@
     "Remove Your Rule" : {
 
     },
+    "Rules work the other way too: while Night Shift is off, %@ keeps it on in %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Rules work the other way too: while Night Shift is off, %1$@ keeps it on in %2$@."
+          }
+        }
+      }
+    },
     "Settings…" : {
+
+    },
+    "Sites work the same way" : {
+
+    },
+    "Skip" : {
+
+    },
+    "Snooze a rule" : {
+
+    },
+    "Snooze it" : {
 
     },
     "Snoozed the %@ rule until %@." : {
@@ -453,6 +618,9 @@
     "Snoozed the %@ rule until you turn it on." : {
 
     },
+    "Snoozing needs a rule" : {
+
+    },
     "Strength" : {
 
     },
@@ -462,7 +630,58 @@
     "Take the Tour" : {
 
     },
+    "Tap it instead to turn Night Shift off." : {
+
+    },
+    "Tap it to turn Night Shift off, and again to turn it back on." : {
+
+    },
+    "Tap the shortcut to turn it back on." : {
+
+    },
+    "That was a peek." : {
+
+    },
+    "That’s a snooze" : {
+
+    },
+    "That’s the tour" : {
+
+    },
+    "That’s true colour" : {
+
+    },
+    "That’s true colour, on one site" : {
+
+    },
     "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu." : {
+
+    },
+    "The moon in the menu bar is Nightcap" : {
+
+    },
+    "The rule keeps Night Shift off here." : {
+
+    },
+    "To end it sooner, choose %@." : {
+
+    },
+    "To give it a break, click the moon, then choose %@ and how long for." : {
+
+    },
+    "Tour" : {
+
+    },
+    "True colour again in the sample." : {
+
+    },
+    "True colour while you hold." : {
+
+    },
+    "True colour, from the schedule or from you." : {
+
+    },
+    "Try a rule" : {
 
     },
     "Turn Off" : {
@@ -510,10 +729,16 @@
     "Website checking needs Accessibility" : {
 
     },
+    "What you changed during it goes with it, and your own rules are as they were." : {
+
+    },
     "When the schedule ends" : {
 
     },
     "When the schedule starts" : {
+
+    },
+    "When you continue, Nightcap turns it on for the tour, and back off once it ends." : {
 
     },
     "Your config decides" : {
@@ -569,6 +794,9 @@
 
     },
     "your rule" : {
+
+    },
+    "“%@”" : {
 
     },
     "“%@” › “%@”" : {

@@ -103,7 +103,7 @@ impl Inner {
 
     fn ui_command(&mut self, command: UiCommand, outcome: &mut Outcome) {
         match command {
-            UiCommand::StartTour { sample, site } => self.tour_started(&sample, site.as_ref()),
+            UiCommand::StartTour => self.tour_started(),
             UiCommand::EndTour => self.tour_ended(self.clock.now()),
             UiCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
             UiCommand::Fix(fix) => self.run_fix(fix, &mut outcome.effects),
@@ -115,7 +115,6 @@ impl Inner {
     fn terminating(&mut self) {
         let now = self.clock.now();
         self.places.release(now);
-        self.tour = None;
         if let Some(socket) = &self.socket
             && let Err(error) = std::fs::remove_file(socket)
         {

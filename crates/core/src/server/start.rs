@@ -128,7 +128,6 @@ impl Inner {
             },
             onboarding: persisted.onboarding,
             last_version: persisted.last_version.clone(),
-            tour: None,
             saved: persisted,
         };
         inner.graduate(config.rules);

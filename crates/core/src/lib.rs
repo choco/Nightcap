@@ -22,7 +22,6 @@ pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
 pub use settings::{RuleAction, Settings, SettingsForNow, SettingsRule, SettingsSwitch};
 pub use setup::checks::{Fix, FixButton, SettingsCheck};
-pub use tour::{TourApp, TourFacts, TourPlace, TourSite};
 
 #[cfg(any(test, debug_assertions))]
 pub use scenario::{Scenario, ScenarioError, Staged, Step};
@@ -165,11 +164,6 @@ impl Core {
 
     pub fn settings(&self) -> Settings {
         self.published.latest().settings.clone()
-    }
-
-    /// What the tour's steps follow, or None while no tour runs.
-    pub fn tour_report(&self) -> Option<TourFacts> {
-        self.published.latest().tour_report.clone()
     }
 
     /// Night Shift as the shell last reported it, and its schedule.

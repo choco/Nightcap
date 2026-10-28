@@ -551,6 +551,11 @@ impl Places {
         }
     }
 
+    /// Whether a tour runs (ADR-0016).
+    pub(crate) fn tour_runs(&self) -> bool {
+        self.tour.is_some()
+    }
+
     /// Whether a tour runs that stands in for the schedule.
     fn stands_in(&self) -> bool {
         self.tour.as_ref().is_some_and(|tour| tour.stands_in)

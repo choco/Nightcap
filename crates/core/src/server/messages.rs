@@ -9,7 +9,7 @@ use nightcap_protocol::{
     Check, Command, ErrorReply, NotificationPermission, OnOff, Place, RuleIdentity, Schedule,
 };
 
-use crate::{Fix, TourApp, TourSite};
+use crate::Fix;
 
 /// Something macOS observed, which the shell reports.
 #[derive(Debug, uniffi::Enum)]
@@ -73,11 +73,8 @@ pub enum Fact {
 /// (ADR-0016), no onboarding and no fixes.
 #[derive(Debug, uniffi::Enum)]
 pub enum UiCommand {
-    /// Starts the tour (ADR-0016), with its sample and the site where it has a site step.
-    StartTour {
-        sample: TourApp,
-        site: Option<TourSite>,
-    },
+    /// Starts the tour (ADR-0016).
+    StartTour,
     /// Ends the tour, as it finishes or the user leaves it.
     EndTour,
     /// Finishes onboarding, with whether the user chose to check websites.

@@ -48,11 +48,7 @@ let zurichSun = Step.fact(
         sunrises: ["2026-10-15T05:49:20Z", "2026-10-16T05:50:47Z", "2026-10-17T05:52:14Z"].map(at),
         sunsets: ["2026-10-15T16:33:25Z", "2026-10-16T16:31:32Z", "2026-10-17T16:29:41Z"].map(at)))
 
-/// The tour started with Tour Sample and Nightcap's site in Safari.
-let tourStarted = Step.uiCommand(
-    .startTour(
-        sample: TourApp(bundleId: tourSample, name: "Tour Sample"),
-        site: TourSite(domain: "nightcap.choco.me", browser: "com.apple.Safari")))
+let tourStarted = Step.uiCommand(.startTour)
 
 nonisolated let tourSample = "io.github.choco.nightcap.tour-sample"
 

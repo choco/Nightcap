@@ -105,7 +105,9 @@ enum Snapshot {
         let tour = Tour(
             shortcut: shortcut,
             browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
-            current: { (nil, .off) }, press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
+            // Each panel takes its facts below, so the tour never asks.
+            current: { TourFacts.Answers(asking: try! Core.staged(scenario: Scenario(now: Date()))) },
+            press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
         let away = TourPlace(inFront: false, rule: nil, snoozed: false)
         let inFront = TourPlace(inFront: true, rule: nil, snoozed: false)
         let ruled = TourPlace(inFront: false, rule: .off, snoozed: false)

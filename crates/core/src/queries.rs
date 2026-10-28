@@ -94,7 +94,7 @@ impl Answers {
                     notifications: inner.grants.notifications,
                 },
             },
-            tour: inner.tour.as_ref().map(|_| TourState {
+            tour: inner.places.tour_runs().then(|| TourState {
                 stands_in: look.everywhere.base == Some(Reason::Tour),
             }),
             about: About {

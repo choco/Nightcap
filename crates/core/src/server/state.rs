@@ -16,7 +16,6 @@ use crate::setup::grants::Grants;
 use crate::storage::ad_hoc_rules;
 use crate::storage::file::Files;
 use crate::storage::saved_state::{Persisted, Store};
-use crate::tour;
 
 /// What the core decides from, which its thread alone owns (ADR-0002): what it believes about
 /// the system, as last reported by the shell, what it keeps across restarts, and the files and
@@ -45,8 +44,6 @@ pub(crate) struct Inner {
     pub(crate) onboarding: u32,
     /// See `Persisted::last_version`.
     pub(crate) last_version: Option<String>,
-    /// What the running tour's steps follow, while one runs (ADR-0016).
-    pub(crate) tour: Option<tour::Tour>,
     /// What was last written to `state.json`.
     pub(crate) saved: Persisted,
 }
