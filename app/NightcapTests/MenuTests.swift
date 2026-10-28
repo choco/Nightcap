@@ -316,7 +316,7 @@ struct MenuTests {
                         return (front.places + [front.everywhere]).first { $0.place == place }
                     }
                     let before = try #require(standing(place))
-                    let state = before.gives.other
+                    let state = before.gives.other()
                     core.send(command: choice.command)
                     // A site left with no rules of its own gives way to the domain that covers it.
                     let after = try #require(standing(place) ?? before.inherits.flatMap { standing($0.from) })

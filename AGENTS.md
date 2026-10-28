@@ -6,7 +6,7 @@ A macOS app that switches Night Shift off, or on, for chosen apps and websites: 
 
 Work inside `nix develop`. It provides the pinned Rust toolchain, points cargo at Xcode's compiler and linker, and puts `scripts/` on `PATH`. CI runs the same scripts by path, so changing a script changes CI.
 
-- `build-core [--release]`: builds the core and the CLI, and regenerates `app/NightcapCore` (the xcframework and the Swift bindings). The Swift side sees a change to the core's UniFFI exports only after this runs.
+- `build-core [--release]`: builds the core and the CLI, and regenerates `app/NightcapCore` (the xcframework and the Swift bindings). The Swift side sees a change to the core's or the protocol's UniFFI exports only after this runs.
 - `build-app [--release]`: builds `build/xcode/Release/Nightcap.app` or the dev build, `build/xcode/Debug/Nightcap Dev.app` (`io.github.choco.nightcap.dev`), unsigned. The dev build's own name keeps it apart from the installed app in System Settings.
 - `run-dev`: builds, signs and launches the dev build.
 - `run-tests`: runs the Rust tests. The core's integration tests (`crates/core/tests/`) stage cores in memory with `Scenario::stage()`, which only debug builds have, and reach the socket and the disk only in `ipc.rs`'s and `storage/file.rs`'s own tests.
@@ -29,7 +29,7 @@ The site's ambient motion is free in Safari only while WebKit's compositor runs 
 
 The privacy policy (`site/src/Privacy.tsx`) says what Nightcap keeps, where, and what it sends over the network. A change to any of these, in the app or the site, changes the policy and its date in the same commit.
 
-Swift files under `app/Nightcap/` join the app target automatically, and those under `app/NightcapTests/` the test bundle (folder-synced groups); an app file the tests compile too, such as `Onboarding/OnboardingFlow.swift`, is listed in the `Nightcap` folder's exceptions for `NightcapTests`. Otherwise the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and `NightcapCore.swift` are build outputs: change their sources and rebuild.
+Swift files under `app/Nightcap/` join the app target automatically, and those under `app/NightcapTests/` the test bundle (folder-synced groups); an app file the tests compile too, such as `Onboarding/OnboardingFlow.swift`, is listed in the `Nightcap` folder's exceptions for `NightcapTests`. Otherwise the project file changes only for settings, build phases and packages. Signing goes through `release/sign` alone, with Xcode's own signing off. `build/`, `target/`, the xcframework and the Swift bindings in `app/NightcapCore/Sources` are build outputs: change their sources and rebuild.
 
 ## Code style
 

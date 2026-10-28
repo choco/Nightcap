@@ -26,11 +26,11 @@ struct Announcer {
     /// that answers `cause`, and records what it told.
     func heard(_ cause: Cause, _ snapshot: Snapshot) -> [Notice] {
         let checks = snapshot.checks().checks
-        let problems = checks.filter { $0.state.isProblem }
+        let problems = checks.filter { $0.state.isProblem() }
         let record = Set(defaults.stringArray(forKey: Self.told) ?? [])
-        var told = record.subtracting(checks.filter { !$0.state.isProblem }.map(\.detail.kind.key))
+        var told = record.subtracting(checks.filter { !$0.state.isProblem() }.map { $0.detail.kind().key })
         var notices: [Notice] = []
-        for problem in problems where !told.contains(problem.detail.kind.key) {
+        for problem in problems where !told.contains(problem.detail.kind().key) {
             switch cause {
             case .launch, .fact:
                 guard let notice = Notice(problem: problem.detail, words: words) else { continue }
@@ -38,7 +38,7 @@ struct Announcer {
             case .command, .quit:
                 break
             }
-            told.insert(problem.detail.kind.key)
+            told.insert(problem.detail.kind().key)
         }
         if told != record { keep(told) }
         return notices

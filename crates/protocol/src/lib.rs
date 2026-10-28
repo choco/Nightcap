@@ -4,16 +4,35 @@
 //! [`HelloMessage`] from the client, answered by a [`HelloReply`]; then the client sends one
 //! [`Request`] and receives one [`Response`]. They carry facts, never words: each client words
 //! them itself.
+//!
+//! The commands and the answers cross to the shell as they are, through UniFFI (ADR-0002).
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::SystemTime;
 
 use idna::AsciiDenyList;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
+
+uniffi::setup_scaffolding!();
+
+// A length crosses as whole seconds: the config's lengths, and the commands the app sends with
+// them, the very ones the CLI would send (ADR-0002).
+uniffi::custom_type!(SignedDuration, i64, {
+    remote,
+    lower: |duration| duration.as_secs(),
+    try_lift: |seconds| Ok(SignedDuration::from_secs(seconds)),
+});
+
+uniffi::custom_type!(Timestamp, SystemTime, {
+    remote,
+    lower: |timestamp| SystemTime::from(timestamp),
+    try_lift: |time| Ok(Timestamp::try_from(time)?),
+});
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
 pub const PROTOCOL_VERSION: u32 = 13;
@@ -117,7 +136,7 @@ pub enum Request {
 
 /// What the CLI and the app ask Nightcap to do. Each answers with the resulting decision, short of
 /// a reload, which answers with every rule, and an update check, which answers that it started.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     /// The switch: Night Shift on everywhere, until turned back (ADR-0018).
@@ -164,7 +183,7 @@ pub enum Command {
 }
 
 /// Where a change applies: everywhere, an app, or a domain and its subdomains (ADR-0018).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Place {
     Everywhere,
@@ -183,6 +202,18 @@ impl fmt::Display for Place {
     }
 }
 
+#[uniffi::export]
+impl Place {
+    /// The identity an app's or site's indefinite rule here has; everywhere has none.
+    pub fn identity(&self) -> Option<RuleIdentity> {
+        match self {
+            Self::Everywhere => None,
+            Self::App(bundle_id) => Some(RuleIdentity::App(bundle_id.clone())),
+            Self::Domain(domain) => Some(RuleIdentity::Domain(domain.clone())),
+        }
+    }
+}
+
 impl From<RuleIdentity> for Place {
     fn from(identity: RuleIdentity) -> Self {
         match identity {
@@ -193,7 +224,7 @@ impl From<RuleIdentity> for Place {
 }
 
 /// How long a rule that `Set` asks for lasts (ADR-0018).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Lasting {
     /// This long from now.
@@ -242,7 +273,7 @@ pub enum Answer {
     Export(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
     Nix,
@@ -286,7 +317,7 @@ pub enum Payload {
 }
 
 /// Night Shift as the shell last reported it, and its schedule (ADR-0014).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct NightShiftState {
     pub state: NightShift,
     /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
@@ -316,7 +347,7 @@ impl NightShiftState {
 }
 
 /// What's in front, and what decides Night Shift there (ADR-0018).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Front {
     /// The frontmost app's bundle ID, when it has one a rule could name.
     pub app: Option<BundleId>,
@@ -339,7 +370,7 @@ pub struct Front {
 
 /// A place in front as it stands (ADR-0018): what it gives, its rules and what they sit on, and
 /// what it inherits from the places in front after it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct PlaceInFront {
     pub place: Place,
     /// Its own say, else the one it inherits, else Night Shift as last reported.
@@ -355,14 +386,14 @@ pub struct PlaceInFront {
 }
 
 /// What a place in front inherits: a less specific place's say.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Inherited {
     pub from: Place,
     pub says: OnOff,
 }
 
 /// The config as Nightcap last read it, and why it or `rules.toml` can't be used (ADR-0007).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ConfigState {
     /// Where it's read from, whether or not it exists.
     pub path: String,
@@ -384,7 +415,7 @@ pub struct ConfigState {
 }
 
 /// The user's choices about how Nightcap runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Preferences {
     pub website_checking: WebsiteChecking,
     /// Whether the user wants Nightcap's notifications, which the notifications check compares
@@ -395,21 +426,21 @@ pub struct Preferences {
 }
 
 /// The checks, and what macOS last reported behind them: the grants and the login item.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Checks {
     pub checks: Vec<Check>,
     pub permissions: Permissions,
 }
 
 /// A trial that runs (ADR-0016).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct TrialState {
     /// It has Night Shift on, standing in for the schedule, as the app asked when it began it.
     pub stands_in: bool,
 }
 
 /// The Nightcap that answers.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct About {
     pub version: String,
     pub install: Install,
@@ -421,7 +452,7 @@ pub struct About {
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
 /// decides it, and what that place rests on, its shortest rule first (ADR-0018).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Decision {
     /// None while everywhere decides and the schedule isn't known yet.
     pub state: Option<OnOff>,
@@ -442,7 +473,7 @@ pub enum RuleAdded {
 }
 
 /// One thing a decision rests on.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
     Rule(Rule),
@@ -457,7 +488,7 @@ pub enum Reason {
 
 /// A change to Night Shift: a place, what it says there, how long it lasts and who set it
 /// (ADR-0018).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Rule {
     pub place: Place,
     /// Night Shift off, or on, while the place is in front (ADR-0006).
@@ -467,7 +498,7 @@ pub struct Rule {
 }
 
 /// A rule as the rules query lists it, written as the rule with its snooze beside it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ListedRule {
     #[serde(flatten)]
     pub rule: Rule,
@@ -477,7 +508,7 @@ pub struct ListedRule {
 }
 
 /// How long a rule lasts (ADR-0018). At one place, the shortest decides.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Length {
     /// Until it's taken off.
@@ -489,6 +520,7 @@ pub enum Length {
     Until { until: Timestamp },
 }
 
+#[uniffi::export]
 impl Length {
     /// When a rule of this length ends, if it has an end.
     pub fn end(&self) -> Option<Timestamp> {
@@ -501,7 +533,7 @@ impl Length {
 }
 
 /// Who set a rule (ADR-0018).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum SetBy {
     /// The config, whose rules are indefinite, at an app or a site (ADR-0007).
@@ -516,7 +548,7 @@ pub enum SetBy {
 
 /// The app or the site an indefinite rule is at, written `app:com.figma.Desktop` or
 /// `domain:figma.com`: each has one at most (ADR-0006).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, uniffi::Enum)]
 #[serde(into = "String")]
 pub enum RuleIdentity {
     App(BundleId),
@@ -672,6 +704,18 @@ impl<'de> Deserialize<'de> for Domain {
     }
 }
 
+// The shell sees bundle IDs and domains as strings. One it sends that isn't valid fails to lift,
+// which stops the app, so the shell checks any it didn't get from the core.
+uniffi::custom_type!(BundleId, String, {
+    lower: |bundle_id| bundle_id.into(),
+    try_lift: |text| Ok(text.parse()?),
+});
+
+uniffi::custom_type!(Domain, String, {
+    lower: |domain| domain.into(),
+    try_lift: |text| Ok(text.parse()?),
+});
+
 /// Why text doesn't name an app, a domain or a rule. A domain's message quotes it, so the core
 /// never logs one (ADR-0009).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -700,7 +744,7 @@ where
 
 /// One thing Nightcap depends on, compared with what the user set up: what it found, which each
 /// client words itself, and where that leaves it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Check {
     /// Written as the check's `kind` and, beside it, its `detail`.
     #[serde(flatten)]
@@ -709,7 +753,7 @@ pub struct Check {
 }
 
 /// What a check found, by its kind.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(tag = "kind", content = "detail", rename_all = "snake_case")]
 pub enum CheckDetail {
     NightShift(NightShiftDetail),
@@ -720,6 +764,7 @@ pub enum CheckDetail {
     AdHocRules(AdHocRulesDetail),
 }
 
+#[uniffi::export]
 impl CheckDetail {
     pub fn kind(&self) -> CheckKind {
         match self {
@@ -733,7 +778,7 @@ impl CheckDetail {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NightShiftDetail {
     /// Night Shift works on this Mac, with this schedule; None until the shell first reports it.
@@ -748,7 +793,7 @@ pub enum NightShiftDetail {
 }
 
 /// Accessibility, which website checking needs to read the front tab.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum AccessibilityDetail {
     Allowed,
@@ -758,7 +803,7 @@ pub enum AccessibilityDetail {
     NotNeeded,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationsDetail {
     Allowed,
@@ -769,7 +814,7 @@ pub enum NotificationsDetail {
 }
 
 /// Opening at login, in self-managed installs (ADR-0011).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum OpenAtLoginDetail {
     /// Nightcap opens when the user logs in.
@@ -782,7 +827,7 @@ pub enum OpenAtLoginDetail {
     Off,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigFileDetail {
     /// Valid, with this many rules.
@@ -793,7 +838,7 @@ pub enum ConfigFileDetail {
     Error(FileError),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum AdHocRulesDetail {
     /// In use, with this many rules.
@@ -803,7 +848,7 @@ pub enum AdHocRulesDetail {
 }
 
 /// Why one of Nightcap's files, the config or `rules.toml`, can't be used, with where it is.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum FileError {
     /// It can't be read: why, by kind.
@@ -821,7 +866,7 @@ pub enum FileError {
 }
 
 /// What a value in a file is, as TOML writes it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ValueType {
     String,
@@ -838,7 +883,7 @@ pub enum ValueType {
 }
 
 /// Where in a file's text: a line, and a column on it in characters, each counted from 1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Position {
     pub line: u32,
     pub column: u32,
@@ -846,7 +891,7 @@ pub struct Position {
 
 /// Why macOS couldn't read or write a file or a folder, by kind, which each client words itself;
 /// the log has macOS's own reason.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum IoFailure {
     /// Nothing is there, or at a folder on its path.
@@ -880,7 +925,7 @@ impl From<io::ErrorKind> for IoFailure {
 
 /// What makes a well-formed config or `rules.toml` invalid, with the key, entry or value as the
 /// file writes it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Problem {
     /// A key its table doesn't take: the keys that lead to the table from the top of the file,
@@ -916,7 +961,7 @@ pub enum Problem {
     NotLengths { lengths: Vec<String> },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckKind {
     NightShift,
@@ -927,7 +972,7 @@ pub enum CheckKind {
     AdHocRules,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckState {
     Ok,
@@ -940,6 +985,7 @@ pub enum CheckState {
     Broken,
 }
 
+#[uniffi::export]
 impl CheckState {
     /// Whether the check needs the user: drift, or broken.
     pub fn is_problem(self) -> bool {
@@ -948,20 +994,21 @@ impl CheckState {
 }
 
 /// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0012).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct WebsiteChecking {
     pub state: OnOff,
     /// Set by `websites` in the config, which wins over the app and the CLI.
     pub from_config: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum OnOff {
     On,
     Off,
 }
 
+#[uniffi::export]
 impl OnOff {
     pub fn other(self) -> Self {
         match self {
@@ -987,7 +1034,7 @@ impl fmt::Display for OnOff {
 }
 
 /// Night Shift as last observed.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NightShift {
     #[default]
@@ -997,7 +1044,7 @@ pub enum NightShift {
 }
 
 /// Night Shift's schedule in System Settings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Schedule {
     Off,
@@ -1009,21 +1056,21 @@ pub enum Schedule {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct TimeOfDay {
     pub hour: u8,
     pub minute: u8,
 }
 
 /// Who owns updates and starting at login (ADR-0011).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Install {
     Managed,
     SelfManaged,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Permissions {
     pub accessibility: bool,
     pub notifications: NotificationPermission,
@@ -1033,7 +1080,7 @@ pub struct Permissions {
 }
 
 /// Nightcap's login item, as macOS reports it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum LoginItem {
     Enabled,
@@ -1042,7 +1089,7 @@ pub enum LoginItem {
     NotRegistered,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationPermission {
     #[default]
@@ -1053,7 +1100,7 @@ pub enum NotificationPermission {
 
 /// Why Nightcap refused a command, which then changes nothing: what each client needs to say
 /// why, in its own words.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Refusal {
     /// This Mac has no Night Shift, which the command needs.
@@ -1099,7 +1146,7 @@ pub enum Refusal {
 
 /// What runs where it isn't a self-managed release, which updates itself and opens itself at
 /// login (ADR-0011).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NotSelfManaged {
     /// A dev build, which would shadow the installed app: it's rebuilt, and started by hand.

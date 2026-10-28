@@ -56,7 +56,7 @@ struct Settings: Equatable {
         let accept: FixButton?
 
         /// A check that needs the user: drift, or broken.
-        var isProblem: Bool { state.isProblem }
+        var isProblem: Bool { state.isProblem() }
     }
 
     /// An app's or site's indefinite rule in the Rules tab: what it says, where it comes from or
@@ -115,16 +115,16 @@ struct Settings: Equatable {
         self.checks = checks.filter(Self.shows).map { check in
             let fixes = Self.fixes(for: check.detail, websitesFromConfig: websites.fromConfig, words: words)
             return CheckStatus(
-                kind: check.detail.kind, state: check.state, text: words.check(check.detail),
+                kind: check.detail.kind(), state: check.state, text: words.check(check.detail),
                 restore: fixes.restore, accept: fixes.accept)
         }
         configPath = snapshot.config().path
         self.rules = Self.rows(of: rules, words: words)
         forNow = Self.forNow(rules.map(\.rule)).compactMap { place, rules in
-            place.identity.map { identity in
+            place.identity().map { identity in
                 ForNowRow(
                     identity: identity,
-                    label: words.forNow(rules.map { Wording.Change(state: $0.says, until: $0.length.end) }),
+                    label: words.forNow(rules.map { Wording.Change(state: $0.says, until: $0.length.end()) }),
                     button: CommandButton(title: words.end, command: .reset(place)))
             }
         }
@@ -150,7 +150,7 @@ struct Settings: Equatable {
 
     /// The tab with the problem the menu points at: General's first, then Rules'.
     static func tab(for checks: [Check]) -> Tab {
-        let problems = checks.filter(\.state.isProblem).map(\.detail.kind)
+        let problems = checks.filter { $0.state.isProblem() }.map { $0.detail.kind() }
         return problems.isEmpty || problems.contains(where: Tab.general.checks.contains) ? .general : .rules
     }
 
@@ -162,7 +162,7 @@ struct Settings: Equatable {
     private static func shows(_ check: Check) -> Bool {
         switch check.detail {
         case .accessibility(.notNeeded): false
-        case .openAtLogin, .adHocRules: check.state.isProblem
+        case .openAtLogin, .adHocRules: check.state.isProblem()
         case .nightShift, .accessibility, .notifications, .configFile: true
         }
     }
@@ -199,14 +199,14 @@ struct Settings: Equatable {
     /// only in the config (ADR-0006). A trial's rules have none (ADR-0016).
     private static func row(_ listed: ListedRule, _ words: Wording) -> RuleRow? {
         let rule = listed.rule
-        guard let identity = rule.place.identity else { return nil }
+        guard let identity = rule.place.identity() else { return nil }
         let shown: (label: String, button: CommandButton?)
         switch (listed.snooze, rule.setBy) {
         case (_, .trial), (_, .outsideChange):
             return nil
         case (let snooze?, _):
             shown = (
-                words.snoozed(snooze.says, until: snooze.length.end),
+                words.snoozed(snooze.says, until: snooze.length.end()),
                 CommandButton(title: words.putBack, command: .reset(rule.place))
             )
         case (nil, .config):

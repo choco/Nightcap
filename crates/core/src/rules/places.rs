@@ -227,9 +227,7 @@ impl Places {
             .reasons
             .into_iter()
             .find_map(|reason| match reason {
-                Reason::Rule(rule) if rule.length == Length::Indefinite => {
-                    place_identity(&rule.place)
-                }
+                Reason::Rule(rule) if rule.length == Length::Indefinite => rule.place.identity(),
                 _ => None,
             });
         if let Some(identity) = &snoozed {
@@ -558,15 +556,6 @@ fn rank(rule: &Rule) -> u8 {
     }
 }
 
-/// The identity a rule for this place would have; everywhere has none.
-pub(crate) fn place_identity(place: &Place) -> Option<RuleIdentity> {
-    match place {
-        Place::Everywhere => None,
-        Place::App(bundle_id) => Some(RuleIdentity::App(bundle_id.clone())),
-        Place::Domain(domain) => Some(RuleIdentity::Domain(domain.clone())),
-    }
-}
-
 /// Whether a rule is an app's or a site's indefinite one: the config's, the user's or a
 /// trial's, as the app's rule list and `nightcap rules` show them.
 pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
@@ -575,7 +564,7 @@ pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
 
 /// A place as the log may show it: a domain is named by its kind only (ADR-0009).
 fn loggable_place(place: &Place) -> String {
-    match place_identity(place) {
+    match place.identity() {
         None => "everywhere".to_owned(),
         Some(identity) => loggable(&identity),
     }

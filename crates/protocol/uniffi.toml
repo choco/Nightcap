@@ -1,0 +1,8 @@
+# The protocol's bindings compile into the core's Swift module, NightcapCore, since the core's
+# generated Swift names the protocol's types without importing a module for them. `module_name`
+# names only the generated file, NightcapProtocol.swift, and the header joins the core's in the
+# NightcapCoreFFI module under a name of its own.
+[bindings.swift]
+module_name = "NightcapProtocol"
+ffi_module_name = "NightcapCoreFFI"
+ffi_module_filename = "NightcapProtocolFFI"

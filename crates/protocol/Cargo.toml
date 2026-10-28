@@ -10,6 +10,7 @@ idna.workspace = true
 jiff = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
+uniffi.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true

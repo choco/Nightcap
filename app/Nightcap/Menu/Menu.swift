@@ -141,7 +141,7 @@ private struct Rows {
     /// when it would offer nothing.
     func everywhere() -> Menu.PlaceRow? {
         let everywhere = front.everywhere
-        let state = everywhere.gives.other
+        let state = everywhere.gives.other()
         var items: [Menu.Item] = []
         // The switch keeps everywhere's rules that say its way, so only where one does would going
         // back to the schedule differ from it. While a trial stands in, the schedule isn't there
@@ -191,7 +191,7 @@ private struct Rows {
     /// come to the same as undoing, then indefinitely, which is a rule.
     private func row(_ at: PlaceInFront, named: Wording.Place, identity: RuleIdentity) -> Menu.PlaceRow {
         let place = at.place
-        let state = at.gives.other
+        let state = at.gives.other()
         let rule = at.rule
         var items: [Menu.Item] = []
         let undo: String? =
@@ -252,7 +252,7 @@ private struct Rows {
             title: offers ? words.turn(state, at: named) : words.nothingToOffer(at: named),
             site: site,
             subtitle: words.placeSays(
-                at.rules.map { Wording.Change(state: $0.says, until: $0.length.end) },
+                at.rules.map { Wording.Change(state: $0.says, until: $0.length.end()) },
                 then: rule.map { (says: $0.says, whose: Self.whose($0.setBy)) }),
             items: offers ? items : [])
     }
@@ -267,8 +267,8 @@ private struct Rows {
         return switch (top, named(decision.place)) {
         case (.rule(let rule), let place?) where rule.length == .indefinite:
             words.rule(rule.says, at: place, whose: Self.whose(rule.setBy))
-        case (.rule(let rule), let place?): words.change(rule.says, at: place, until: rule.length.end)
-        case (.rule(let rule), nil): words.change(rule.says, until: rule.length.end)
+        case (.rule(let rule), let place?): words.change(rule.says, at: place, until: rule.length.end())
+        case (.rule(let rule), nil): words.change(rule.says, until: rule.length.end())
         case (.standIn, _): words.onForTheTour
         case (.schedule(_, let until?), _): words.followingTheSchedule(until: until)
         case (.schedule(_, nil), _):
@@ -278,7 +278,7 @@ private struct Rows {
 
     /// The problem line, from the checks that are problems: drift or broken.
     func problemLine() -> Menu.ProblemLine? {
-        let problems = checks.filter(\.state.isProblem).map(\.detail)
+        let problems = checks.filter { $0.state.isProblem() }.map(\.detail)
         guard !problems.isEmpty else { return nil }
         return Menu.ProblemLine(title: words.thingsNeedAttention(problems.count), subtitle: words.needing(problems))
     }
@@ -303,7 +303,7 @@ private struct Rows {
         else { return nil }
         return .choice(
             Menu.Choice(
-                title: words.until(until), subtitle: words.moment(of: schedule, turning: state.other),
+                title: words.until(until), subtitle: words.moment(of: schedule, turning: state.other()),
                 command: .set(place: place, state: state, length: .untilScheduleTurns)))
     }
 

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds the core and the CLI, wraps the core as NightcapCoreFFI.xcframework with
-# its generated Swift bindings in app/NightcapCore, and stages the CLI in build/cli for
-# the app bundle. Pass --release for an optimised build.
+# its generated Swift bindings in app/NightcapCore, the core's and the protocol's, one file
+# each in the one Swift module, and stages the CLI in build/cli for the app bundle. Pass
+# --release for an optimised build.
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -19,7 +20,7 @@ lib="target/$profile/libnightcap_core.a"
 
 package="app/NightcapCore"
 generated="build/uniffi"
-rm -rf "$generated" "$package/NightcapCoreFFI.xcframework"
+rm -rf "$generated" "$package/NightcapCoreFFI.xcframework" "$package/Sources"
 mkdir -p "$generated/include" "$package/Sources/NightcapCore"
 
 cargo run --quiet --package uniffi-bindgen -- \

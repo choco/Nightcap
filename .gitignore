@@ -1,7 +1,7 @@
 /target/
 /build/
 /app/NightcapCore/NightcapCoreFFI.xcframework/
-/app/NightcapCore/Sources/NightcapCore/NightcapCore.swift
+/app/NightcapCore/Sources/
 xcuserdata/
 .DS_Store
 .build/
