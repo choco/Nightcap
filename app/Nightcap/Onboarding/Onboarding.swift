@@ -195,13 +195,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
     }
 
-    /// A footer's action, the window's own or the flow's, then the step it leads to.
-    private func run(_ action: OnboardingFlow.Action) {
-        switch action {
+    /// A footer's button, the window's own or the flow's, then the step it leads to.
+    private func run(_ button: OnboardingFlow.FooterButton) {
+        switch button {
         case .chooseApp: chooseApp()
         case .done: window.performClose(nil)
         default:
-            flow.perform(action)
+            flow.perform(button)
             draw()
         }
     }

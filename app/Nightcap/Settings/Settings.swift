@@ -27,7 +27,7 @@ struct Settings: Equatable {
     }
 
     /// A button that sends `command`.
-    struct Action: Equatable {
+    struct CommandButton: Equatable {
         let title: String
         let command: Command
     }
@@ -68,7 +68,7 @@ struct Settings: Equatable {
         let label: String
         let snoozed: Bool
         /// None for a config rule that isn't snoozed: only the config changes it (ADR-0006).
-        let action: Action?
+        let button: CommandButton?
     }
 
     /// An app or site that temporary rules alone keep on or off for now, and ending them.
@@ -76,7 +76,7 @@ struct Settings: Equatable {
         let identity: RuleIdentity
         /// "Night Shift off until 20:00".
         let label: String
-        let action: Action
+        let button: CommandButton
     }
 
     let websiteChecking: Switch
@@ -125,7 +125,7 @@ struct Settings: Equatable {
                 ForNowRow(
                     identity: identity,
                     label: words.forNow(rules.map { Wording.Change(state: $0.says, until: $0.length.end) }),
-                    action: Action(title: words.end, command: .reset(place)))
+                    button: CommandButton(title: words.end, command: .reset(place)))
             }
         }
         version = snapshot.about().version
@@ -200,23 +200,23 @@ struct Settings: Equatable {
     private static func row(_ listed: ListedRule, _ words: Wording) -> RuleRow? {
         let rule = listed.rule
         guard let identity = rule.place.identity else { return nil }
-        let shown: (label: String, action: Action?)
+        let shown: (label: String, button: CommandButton?)
         switch (listed.snooze, rule.setBy) {
         case (_, .trial), (_, .outsideChange):
             return nil
         case (let snooze?, _):
             shown = (
                 words.snoozed(snooze.says, until: snooze.length.end),
-                Action(title: words.putBack, command: .reset(rule.place))
+                CommandButton(title: words.putBack, command: .reset(rule.place))
             )
         case (nil, .config):
             shown = (words.fromYourConfig, nil)
         case (nil, .you):
-            shown = (words.adHoc, Action(title: words.remove, command: .removeRule(identity)))
+            shown = (words.adHoc, CommandButton(title: words.remove, command: .removeRule(identity)))
         }
         return RuleRow(
             identity: identity, says: rule.says, label: shown.label, snoozed: listed.snooze != nil,
-            action: shown.action)
+            button: shown.button)
     }
 
     /// The apps and sites with temporary rules and no indefinite one, each with its rules,

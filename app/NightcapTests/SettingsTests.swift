@@ -244,16 +244,16 @@ struct SettingsTests {
             settings(core).rules == [
                 Settings.RuleRow(
                     identity: .app("com.figma.Desktop"), says: .off, label: "From your config", snoozed: false,
-                    action: nil),
+                    button: nil),
                 Settings.RuleRow(
                     identity: .domain("figma.com"), says: .off, label: "Snoozed until 07:00", snoozed: true,
-                    action: Settings.Action(title: "Put Back", command: .reset(.domain("figma.com")))),
+                    button: Settings.CommandButton(title: "Put Back", command: .reset(.domain("figma.com")))),
                 Settings.RuleRow(
                     identity: .app("com.apple.Photos"), says: .off, label: "Ad-hoc", snoozed: false,
-                    action: Settings.Action(title: "Remove", command: .removeRule(.app("com.apple.Photos")))),
+                    button: Settings.CommandButton(title: "Remove", command: .removeRule(.app("com.apple.Photos")))),
                 Settings.RuleRow(
                     identity: .domain("youtube.com"), says: .on, label: "Ad-hoc", snoozed: false,
-                    action: Settings.Action(title: "Remove", command: .removeRule(.domain("youtube.com")))),
+                    button: Settings.CommandButton(title: "Remove", command: .removeRule(.domain("youtube.com")))),
             ])
     }
 
@@ -275,7 +275,7 @@ struct SettingsTests {
             settings(core).rules == [
                 Settings.RuleRow(
                     identity: .app("com.figma.Desktop"), says: .off, label: "From your config", snoozed: false,
-                    action: nil)
+                    button: nil)
             ])
     }
 
@@ -292,7 +292,7 @@ struct SettingsTests {
             settings(core).forNow == [
                 Settings.ForNowRow(
                     identity: .app("com.apple.mail"), label: "Night Shift on until 23:30, then off until 22:00",
-                    action: Settings.Action(title: "End", command: .reset(mailApp)))
+                    button: Settings.CommandButton(title: "End", command: .reset(mailApp)))
             ])
     }
 

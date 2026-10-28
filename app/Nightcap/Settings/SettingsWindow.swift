@@ -320,7 +320,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let end = CapsuleButton(temporary.action.title, .small) { [choose] in choose(temporary.action.command) }
+        let end = CapsuleButton(temporary.button.title, .small) { [choose] in choose(temporary.button.command) }
         let row = NSStackView(views: [icon, texts, end])
         row.orientation = .horizontal
         row.distribution = .fill
@@ -341,11 +341,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let action = rule.action.map { action in
-            CapsuleButton(action.title, .small) { [choose] in choose(action.command) }
+        let button = rule.button.map { button in
+            CapsuleButton(button.title, .small) { [choose] in choose(button.command) }
         }
         let row = NSStackView(
-            views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [action].compactMap { $0 })
+            views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [button].compactMap { $0 })
         row.orientation = .horizontal
         row.distribution = .fill
         row.alignment = .centerY

@@ -50,8 +50,8 @@ final class OnboardingFlow {
         }
     }
 
-    /// What a footer's button does.
-    enum Action: Equatable {
+    /// A footer's button, by what it does.
+    enum FooterButton: Equatable {
         /// Moves on, sending what the step chose.
         case `continue`
         /// Moves on, leaving the step's choice unmade.
@@ -78,9 +78,9 @@ final class OnboardingFlow {
 
     /// A step's buttons: a link beside Back, then the one to press last on the right.
     struct Footer: Equatable {
-        var link: Action? = nil
-        var secondary: Action? = nil
-        let primary: Action
+        var link: FooterButton? = nil
+        var secondary: FooterButton? = nil
+        let primary: FooterButton
     }
 
     /// A step's dot: done, current or to do, and the index a click on it goes to, for a step
@@ -300,10 +300,10 @@ final class OnboardingFlow {
         }
     }
 
-    /// Carries out a footer's action, apart from those the window carries out: choosing an app
+    /// Carries out a footer's button, apart from those the window carries out: choosing an app
     /// and closing.
-    func perform(_ action: Action) {
-        switch action {
+    func perform(_ button: FooterButton) {
+        switch button {
         case .continue:
             switch step {
             case .schedule where schedule != setup.schedule:

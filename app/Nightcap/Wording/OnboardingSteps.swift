@@ -95,8 +95,8 @@ extension Wording {
     }
 
     /// A footer's button.
-    func title(of action: OnboardingFlow.Action) -> String {
-        switch action {
+    func title(of button: OnboardingFlow.FooterButton) -> String {
+        switch button {
         case .continue: text("Continue")
         case .notNow: text("Not Now")
         case .reviewSettings: text("Review Settings")
