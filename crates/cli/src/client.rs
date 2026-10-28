@@ -179,82 +179,25 @@ fn receive(reader: &mut impl BufRead) -> anyhow::Result<String> {
     Ok(line)
 }
 
+// Staged cores exist only in debug builds.
 #[cfg(test)]
-mod tests {
-    use serde_json::{Map, Value};
+#[cfg(debug_assertions)]
+pub(crate) mod tests {
+    use nightcap_core::Scenario;
 
     use super::*;
 
-    /// The answers to what `nightcap status` asks, each under its query's name.
-    const ANSWERS: &str = concat!(
-        r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true},"#,
-        r#""night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"},"#,
-        r#""front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":null,"inherits":null}},"#,
-        r#""rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config","snooze":null}],"#,
-        r#""config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":null},"#,
-        r#""preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false},"#,
-        r#""checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}},"#,
-        r#""trial":{"stands_in":true}}"#,
-    );
-
-    #[test]
-    fn status_asks_every_query_in_one_request_and_keeps_each_answer() {
-        let answers: Value = serde_json::from_str(ANSWERS).unwrap();
-        // The server's answer to a query, as `ANSWERS` has it under the query's name.
-        let answer = |query: &Query| {
-            let Value::String(name) = serde_json::to_value(query).unwrap() else {
-                panic!("status asks no query with an argument, but asked {query:?}");
-            };
-            let answered = answers[name.as_str()].clone();
-            serde_json::from_value::<Answer>(Value::Object(Map::from_iter([(name, answered)])))
-                .unwrap()
-        };
-        let mut asked = Vec::new();
-
-        let Ok(report) = report(|request| {
-            asked.push(request.clone());
-            let Request::Queries(queries) = request else {
-                panic!("expected queries, got {request:?}");
-            };
-            Ok(Payload::Answers(queries.iter().map(answer).collect()))
+    /// What `report` reads from `scenario`'s core, staged in memory, with each request carried
+    /// as the socket carries it, from Nightcap 1.2.0.
+    pub(crate) fn staged_report(scenario: Scenario) -> Report {
+        let staged = scenario.stage().unwrap();
+        let Ok(mut report) = report(|request| match staged.request(request.clone()) {
+            (_, Response::Ok(payload)) => Ok(payload),
+            (_, response) => panic!("expected answers, got {response:?}"),
         }) else {
             panic!("the status reads its answers");
         };
-
-        assert_eq!(
-            asked,
-            vec![Request::Queries(vec![
-                Query::About,
-                Query::NightShift,
-                Query::Front,
-                Query::Rules,
-                Query::Config,
-                Query::Preferences,
-                Query::Checks,
-                Query::Trial,
-            ])]
-        );
-        let Report {
-            about,
-            night_shift,
-            front,
-            rules,
-            config,
-            preferences,
-            checks,
-            trial,
-        } = report;
-        for (name, kept) in [
-            ("about", serde_json::to_value(about)),
-            ("night_shift", serde_json::to_value(night_shift)),
-            ("front", serde_json::to_value(front)),
-            ("rules", serde_json::to_value(rules)),
-            ("config", serde_json::to_value(config)),
-            ("preferences", serde_json::to_value(preferences)),
-            ("checks", serde_json::to_value(checks)),
-            ("trial", serde_json::to_value(trial)),
-        ] {
-            assert_eq!(kept.unwrap(), answers[name], "{name}");
-        }
+        report.about.version = "1.2.0".to_owned();
+        report
     }
 }

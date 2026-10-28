@@ -12,7 +12,7 @@ use nightcap_protocol::{
 
 use common::{
     accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
-    app_rule, at, books, custom_hours, domain_rule, figma, figma_app, forced, host_event,
+    app_rule, at, books, check, custom_hours, domain_rule, figma, figma_app, forced, host_event,
     in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon, on_by_the_schedule,
     refusal, reported, resettable, rules, send, set, standing, until_turn, yours,
 };
@@ -631,131 +631,102 @@ fn rules_are_listed_by_what_they_say() {
 }
 
 #[test]
-fn a_config_that_cant_be_is_refused() {
+fn a_config_that_cant_be_is_refused_naming_the_line_of_what_cant_be() {
     let staged = noon().stage().unwrap();
-
-    let lengths = |lengths: &[&str]| Problem::NotLengths {
-        lengths: lengths.iter().map(|length| (*length).to_owned()).collect(),
-    };
+    let path = staged.core().snapshot().config().path;
     let strings = |items: &[&str]| items.iter().map(|item| (*item).to_owned()).collect();
-    for (config, why) in [
+    let lengths = |lengths: &[&str]| Problem::NotLengths {
+        lengths: strings(lengths),
+    };
+
+    for (config, problem, line) in [
         (
-            "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.figma.desktop\"]\n",
+            "[rules.off]\napp = [\"com.figma.Desktop\"]\n\n[rules.on]\napp = [\n  \"com.apple.Photos\",\n  \"com.figma.desktop\",\n]\n",
             Problem::BothWays { identity: figma() },
+            7,
         ),
         (
-            "[rules]\napp = [\"com.figma.Desktop\"]\n",
+            "websites = true\n[rules]\napp = [\"com.figma.Desktop\"]\n",
             Problem::UnknownKey {
                 table: strings(&["rules"]),
                 key: "app".to_owned(),
                 expected: strings(&["off", "on"]),
             },
+            3,
         ),
         (
-            "lengths = [\"45m\", \"forever\"]\n",
-            lengths(&["45m", "forever"]),
-        ),
-        ("lengths = [\"30s\"]\n", lengths(&["30s"])),
-        ("lengths = []\n", lengths(&[])),
-        (
-            "[menu]\nlengths = [\"45m\"]\n",
+            "websites = true\n\n[menu]\nlengths = [\"45m\"]\n",
             Problem::UnknownKey {
                 table: Vec::new(),
                 key: "menu".to_owned(),
                 expected: strings(&["websites", "lengths", "night_shift", "rules"]),
             },
+            3,
         ),
         (
-            "[rules.off]\napp = [\"com.figma.Desktop \"]\n",
+            "[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n",
             Problem::NotABundleId {
                 entry: "com.figma.Desktop ".to_owned(),
             },
+            4,
         ),
         (
             "[rules.on]\napp = [\"\"]\n",
             Problem::NotABundleId {
                 entry: String::new(),
             },
-        ),
-        (
-            "[rules.off]\ndomain = [\"https://figma.com\"]\n",
-            Problem::NotADomain {
-                entry: "https://figma.com".to_owned(),
-            },
-        ),
-    ] {
-        staged.write_config(Some(config));
-        let (_, response) = staged.request(Request::Command(Command::Reload));
-        let Response::Refused(Refusal::InvalidConfig(FileError::Invalid { problem, .. })) =
-            response
-        else {
-            panic!("{config:?} was accepted: {response:?}");
-        };
-        assert_eq!(problem, why, "{config:?}");
-    }
-}
-
-#[test]
-fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
-    let staged = noon().stage().unwrap();
-    let path = staged.core().snapshot().config().path;
-
-    for (config, line) in [
-        (
-            "[rules.off]\napp = [\"com.figma.Desktop\"]\n\n[rules.on]\napp = [\n  \"com.apple.Photos\",\n  \"com.figma.desktop\",\n]\n",
-            7,
-        ),
-        (
-            "websites = true\n[rules]\napp = [\"com.figma.Desktop\"]\n",
-            3,
-        ),
-        (
-            "[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n",
-            4,
+            2,
         ),
         (
             "[rules.on]\ndomain = [\"figma.com\"]\n[rules.off]\ndomain = [\"https://figma.com\"]\n",
+            Problem::NotADomain {
+                entry: "https://figma.com".to_owned(),
+            },
             4,
         ),
         (
             "[night_shift]\nschedule = \"22:00-07:00\"\nstrength = 101\n",
+            Problem::StrengthOutOfRange { strength: 101 },
             3,
         ),
-        ("[night_shift]\nschedule = \"dusk\"\n", 2),
-        ("\nlengths = [\"45m\", \"forever\"]\n", 2),
-        ("websites = true\n\n[menu]\nlengths = [\"45m\"]\n", 3),
+        (
+            "[night_shift]\nstrength = 300\n",
+            Problem::StrengthOutOfRange { strength: 300 },
+            2,
+        ),
+        (
+            "[night_shift]\nschedule = \"dusk\"\n",
+            Problem::NotASchedule {
+                schedule: "dusk".to_owned(),
+            },
+            2,
+        ),
+        (
+            "\nlengths = [\"45m\", \"forever\"]\n",
+            lengths(&["45m", "forever"]),
+            2,
+        ),
+        ("lengths = [\"30s\"]\n", lengths(&["30s"]), 1),
+        ("lengths = []\n", lengths(&[]), 1),
     ] {
         staged.write_config(Some(config));
+        let error = FileError::Invalid {
+            path: path.clone(),
+            line,
+            problem,
+        };
+
         let (_, response) = staged.request(Request::Command(Command::Reload));
 
-        assert!(
-            matches!(
-                &response,
-                Response::Refused(Refusal::InvalidConfig(FileError::Invalid {
-                    path: at_path,
-                    line: at,
-                    ..
-                })) if *at == line && *at_path == path
-            ),
-            "{config:?}: {response:?}"
+        assert_eq!(
+            response,
+            Response::Refused(Refusal::InvalidConfig(error.clone())),
+            "{config:?}"
         );
-        let found = staged
-            .core()
-            .snapshot()
-            .checks()
-            .checks
-            .into_iter()
-            .map(|check| check.detail)
-            .find(|detail| detail.kind() == CheckKind::ConfigFile);
-        assert!(
-            matches!(
-                &found,
-                Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    line: at,
-                    ..
-                }))) if *at == line
-            ),
-            "{config:?}: {found:?}"
+        assert_eq!(
+            check(&staged, CheckKind::ConfigFile).map(|check| check.detail),
+            Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(error))),
+            "{config:?}"
         );
     }
 }

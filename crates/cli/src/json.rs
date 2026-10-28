@@ -323,12 +323,12 @@ mod tests {
     use nightcap_core::{AppCommand, Fact, Scenario};
     use nightcap_protocol::{
         BundleId, CheckKind, CheckState, Command, Domain, Lasting, NotificationPermission, Place,
-        Response, Schedule, TimeOfDay, TrialState, WebsiteChecking,
+        Schedule, TimeOfDay, TrialState, WebsiteChecking,
     };
     use serde_json::{Value, json, to_value};
 
     use super::*;
-    use crate::client;
+    use crate::client::tests::staged_report;
 
     /// Where the pinned documents put the config, wherever the tests' XDG directories are.
     const CONFIG: &str = "/Users/me/.config/nightcap/config.toml";
@@ -370,14 +370,7 @@ mod tests {
     /// with the config where `CONFIG` puts it and the version 1.2.0. It's indented here, to
     /// read; the CLI prints it on one line.
     fn printed<T: Serialize>(scenario: Scenario, print: impl Fn(&Report) -> T) -> String {
-        let staged = scenario.stage().unwrap();
-        let Ok(mut report) = client::report(|request| match staged.request(request.clone()) {
-            (_, Response::Ok(payload)) => Ok(payload),
-            (_, response) => panic!("expected answers, got {response:?}"),
-        }) else {
-            panic!("the status reads its answers");
-        };
-        report.about.version = "1.2.0".to_owned();
+        let report = staged_report(scenario);
         serde_json::to_string_pretty(&print(&report))
             .unwrap()
             .replace(&report.config.path, CONFIG)

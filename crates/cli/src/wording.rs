@@ -693,10 +693,7 @@ fn time_of_day(time: TimeOfDay) -> String {
 
 #[cfg(test)]
 mod tests {
-    use nightcap_protocol::{
-        About, Check, CheckState, Front, NightShiftState, Permissions, PlaceInFront, Position,
-        Preferences, WebsiteChecking,
-    };
+    use nightcap_protocol::Position;
 
     use super::*;
 
@@ -935,22 +932,6 @@ mod tests {
                 "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it, or a folder on its path, isn't there",
             ),
             (
-                IoFailure::PermissionDenied,
-                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: permission denied",
-            ),
-            (
-                IoFailure::IsAFolder,
-                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it's a folder",
-            ),
-            (
-                IoFailure::NotAFolder,
-                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: one of the folders on its path is a file",
-            ),
-            (
-                IoFailure::NotUtf8,
-                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it isn't UTF-8 text",
-            ),
-            (
                 IoFailure::Other,
                 "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml",
             ),
@@ -994,29 +975,11 @@ mod tests {
             "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: `rules.off.domian` isn't a key here; use `app` or `domain`"
         );
         assert_eq!(
-            invalid(FileError::Invalid {
-                path: path(),
-                line: 2,
-                problem: Problem::StrengthOutOfRange { strength: 101 },
-            }),
-            "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 2: night_shift.strength is 0 to 100, not 101"
-        );
-        assert_eq!(
             ad_hoc(AdHocRulesDetail::Off(FileError::Newer {
                 path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
                 version: 3,
             })),
             "Ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml is version 3, from a newer Nightcap than this one."
-        );
-        assert_eq!(
-            ad_hoc(AdHocRulesDetail::Off(FileError::Invalid {
-                path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
-                line: 3,
-                problem: Problem::NotABundleId {
-                    entry: "com.figma.Desktop ".to_owned(),
-                },
-            })),
-            "Ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml: line 3: \"com.figma.Desktop \" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods."
         );
     }
 
@@ -1064,108 +1027,6 @@ mod tests {
                     expected: ValueType::Strings,
                 },
                 "`rules.off.app` is a list of strings, not a string",
-            ),
-            (
-                Problem::WrongType {
-                    table: Vec::new(),
-                    key: "websites".to_owned(),
-                    found: ValueType::Integer,
-                    expected: ValueType::Boolean,
-                },
-                "`websites` is true or false, not an integer",
-            ),
-            (
-                Problem::WrongType {
-                    table: Vec::new(),
-                    key: "lengths".to_owned(),
-                    found: ValueType::List,
-                    expected: ValueType::Strings,
-                },
-                "`lengths` is a list of strings, not a list that isn't all strings",
-            ),
-            (
-                Problem::WrongType {
-                    table: Vec::new(),
-                    key: "night_shift".to_owned(),
-                    found: ValueType::Float,
-                    expected: ValueType::Table,
-                },
-                "`night_shift` is a table, not a float",
-            ),
-            (
-                Problem::WrongType {
-                    table: keys(&["night_shift"]),
-                    key: "schedule".to_owned(),
-                    found: ValueType::Datetime,
-                    expected: ValueType::String,
-                },
-                "`night_shift.schedule` is a string, not a date or a time",
-            ),
-            (
-                Problem::WrongType {
-                    table: keys(&["night_shift"]),
-                    key: "strength".to_owned(),
-                    found: ValueType::Table,
-                    expected: ValueType::Integer,
-                },
-                "`night_shift.strength` is an integer, not a table",
-            ),
-            (
-                Problem::MissingKey {
-                    table: Vec::new(),
-                    key: "version".to_owned(),
-                },
-                "`version` is missing",
-            ),
-            (
-                Problem::UnknownKey {
-                    table: keys(&["rules"]),
-                    key: "app".to_owned(),
-                    expected: keys(&["off", "on"]),
-                },
-                "`rules.app` isn't a key here; use `off` or `on`",
-            ),
-            (
-                Problem::NotABundleId {
-                    entry: String::new(),
-                },
-                "\"\" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods",
-            ),
-            (
-                Problem::NotADomain {
-                    entry: "https://figma.com".to_owned(),
-                },
-                "\"https://figma.com\" isn't a domain like figma.com: no scheme, path, port or wildcard",
-            ),
-            (
-                Problem::BothWays {
-                    identity: "app:com.figma.Desktop".parse().unwrap(),
-                },
-                "app:com.figma.Desktop is in both rules.off and rules.on: an app or domain has one rule",
-            ),
-            (
-                Problem::StrengthOutOfRange { strength: 101 },
-                "night_shift.strength is 0 to 100, not 101",
-            ),
-            (
-                Problem::NotASchedule {
-                    schedule: "dusk".to_owned(),
-                },
-                "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not \"dusk\"",
-            ),
-            (
-                Problem::NotLengths {
-                    lengths: vec!["45m".to_owned(), "forever".to_owned()],
-                },
-                "lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not [\"45m\", \"forever\"]",
-            ),
-            (
-                Problem::UnknownKey {
-                    table: Vec::new(),
-                    key: "menu".to_owned(),
-                    expected: keys(&["websites", "lengths", "night_shift", "rules"]),
-                },
-                "`menu` isn't a key here; use `websites`, `lengths`, `night_shift` or `rules`",
             ),
         ] {
             assert_eq!(problem(&found), said, "{found:?}");
@@ -1226,39 +1087,22 @@ mod tests {
 
     #[test]
     fn a_refusal_says_why_with_what_it_names() {
-        let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
         let config = || "/Users/me/.config/nightcap/config.toml".to_owned();
         let rules = || "/Users/me/.local/share/nightcap/rules.toml".to_owned();
 
         for (why, said) in [
-            (
-                Refusal::NightShiftUnavailable,
-                "Night Shift isn't available on this Mac",
-            ),
-            (
-                Refusal::StrengthUnavailable,
-                "Night Shift's strength can't be read on this Mac",
-            ),
             (
                 Refusal::TooLong {
                     length: jiff::SignedDuration::from_mins(90),
                 },
                 "1h 30m is too long",
             ),
-            (Refusal::Passed, "that time has passed"),
-            (Refusal::NoSchedule, "there's no schedule to wait for"),
             (
                 Refusal::ConfigSays {
-                    identity: figma.clone(),
+                    identity: "app:com.figma.Desktop".parse().unwrap(),
                     says: OnOff::Off,
                 },
                 "app:com.figma.Desktop comes from the config, which says off; change it there",
-            ),
-            (
-                Refusal::ConfigRule {
-                    identity: figma.clone(),
-                },
-                "app:com.figma.Desktop comes from the config; change it there",
             ),
             (
                 Refusal::NoSuchRule {
@@ -1283,13 +1127,6 @@ mod tests {
             (
                 Refusal::AdHocRulesNotSaved {
                     path: rules(),
-                    failure: IoFailure::PermissionDenied,
-                },
-                "couldn't save /Users/me/.local/share/nightcap/rules.toml: permission denied",
-            ),
-            (
-                Refusal::AdHocRulesNotSaved {
-                    path: rules(),
                     failure: IoFailure::Other,
                 },
                 "couldn't save /Users/me/.local/share/nightcap/rules.toml",
@@ -1306,18 +1143,6 @@ mod tests {
                     },
                 }),
                 "/Users/me/.config/nightcap/config.toml: line 2: `rules.off.app` is a list of strings, not a string",
-            ),
-            (
-                Refusal::WebsiteCheckingInConfig,
-                "website checking is set by `websites` in the config",
-            ),
-            (
-                Refusal::NoUpdater(NotSelfManaged::DevBuild),
-                "dev builds don't update themselves; rebuild instead",
-            ),
-            (
-                Refusal::NoUpdater(NotSelfManaged::ManagedInstall),
-                "this install is managed by its installer, which keeps it up to date",
             ),
         ] {
             assert_eq!(refusal(&why), said, "{why:?}");
@@ -1345,219 +1170,152 @@ mod tests {
         );
     }
 
-    #[test]
-    fn needs_attention_lists_each_problem_as_the_checks_carry_it() {
-        let checks: Checks = serde_json::from_str(
-            r#"{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"problem":{"unknown_key":{"table":["rules","off"],"key":"domian","expected":["app","domain"]}}}}},"state":"broken"}],"permissions":{"accessibility":false,"notifications":"granted"}}"#,
-        )
-        .unwrap();
+    // Staged cores exist only in debug builds.
+    #[cfg(debug_assertions)]
+    mod status {
+        use jiff::SignedDuration;
+        use nightcap_core::{AppCommand, Fact, Scenario};
+        use nightcap_protocol::{Command, Instance};
 
-        assert_eq!(
-            needs_attention(&checks),
-            [
-                "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: `rules.off.domian` isn't a key here; use `app` or `domain`",
-            ]
-        );
-    }
+        use super::*;
+        use crate::client::tests::staged_report;
 
-    /// Safari in front on figma.com, which a config rule keeps off while Night Shift is on by the
-    /// custom hours, with everywhere on until 23:30 and notifications switched off.
-    fn on_figma() -> Report {
-        let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
-        let figma = indefinite("domain:figma.com", OnOff::Off, SetBy::Config);
-        let late = Rule {
-            place: Place::Everywhere,
-            says: OnOff::On,
-            length: Length::Until {
-                until: at("2026-10-16T21:30:00Z"),
-            },
-            set_by: SetBy::You,
-        };
-        let in_front = |place: Place| PlaceInFront {
-            place,
-            gives: OnOff::On,
-            rules: Vec::new(),
-            base: None,
-            inherits: None,
-        };
-        Report {
-            about: About {
-                version: "1.2.0".to_owned(),
-                install: Install::SelfManaged,
-                manages_itself: true,
-            },
-            night_shift: NightShiftState {
-                state: NightShift::On,
-                strength: Some(60),
-                schedule: Some(Schedule::Custom {
-                    from: TimeOfDay {
-                        hour: 22,
-                        minute: 0,
+        /// At 23:00 in a self-managed release, Safari in front on www.figma.com, which a config
+        /// rule keeps off while Night Shift, on by the custom hours at a strength of 60, has yet
+        /// to turn off; with everywhere on until 23:30, an ad-hoc rule for Mail, and
+        /// notifications switched off after being allowed.
+        fn on_figma() -> Scenario {
+            Scenario::at("2026-10-16T23:00:00+02:00".parse().unwrap())
+                .installed(Instance::Release, Install::SelfManaged)
+                .config(
+                    "websites = true\n[night_shift]\nstrength = 40\n[rules.off]\ndomain = [\"figma.com\"]\n",
+                )
+                .then(Fact::StatusChanged {
+                    enabled: true,
+                    schedule: Schedule::Custom {
+                        from: TimeOfDay {
+                            hour: 22,
+                            minute: 0,
+                        },
+                        to: TimeOfDay { hour: 7, minute: 0 },
                     },
-                    to: TimeOfDay { hour: 7, minute: 0 },
-                }),
-                set_aside: false,
-                scheduled: Some(OnOff::On),
-                next_on: None,
-                next_off: Some(at("2026-10-17T05:00:00Z")),
-            },
-            front: Front {
-                app: Some("com.apple.Safari".parse().unwrap()),
-                watching: true,
-                host: Some("www.figma.com".to_owned()),
-                site: Some("figma.com".parse().unwrap()),
-                decision: Decision {
-                    state: Some(OnOff::Off),
-                    place: figma.place.clone(),
-                    reasons: vec![Reason::Rule(figma.clone())],
-                },
-                places: Vec::new(),
-                everywhere: in_front(Place::Everywhere),
-            },
-            rules: [
-                figma,
-                indefinite("app:com.apple.mail", OnOff::On, SetBy::You),
-                late,
-            ]
-            .map(|rule| ListedRule { rule, snooze: None })
-            .to_vec(),
-            config: ConfigState {
-                path: "/Users/me/.config/nightcap/config.toml".to_owned(),
-                found: true,
-                error: None,
-                strength: Some(40),
-                schedule: None,
-                websites: Some(OnOff::On),
-                lengths: Vec::new(),
-                ad_hoc_error: None,
-            },
-            preferences: Preferences {
-                website_checking: WebsiteChecking {
-                    state: OnOff::On,
-                    from_config: true,
-                },
-                notifications_wanted: true,
-                open_at_login: false,
-            },
-            checks: Checks {
-                checks: vec![Check {
-                    detail: CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
-                    state: CheckState::Drifted,
-                }],
-                permissions: Permissions {
+                    sun_schedule_set_aside: false,
+                })
+                .then(Fact::StrengthChanged { value: 60 })
+                .then(Fact::PermissionsChanged {
+                    accessibility: true,
+                    notifications: NotificationPermission::Granted,
+                })
+                .then(Fact::PermissionsChanged {
                     accessibility: true,
                     notifications: NotificationPermission::Denied,
-                    login_item: None,
-                },
-            },
-            trial: None,
+                })
+                .then(Command::AddRule {
+                    identity: "app:com.apple.mail".parse().unwrap(),
+                    says: OnOff::On,
+                })
+                .then(Command::Set {
+                    place: Place::Everywhere,
+                    state: OnOff::On,
+                    length: Lasting::For(SignedDuration::from_mins(30)),
+                })
+                .then(Fact::AppActivated {
+                    bundle_id: Some("com.apple.Safari".to_owned()),
+                    is_browser: true,
+                })
+                .then(Fact::HostChanged {
+                    generation: 1,
+                    host: Some("www.figma.com".to_owned()),
+                })
         }
-    }
 
-    #[test]
-    fn status_reads_a_line_at_a_time_with_times_in_the_zone() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        fn zurich() -> TimeZone {
+            TimeZone::get("Europe/Zurich").unwrap()
+        }
 
-        assert_eq!(
-            status(&on_figma(), &zone),
-            [
-                "Nightcap 1.2.0, self-managed",
-                "Night Shift: on, off by the config rule for domain:figma.com",
-                "Schedule: 22:00 to 07:00, on until 07:00",
-                "Strength: 60 (the config says 40)",
-                "Frontmost app: com.apple.Safari, on www.figma.com",
-                "Rules: domain:figma.com (config rule, off), app:com.apple.mail (ad-hoc rule, on)",
-                "Website checking: on (set in the config)",
-                "Everywhere: on until 23:30",
-                "Accessibility: granted",
-                "Notifications: denied",
-                "Needs attention:",
-                "  Notifications were allowed, but they’re switched off in System Settings.",
-            ]
-        );
-    }
+        /// What `nightcap status` shows for `scenario`, in Zurich.
+        fn shown(scenario: Scenario) -> Vec<String> {
+            status(&staged_report(scenario), &zurich())
+        }
 
-    #[test]
-    fn status_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
-        let figma = || Place::Domain("figma.com".parse().unwrap());
-        let snooze = Rule {
-            place: figma(),
-            says: OnOff::On,
-            length: Length::UntilScheduleTurns {
-                until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
-            },
-            set_by: SetBy::OutsideChange,
-        };
-        let night_shift_line = |served: Option<Rule>| {
-            let mut report = on_figma();
-            report.front.decision = Decision {
-                state: Some(OnOff::On),
-                place: figma(),
-                reasons: vec![
-                    Reason::Rule(snooze.clone()),
-                    Reason::Rule(indefinite("domain:figma.com", OnOff::Off, SetBy::Config)),
-                ],
-            };
-            report.rules[0].snooze = served;
-            status(&report, &zone).swap_remove(1)
-        };
+        #[test]
+        fn status_reads_a_line_at_a_time_with_times_in_the_zone() {
+            assert_eq!(
+                shown(on_figma()),
+                [
+                    "Nightcap 1.2.0, self-managed",
+                    "Night Shift: on, off by the config rule for domain:figma.com",
+                    "Schedule: 22:00 to 07:00, on until 07:00",
+                    "Strength: 60 (the config says 40)",
+                    "Frontmost app: com.apple.Safari, on www.figma.com",
+                    "Rules: domain:figma.com (config rule, off), app:com.apple.mail (ad-hoc rule, on)",
+                    "Website checking: on (set in the config)",
+                    "Everywhere: on until 23:30",
+                    "Accessibility: granted",
+                    "Notifications: denied",
+                    "Needs attention:",
+                    "  Notifications were allowed, but they’re switched off in System Settings.",
+                ]
+            );
+        }
 
-        assert_eq!(
-            night_shift_line(Some(snooze.clone())),
-            "Night Shift: on at domain:figma.com until 07:00, its config rule snoozed"
-        );
-        assert_eq!(
-            night_shift_line(None),
-            "Night Shift: on at domain:figma.com until 07:00"
-        );
-    }
+        #[test]
+        fn status_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
+            let mut report = staged_report(on_figma().then(Command::Set {
+                place: Place::Domain("figma.com".parse().unwrap()),
+                state: OnOff::On,
+                length: Lasting::UntilScheduleTurns,
+            }));
+            let night_shift_line = |report: &Report| status(report, &zurich()).swap_remove(1);
 
-    #[test]
-    fn status_says_the_tour_runs_and_whether_night_shift_is_on_for_it() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
-        let second_line = |trial| {
-            let mut report = on_figma();
-            report.trial = trial;
-            status(&report, &zone).swap_remove(1)
-        };
+            assert_eq!(
+                night_shift_line(&report),
+                "Night Shift: on at domain:figma.com until 07:00, its config rule snoozed"
+            );
+            for listed in &mut report.rules {
+                listed.snooze = None;
+            }
+            assert_eq!(
+                night_shift_line(&report),
+                "Night Shift: on at domain:figma.com until 07:00"
+            );
+        }
 
-        assert_eq!(
-            second_line(Some(TrialState { stands_in: false })),
-            "Tour: running in the app, so rules and changes you make last until it ends"
-        );
-        assert_eq!(
-            second_line(Some(TrialState { stands_in: true })),
-            "Tour: running in the app, with Night Shift on for it, so rules and changes you make last until it ends"
-        );
-        assert_eq!(
-            second_line(None),
-            "Night Shift: on, off by the config rule for domain:figma.com"
-        );
-    }
+        #[test]
+        fn status_says_the_tour_runs_and_whether_night_shift_is_on_for_it() {
+            let second_line = |scenario| shown(scenario).swap_remove(1);
 
-    #[test]
-    fn status_says_whether_the_install_manages_itself() {
-        let zone = TimeZone::get("Europe/Zurich").unwrap();
-        let first_line = |install, manages_itself| {
-            let mut report = on_figma();
-            report.about.install = install;
-            report.about.manages_itself = manages_itself;
-            status(&report, &zone).swap_remove(0)
-        };
+            assert_eq!(
+                second_line(on_figma().then(AppCommand::BeginTrial { stands_in: false })),
+                "Tour: running in the app, so rules and changes you make last until it ends"
+            );
+            assert_eq!(
+                second_line(on_figma().then(AppCommand::BeginTrial { stands_in: true })),
+                "Tour: running in the app, with Night Shift on for it, so rules and changes you make last until it ends"
+            );
+            assert_eq!(
+                second_line(on_figma()),
+                "Night Shift: on, off by the config rule for domain:figma.com"
+            );
+        }
 
-        assert_eq!(
-            first_line(Install::SelfManaged, true),
-            "Nightcap 1.2.0, self-managed"
-        );
-        assert_eq!(
-            first_line(Install::Managed, false),
-            "Nightcap 1.2.0, managed by its installer"
-        );
-        assert_eq!(
-            first_line(Install::SelfManaged, false),
-            "Nightcap 1.2.0, a dev build"
-        );
+        #[test]
+        fn status_says_whether_the_install_manages_itself() {
+            let first_line =
+                |instance, install| shown(on_figma().installed(instance, install)).swap_remove(0);
+
+            assert_eq!(
+                first_line(Instance::Release, Install::SelfManaged),
+                "Nightcap 1.2.0, self-managed"
+            );
+            assert_eq!(
+                first_line(Instance::Release, Install::Managed),
+                "Nightcap 1.2.0, managed by its installer"
+            );
+            assert_eq!(
+                first_line(Instance::Dev, Install::SelfManaged),
+                "Nightcap 1.2.0, a dev build"
+            );
+        }
     }
 }

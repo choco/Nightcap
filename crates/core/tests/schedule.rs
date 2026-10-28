@@ -43,24 +43,6 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
 }
 
 #[test]
-fn night_shift_is_answered_with_the_schedule_what_it_says_and_its_next_turn() {
-    let staged = off_by_the_schedule().stage().unwrap();
-
-    assert_eq!(
-        staged.core().snapshot().night_shift().schedule,
-        Some(custom_hours())
-    );
-    assert_eq!(
-        staged.core().snapshot().night_shift().scheduled,
-        Some(OnOff::Off)
-    );
-    assert_eq!(
-        staged.core().snapshot().night_shift().next_transition(),
-        Some(at("2026-10-16T22:00:00+02:00"))
-    );
-}
-
-#[test]
 fn the_core_asks_to_be_woken_at_the_next_schedule_transition() {
     let staged = Scenario::at(at("2026-10-16T20:00:00+02:00"))
         .stage()

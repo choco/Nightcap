@@ -6,7 +6,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{AppCommand, Fact, Scenario, Snapshot, Staged};
+use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
@@ -16,14 +16,15 @@ use nightcap_protocol::{
 };
 
 use common::{
-    accessibility_granted, activate, activate_browser, activate_browser_event, activate_event,
-    ad_hoc, add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma, figma_app,
-    forced, host_event, listed, mail, minutes, noon, off_by_the_schedule, on_by_the_schedule,
-    on_figma, permissions, report_zurich_sun, reported, send, set, until, until_turn, yours,
+    accessibility_granted, activate_browser, activate_browser_event, activate_event, ad_hoc,
+    add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma_app, forced, host_event,
+    listed, mail, minutes, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
+    report_zurich_sun, reported, send, set, until, until_turn, yours,
 };
 
-/// Every query's answer over the socket, all asked in one request, is the one the shell gets in
-/// process from the snapshot it takes.
+/// Every query's answer over the socket, all asked in one request, in the order asked and however
+/// often one is, is the one the shell gets in process from the snapshot it takes; asking nothing
+/// answers nothing.
 fn answers_alike(staged: &Staged) {
     let snapshot = staged.core().snapshot();
     assert_eq!(
@@ -39,6 +40,7 @@ fn answers_alike(staged: &Staged) {
                 Query::Trial,
                 Query::About,
                 Query::Export(ExportFormat::Toml),
+                Query::Rules,
             ]
         ),
         vec![
@@ -51,8 +53,10 @@ fn answers_alike(staged: &Staged) {
             Answer::Trial(snapshot.trial()),
             Answer::About(snapshot.about()),
             Answer::Export(snapshot.export(ExportFormat::Toml)),
+            Answer::Rules(snapshot.rules()),
         ]
     );
+    assert_eq!(ask(staged, Vec::new()), Vec::new());
 }
 
 #[test]
@@ -547,83 +551,4 @@ fn about_answers_the_version_and_the_install() {
         Install::SelfManaged
     );
     answers_alike(&managed);
-}
-
-#[test]
-fn a_query_answers_as_of_the_last_input() {
-    let staged = noon().stage().unwrap();
-    assert_eq!(staged.core().snapshot().rules(), Vec::new());
-
-    send(&staged, add_rule(figma()));
-
-    assert_eq!(
-        staged.core().snapshot().rules(),
-        vec![listed(ad_hoc(figma()))]
-    );
-    staged.report(reported(true, custom_hours()));
-    assert_eq!(staged.core().snapshot().night_shift().state, NightShift::On);
-}
-
-#[test]
-fn a_snapshot_keeps_answering_as_it_was_while_one_taken_after_an_input_answers_the_change() {
-    let staged = on_by_the_schedule().stage().unwrap();
-    let queries = || vec![Query::Rules, Query::Front];
-    let before = staged.core().snapshot();
-    let asked_before = ask(&staged, queries());
-
-    send(&staged, add_rule(figma()));
-    activate(&staged, "com.figma.Desktop");
-    let after = staged.core().snapshot();
-    let asked_after = ask(&staged, queries());
-
-    let answers = |snapshot: &Snapshot| {
-        vec![
-            Answer::Rules(snapshot.rules()),
-            Answer::Front(Box::new(snapshot.front())),
-        ]
-    };
-    assert_eq!(asked_before, answers(&before));
-    assert_eq!(asked_after, answers(&after));
-
-    assert_eq!(before.rules(), Vec::new());
-    assert_eq!(before.front().app, None);
-    assert_eq!(before.front().decision.place, Place::Everywhere);
-    assert!(
-        !before
-            .export(ExportFormat::Toml)
-            .contains("com.figma.Desktop")
-    );
-    assert_eq!(after.rules(), vec![listed(ad_hoc(figma()))]);
-    assert_eq!(
-        after.front().app,
-        Some("com.figma.Desktop".parse().unwrap())
-    );
-    assert_eq!(after.front().decision.place, figma_app());
-    assert!(
-        after
-            .export(ExportFormat::Toml)
-            .contains("com.figma.Desktop")
-    );
-}
-
-#[test]
-fn one_request_answers_its_queries_in_the_order_asked_however_often_one_is_asked() {
-    let staged = on_figma().stage().unwrap();
-    let snapshot = staged.core().snapshot();
-
-    let answers = ask(
-        &staged,
-        vec![Query::About, Query::Rules, Query::NightShift, Query::Rules],
-    );
-
-    assert_eq!(
-        answers,
-        vec![
-            Answer::About(snapshot.about()),
-            Answer::Rules(snapshot.rules()),
-            Answer::NightShift(snapshot.night_shift()),
-            Answer::Rules(snapshot.rules()),
-        ]
-    );
-    assert_eq!(ask(&staged, Vec::new()), Vec::new());
 }

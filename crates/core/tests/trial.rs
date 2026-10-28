@@ -246,6 +246,34 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
 }
 
 #[test]
+fn turning_a_trial_rule_the_other_way_mid_trial_answers_that_the_trials_rule_changed() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    begin_trial(&staged, false);
+    send(&staged, add_rule(notes()));
+
+    let (_, response) = send(
+        &staged,
+        Command::AddRule {
+            identity: notes(),
+            says: OnOff::On,
+        },
+    );
+
+    assert!(
+        matches!(
+            response,
+            Response::Ok(Payload::RuleAdded {
+                rule: RuleAdded::Changed {
+                    set_by: SetBy::Trial
+                },
+                ..
+            })
+        ),
+        "{response:?}"
+    );
+}
+
+#[test]
 fn once_a_trial_ends_the_rule_added_during_it_matches_nothing() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
