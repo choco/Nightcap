@@ -121,7 +121,7 @@ struct Settings: Equatable {
         }
         configPath = snapshot.config().path
         self.rules = Self.rows(of: rules, words: words)
-        forNow = Self.forNow(rules).compactMap { place, rules in
+        forNow = Self.forNow(rules.map(\.rule)).compactMap { place, rules in
             place.identity.map { identity in
                 ForNowRow(
                     identity: identity,
@@ -145,8 +145,8 @@ struct Settings: Equatable {
     /// The Rules tab's rows for `rules`, every rule at every place: the apps' and sites'
     /// indefinite rules, the config's then the user's, each with its label and what can be done
     /// about it. Onboarding's suggestions say where their rules come from in the same words.
-    static func rows(of rules: [Rule], words: Wording) -> [RuleRow] {
-        rules.filter(isAppOrSiteRule).compactMap { rule in row(rule, among: rules, words) }
+    static func rows(of rules: [ListedRule], words: Wording) -> [RuleRow] {
+        rules.filter { isAppOrSiteRule($0.rule) }.compactMap { listed in row(listed, words) }
     }
 
     /// The tab with the problem the menu points at: General's first, then Rules'.
@@ -198,14 +198,11 @@ struct Settings: Equatable {
 
     /// A rule's row: a snooze can be put back, the user's rule removed, and a config rule changed
     /// only in the config (ADR-0006). A trial's rules have none (ADR-0016).
-    private static func row(_ rule: Rule, among rules: [Rule], _ words: Wording) -> RuleRow? {
+    private static func row(_ listed: ListedRule, _ words: Wording) -> RuleRow? {
+        let rule = listed.rule
         guard let identity = rule.place.identity else { return nil }
-        // The shortest rule at the place, where it says the other way.
-        let snooze = rules.filter { $0.place == rule.place && $0.length != .indefinite }
-            .min { $0.length.rank < $1.length.rank }
-            .flatMap { $0.says != rule.says ? $0 : nil }
         let shown: (label: String, action: Action?)
-        switch (snooze, rule.setBy) {
+        switch (listed.snooze, rule.setBy) {
         case (_, .trial), (_, .outsideChange):
             return nil
         case (let snooze?, _):
@@ -219,12 +216,13 @@ struct Settings: Equatable {
             shown = (words.adHoc, Action(title: words.remove, command: .removeRule(identity)))
         }
         return RuleRow(
-            identity: identity, says: rule.says, label: shown.label, snoozed: snooze != nil, action: shown.action)
+            identity: identity, says: rule.says, label: shown.label, snoozed: listed.snooze != nil,
+            action: shown.action)
     }
 
     /// The apps and sites with temporary rules and no indefinite one, each with its rules,
-    /// shortest first, in the order the places got their first.
-    private static func forNow(_ rules: [Rule]) -> [(Place, [Rule])] {
+    /// shortest first as the rules query lists them, in the order the places got their first.
+    private static func forNow(_ rules: [Rule]) -> [(place: Place, rules: [Rule])] {
         var places: [(place: Place, rules: [Rule])] = []
         for rule in rules where rule.place != .everywhere && rule.length != .indefinite {
             guard !rules.contains(where: { $0.place == rule.place && isAppOrSiteRule($0) }) else { continue }
@@ -234,7 +232,7 @@ struct Settings: Equatable {
                 places.append((rule.place, [rule]))
             }
         }
-        return places.map { ($0.place, $0.rules.sorted { $0.length.rank < $1.length.rank }) }
+        return places
     }
 
     /// Whether a rule is an app's or a site's indefinite one, as the Rules tab lists them.

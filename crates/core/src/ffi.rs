@@ -8,10 +8,11 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
-    FileError, Front, Inherited, Install, Lasting, Length, LoginItem, NightShift, NightShiftDetail,
-    NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
-    OnboardingAsks, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Problem,
-    Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, WebsiteChecking,
+    FileError, Front, Inherited, Install, Lasting, Length, ListedRule, LoginItem, NightShift,
+    NightShiftDetail, NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail,
+    OnOff, OnboardingAsks, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences,
+    Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
+    WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -341,6 +342,12 @@ pub struct Rule {
     pub says: OnOff,
     pub length: Length,
     pub set_by: SetBy,
+}
+
+#[uniffi::remote(Record)]
+pub struct ListedRule {
+    pub rule: Rule,
+    pub snooze: Option<Rule>,
 }
 
 #[uniffi::remote(Enum)]

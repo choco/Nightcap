@@ -60,6 +60,27 @@ struct TourFactsTests {
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: false))
     }
 
+    @Test func theSamplesRuleIsSnoozedWhileItsShortestRuleSaysTheOtherWay() throws {
+        let core = try onByTheSchedule(
+            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
+        let sample = Place.app(tourSample)
+
+        core.send(command: .set(place: sample, state: .on, length: .untilScheduleTurns))
+        #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
+        core.send(command: .set(place: sample, state: .off, length: minutes(30)))
+
+        #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: false))
+    }
+
+    @Test func anOutsideChangeSnoozesTheSamplesRuleInItsFacts() throws {
+        let core = try onByTheSchedule(
+            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)), reported(false))
+
+        core.report(fact: .statusChanged(enabled: true, schedule: customHours, sunScheduleSetAside: false))
+
+        #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
+    }
+
     @Test func theSitesOwnRuleShowsInItsFactsAndATapChangesOnlyTheSwitch() throws {
         let core = try onByTheSchedule(
             config: "websites = true\n", tourBegun, front("com.apple.Safari", browser: true),

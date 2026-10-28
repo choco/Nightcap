@@ -213,7 +213,8 @@ pub enum Lasting {
 pub enum Query {
     NightShift,
     Front,
-    /// Every rule at every place.
+    /// Every rule at every place, each with its snooze: the apps' and sites' indefinite rules
+    /// first, then each place's others together, shortest first.
     Rules,
     Config,
     Preferences,
@@ -230,7 +231,7 @@ pub enum Query {
 pub enum Answer {
     NightShift(NightShiftState),
     Front(Box<Front>),
-    Rules(Vec<Rule>),
+    Rules(Vec<ListedRule>),
     Config(ConfigState),
     Preferences(Preferences),
     Checks(Checks),
@@ -273,8 +274,8 @@ impl From<Result<Payload, Refusal>> for Response {
 pub enum Payload {
     /// The queries' answers, in the order asked.
     Answers(Vec<Answer>),
-    /// Every rule, after a reload.
-    Rules(Vec<Rule>),
+    /// Every rule, after a reload, as the rules query lists them.
+    Rules(Vec<ListedRule>),
     /// What a command leads to.
     Decision(Decision),
     /// What adding a rule did, and the decision it leads to.
@@ -473,6 +474,16 @@ pub struct Rule {
     pub says: OnOff,
     pub length: Length,
     pub set_by: SetBy,
+}
+
+/// A rule as the rules query lists it, written as the rule with its snooze beside it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ListedRule {
+    #[serde(flatten)]
+    pub rule: Rule,
+    /// The rule that snoozes it: its place's shortest, where that's shorter and says the other
+    /// way. It waits underneath, and comes back when its snooze ends (ADR-0018).
+    pub snooze: Option<Rule>,
 }
 
 /// How long a rule lasts (ADR-0018). At one place, the shortest decides.
@@ -1670,21 +1681,23 @@ mod tests {
             json(&Request::Queries(vec![Query::Export(ExportFormat::Nix)])),
             r#"{"queries":[{"export":"nix"}]}"#
         );
-        assert_eq!(
-            json(&Response::Ok(Payload::Rules(vec![
-                Rule {
-                    place: Place::from(figma),
+        let reloaded = Response::Ok(Payload::Rules(vec![
+            ListedRule {
+                rule: Rule {
+                    place: Place::from(figma.clone()),
                     says: OnOff::Off,
                     length: Length::Indefinite,
                     set_by: SetBy::You,
                 },
-                Rule {
-                    place: Place::Everywhere,
+                snooze: Some(Rule {
+                    place: Place::from(figma),
                     says: OnOff::On,
                     length: Length::UntilScheduleTurns { until: None },
                     set_by: SetBy::OutsideChange,
-                },
-                Rule {
+                }),
+            },
+            ListedRule {
+                rule: Rule {
                     place: Place::Everywhere,
                     says: OnOff::Off,
                     length: Length::Until {
@@ -1692,9 +1705,12 @@ mod tests {
                     },
                     set_by: SetBy::Trial,
                 },
-            ]))),
-            r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you"},{"place":"everywhere","says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"trial"}]}}"#
-        );
+                snooze: None,
+            },
+        ]));
+        let wire = r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you","snooze":{"place":{"domain":"figma.com"},"says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"}},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"trial","snooze":null}]}}"#;
+        assert_eq!(json(&reloaded), wire);
+        assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), reloaded);
     }
 
     #[test]

@@ -265,6 +265,20 @@ struct SettingsTests {
         #expect(settings(core).rules.first?.label == "Snoozed until you turn it off")
     }
 
+    @Test func aRuleIsSnoozedOnlyWhileItsPlacesShortestRuleSaysTheOtherWay() throws {
+        let core = try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)))
+        #expect(settings(core).rules.first?.label == "Snoozed until 07:00")
+
+        core.send(command: .set(place: figmaApp, state: .off, length: minutes(30)))
+
+        #expect(
+            settings(core).rules == [
+                Settings.RuleRow(
+                    identity: .app("com.figma.Desktop"), says: .off, label: "From your config", snoozed: false,
+                    action: nil)
+            ])
+    }
+
     @Test func theRulesTabListsWhatTemporaryRulesSetWhereNoIndefiniteOneDoes() throws {
         let core = try onByTheSchedule(
             config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
@@ -287,7 +301,7 @@ struct SettingsTests {
             tourBegun, front(tourSample),
             .command(.addRule(identity: .app(tourSample), says: .off)))
 
-        #expect(core.snapshot().rules().contains { $0.setBy == .trial })
+        #expect(core.snapshot().rules().contains { $0.rule.setBy == .trial })
         #expect(settings(core).rules == [])
     }
 

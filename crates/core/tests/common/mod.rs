@@ -14,9 +14,9 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
 use nightcap_protocol::{
-    Answer, Check, CheckKind, Command, Lasting, Length, NotificationPermission, OnOff, Payload,
-    Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule, SetBy,
-    TimeOfDay,
+    Answer, Check, CheckKind, Command, Lasting, Length, ListedRule, NotificationPermission, OnOff,
+    Payload, Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule,
+    SetBy, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -123,7 +123,12 @@ pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
     else {
         panic!("expected rules");
     };
-    rules
+    rules.into_iter().map(|listed| listed.rule).collect()
+}
+
+/// A rule as the rules query lists it while nothing snoozes it.
+pub(crate) fn listed(rule: Rule) -> ListedRule {
+    ListedRule { rule, snooze: None }
 }
 
 /// How `place` stands while in front.

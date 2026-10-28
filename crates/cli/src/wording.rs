@@ -5,7 +5,7 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
-    Decision, FileError, Hello, Install, Lasting, Length, NightShift, NightShiftDetail,
+    Decision, FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
     NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
     PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded, RuleIdentity, Schedule,
     SetBy, TimeOfDay,
@@ -56,10 +56,17 @@ pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
     description
 }
 
-/// `app:com.figma.Desktop (config rule, off)`.
-pub(crate) fn rule(rule: &Rule) -> String {
+/// `app:com.figma.Desktop (config rule, off)`, and while it's snoozed
+/// `app:com.figma.Desktop (config rule, off, snoozed until 07:00)`, with times in `zone`.
+pub(crate) fn rule(listed: &ListedRule, zone: &TimeZone) -> String {
+    let ListedRule { rule, snooze } = listed;
+    let snoozed = match snooze.as_ref().map(|snooze| snooze.length.end()) {
+        None => String::new(),
+        Some(Some(end)) => format!(", snoozed{}", until(Some(end), zone)),
+        Some(None) => format!(", snoozed until you turn it {}", rule.says),
+    };
     format!(
-        "{} ({} rule, {})",
+        "{} ({} rule, {}{snoozed})",
         rule.place,
         source(rule.set_by),
         rule.says
@@ -68,10 +75,10 @@ pub(crate) fn rule(rule: &Rule) -> String {
 
 /// The apps' and sites' indefinite rules, the ones `nightcap rules` lists: the config's, the
 /// user's and the tour's.
-pub(crate) fn app_and_site_rules(rules: &[Rule]) -> Vec<Rule> {
+pub(crate) fn app_and_site_rules(rules: &[ListedRule]) -> Vec<ListedRule> {
     rules
         .iter()
-        .filter(|rule| is_app_or_site_rule(rule))
+        .filter(|listed| is_app_or_site_rule(&listed.rule))
         .cloned()
         .collect()
 }
@@ -438,7 +445,10 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         "Frontmost app: {}{host}",
         front.app.as_ref().map_or("unknown", |app| app.as_str())
     ));
-    lines.push(format!("Rules: {}", rules(&app_and_site_rules(every_rule))));
+    lines.push(format!(
+        "Rules: {}",
+        rules(&app_and_site_rules(every_rule), zone)
+    ));
     let website_checking = preferences.website_checking;
     lines.push(format!(
         "Website checking: {}{}",
@@ -470,18 +480,27 @@ fn needs_attention(checks: &Checks) -> Vec<String> {
         .collect()
 }
 
-pub(crate) fn rules(rules: &[Rule]) -> String {
+/// Rules as `rule` words them, with times in `zone`, or "none".
+pub(crate) fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
     if rules.is_empty() {
         return "none".to_owned();
     }
-    rules.iter().map(rule).collect::<Vec<_>>().join(", ")
+    rules
+        .iter()
+        .map(|listed| rule(listed, zone))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Each place's rules but an app's or site's indefinite one, shortest first, a line per place,
 /// with times in `zone`: "app:com.figma.Desktop: on until 07:00".
-fn places_rules(rules: &[Rule], zone: &TimeZone) -> Vec<String> {
+fn places_rules(rules: &[ListedRule], zone: &TimeZone) -> Vec<String> {
     let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
-    for rule in rules.iter().filter(|rule| !is_app_or_site_rule(rule)) {
+    for rule in rules
+        .iter()
+        .map(|listed| &listed.rule)
+        .filter(|rule| !is_app_or_site_rule(rule))
+    {
         let part = match rule.length.end() {
             Some(end) => format!("{}{}", rule.says, until(Some(end), zone)),
             None => format!("{} until you turn it {}", rule.says, rule.says.other()),
@@ -670,7 +689,16 @@ mod tests {
 
     #[test]
     fn a_rule_reads_with_its_source_and_what_it_says() {
-        let worded = |place: &str, set_by, says| rule(&indefinite(place, says, set_by));
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let worded = |place: &str, set_by, says| {
+            rule(
+                &ListedRule {
+                    rule: indefinite(place, says, set_by),
+                    snooze: None,
+                },
+                &zone,
+            )
+        };
 
         assert_eq!(
             worded("app:com.figma.Desktop", SetBy::Config, OnOff::Off),
@@ -687,6 +715,34 @@ mod tests {
                 OnOff::Off
             ),
             "app:io.github.choco.nightcap.TourSample (tour rule, off)"
+        );
+    }
+
+    #[test]
+    fn a_snoozed_rule_reads_until_its_snooze_ends() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let snoozed = |until| {
+            rule(
+                &ListedRule {
+                    rule: indefinite("app:com.figma.Desktop", OnOff::Off, SetBy::Config),
+                    snooze: Some(Rule {
+                        place: Place::App("com.figma.Desktop".parse().unwrap()),
+                        says: OnOff::On,
+                        length: Length::UntilScheduleTurns { until },
+                        set_by: SetBy::OutsideChange,
+                    }),
+                },
+                &zone,
+            )
+        };
+
+        assert_eq!(
+            snoozed(Some("2026-10-17T05:00:00Z".parse().unwrap())),
+            "app:com.figma.Desktop (config rule, off, snoozed until 07:00)"
+        );
+        assert_eq!(
+            snoozed(None),
+            "app:com.figma.Desktop (config rule, off, snoozed until you turn it off)"
         );
     }
 
@@ -1142,11 +1198,13 @@ mod tests {
                 places: Vec::new(),
                 everywhere: in_front(Place::Everywhere),
             },
-            rules: vec![
+            rules: [
                 figma,
                 indefinite("app:com.apple.mail", OnOff::On, SetBy::You),
                 late,
-            ],
+            ]
+            .map(|rule| ListedRule { rule, snooze: None })
+            .to_vec(),
             config: ConfigState {
                 path: "/Users/me/.config/nightcap/config.toml".to_owned(),
                 found: true,

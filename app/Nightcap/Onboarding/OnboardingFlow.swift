@@ -128,7 +128,7 @@ final class OnboardingFlow {
     private var reached = 0
 
     /// The core's rules, as the snapshot onboarding last took has them.
-    private var rules: [Rule]
+    private var rules: [ListedRule]
     private let words: Wording
     private let granted: () -> Bool
     private let askForAccessibility: () -> Void

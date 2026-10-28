@@ -206,8 +206,8 @@ mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, Install, Instance, Lasting, Length, OnOff, Place, Refusal, Rule, RuleIdentity,
-        Schedule, SetBy, TimeOfDay,
+        Command, Install, Instance, Lasting, Length, ListedRule, OnOff, Place, Refusal, Rule,
+        RuleIdentity, Schedule, SetBy, TimeOfDay,
     };
 
     use super::{Disk, File, Files, Owned, Paths};
@@ -316,13 +316,16 @@ mod tests {
         );
         assert_eq!(
             inner.every_rule(inner.clock.now()),
-            vec![Rule {
-                place: Place::from(mail),
-                says: OnOff::Off,
-                length: Length::Until {
-                    until: "2026-10-16T23:30:00+02:00".parse().unwrap(),
+            vec![ListedRule {
+                rule: Rule {
+                    place: Place::from(mail),
+                    says: OnOff::Off,
+                    length: Length::Until {
+                        until: "2026-10-16T23:30:00+02:00".parse().unwrap(),
+                    },
+                    set_by: SetBy::You,
                 },
-                set_by: SetBy::You,
+                snooze: None,
             }]
         );
     }

@@ -4,8 +4,8 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    About, Checks, ConfigState, FileError, Front, Inherited, NightShiftState, OnOff, Permissions,
-    Place, PlaceInFront, Preferences, Rule, Schedule, TrialState, WebsiteChecking,
+    About, Checks, ConfigState, FileError, Front, Inherited, ListedRule, NightShiftState, OnOff,
+    Permissions, Place, PlaceInFront, Preferences, Schedule, TrialState, WebsiteChecking,
 };
 
 use crate::rules::places::look::PlaceLook;
@@ -17,7 +17,7 @@ use crate::storage::file::File;
 pub(crate) struct Answers {
     pub(crate) night_shift: NightShiftState,
     pub(crate) front: Front,
-    pub(crate) rules: Vec<Rule>,
+    pub(crate) rules: Vec<ListedRule>,
     pub(crate) config: ConfigState,
     pub(crate) preferences: Preferences,
     pub(crate) checks: Checks,
@@ -116,14 +116,18 @@ fn in_front(at: &PlaceLook) -> PlaceInFront {
 }
 
 impl Inner {
-    /// Every rule at every place: the apps' and sites' indefinite ones first, the config's, then
-    /// the ad-hoc ones, then the trial's.
-    pub(crate) fn every_rule(&self, now: Timestamp) -> Vec<Rule> {
+    /// Every rule at every place, each with its snooze: the apps' and sites' indefinite ones
+    /// first, the config's, then the ad-hoc ones, then the trial's, then each place's others
+    /// together, shortest first.
+    pub(crate) fn every_rule(&self, now: Timestamp) -> Vec<ListedRule> {
         self.places
             .look(&self.facts.world(now))
             .rules
             .into_iter()
-            .map(|(rule, _)| rule.clone())
+            .map(|(rule, snooze)| ListedRule {
+                rule: rule.clone(),
+                snooze: snooze.cloned(),
+            })
             .collect()
     }
 }

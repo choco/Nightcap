@@ -143,7 +143,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             };
             println!(
                 "Reloaded the config. Rules: {}",
-                wording::rules(&wording::app_and_site_rules(&rules))
+                wording::rules(&wording::app_and_site_rules(&rules), &TimeZone::system())
             );
             return Ok(());
         }
@@ -243,8 +243,9 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             } else if rules.is_empty() {
                 println!("No rules.");
             } else {
+                let zone = TimeZone::system();
                 for rule in &rules {
-                    println!("{}", wording::rule(rule));
+                    println!("{}", wording::rule(rule, &zone));
                 }
             }
             return Ok(());

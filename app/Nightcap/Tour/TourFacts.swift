@@ -51,13 +51,8 @@ extension TourFacts {
         let front = snapshot.front()
         let everyRule = snapshot.rules()
         let followed = { (place: Place, inFront: Bool) in
-            let rules = everyRule.filter { $0.place == place }
-            let rule = rules.first { $0.length == .indefinite }
-            // A place's temporary rules come shortest first.
-            let shortest = rules.first { $0.length != .indefinite }
-            return TourPlace(
-                inFront: inFront, rule: rule?.says,
-                snoozed: rule.flatMap { rule in shortest.map { $0.says != rule.says } } ?? false)
+            let listed = everyRule.first { $0.rule.place == place && $0.rule.length == .indefinite }
+            return TourPlace(inFront: inFront, rule: listed?.rule.says, snoozed: listed?.snooze != nil)
         }
         self.init(
             standsIn: trial.standsIn,

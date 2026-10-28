@@ -13,8 +13,8 @@ use nightcap_protocol::{
 use common::{
     accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
     app_rule, at, books, custom_hours, domain_rule, figma, figma_app, forced, host_event,
-    in_books_at_noon, kept_ad_hoc, late, launch, mail, minutes, noon, on_by_the_schedule, refusal,
-    reported, resettable, rules, send, set, standing, until_turn, yours,
+    in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon, on_by_the_schedule,
+    refusal, reported, resettable, rules, send, set, standing, until_turn, yours,
 };
 
 #[test]
@@ -106,7 +106,7 @@ fn reload_applies_a_changed_config() {
     );
     assert_eq!(
         response,
-        Response::Ok(Payload::Rules(vec![app_rule("com.figma.Desktop")]))
+        Response::Ok(Payload::Rules(vec![listed(app_rule("com.figma.Desktop"))]))
     );
 }
 

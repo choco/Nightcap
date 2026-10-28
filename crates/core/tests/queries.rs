@@ -10,16 +10,16 @@ use nightcap_core::{AppCommand, Fact, Scenario, Snapshot, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
-    Length, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks,
-    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
-    WebsiteChecking,
+    Length, ListedRule, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff,
+    OnboardingAsks, Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule,
+    TrialState, WebsiteChecking,
 };
 
 use common::{
     accessibility_granted, activate, activate_browser, activate_browser_event, activate_event,
     ad_hoc, add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma, figma_app,
-    forced, host_event, mail, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
-    report_zurich_sun, reported, send, set, until_turn, yours,
+    forced, host_event, listed, mail, minutes, noon, off_by_the_schedule, on_by_the_schedule,
+    on_figma, permissions, report_zurich_sun, reported, send, set, until, until_turn, yours,
 };
 
 /// Every query's answer over the socket, all asked in one request, is the one the shell gets in
@@ -296,26 +296,53 @@ fn front_answers_an_external_on_over_the_rule_it_snoozed() {
 }
 
 #[test]
-fn rules_answers_every_rule_at_every_place() {
+fn rules_answers_every_rule_at_every_place_each_with_its_snooze() {
     let staged = forced();
+    let mail_app = Place::from(mail());
+    let until_morning = || {
+        yours(
+            figma_app(),
+            OnOff::On,
+            until_turn("2026-10-17T07:00:00+02:00"),
+        )
+    };
+    let for_an_hour = || {
+        yours(
+            Place::Everywhere,
+            OnOff::On,
+            until("2026-10-17T00:00:00+02:00"),
+        )
+    };
     send(&staged, add_rule(mail()));
     send(
         &staged,
         set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
+    // Mail's rule says off too, so nothing snoozes it.
+    send(&staged, set(mail_app.clone(), OnOff::Off, minutes(30)));
     send(&staged, Command::Off);
+    send(&staged, set(Place::Everywhere, OnOff::On, minutes(60)));
+    let snoozed = |rule, snooze| ListedRule {
+        rule,
+        snooze: Some(snooze),
+    };
 
     assert_eq!(
         staged.core().snapshot().rules(),
         vec![
-            app_rule("com.figma.Desktop"),
-            ad_hoc(mail()),
-            yours(
-                figma_app(),
-                OnOff::On,
-                until_turn("2026-10-17T07:00:00+02:00")
+            snoozed(app_rule("com.figma.Desktop"), until_morning()),
+            listed(ad_hoc(mail())),
+            listed(until_morning()),
+            listed(yours(
+                mail_app,
+                OnOff::Off,
+                until("2026-10-16T23:30:00+02:00")
+            )),
+            listed(for_an_hour()),
+            snoozed(
+                yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+                for_an_hour()
             ),
-            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
         ]
     );
     answers_alike(&staged);
@@ -541,7 +568,10 @@ fn a_query_answers_as_of_the_last_input() {
 
     send(&staged, add_rule(figma()));
 
-    assert_eq!(staged.core().snapshot().rules(), vec![ad_hoc(figma())]);
+    assert_eq!(
+        staged.core().snapshot().rules(),
+        vec![listed(ad_hoc(figma()))]
+    );
     staged.report(reported(true, custom_hours()));
     assert_eq!(staged.core().snapshot().night_shift().state, NightShift::On);
 }
@@ -575,7 +605,7 @@ fn a_snapshot_keeps_answering_as_it_was_while_one_taken_after_an_input_answers_t
             .export(ExportFormat::Toml)
             .contains("com.figma.Desktop")
     );
-    assert_eq!(after.rules(), vec![ad_hoc(figma())]);
+    assert_eq!(after.rules(), vec![listed(ad_hoc(figma()))]);
     assert_eq!(
         after.front().app,
         Some("com.figma.Desktop".parse().unwrap())

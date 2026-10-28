@@ -15,15 +15,6 @@ extension Length {
         case .until(let until): until
         }
     }
-
-    /// Where a rule of this length goes among its place's, shortest first.
-    var rank: Int {
-        switch self {
-        case .until: 0
-        case .untilScheduleTurns: 1
-        case .indefinite: 2
-        }
-    }
 }
 
 extension PlaceInFront {
