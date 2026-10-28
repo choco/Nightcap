@@ -49,7 +49,7 @@ struct Settings: Equatable {
         let accept: FixButton?
 
         /// A check that needs the user: drift, or broken.
-        var isProblem: Bool { Settings.isProblem(state) }
+        var isProblem: Bool { state.isProblem }
     }
 
     /// An app's or site's indefinite rule in the Rules tab: what it says, where it comes from or
@@ -101,7 +101,7 @@ struct Settings: Equatable {
         // Only an install that opens itself at login has the check. Registered but waiting for
         // approval counts as on; its check explains the rest.
         openAtLogin =
-            checks.contains(where: { Self.kind(of: $0.detail) == .openAtLogin })
+            checks.contains(where: { $0.detail.kind == .openAtLogin })
             ? answered.permissions.loginItem.map { item in
                 let on = item != .notRegistered
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))
@@ -110,16 +110,16 @@ struct Settings: Equatable {
             let fixes = Self.fixes(for: check.detail, websitesFromConfig: websites.fromConfig)
             let button = { (fix: Fix?) in fix.map { FixButton(title: words.title(of: $0), fix: $0) } }
             return CheckStatus(
-                kind: Self.kind(of: check.detail), state: check.state, text: words.check(check.detail),
+                kind: check.detail.kind, state: check.state, text: words.check(check.detail),
                 restore: button(fixes.restore), accept: button(fixes.accept))
         }
         configPath = core.config().path
         self.rules = Self.rows(of: rules, words: words)
         forNow = Self.forNow(rules).compactMap { place, rules in
-            Self.identity(of: place).map { identity in
+            place.identity.map { identity in
                 ForNowRow(
                     identity: identity,
-                    label: words.forNow(rules.map { Wording.Change(state: $0.says, until: Self.end(of: $0.length)) }),
+                    label: words.forNow(rules.map { Wording.Change(state: $0.says, until: $0.length.end) }),
                     action: Action(title: words.end, command: .reset(place)))
             }
         }
@@ -145,15 +145,11 @@ struct Settings: Equatable {
 
     /// The tab with the problem the menu points at: General's first, then Rules'.
     static func tab(for checks: [Check]) -> Tab {
-        let problems = checks.filter { isProblem($0.state) }.map { kind(of: $0.detail) }
+        let problems = checks.filter(\.state.isProblem).map(\.detail.kind)
         return problems.isEmpty || problems.contains(where: Tab.general.checks.contains) ? .general : .rules
     }
 
     // MARK: Deciding
-
-    private static func isProblem(_ state: CheckState) -> Bool {
-        state == .drifted || state == .broken
-    }
 
     /// Whether the window shows a check: Accessibility's goes unmentioned while website checking
     /// doesn't need it, opening at login's switch says whether Nightcap opens at login, and the
@@ -161,7 +157,7 @@ struct Settings: Equatable {
     private static func shows(_ check: Check) -> Bool {
         switch check.detail {
         case .accessibility(.notNeeded): false
-        case .openAtLogin, .adHocRules: isProblem(check.state)
+        case .openAtLogin, .adHocRules: check.state.isProblem
         case .nightShift, .accessibility, .notifications, .configFile: true
         }
     }
@@ -189,10 +185,10 @@ struct Settings: Equatable {
     /// A rule's row: a snooze can be put back, the user's rule removed, and a config rule changed
     /// only in the config (ADR-0006). The tour's rules have none (ADR-0016).
     private static func row(_ rule: Rule, among rules: [Rule], _ words: Wording) -> RuleRow? {
-        guard let identity = identity(of: rule.place) else { return nil }
+        guard let identity = rule.place.identity else { return nil }
         // The shortest rule at the place, where it says the other way.
         let snooze = rules.filter { $0.place == rule.place && $0.length != .indefinite }
-            .min { rank(of: $0.length) < rank(of: $1.length) }
+            .min { $0.length.rank < $1.length.rank }
             .flatMap { $0.says != rule.says ? $0 : nil }
         let shown: (label: String, action: Action?)
         switch (snooze, rule.setBy) {
@@ -200,7 +196,7 @@ struct Settings: Equatable {
             return nil
         case (let snooze?, _):
             shown = (
-                words.snoozed(snooze.says, until: end(of: snooze.length)),
+                words.snoozed(snooze.says, until: snooze.length.end),
                 Action(title: words.putBack, command: .reset(rule.place))
             )
         case (nil, .config):
@@ -224,49 +220,11 @@ struct Settings: Equatable {
                 places.append((rule.place, [rule]))
             }
         }
-        return places.map { ($0.place, $0.rules.sorted { rank(of: $0.length) < rank(of: $1.length) }) }
+        return places.map { ($0.place, $0.rules.sorted { $0.length.rank < $1.length.rank }) }
     }
 
     /// Whether a rule is an app's or a site's indefinite one, as the Rules tab lists them.
     private static func isAppOrSiteRule(_ rule: Rule) -> Bool {
         rule.place != .everywhere && rule.length == .indefinite
-    }
-
-    /// The identity a rule for this place has; everywhere has none.
-    private static func identity(of place: Place) -> RuleIdentity? {
-        switch place {
-        case .everywhere: nil
-        case .app(let bundleId): .app(bundleId)
-        case .domain(let domain): .domain(domain)
-        }
-    }
-
-    /// When a rule of this length ends, if it has an end.
-    private static func end(of length: Length) -> Date? {
-        switch length {
-        case .indefinite: nil
-        case .untilScheduleTurns(let until): until
-        case .until(let until): until
-        }
-    }
-
-    /// Where a rule's length puts it among its place's, shortest first.
-    private static func rank(of length: Length) -> Int {
-        switch length {
-        case .until: 0
-        case .untilScheduleTurns: 1
-        case .indefinite: 2
-        }
-    }
-
-    private static func kind(of detail: CheckDetail) -> CheckKind {
-        switch detail {
-        case .nightShift: .nightShift
-        case .accessibility: .accessibility
-        case .notifications: .notifications
-        case .openAtLogin: .openAtLogin
-        case .configFile: .configFile
-        case .adHocRules: .adHocRules
-        }
     }
 }

@@ -285,7 +285,7 @@ private struct Rows {
 
     /// The problem line, from the checks that are problems: drift or broken.
     func problemLine() -> Menu.ProblemLine? {
-        let problems = answers.checks.filter { $0.state == .drifted || $0.state == .broken }.map(\.detail)
+        let problems = answers.checks.filter(\.state.isProblem).map(\.detail)
         guard !problems.isEmpty else { return nil }
         return Menu.ProblemLine(title: words.thingsNeedAttention(problems.count), subtitle: words.needing(problems))
     }

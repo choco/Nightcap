@@ -438,9 +438,7 @@ extension OnboardingFlow.Setup {
         let askStrength = nightShift.strength != nil && config.strength == nil
         let askSchedule = nightShift.state != .unavailable && config.schedule == nil
         // Only an install that opens itself at login has the check.
-        let opensItself = checks.checks.contains { check in
-            if case .openAtLogin = check.detail { true } else { false }
-        }
+        let opensItself = checks.checks.contains { $0.detail.kind == .openAtLogin }
         self.init(
             askStrength: askStrength,
             askSchedule: askSchedule,

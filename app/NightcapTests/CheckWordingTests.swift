@@ -29,15 +29,8 @@ func reportedSetAside(_ enabled: Bool, _ schedule: Schedule) -> Step {
 
 extension Core {
     /// What the check of `kind` found, as the checks query answers it.
-    func found(_ kind: CheckKind) -> Check? {
-        checks().checks.first { check in
-            switch (check.detail, kind) {
-            case (.nightShift, .nightShift), (.accessibility, .accessibility), (.notifications, .notifications),
-                (.openAtLogin, .openAtLogin), (.configFile, .configFile), (.adHocRules, .adHocRules):
-                true
-            default: false
-            }
-        }
+    @MainActor func found(_ kind: CheckKind) -> Check? {
+        checks().checks.first { $0.detail.kind == kind }
     }
 }
 
