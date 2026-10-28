@@ -1,5 +1,5 @@
 //! The connection to the server: its socket, the Hello before each request, and the queries
-//! `nightcap status` asks.
+//! the CLI asks.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -57,15 +57,28 @@ pub(crate) fn request(
     }
 }
 
-/// Asks the server `query` alone, and gives its answer.
-pub(crate) fn ask(instance: Instance, query: Query) -> Result<Answer, Failure> {
-    let Payload::Answers(answers) = request(instance, &Request::Queries(vec![query]), None)? else {
+/// Asks `query` alone, in the one request `send` sends, and gives its answer.
+pub(crate) fn ask(
+    send: impl FnOnce(&Request) -> Result<Payload, Failure>,
+    query: Query,
+) -> Result<Answer, Failure> {
+    let Payload::Answers(answers) = send(&Request::Queries(vec![query]))? else {
         return Err(unexpected_reply());
     };
     let Ok([answer]) = <[Answer; 1]>::try_from(answers) else {
         return Err(unexpected_reply());
     };
     Ok(answer)
+}
+
+/// Every rule with its snooze, in the one request `send` sends.
+pub(crate) fn rules(
+    send: impl FnOnce(&Request) -> Result<Payload, Failure>,
+) -> Result<Vec<ListedRule>, Failure> {
+    let Answer::Rules(rules) = ask(send, Query::Rules)? else {
+        return Err(unexpected_reply());
+    };
+    Ok(rules)
 }
 
 /// What `nightcap status` shows, from the queries it asks in one request, so every answer is

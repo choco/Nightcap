@@ -118,9 +118,10 @@ fn refused(why: &str) -> ExitCode {
 }
 
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
+    let send = |sent: &Request| request(instance, sent, None);
     let command = match command {
         Command::Status { json: as_json } => {
-            let report = client::report(|status| request(instance, status, None))?;
+            let report = client::report(send)?;
             if as_json {
                 println!(
                     "{}",
@@ -142,90 +143,10 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             println!("{}", wording::reloaded(&rules, &TimeZone::system()));
             return Ok(());
         }
-        Command::Rules { action } => return run_rules(instance, action),
-        Command::Strength { value: None } => {
-            let Answer::NightShift(night_shift) = ask(instance, Query::NightShift)? else {
-                return Err(unexpected_reply());
-            };
-            let Some(strength) = night_shift.strength else {
-                return Err(Failure::Refused(Refusal::StrengthUnavailable));
-            };
-            println!("{}", wording::strength(strength));
-            return Ok(());
-        }
-        Command::Strength { value: Some(value) } => {
-            let command = protocol::Command::Strength(value);
-            let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
-                return Err(unexpected_reply());
-            };
-            println!("{}", wording::strength_set(value));
-            return Ok(());
-        }
-        Command::Update => {
-            let check = Request::Command(protocol::Command::CheckForUpdates);
-            let Payload::UpdateCheckStarted = request(instance, &check, None)? else {
-                return Err(unexpected_reply());
-            };
-            println!("{}", wording::checking_for_updates());
-            return Ok(());
-        }
-        Command::On(details) => {
-            change(OnOff::On, &details, &Zoned::now()).map_err(Failure::Mistaken)?
-        }
-        Command::Off(details) => {
-            change(OnOff::Off, &details, &Zoned::now()).map_err(Failure::Mistaken)?
-        }
-        Command::Toggle => protocol::Command::Toggle,
-        Command::Reset { place } => protocol::Command::Reset(place.place()),
-        Command::Websites { state } => {
-            let state = match state {
-                Switch::On => OnOff::On,
-                Switch::Off => OnOff::Off,
-            };
-            let command = protocol::Command::Websites(state);
-            let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
-                return Err(unexpected_reply());
-            };
-            println!("{}", wording::website_checking_set(state));
-            return Ok(());
-        }
-    };
-    let Payload::Decision(decision) = request(instance, &Request::Command(command.clone()), None)?
-    else {
-        return Err(unexpected_reply());
-    };
-    let zone = TimeZone::system();
-    if let Some(line) = set_elsewhere(&command, &decision, &zone) {
-        println!("{line}");
-    }
-    // The reply comes before the shell applies the change, so it names what the core decided
-    // rather than Night Shift as last observed.
-    println!("{}", wording::decided(&decision, &zone));
-    Ok(())
-}
-
-/// What a `Set` to a place that doesn't decide says it set: the decision is the front's.
-fn set_elsewhere(
-    command: &protocol::Command,
-    decision: &Decision,
-    zone: &TimeZone,
-) -> Option<String> {
-    match command {
-        protocol::Command::Set {
-            place,
-            state,
-            length,
-        } if *place != decision.place => Some(wording::set(place, *state, length, zone)),
-        _ => None,
-    }
-}
-
-fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
-    let (done, decision) = match action {
-        RulesAction::List { json: as_json } => {
-            let Answer::Rules(rules) = ask(instance, Query::Rules)? else {
-                return Err(unexpected_reply());
-            };
+        Command::Rules {
+            action: RulesAction::List { json: as_json },
+        } => {
+            let rules = client::rules(send)?;
             if as_json {
                 println!(
                     "{}",
@@ -245,45 +166,130 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             }
             return Ok(());
         }
-        RulesAction::Export { format } => {
+        Command::Rules {
+            action: RulesAction::Export { format },
+        } => {
             let format = match format {
                 Format::Nix => protocol::ExportFormat::Nix,
                 Format::Toml => protocol::ExportFormat::Toml,
             };
-            let Answer::Export(text) = ask(instance, Query::Export(format))? else {
+            let Answer::Export(text) = ask(send, Query::Export(format))? else {
                 return Err(unexpected_reply());
             };
             print!("{text}");
             return Ok(());
         }
-        RulesAction::Add { identity, on } => {
-            let says = OnOff::from(on);
-            let command = protocol::Command::AddRule {
-                identity: identity.clone(),
-                says,
-            };
-            let Payload::RuleAdded { rule, decision } =
-                request(instance, &Request::Command(command), None)?
-            else {
+        Command::Rules {
+            action: RulesAction::Add { identity, on },
+        } => protocol::Command::AddRule {
+            identity,
+            says: OnOff::from(on),
+        },
+        Command::Rules {
+            action: RulesAction::Remove { identity },
+        } => protocol::Command::RemoveRule(identity),
+        Command::Strength { value: None } => {
+            let Answer::NightShift(night_shift) = ask(send, Query::NightShift)? else {
                 return Err(unexpected_reply());
             };
-            (wording::rule_added(&identity, says, rule), decision)
+            let Some(strength) = night_shift.strength else {
+                return Err(Failure::Refused(Refusal::StrengthUnavailable));
+            };
+            println!("{}", wording::strength(strength));
+            return Ok(());
         }
-        RulesAction::Remove { identity } => {
-            let done = wording::rule_removed(&identity);
-            let command = protocol::Command::RemoveRule(identity);
-            let Payload::Decision(decision) = request(instance, &Request::Command(command), None)?
-            else {
+        Command::Strength { value: Some(value) } => {
+            let command = protocol::Command::Strength(value);
+            let Payload::Decision(_) = send(&Request::Command(command))? else {
                 return Err(unexpected_reply());
             };
-            (done, decision)
+            println!("{}", wording::strength_set(value));
+            return Ok(());
+        }
+        Command::Update => {
+            let check = Request::Command(protocol::Command::CheckForUpdates);
+            let Payload::UpdateCheckStarted = send(&check)? else {
+                return Err(unexpected_reply());
+            };
+            println!("{}", wording::checking_for_updates());
+            return Ok(());
+        }
+        Command::On(details) => {
+            change(OnOff::On, &details, &Zoned::now()).map_err(Failure::Mistaken)?
+        }
+        Command::Off(details) => {
+            change(OnOff::Off, &details, &Zoned::now()).map_err(Failure::Mistaken)?
+        }
+        Command::Toggle => protocol::Command::Toggle,
+        Command::Reset { place } => protocol::Command::Reset(place.place()),
+        Command::Websites { state } => {
+            let state = match state {
+                Switch::On => OnOff::On,
+                Switch::Off => OnOff::Off,
+            };
+            let command = protocol::Command::Websites(state);
+            let Payload::Decision(_) = send(&Request::Command(command))? else {
+                return Err(unexpected_reply());
+            };
+            println!("{}", wording::website_checking_set(state));
+            return Ok(());
         }
     };
-    println!(
-        "{}",
-        wording::rules_changed(&done, &decision, &TimeZone::system())
-    );
+    for line in commanded(&command, send, &TimeZone::system())? {
+        println!("{line}");
+    }
     Ok(())
+}
+
+/// What `command`, one that can change what decides, prints once Nightcap has carried it out,
+/// with `send` sending each request: what it did, where the decision doesn't say so, then what
+/// Night Shift does after it. The reply comes before the shell applies the change, so it names
+/// what the core decided rather than Night Shift as last observed. It carries the decision
+/// alone, so the deciding rule's snooze comes from the rules, asked in a second request: the core
+/// publishes the snapshot a command leaves before it replies, so they answer as of the command
+/// or later.
+fn commanded(
+    command: &protocol::Command,
+    mut send: impl FnMut(&Request) -> Result<Payload, Failure>,
+    zone: &TimeZone,
+) -> Result<Vec<String>, Failure> {
+    let (done, decision) = match (command, send(&Request::Command(command.clone()))?) {
+        (protocol::Command::AddRule { identity, says }, Payload::RuleAdded { rule, decision }) => {
+            (Some(wording::rule_added(identity, *says, rule)), decision)
+        }
+        (protocol::Command::RemoveRule(identity), Payload::Decision(decision)) => {
+            (Some(wording::rule_removed(identity)), decision)
+        }
+        (protocol::Command::AddRule { .. } | protocol::Command::RemoveRule(_), _) => {
+            return Err(unexpected_reply());
+        }
+        (_, Payload::Decision(decision)) => (None, decision),
+        _ => return Err(unexpected_reply()),
+    };
+    let rules = client::rules(send)?;
+    Ok(match done {
+        Some(done) => vec![wording::rules_changed(&done, &decision, &rules, zone)],
+        None => set_elsewhere(command, &decision, zone)
+            .into_iter()
+            .chain([wording::decided(&decision, &rules, zone)])
+            .collect(),
+    })
+}
+
+/// What a `Set` to a place that doesn't decide says it set: the decision is the front's.
+fn set_elsewhere(
+    command: &protocol::Command,
+    decision: &Decision,
+    zone: &TimeZone,
+) -> Option<String> {
+    match command {
+        protocol::Command::Set {
+            place,
+            state,
+            length,
+        } if *place != decision.place => Some(wording::set(place, *state, length, zone)),
+        _ => None,
+    }
 }
 
 pub(crate) fn unexpected_reply() -> Failure {
@@ -401,5 +407,75 @@ mod tests {
             Ok("2026-10-17T21:00:00+02:00".parse().unwrap())
         );
         assert!(until("7am").is_err());
+    }
+
+    /// What `command` prints, each request carried to `staged` as the socket carries it, with
+    /// times in Zurich.
+    #[cfg(debug_assertions)]
+    fn printed(staged: &nightcap_core::Staged, command: protocol::Command) -> Vec<String> {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let send = |sent: &Request| match staged.request(sent.clone()) {
+            (_, protocol::Response::Ok(payload)) => Ok(payload),
+            (_, response) => panic!("expected an answer, got {response:?}"),
+        };
+        let Ok(lines) = commanded(&command, send, &zone) else {
+            panic!("{command:?} printed nothing");
+        };
+        lines
+    }
+
+    // Staged cores exist only in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_command_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
+        use nightcap_core::{Fact, Scenario};
+        use protocol::{Schedule, TimeOfDay};
+
+        let figma = || Place::App("com.figma.Desktop".parse().unwrap());
+        let staged = Scenario::at("2026-10-16T23:00:00+02:00".parse().unwrap())
+            .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+            .then(Fact::StatusChanged {
+                enabled: true,
+                schedule: Schedule::Custom {
+                    from: TimeOfDay {
+                        hour: 22,
+                        minute: 0,
+                    },
+                    to: TimeOfDay { hour: 7, minute: 0 },
+                },
+                sun_schedule_set_aside: false,
+            })
+            .then(Fact::AppActivated {
+                bundle_id: Some("com.figma.Desktop".to_owned()),
+                is_browser: false,
+            })
+            .then(protocol::Command::Set {
+                place: figma(),
+                state: OnOff::On,
+                length: Lasting::For(SignedDuration::from_mins(30)),
+            })
+            .stage()
+            .unwrap();
+        let snoozed =
+            "Night Shift on at app:com.figma.Desktop until 23:30, its config rule snoozed";
+
+        assert_eq!(printed(&staged, protocol::Command::Off), [snoozed]);
+        assert_eq!(printed(&staged, protocol::Command::Toggle), [snoozed]);
+        assert_eq!(
+            printed(
+                &staged,
+                protocol::Command::AddRule {
+                    identity: "domain:youtube.com".parse().unwrap(),
+                    says: OnOff::Off,
+                }
+            ),
+            [format!(
+                "Added domain:youtube.com, which turns Night Shift off. {snoozed}."
+            )]
+        );
+        assert_eq!(
+            printed(&staged, protocol::Command::Reset(figma())),
+            ["Night Shift off by the config rule for app:com.figma.Desktop"]
+        );
     }
 }

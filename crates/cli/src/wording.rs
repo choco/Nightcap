@@ -498,15 +498,25 @@ pub(crate) fn set(place: &Place, state: OnOff, length: &Lasting, zone: &TimeZone
     format!("Set {place} {state} {}.", length_text(length, zone))
 }
 
-/// What Night Shift does after a command, as the core decided it, with times in `zone`.
-pub(crate) fn decided(decision: &Decision, zone: &TimeZone) -> String {
-    format!("Night Shift {}", self::decision(decision, zone))
+/// What Night Shift does after a command, as the core decided it, with the deciding rule's snooze
+/// as `rules` serve it and times in `zone`.
+pub(crate) fn decided(decision: &Decision, rules: &[ListedRule], zone: &TimeZone) -> String {
+    format!(
+        "Night Shift {}{}",
+        self::decision(decision, zone),
+        snoozed(&decision.place, rules)
+    )
 }
 
 /// What a change to the rules did, as `done` says it, then what Night Shift does after it, with
-/// times in `zone`.
-pub(crate) fn rules_changed(done: &str, decision: &Decision, zone: &TimeZone) -> String {
-    format!("{done} {}.", decided(decision, zone))
+/// the deciding rule's snooze as `rules` serve it and times in `zone`.
+pub(crate) fn rules_changed(
+    done: &str,
+    decision: &Decision,
+    rules: &[ListedRule],
+    zone: &TimeZone,
+) -> String {
+    format!("{done} {}.", decided(decision, rules, zone))
 }
 
 pub(crate) fn rule_removed(identity: &RuleIdentity) -> String {
