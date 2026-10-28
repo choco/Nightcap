@@ -315,7 +315,7 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
     assert_eq!(
         response,
         Response::Ok(Payload::RuleAdded {
-            rule: RuleAdded::New,
+            rule: RuleAdded::New { set_by: SetBy::You },
             decision: Decision {
                 state: Some(OnOff::Off),
                 place: figma_app(),

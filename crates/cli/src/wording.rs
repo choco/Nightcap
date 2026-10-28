@@ -87,11 +87,14 @@ fn is_app_or_site_rule(rule: &Rule) -> bool {
 }
 
 /// What adding a rule for `identity` that says `says` did, as Nightcap answers it: added one,
-/// changed the user's own or the tour's, or left one that already says so. A config rule that
-/// says otherwise is refused instead.
+/// the tour's lasting until it ends, changed the user's own or the tour's, or left one that
+/// already says so. A config rule that says otherwise is refused instead.
 pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, added: RuleAdded) -> String {
     match added {
-        RuleAdded::New => format!("Added {identity}, which turns Night Shift {says}."),
+        RuleAdded::New {
+            set_by: SetBy::Trial,
+        } => format!("Added {identity}, which turns Night Shift {says} until the tour ends."),
+        RuleAdded::New { .. } => format!("Added {identity}, which turns Night Shift {says}."),
         RuleAdded::AlreadySays { set_by } => format!(
             "The {} rule for {identity} already turns Night Shift {says}.",
             source(set_by)
@@ -1094,8 +1097,18 @@ mod tests {
         let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
 
         assert_eq!(
-            rule_added(&figma, OnOff::Off, RuleAdded::New),
+            rule_added(&figma, OnOff::Off, RuleAdded::New { set_by: SetBy::You }),
             "Added app:com.figma.Desktop, which turns Night Shift off."
+        );
+        assert_eq!(
+            rule_added(
+                &figma,
+                OnOff::On,
+                RuleAdded::New {
+                    set_by: SetBy::Trial
+                }
+            ),
+            "Added app:com.figma.Desktop, which turns Night Shift on until the tour ends."
         );
         assert_eq!(
             rule_added(

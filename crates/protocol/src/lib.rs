@@ -15,7 +15,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -436,8 +436,8 @@ pub struct Decision {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleAdded {
-    /// A rule where there was none.
-    New,
+    /// A rule where there was none, the user's, or during a trial the trial's (ADR-0016).
+    New { set_by: SetBy },
     /// The rule there said the other way, and now says this one: the user's own, or a trial's.
     Changed { set_by: SetBy },
     /// The rule there already says so: the config's, the user's or a trial's.
@@ -1659,7 +1659,16 @@ mod tests {
             reasons: Vec::new(),
         };
         for (rule, wire) in [
-            (RuleAdded::New, r#""new""#),
+            (
+                RuleAdded::New { set_by: SetBy::You },
+                r#"{"new":{"set_by":"you"}}"#,
+            ),
+            (
+                RuleAdded::New {
+                    set_by: SetBy::Trial,
+                },
+                r#"{"new":{"set_by":"trial"}}"#,
+            ),
             (
                 RuleAdded::Changed { set_by: SetBy::You },
                 r#"{"changed":{"set_by":"you"}}"#,

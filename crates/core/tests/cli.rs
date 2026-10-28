@@ -83,7 +83,10 @@ fn adding_a_rule_answers_whether_it_was_new_changed_or_already_said_so() {
         rule
     };
 
-    assert_eq!(added(&staged, site(), OnOff::Off), RuleAdded::New);
+    assert_eq!(
+        added(&staged, site(), OnOff::Off),
+        RuleAdded::New { set_by: SetBy::You }
+    );
     assert_eq!(
         added(&staged, site(), OnOff::Off),
         RuleAdded::AlreadySays { set_by: SetBy::You }
@@ -100,7 +103,12 @@ fn adding_a_rule_answers_whether_it_was_new_changed_or_already_said_so() {
     );
     let books = || RuleIdentity::App("com.apple.iBooksX".parse().unwrap());
     staged.send_app(AppCommand::BeginTrial { stands_in: false });
-    assert_eq!(added(&staged, books(), OnOff::Off), RuleAdded::New);
+    assert_eq!(
+        added(&staged, books(), OnOff::Off),
+        RuleAdded::New {
+            set_by: SetBy::Trial
+        }
+    );
     assert_eq!(
         added(&staged, books(), OnOff::On),
         RuleAdded::Changed {

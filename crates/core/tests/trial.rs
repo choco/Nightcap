@@ -228,7 +228,9 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
     assert_eq!(
         response,
         Response::Ok(Payload::RuleAdded {
-            rule: RuleAdded::New,
+            rule: RuleAdded::New {
+                set_by: SetBy::Trial
+            },
             decision: Decision {
                 state: Some(OnOff::Off),
                 place: notes_app(),

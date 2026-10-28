@@ -266,22 +266,21 @@ impl Places {
                     says: said,
                 });
             }
-            Some((_, set_by)) => {
-                self.make_rule(identity, says);
-                RuleAdded::Changed { set_by }
-            }
-            None => {
-                self.make_rule(identity, says);
-                RuleAdded::New
-            }
+            Some(_) => RuleAdded::Changed {
+                set_by: self.make_rule(identity, says),
+            },
+            None => RuleAdded::New {
+                set_by: self.make_rule(identity, says),
+            },
         };
         self.clear(&place);
         self.lay_out();
         Ok(added)
     }
 
-    /// Makes the user's rule say `says`: the ad-hoc one, else during a trial the trial's.
-    fn make_rule(&mut self, identity: &RuleIdentity, says: OnOff) {
+    /// Makes the user's rule say `says`: the ad-hoc one, else during a trial the trial's. Gives
+    /// who the rule is set by.
+    fn make_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> SetBy {
         if let Some((_, kept)) = self
             .live
             .ad_hoc
@@ -290,12 +289,15 @@ impl Places {
         {
             *kept = says;
             tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
+            SetBy::You
         } else if let Some(trial) = &mut self.trial {
             tracing::info!("trial rule {}: {says}", loggable(identity));
             trial.set_rule(identity, says);
+            SetBy::Trial
         } else {
             self.live.ad_hoc.push((identity.clone(), says));
             tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
+            SetBy::You
         }
     }
 
