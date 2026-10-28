@@ -34,20 +34,25 @@ private func setup(_ core: Core) -> OnboardingFlow.Setup {
 }
 
 /// The flow over `core`, with iMovie and Photos to suggest and figma.com among the sites. What it
-/// chooses reaches the core, as the menu's commands do, and `sent` too.
+/// chooses reaches the core, as the menu's commands do, and `sent` too; the core's snapshot after
+/// each reaches the flow, as the app's redraw hands it on.
 private func onboarding(
     _ core: Core, sent: Sent = Sent(),
     notifications: @escaping () -> NotificationPermission = { .notRequested },
     onFinish: @escaping (Bool?) -> Void = { _ in }
 ) -> OnboardingFlow {
-    OnboardingFlow(
-        setup: setup(core), apps: [imovie, photos], sites: ["figma.com"],
-        rules: { core.snapshot().rules() }, words: .staged, accessibilityGranted: { true }, askForAccessibility: {},
+    weak var made: OnboardingFlow?
+    let flow = OnboardingFlow(
+        core.snapshot(), apps: [imovie, photos], sites: ["figma.com"], words: .staged,
+        accessibilityGranted: { true }, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
             core.send(command: command)
+            made?.refresh(core.snapshot())
         },
         notifications: notifications, askForNotifications: {}, onFinish: onFinish)
+    made = flow
+    return flow
 }
 
 /// Onboarding's flow on a staged core: what each user is asked, and what reaches the core when.
@@ -204,6 +209,9 @@ struct OnboardingFlowTests {
         flow.toggle(flow.apps[0])
 
         staged.send(command: .addRule(identity: .app(imovie), says: .on))
+        // The flow reads the snapshot it was handed until the redraw hands on the next.
+        #expect(flow.apps[0] == OnboardingFlow.Suggestion(identity: .app(imovie), ruled: nil))
+        flow.refresh(staged.snapshot())
 
         #expect(flow.apps[0] == OnboardingFlow.Suggestion(identity: .app(imovie), ruled: "Ad-hoc"))
         #expect(flow.isTicked(flow.apps[0]))

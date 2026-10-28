@@ -6,7 +6,7 @@ import NightcapCore
 /// draws it, rebuilding the menu each time it opens, and sends the chosen command to the core.
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    /// The core's latest snapshot, which the menu takes as it appears and opens.
+    /// The core's latest snapshot, which the menu takes as it opens.
     private let current: () -> Snapshot
     private let icons: SiteIcons
     private let words = Wording.system
@@ -42,7 +42,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         init(_ pick: Menu.PickTime) { self.pick = pick }
     }
 
+    /// The item, drawn first from `snapshot`.
     init(
+        _ snapshot: Snapshot,
         current: @escaping () -> Snapshot,
         icons: SiteIcons,
         choose: @escaping (Command) -> Void,
@@ -74,7 +76,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -MenuArt.dotOffset.y),
             ])
         }
-        refresh(current())
+        refresh(snapshot)
     }
 
     /// Where items' titles start, in the slider's view, which puts its small sun there as the

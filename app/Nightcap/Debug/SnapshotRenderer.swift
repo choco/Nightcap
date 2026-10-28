@@ -71,8 +71,7 @@ enum SnapshotRenderer {
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))
             return Onboarding(
-                setup: OnboardingFlow.Setup(core.snapshot()),
-                rules: { core.snapshot().rules() },
+                core.snapshot(),
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
                 now: { evening },

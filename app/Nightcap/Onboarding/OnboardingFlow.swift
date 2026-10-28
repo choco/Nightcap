@@ -127,7 +127,8 @@ final class OnboardingFlow {
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
 
-    private let rules: () -> [Rule]
+    /// The core's rules, as the snapshot onboarding last took has them.
+    private var rules: [Rule]
     private let words: Wording
     private let granted: () -> Bool
     private let askForAccessibility: () -> Void
@@ -136,17 +137,17 @@ final class OnboardingFlow {
     private let askForNotifications: () -> Void
     private let onFinish: (_ websites: Bool?) -> Void
 
-    /// `apps` are the bundle IDs of the suggested apps the grid shows, and `sites` the suggested
-    /// sites' domains. `rules` are the core's rules as they stand, and `words` say where one comes
-    /// from; `choose` sends a command to the core, as the menu does; `notifications` says whether
+    /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
+    /// and has the rules as they stand. `apps` are the bundle IDs of the suggested apps the grid
+    /// shows, and `sites` the suggested sites' domains; `words` say where a rule comes from;
+    /// `choose` sends a command to the core, as the menu does; `notifications` says whether
     /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
     /// onboarding finishes, with whether the user chose website checking, or nil where the config
     /// sets it.
     init(
-        setup: Setup,
+        _ snapshot: Snapshot,
         apps: [String],
         sites: [String],
-        rules: @escaping () -> [Rule],
         words: Wording,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
@@ -155,8 +156,8 @@ final class OnboardingFlow {
         askForNotifications: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool?) -> Void
     ) {
-        self.setup = setup
-        self.rules = rules
+        setup = Setup(snapshot)
+        rules = snapshot.rules()
         self.words = words
         granted = accessibilityGranted
         self.askForAccessibility = askForAccessibility
@@ -180,6 +181,12 @@ final class OnboardingFlow {
             websites = true
             page = accessibilityGranted() ? .sites : .accessibility
         }
+    }
+
+    /// Takes the rules as `snapshot` has them, the one each redraw after an outcome hands on.
+    /// What onboarding asks stays as it opened.
+    func refresh(_ snapshot: Snapshot) {
+        rules = snapshot.rules()
     }
 
     var accessibilityGranted: Bool { granted() }
@@ -335,7 +342,7 @@ final class OnboardingFlow {
     // MARK: The steps' choices
 
     /// The suggested apps on this Mac, then any the user chose. One with a rule, short of a rule
-    /// given here, comes ticked and can't be changed, as the core has the rules now.
+    /// given here, comes ticked and can't be changed, as the last snapshot has the rules.
     var apps: [Suggestion] {
         let ruled = self.ruled
         return appIds.map { Suggestion(identity: .app($0), ruled: ruled[.app($0)]) }
@@ -351,7 +358,7 @@ final class OnboardingFlow {
     /// here.
     private var ruled: [RuleIdentity: String] {
         Dictionary(
-            Settings.rows(of: rules(), words: words).filter { !given.contains($0.identity) }.map {
+            Settings.rows(of: rules, words: words).filter { !given.contains($0.identity) }.map {
                 ($0.identity, $0.label)
             }, uniquingKeysWith: { first, _ in first })
     }
@@ -392,13 +399,13 @@ final class OnboardingFlow {
         return grid.filter { $0.ruled == nil && ticked.contains($0.identity) }
     }
 
-    /// The suggested apps given a rule here, as the core has them now.
+    /// The suggested apps given a rule here, as the last snapshot has them.
     var addedApps: [Suggestion] { added(apps) }
     var addedSites: [Suggestion] { added(sites) }
 
     private func added(_ suggestions: [Suggestion]) -> [Suggestion] {
-        let rules = Set(Settings.rows(of: rules(), words: words).map(\.identity))
-        return suggestions.filter { given.contains($0.identity) && rules.contains($0.identity) }
+        let ruled = Set(Settings.rows(of: rules, words: words).map(\.identity))
+        return suggestions.filter { given.contains($0.identity) && ruled.contains($0.identity) }
     }
 
     // MARK: The Accessibility grant

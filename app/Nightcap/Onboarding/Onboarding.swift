@@ -64,21 +64,21 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var redrawing = false
     /// The sites page was drawn last, so redrawing it asks for no icons.
     private var showingSites = false
-    /// The suggestions as the page last drew them, with where their rules come from.
-    private var drawnSuggestions: [OnboardingFlow.Suggestion] = []
+    /// What the page last drew of the rules: the suggestions with where their rules come from,
+    /// then those onboarding gave a rule.
+    private var drawnRules: [OnboardingFlow.Suggestion] = []
     private var closedByUser = false
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
 
-    /// `setup` is what onboarding asks this user; `rules` are the core's rules as they stand; `now`
-    /// is the time the stage's timeline marks; `shortcut` is the one Ready's menu shows; `choose`
-    /// sends a command to the core, as the menu does; `notifications` says whether notifications
-    /// are allowed, denied or not asked for yet, as last read; `onFinish` runs once onboarding
-    /// ends, by Done or the close button, with whether the user chose website checking, or nil
-    /// where the config sets it.
+    /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
+    /// and has the rules as they stand; `now` is the time the stage's timeline marks; `shortcut`
+    /// is the one Ready's menu shows; `choose` sends a command to the core, as the menu does;
+    /// `notifications` says whether notifications are allowed, denied or not asked for yet, as
+    /// last read; `onFinish` runs once onboarding ends, by Done or the close button, with whether
+    /// the user chose website checking, or nil where the config sets it.
     init(
-        setup: OnboardingFlow.Setup,
-        rules: @escaping () -> [Rule],
+        _ snapshot: Snapshot,
         icons: SiteIcons,
         sun: Sun?,
         now: @escaping () -> Date,
@@ -96,7 +96,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             .prefix(OnboardingFlow.gridSize - 1)
         appItems = Dictionary(uniqueKeysWithValues: apps.map { (RuleIdentity.app($0.id), $0) })
         flow = OnboardingFlow(
-            setup: setup, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), rules: rules, words: words,
+            snapshot, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), words: words,
             accessibilityGranted: accessibilityGranted, askForAccessibility: askForAccessibility, choose: choose,
             notifications: notifications, askForNotifications: askForNotifications, onFinish: onFinish)
         self.icons = icons
@@ -124,11 +124,24 @@ final class Onboarding: NSObject, NSWindowDelegate {
         if flow.step == .lastThings || flow.step == .ready { draw() }
     }
 
-    /// Redraws a grid whose suggestions' rules came or went, as from the CLI, so each shows where
-    /// its rule comes from as the core has it.
-    func refresh() {
-        let grid = flow.step == .apps || (flow.step == .websites && flow.page == .sites)
-        if grid, flow.apps + flow.sites != drawnSuggestions { draw() }
+    /// Takes the rules as `snapshot` has them, and redraws a page that shows them once they came
+    /// or went, as from the CLI or as the core takes the ones onboarding gave: a grid's
+    /// suggestions each say where their rule comes from, and the last steps name what onboarding
+    /// gave a rule. Steps that show no rules stay as they are, so a drag isn't ended.
+    func refresh(_ snapshot: Snapshot) {
+        flow.refresh(snapshot)
+        let showsRules =
+            switch flow.step {
+            case .apps, .lastThings, .ready: true
+            case .websites: flow.page == .sites
+            case .alreadySetUp, .strength, .schedule: false
+            }
+        if showsRules, shownRules != drawnRules { draw() }
+    }
+
+    /// What the page draws of the rules, as `drawnRules` keeps it.
+    private var shownRules: [OnboardingFlow.Suggestion] {
+        flow.apps + flow.sites + flow.addedApps + flow.addedSites
     }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
@@ -213,7 +226,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let sites = flow.step == .websites && flow.page == .sites
         if sites && !showingSites { icons.ask(Self.suggestedSites.map(\.host)) }
         showingSites = sites
-        drawnSuggestions = flow.apps + flow.sites
+        drawnRules = shownRules
         stage.strength = flow.strength
         stage.show(scene)
         pageArea.subviews.forEach { $0.removeFromSuperview() }

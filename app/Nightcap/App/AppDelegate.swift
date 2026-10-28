@@ -151,8 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host, let accessibility = host.accessibility else { return }
         let core = host.core
         let onboarding = Onboarding(
-            setup: OnboardingFlow.Setup(core.snapshot()),
-            rules: { core.snapshot().rules() },
+            core.snapshot(),
             icons: siteIcons,
             sun: host.nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
@@ -170,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 host.send(.finishOnboarding(websites: websites))
                 self.onboarding = nil
                 host.watchPermissions(closely: false)
-                showStatusMenu()
+                showStatusMenu(core.snapshot())
                 // The Dock icon goes once the popover is up, while Nightcap stays active with it.
                 statusMenu?.pointOut(
                     takeTour: { [weak self] in DispatchQueue.main.async { self?.startTour() } },
@@ -182,10 +181,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.watchPermissions(closely: true)
     }
 
-    private func showStatusMenu() {
+    /// The menu-bar item, drawn first from `snapshot`.
+    private func showStatusMenu(_ snapshot: Snapshot) {
         guard let host else { return }
         let core = host.core
         statusMenu = StatusMenu(
+            snapshot,
             current: { core.snapshot() },
             icons: siteIcons,
             choose: { command in host.send(command) },
@@ -248,19 +249,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// After each outcome, whichever fact or command it answers, the CLI's included, from one
-    /// snapshot, so the menu, Settings and the tour all show the same input's answers. The
-    /// menu-bar item appears once onboarding is finished; onboarding asks for notifications
-    /// itself, and without it they're asked for as the item first appears.
+    /// snapshot, so the menu, Settings, onboarding and the tour all show the same input's
+    /// answers. The menu-bar item appears once onboarding is finished; onboarding asks for
+    /// notifications itself, and without it they're asked for as the item first appears.
     private func refresh() {
         guard let host else { return }
         let snapshot = host.core.snapshot()
         if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
-            showStatusMenu()
+            showStatusMenu(snapshot)
             host.askForNotifications()
         }
         statusMenu?.refresh(snapshot)
         settingsWindow?.refresh(snapshot)
-        onboarding?.refresh()
+        onboarding?.refresh(snapshot)
         tour?.refresh(snapshot)
     }
 }
