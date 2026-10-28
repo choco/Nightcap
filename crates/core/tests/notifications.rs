@@ -68,7 +68,7 @@ fn a_config_broken_at_launch_is_announced() {
         .unwrap();
 
     let error = FileError::Malformed {
-        path: staged.core().settings().config_path,
+        path: staged.core().config().path,
         line: Some(2),
         message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
     };

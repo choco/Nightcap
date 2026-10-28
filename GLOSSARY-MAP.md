@@ -8,6 +8,6 @@
 
 ## Relationships
 
-- **Control → App**: Control computes the checks and what Settings shows, and answers the queries from which App decides what the menu shows; App draws them and sends back commands and fixes
+- **Control → App**: Control computes the checks, as facts, and answers the queries from which App decides what the menu, Settings and onboarding show; App words them and the checks, draws them and sends back commands and fixes
 - **App → Control**: website checking, a choice made in App, decides whether Control watches the front browser
 - **Release → App**: every grant App checks is tied to Release's signing requirement

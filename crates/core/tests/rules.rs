@@ -128,7 +128,7 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         error.message,
         format!(
             "{}: line 2: invalid type: string \"com.figma.Desktop\", expected a sequence",
-            staged.core().settings().config_path
+            staged.core().config().path
         )
     );
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
@@ -585,7 +585,7 @@ fn a_config_that_cant_be_is_refused() {
 #[test]
 fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
     let staged = noon().stage().unwrap();
-    let path = staged.core().settings().config_path;
+    let path = staged.core().config().path;
 
     for (config, line) in [
         (

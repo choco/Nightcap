@@ -6,22 +6,18 @@ mod commands;
 mod ffi;
 mod ipc;
 mod logging;
-mod onboarding;
 mod queries;
 mod rules;
 #[cfg(any(test, debug_assertions))]
 mod scenario;
 mod server;
-mod settings;
 mod setup;
 mod storage;
 mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use onboarding::{OnboardingNightShift, OnboardingSteps};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
-pub use settings::{RuleAction, Settings, SettingsForNow, SettingsRule, SettingsSwitch};
-pub use setup::checks::{Fix, FixButton, SettingsCheck};
+pub use setup::checks::Fix;
 
 #[cfg(any(test, debug_assertions))]
 pub use scenario::{Scenario, ScenarioError, Staged, Step};
@@ -156,14 +152,6 @@ impl Core {
     pub fn export(&self, format: ExportFormat) -> String {
         ad_hoc_rules::export(&self.published.latest().ad_hoc, format)
             .expect("rules always serialize")
-    }
-
-    pub fn onboarding(&self) -> OnboardingSteps {
-        self.published.latest().onboarding.clone()
-    }
-
-    pub fn settings(&self) -> Settings {
-        self.published.latest().settings.clone()
     }
 
     /// Night Shift as the shell last reported it, and its schedule.

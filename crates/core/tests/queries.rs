@@ -419,7 +419,7 @@ fn config_answers_what_it_sets_and_where_it_is() {
     assert_eq!(
         config,
         ConfigState {
-            path: staged.core().settings().config_path,
+            path: staged.core().config().path,
             found: true,
             error: None,
             strength: Some(40),

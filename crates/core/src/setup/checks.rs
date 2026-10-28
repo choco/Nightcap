@@ -1,12 +1,12 @@
 //! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
-//! the status carries and in the words Settings shows it in, with its fixes; and the event that
-//! announces a problem when it appears.
+//! the checks query answers, which each client words itself; what each fix does; and the event
+//! that announces a problem when it appears.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
+    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, Command,
     ConfigFileDetail, FileError, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy, TimeOfDay,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy,
 };
 
 use crate::rules::places::is_app_or_site_rule;
@@ -20,24 +20,9 @@ use crate::{Effect, Event, LoginItem};
 /// back on (macOS 27).
 const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
 
-/// A check as Settings shows it, with what can be done about it.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct SettingsCheck {
-    pub kind: CheckKind,
-    pub state: CheckState,
-    pub text: String,
-    /// Puts back what the user set up, or fixes what's broken.
-    pub restore: Option<FixButton>,
-    /// Accepts the change as the user's choice.
-    pub accept: Option<FixButton>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct FixButton {
-    pub title: String,
-    pub fix: Fix,
-}
-
+/// An action Settings offers with a problem: a restore, an accept, or reloading a broken file.
+/// Which one a check offers, and in what words, is the shell's; what it does is the core's,
+/// short of the four the shell carries out itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum Fix {
     /// The shell's: the macOS prompt while Nightcap has no entry in the list, else the pane.
@@ -110,68 +95,6 @@ impl Inner {
 }
 
 impl Inner {
-    /// The checks as Settings shows them, each with its fixes.
-    pub(crate) fn settings_checks(&self, now: Timestamp) -> Vec<SettingsCheck> {
-        self.checks(now)
-            .into_iter()
-            .map(|check| {
-                let (restore, accept) = self.fixes(&check.detail);
-                SettingsCheck {
-                    kind: check.detail.kind(),
-                    state: check.state,
-                    text: sentence(&check.detail),
-                    restore,
-                    accept,
-                }
-            })
-            .collect()
-    }
-
-    /// What Settings offers for what a check found: putting back what the user set up, and
-    /// accepting the change as their choice.
-    fn fixes(&self, detail: &CheckDetail) -> (Option<FixButton>, Option<FixButton>) {
-        let button = |title: &str, fix| {
-            Some(FixButton {
-                title: title.to_owned(),
-                fix,
-            })
-        };
-        let dont_open_at_login = || button("Don’t Open at Login", Fix::DontOpenAtLogin);
-        match detail {
-            CheckDetail::Accessibility(AccessibilityDetail::NotAllowed) => (
-                button("Allow…", Fix::AskForAccessibility),
-                // Only the config can turn off what the config turned on.
-                button("Stop Checking Websites", Fix::StopCheckingWebsites)
-                    .filter(|_| self.facts.config_websites.is_none()),
-            ),
-            CheckDetail::Notifications(NotificationsDetail::SwitchedOff) => (
-                button("Allow Notifications…", Fix::AllowNotifications),
-                button("Keep Notifications Off", Fix::KeepNotificationsOff),
-            ),
-            CheckDetail::Notifications(NotificationsDetail::Off) => (
-                button("Allow Notifications…", Fix::AllowNotifications),
-                None,
-            ),
-            CheckDetail::NightShift(NightShiftDetail::SetAside) => (
-                button("Open Location Services…", Fix::OpenLocationServices),
-                button("Keep the Schedule Off", Fix::KeepScheduleOff),
-            ),
-            // Registering again doesn't help an item that's waiting for approval.
-            CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval) => (
-                button("Open Login Items…", Fix::OpenLoginItems),
-                dont_open_at_login(),
-            ),
-            CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed) => (
-                button("Open at Login", Fix::OpenAtLogin),
-                dont_open_at_login(),
-            ),
-            CheckDetail::ConfigFile(ConfigFileDetail::Error(_)) => {
-                (button("Reload", Fix::Reload), None)
-            }
-            _ => (None, None),
-        }
-    }
-
     /// Everything Nightcap depends on, compared with what the user set up.
     pub(crate) fn checks(&self, now: Timestamp) -> Vec<Check> {
         let look = self.places.look(&self.facts.world(now));
@@ -310,144 +233,6 @@ fn announced(detail: &CheckDetail) -> bool {
     }
 }
 
-/// What a check found, in the words Settings shows it in.
-fn sentence(detail: &CheckDetail) -> String {
-    match detail {
-        CheckDetail::NightShift(found) => night_shift_sentence(found),
-        CheckDetail::Accessibility(found) => match found {
-            AccessibilityDetail::Allowed => "Accessibility is allowed.",
-            AccessibilityDetail::NotAllowed => {
-                "Accessibility isn’t allowed, so website checking can’t read the front tab."
-            }
-            AccessibilityDetail::NotNeeded => "Not needed while website checking is off.",
-        }
-        .to_owned(),
-        CheckDetail::Notifications(found) => match found {
-            NotificationsDetail::Allowed => "Allowed.",
-            NotificationsDetail::SwitchedOff => {
-                "Notifications were allowed, but they’re switched off in System Settings."
-            }
-            NotificationsDetail::Off => "Notifications are off.",
-        }
-        .to_owned(),
-        CheckDetail::OpenAtLogin(found) => match found {
-            OpenAtLoginDetail::Opens => "Nightcap opens when you log in.",
-            OpenAtLoginDetail::AwaitingApproval => {
-                "macOS is waiting for your approval in Login Items."
-            }
-            OpenAtLoginDetail::Removed => {
-                "Nightcap no longer opens at login: it was removed in System Settings."
-            }
-            OpenAtLoginDetail::Off => "Nightcap doesn’t open at login.",
-        }
-        .to_owned(),
-        CheckDetail::ConfigFile(found) => match found {
-            ConfigFileDetail::Valid { rules: 0 } => "Valid, with no rules.".to_owned(),
-            ConfigFileDetail::Valid { rules: 1 } => "Valid, with 1 rule.".to_owned(),
-            ConfigFileDetail::Valid { rules } => format!("Valid, with {rules} rules."),
-            ConfigFileDetail::Missing => "No config file.".to_owned(),
-            ConfigFileDetail::Error(error) => in_the_file(error),
-        },
-        CheckDetail::AdHocRules(found) => match found {
-            AdHocRulesDetail::On { rules: 0 } => "No ad-hoc rules.".to_owned(),
-            AdHocRulesDetail::On { rules: 1 } => "1 ad-hoc rule.".to_owned(),
-            AdHocRulesDetail::On { rules } => format!("{rules} ad-hoc rules."),
-            AdHocRulesDetail::Off(error) => format!("Ad-hoc rules are off: {}.", located(error)),
-        },
-    }
-}
-
-/// Night Shift's check, in the words Settings shows it in.
-fn night_shift_sentence(found: &NightShiftDetail) -> String {
-    let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
-    match found {
-        NightShiftDetail::Available { schedule } => match schedule {
-            None => "Available.".to_owned(),
-            Some(Schedule::Off) => "Available, with no schedule.".to_owned(),
-            Some(Schedule::SunsetToSunrise) => {
-                "Available, following its schedule: sunset to sunrise.".to_owned()
-            }
-            Some(Schedule::Custom { from, to }) => format!(
-                "Available, following its schedule: {} to {}.",
-                time(*from),
-                time(*to)
-            ),
-        },
-        NightShiftDetail::Unavailable => "Night Shift isn’t available on this Mac.".to_owned(),
-        NightShiftDetail::SetAside => {
-            "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on."
-                .to_owned()
-        }
-        NightShiftDetail::NoSunTimes { .. } => {
-            "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them."
-                .to_owned()
-        }
-    }
-}
-
-/// Where in the file and what, in a sentence without the path, which Settings shows above the
-/// config's check: "Line 4: unknown field `domian`, expected `app` or `domain`." An invalid entry
-/// or value with no line keeps its first letter: it starts with the key or entry it names, as
-/// the file writes it.
-fn in_the_file(error: &FileError) -> String {
-    match error {
-        FileError::Unreadable { message, .. } => format!("Couldn't read it: {message}."),
-        FileError::Malformed {
-            line: Some(line),
-            message,
-            ..
-        }
-        | FileError::Invalid {
-            line: Some(line),
-            message,
-            ..
-        } => format!("Line {line}: {message}."),
-        FileError::Malformed {
-            line: None,
-            message,
-            ..
-        } => format!("{}.", capitalized(message)),
-        FileError::Invalid {
-            line: None,
-            message,
-            ..
-        } => format!("{message}."),
-        FileError::Newer { version, .. } => {
-            format!("It’s version {version}, from a newer Nightcap than this one.")
-        }
-    }
-}
-
-/// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
-fn located(error: &FileError) -> String {
-    match error {
-        FileError::Unreadable { path, message } => format!("couldn't read {path}: {message}"),
-        FileError::Malformed {
-            path,
-            line: Some(line),
-            message,
-        }
-        | FileError::Invalid {
-            path,
-            line: Some(line),
-            message,
-        } => format!("{path}: line {line}: {message}"),
-        FileError::Malformed {
-            path,
-            line: None,
-            message,
-        }
-        | FileError::Invalid {
-            path,
-            line: None,
-            message,
-        } => format!("{path}: {message}"),
-        FileError::Newer { path, version } => {
-            format!("{path} is version {version}, from a newer Nightcap than this one")
-        }
-    }
-}
-
 impl From<&ConfigError> for FileError {
     fn from(error: &ConfigError) -> Self {
         match error {
@@ -496,16 +281,4 @@ impl From<&AdHocError> for FileError {
             },
         }
     }
-}
-
-/// `text` with its first letter capitalized.
-fn capitalized(text: &str) -> String {
-    let mut letters = text.chars();
-    letters
-        .next()
-        .map(char::to_uppercase)
-        .into_iter()
-        .flatten()
-        .chain(letters)
-        .collect()
 }

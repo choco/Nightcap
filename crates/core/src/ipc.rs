@@ -454,7 +454,7 @@ mod tests {
                 events: Vec::new(),
             }
         );
-        assert!(core.settings().website_checking.on);
+        assert_eq!(core.preferences().website_checking.state, OnOff::On);
     }
 
     #[test]

@@ -12,10 +12,10 @@
 )]
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_core::{Effect, Fact, File, Fix, FixButton, Outcome, Scenario, SettingsCheck, Staged};
+use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
 use nightcap_protocol::{
-    CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload, Place,
-    Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
+    Check, CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload,
+    Place, Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -365,19 +365,12 @@ pub(crate) fn minutes(count: i64) -> Lasting {
     Lasting::For(SignedDuration::from_mins(count))
 }
 
-/// The check of `kind` as Settings shows it.
-pub(crate) fn settings_check(staged: &Staged, kind: CheckKind) -> Option<SettingsCheck> {
+/// The check of `kind`, as the checks query answers it.
+pub(crate) fn check(staged: &Staged, kind: CheckKind) -> Option<Check> {
     staged
         .core()
-        .settings()
+        .checks()
         .checks
         .into_iter()
-        .find(|check| check.kind == kind)
-}
-
-pub(crate) fn button(title: &str, fix: Fix) -> Option<FixButton> {
-    Some(FixButton {
-        title: title.to_owned(),
-        fix,
-    })
+        .find(|check| check.detail.kind() == kind)
 }

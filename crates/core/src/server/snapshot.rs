@@ -9,14 +9,10 @@ use crate::commands::refused;
 use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
-use crate::storage::file::File;
-use crate::{OnboardingSteps, Settings};
 
 /// The core after one input, as each read sees it.
 #[derive(Debug)]
 pub(crate) struct Snapshot {
-    pub(crate) settings: Settings,
-    pub(crate) onboarding: OnboardingSteps,
     /// What the queries answer, in process and over the socket.
     pub(crate) answers: Answers,
     /// The ad-hoc rules, for an export (ADR-0007).
@@ -27,8 +23,6 @@ impl Snapshot {
     pub(crate) fn of(inner: &Inner) -> Self {
         let now = inner.clock.now();
         Self {
-            settings: Settings::new(inner, now, &inner.files.path(File::Config)),
-            onboarding: OnboardingSteps::new(inner),
             answers: Answers::new(inner, now),
             ad_hoc: inner.places.kept().ad_hoc.clone(),
         }

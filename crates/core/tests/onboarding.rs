@@ -1,9 +1,10 @@
 #![cfg(debug_assertions)]
-//! Onboarding: when it opens, and what it asks.
+//! Onboarding: when it opens, and what finishing it sets. Which steps it shows, from the
+//! queries, is the shell's.
 
 mod common;
 
-use nightcap_core::{Effect, Fact, OnboardingNightShift, OnboardingSteps, UiCommand};
+use nightcap_core::{Effect, Fact, Staged, UiCommand};
 use nightcap_protocol::{Install, Instance, OnOff, Request, Schedule};
 
 use common::{at, noon, report_night_shift};
@@ -55,69 +56,26 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
 #[test]
 fn onboarding_is_finished_once_the_user_goes_through_it_or_the_config_answers_it() {
     let staged = noon().stage().unwrap();
-    assert!(!staged.core().onboarding().finished);
+    let finished = |staged: &Staged| staged.core().preferences().onboarding_finished;
+    assert!(!finished(&staged));
     staged.send_ui(UiCommand::FinishOnboarding { websites: false });
-    assert!(staged.core().onboarding().finished);
+    assert!(finished(&staged));
+    assert_eq!(staged.core().preferences().onboarding_completed, 1);
 
     let answered = noon()
         .config("websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n")
         .stage()
         .unwrap();
     report_night_shift(&answered, Schedule::Off, 60);
-    assert!(!answered.core().onboarding().finished);
+    assert!(!finished(&answered));
     answered.report(Fact::Launched);
-    assert!(answered.core().onboarding().finished);
+    assert!(finished(&answered));
 }
 
 fn shows_onboarding(effects: &[Effect]) -> bool {
     effects
         .iter()
         .any(|effect| matches!(effect, Effect::ShowOnboarding { .. }))
-}
-
-#[test]
-fn onboarding_asks_about_night_shift_starting_from_the_macs_values() {
-    let staged = noon().stage().unwrap();
-    report_night_shift(&staged, Schedule::Off, 60);
-
-    assert_eq!(
-        staged.core().onboarding(),
-        OnboardingSteps {
-            finished: false,
-            night_shift: OnboardingNightShift {
-                ask_strength: true,
-                ask_schedule: true,
-                already_set_up: false,
-                strength: Some(60),
-                schedule: Some(Schedule::Off),
-            },
-            websites_from_config: None,
-            opens_at_login: None,
-        }
-    );
-}
-
-#[test]
-fn onboarding_offers_to_skip_night_shift_once_its_on_a_schedule() {
-    let staged = noon().stage().unwrap();
-    report_night_shift(&staged, Schedule::SunsetToSunrise, 60);
-
-    assert!(staged.core().onboarding().night_shift.already_set_up);
-}
-
-#[test]
-fn onboarding_leaves_out_what_the_config_sets() {
-    let staged = noon()
-        .config("websites = true\n[night_shift]\nstrength = 40\n")
-        .stage()
-        .unwrap();
-    report_night_shift(&staged, Schedule::Off, 60);
-
-    let steps = staged.core().onboarding();
-
-    assert!(!steps.night_shift.ask_strength);
-    assert!(steps.night_shift.ask_schedule);
-    assert_eq!(steps.websites_from_config, Some(true));
 }
 
 #[test]

@@ -257,7 +257,6 @@ fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes
             },
         ]
     );
-    assert!(staged.core().settings().rules.is_empty());
     assert!(!staged.core().export(ExportFormat::Toml).contains(SAMPLE));
     let kept = staged.file(File::Rules).unwrap_or_default();
     assert!(
