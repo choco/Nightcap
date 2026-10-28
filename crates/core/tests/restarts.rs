@@ -129,7 +129,7 @@ fn terminating_stops_watching_and_releases_without_waiting_for_the_host() {
 }
 
 #[test]
-fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
+fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_outside_change() {
     let crashed = forced();
 
     let staged = crashed.restart_at(at("2026-10-16T23:10:00+02:00"));
@@ -149,7 +149,7 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_external_change() {
 }
 
 #[test]
-fn after_a_clean_exit_night_shift_found_off_is_an_external_change() {
+fn after_a_clean_exit_night_shift_found_off_is_an_outside_change() {
     let stopped = forced();
     stopped.stop();
 

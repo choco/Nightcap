@@ -14,7 +14,7 @@ private func problem(_ detail: CheckDetail, _ state: CheckState) -> Notice? {
 
 /// What each event from the core says as a notification.
 struct NoticeTests {
-    @Test func anExternalChangeNamesTheSnoozedRuleByItsAppInFrontAndItsEnd() {
+    @Test func anOutsideChangeNamesTheSnoozedRuleByItsAppInFrontAndItsEnd() {
         let adopted = Event.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: morning)
 
@@ -36,7 +36,7 @@ struct NoticeTests {
         #expect(Notice(site, frontApp: figma, words: .staged)?.body == "Snoozed the figma.com rule until 07:00.")
     }
 
-    @Test func anExternalChangeWithNoEndLastsUntilYouTurnItBack() {
+    @Test func anOutsideChangeWithNoEndLastsUntilYouTurnItBack() {
         let on = Event.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: nil)
         let off = Event.adopted(place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .off, until: nil)
@@ -45,7 +45,7 @@ struct NoticeTests {
         #expect(Notice(off, frontApp: figma, words: .staged)?.title == "Night Shift turned off outside Nightcap")
     }
 
-    @Test func anExternalChangeThatSnoozedNoRuleTellsNothing() {
+    @Test func anOutsideChangeThatSnoozedNoRuleTellsNothing() {
         let adopted = Event.adopted(place: .everywhere, snoozed: nil, state: .on, until: morning)
 
         #expect(Notice(adopted, frontApp: figma, words: .staged) == nil)

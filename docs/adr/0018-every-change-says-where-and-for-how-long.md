@@ -1,6 +1,6 @@
 # Every change to Night Shift is a rule that says where and for how long, and the switch is everywhere's
 
-Night Shift can be changed from the menu, the shortcut, the CLI and Control Center, and each change has to say what it covers and when it ends. Turning Night Shift on in front of a rule, off past sunrise, on for an evening in one app: each needs an answer that survives Cmd-Tabbing away and back and never costs the user their rules. Nightcap can't block Control Center, so an external change always takes effect; the only question is what it means. Two logic prototypes, kept on the `prototype/on-off` branch, settled the model below.
+Night Shift can be changed from the menu, the shortcut, the CLI and Control Center, and each change has to say what it covers and when it ends. Turning Night Shift on in front of a rule, off past sunrise, on for an evening in one app: each needs an answer that survives Cmd-Tabbing away and back and never costs the user their rules. Nightcap can't block Control Center, so an outside change always takes effect; the only question is what it means. Two logic prototypes, kept on the `prototype/on-off` branch, settled the model below.
 
 ## Decision
 
@@ -10,13 +10,13 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - A place is everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains as a domain rule does (ADR-0006): the most specific domain with a rule that covers the tab, else the tab's own domain (ADR-0017).
 - A rule lasts one of three lengths:
   - **Indefinitely**, until it's taken off.
-  - **Until the schedule next turns it back:** the next sunrise for an on and the next sunset for an off, or the end or start of custom hours, and earlier if the schedule is edited. Without a schedule there's no turn to wait for, so only an external change sets one then, and it lasts until it's taken off.
+  - **Until the schedule next turns it back:** the next sunrise for an on and the next sunset for an off, or the end or start of custom hours, and earlier if the schedule is edited. Without a schedule there's no turn to wait for, so only an outside change sets one then, and it lasts until it's taken off.
   - **Until a time:** one picked, or one of the lengths, 30 minutes, 1 hour and 2 hours unless the config's `lengths` sets others, from now.
 - Who sets what:
   - The config sets only indefinite rules, and never for everywhere (ADR-0006, ADR-0007).
   - The user sets indefinite rules, an app's or site's as ad-hoc rules and everywhere's with the switch, and rules until the schedule turns or until a time, anywhere.
   - The tour sets indefinite rules, which last while it runs (ADR-0016).
-  - An external change is adopted as a rule until the schedule turns.
+  - An outside change is adopted as a rule until the schedule turns.
 - A change goes the other way from what its place gives now, whether that's its own say or one inherited from the place before it.
 
 **Which rule decides**
@@ -36,9 +36,9 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - A rule is snoozed by a shorter one at its place that says the other way. It waits underneath, and comes back when the snooze ends or the place is reset.
 - An app's or site's snooze is temporary: changing its indefinite rule is changing the rule (ADR-0006).
 
-**External changes**
+**Outside changes**
 
-- An external change flips what the user sees. It takes off what the deciding place says: its rules that say otherwise, shortest first, short of an app's or site's indefinite one. If an indefinite rule or the schedule still says otherwise, it sets the new state until the schedule next turns it back, as macOS's own toggle lasts.
+- An outside change flips what the user sees. It takes off what the deciding place says: its rules that say otherwise, shortest first, short of an app's or site's indefinite one. If an indefinite rule or the schedule still says otherwise, it sets the new state until the schedule next turns it back, as macOS's own toggle lasts.
 - In front of an app's or site's rule, that snoozes the rule, and the core reports it, which the shell tells as "Snoozed the Figma rule until 07:00". If everywhere says otherwise too, everywhere gets the same rule, linked so that taking off either takes off both. The link stays inside the core.
 
 **The schedule**
@@ -60,7 +60,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - A temporary rule for everywhere, such as on until sunrise over the switch's off, gives the indefinite rule back when it ends.
 - Turning Night Shift off everywhere leaves a snoozed rule's app warm, since the snooze is more specific.
 - A browser whose own place says off is still watched while a site in it could say on (ADR-0012).
-- Telling the user what an external change was taken as needs notification permission. If it is denied, only `status` and the logs say so.
+- Telling the user what an outside change was taken as needs notification permission. If it is denied, only `status` and the logs say so.
 
 ## Rejected alternatives
 
@@ -73,5 +73,5 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - **A snooze until the front app changes, or until the rule stops matching**: Cmd-Tabbing away and back undoes it.
 - **A config rule snoozed indefinitely**: Nightcap would override the config with no end (ADR-0007).
 - **Resume, undoing everything at once**: each place's reset undoes its own.
-- **Reverting an external change, and notifying**: Night Shift visibly flips back, and if the core is wrong it fights the user, leaving the CLI as the only way out.
-- **Adopting external changes silently**: the user never learns what the core took the change to mean.
+- **Reverting an outside change, and notifying**: Night Shift visibly flips back, and if the core is wrong it fights the user, leaving the CLI as the only way out.
+- **Adopting outside changes silently**: the user never learns what the core took the change to mean.

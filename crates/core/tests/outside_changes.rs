@@ -1,5 +1,5 @@
 #![cfg(debug_assertions)]
-//! External changes and their adoption, what only looks like one, and Night Shift while another
+//! Outside changes and their adoption, what only looks like one, and Night Shift while another
 //! user's session is active (ADR-0004).
 
 #![expect(
@@ -19,7 +19,7 @@ use common::{
 };
 
 #[test]
-fn an_external_change_sets_everywhere_until_the_schedule_turns_it_back() {
+fn an_outside_change_sets_everywhere_until_the_schedule_turns_it_back() {
     let staged = off_by_the_schedule().stage().unwrap();
 
     let effects = staged.report(reported(true, custom_hours())).effects;
@@ -36,7 +36,7 @@ fn an_external_change_sets_everywhere_until_the_schedule_turns_it_back() {
 }
 
 #[test]
-fn an_external_change_back_takes_off_what_the_switch_held() {
+fn an_outside_change_back_takes_off_what_the_switch_held() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
     staged.report(reported(true, custom_hours()));
@@ -117,7 +117,7 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
 }
 
 #[test]
-fn a_change_against_the_coming_transition_is_still_an_external_change() {
+fn a_change_against_the_coming_transition_is_still_an_outside_change() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
     staged.report(reported(true, custom_hours()));
@@ -133,7 +133,7 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
 }
 
 #[test]
-fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_external_change() {
+fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_outside_change() {
     let staged = Scenario::at(at("2026-10-16T21:00:00+02:00"))
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -151,7 +151,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_extern
 }
 
 #[test]
-fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_external_change() {
+fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_outside_change() {
     let staged = Scenario::at(at("2026-10-16T21:00:00+02:00"))
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -197,7 +197,7 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
 }
 
 #[test]
-fn with_no_schedule_an_external_change_lasts_until_turned_back() {
+fn with_no_schedule_an_outside_change_lasts_until_turned_back() {
     let staged = noon().stage().unwrap();
     staged.report(reported(false, Schedule::Off));
 

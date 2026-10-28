@@ -4,7 +4,7 @@ Nightcap restarts at every update and at login, and, under a LaunchAgent, after 
 
 ## Decision
 
-`$XDG_STATE_HOME/nightcap/state.json` holds every rule but the apps' and sites' indefinite ones, which the config and `rules.toml` keep, each with its end and who set it (ADR-0018), and the Night Shift state Nightcap was holding. On start, the core drops what has ended and decides again. Night Shift found where the last run left it, held before a crash or released on a clean exit, is Nightcap's own doing, not an external change. On quit or SIGTERM, the shell asks the core to release every force, an app's rule's off or on as much as a temporary rule's, and to write the file.
+`$XDG_STATE_HOME/nightcap/state.json` holds every rule but the apps' and sites' indefinite ones, which the config and `rules.toml` keep, each with its end and who set it (ADR-0018), and the Night Shift state Nightcap was holding. On start, the core drops what has ended and decides again. Night Shift found where the last run left it, held before a crash or released on a clean exit, is Nightcap's own doing, not an outside change. On quit or SIGTERM, the shell asks the core to release every force, an app's rule's off or on as much as a temporary rule's, and to write the file.
 
 ## Consequences
 

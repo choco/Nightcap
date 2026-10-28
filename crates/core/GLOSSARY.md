@@ -51,7 +51,7 @@ A rule until the schedule next turns it back or until a time, which gives back w
 _Avoid_: timer, hold, timed disable, manual state
 
 **Set by**:
-Who set a rule: the config, the user, the tour, or an external change Nightcap adopted.
+Who set a rule: the config, the user, the tour, or an outside change Nightcap adopted.
 
 **Snooze**:
 A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends.
@@ -64,11 +64,12 @@ _Avoid_: toggle, as a noun
 **Reset**:
 Taking off a place's temporary rules, which puts back its indefinite rule, and for everywhere its indefinite one too, which puts back the schedule.
 
-**External change**:
+**Outside change**:
 Night Shift switched outside Nightcap, in Control Center or System Settings.
+_Avoid_: external change
 
 **Adoption**:
-Taking an external change as flipping what the user sees: it takes off what the deciding place says, and sets the other state over an indefinite rule or the schedule until the schedule next turns it back.
+Taking an outside change as flipping what the user sees: it takes off what the deciding place says, and sets the other state over an indefinite rule or the schedule until the schedule next turns it back.
 
 **Tour stand-in**:
 A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules as the tour found them (ADR-0016).

@@ -321,7 +321,7 @@ pub(crate) fn yours(place: Place, says: OnOff, length: Length) -> Rule {
     }
 }
 
-/// A rule an external change set, until the schedule turns at `until`, if it has a turn.
+/// A rule an outside change set, until the schedule turns at `until`, if it has a turn.
 pub(crate) fn adopted(place: Place, says: OnOff, until: Option<&str>) -> Rule {
     Rule {
         place,

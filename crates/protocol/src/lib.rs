@@ -451,7 +451,7 @@ pub enum SetBy {
     You,
     /// The user during the tour, kept only while it runs (ADR-0016).
     Tour,
-    /// An external change, which Nightcap adopted.
+    /// An outside change, which Nightcap adopted.
     OutsideChange,
 }
 

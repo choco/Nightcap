@@ -40,7 +40,7 @@ pub(crate) struct Kept {
     /// Each place's temporary rules and everywhere's indefinite one, a place's together and its
     /// shortest first, at most one of each length.
     pub rules: Vec<Rule>,
-    /// The place an external change set a rule until the schedule turns at together with
+    /// The place an outside change set a rule until the schedule turns at together with
     /// everywhere's: taking off either takes off both (ADR-0018).
     pub linked: Option<Place>,
     pub ad_hoc: Vec<(RuleIdentity, OnOff)>,
@@ -122,7 +122,7 @@ pub(crate) struct PlaceLook {
     pub after_reset: Option<OnOff>,
 }
 
-/// What an external change was adopted as (ADR-0018): the deciding place set to `state` until
+/// What an outside change was adopted as (ADR-0018): the deciding place set to `state` until
 /// the schedule turns, and the rule that snoozes, if one decided.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct Adoption {
@@ -273,7 +273,7 @@ impl Places {
         tracing::info!("reset {}", loggable_place(place));
     }
 
-    /// Takes an external change as flipping what the user sees (ADR-0018): takes off what the
+    /// Takes an outside change as flipping what the user sees (ADR-0018): takes off what the
     /// deciding place says, and sets `state` until the schedule next turns it back over an
     /// indefinite rule or the schedule, everywhere too where an app or a site decides and
     /// everywhere says otherwise. Gives what it set, unless taking off what said otherwise was
@@ -319,7 +319,7 @@ impl Places {
                 _ => None,
             });
         if let Some(identity) = &snoozed {
-            tracing::info!("snoozed {} after an external change", loggable(identity));
+            tracing::info!("snoozed {} after an outside change", loggable(identity));
         }
         Some(Adoption {
             place: deciding,
@@ -1042,7 +1042,7 @@ mod tests {
         }
     }
 
-    /// A rule an external change set, until the schedule turns at `until`.
+    /// A rule an outside change set, until the schedule turns at `until`.
     fn adopted(place: Place, says: OnOff, until: &str) -> Rule {
         Rule {
             place,
@@ -1083,7 +1083,7 @@ mod tests {
 
     /// The places' invariants: one indefinite rule per app or site; in what decides and in
     /// what's kept, each place's other rules together, shortest first, one of each length, and
-    /// none indefinite but everywhere's; and a link only between two rules an external change
+    /// none indefinite but everywhere's; and a link only between two rules an outside change
     /// set until the schedule turns, everywhere's and another place's.
     fn assert_sound(places: &Places, world: &World<'_>) {
         let indefinite = &places.indefinite;

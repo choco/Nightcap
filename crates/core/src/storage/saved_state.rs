@@ -21,7 +21,7 @@ pub(crate) struct Persisted {
     /// Every rule but the indefinite ones at apps and sites, which the config and `rules.toml`
     /// keep (ADR-0018).
     pub(crate) rules: Vec<Rule>,
-    /// The place an external change set a rule until the schedule turns at together with
+    /// The place an outside change set a rule until the schedule turns at together with
     /// everywhere's, so taking off either takes off both.
     pub(crate) linked: Option<Place>,
     /// Website checking as last chosen in the app or the CLI (ADR-0012).
@@ -83,7 +83,7 @@ struct FirstLayers {
     timer: Option<FirstLayer>,
 }
 
-/// On or off at a place until a time, or a hold with no end, with the place an external change
+/// On or off at a place until a time, or a hold with no end, with the place an outside change
 /// held beside it.
 #[derive(Deserialize)]
 struct FirstLayer {
@@ -94,7 +94,7 @@ struct FirstLayer {
 }
 
 /// Version 1's holds and timers as rules. Version 1 didn't keep who set a hold, so one is the
-/// user's unless an external change linked it or only Adoption could have made it: an app's or
+/// user's unless an outside change linked it or only Adoption could have made it: an app's or
 /// site's with no end.
 fn translated(first: Vec<FirstLayers>) -> (Vec<Rule>, Option<Place>) {
     let mut rules = Vec::new();

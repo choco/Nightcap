@@ -81,7 +81,7 @@ impl Inner {
             .is_some_and(|(previous, checked)| previous != checked)
         {
             // macOS applies an edited schedule at once, so the edit is a schedule
-            // transition and whatever it switched isn't an external change.
+            // transition and whatever it switched isn't an outside change.
             tracing::info!("schedule edited");
             self.places.schedule_edited();
             if keep_on && schedule == Schedule::Off && !enabled {
@@ -96,7 +96,7 @@ impl Inner {
 
     /// Reconciles a status callback with what the core wants (ADR-0004). macOS catching up on a
     /// transition the core already applied, or running just ahead of the next one, is that
-    /// transition; a match needs nothing; anything else is an external change, handled like the
+    /// transition; a match needs nothing; anything else is an outside change, handled like the
     /// equivalent command (ADR-0018).
     fn reconcile(&mut self, enabled: bool) -> Option<Event> {
         if self.reconciling.left_by_last_run.take() == Some(OnOff::from(enabled)) {

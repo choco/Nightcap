@@ -84,7 +84,7 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
 #[test]
 fn off_takes_off_everywheres_rule_where_that_is_enough() {
     let staged = noon().stage().unwrap();
-    // Found on with no schedule, which the core adopts as an external change.
+    // Found on with no schedule, which the core adopts as an outside change.
     staged.report(reported(true, Schedule::Off));
 
     let (effects, response) = send(&staged, Command::Off);

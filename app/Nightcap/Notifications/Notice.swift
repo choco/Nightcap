@@ -1,7 +1,7 @@
 import Foundation
 import NightcapCore
 
-/// What a notification says about something the core told: an external change adopted as a
+/// What a notification says about something the core told: an outside change adopted as a
 /// snooze, the first launch after an update, or a problem that appeared on its own.
 struct Notice: Equatable {
     let title: String

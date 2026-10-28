@@ -20,6 +20,6 @@ Night Shift's strength and schedule belong to macOS: System Settings shows them 
 
 - **Sending the user to System Settings to set Night Shift up**: the people onboarding is for don't know where it is or what its slider does, and the step would end in another app's window.
 - **Nightcap owning the schedule and strength, with its own copy of each**: two schedules would disagree, Control Center would still follow macOS's, and the core relies on macOS performing schedule transitions (ADR-0004).
-- **Putting back what onboarding or the config set when it changes**: Nightcap would fight the user's own changes in System Settings, as reverting external changes would (ADR-0018).
+- **Putting back what onboarding or the config set when it changes**: Nightcap would fight the user's own changes in System Settings, as reverting outside changes would (ADR-0018).
 - **Applying the config's values at every launch or reload**: every login, and every installer run of `nightcap reload`, would undo a change the user made in System Settings.
 - **Locking them while the config sets them, as the config locks `websites`**: Nightcap can't lock System Settings, so the lock would cover only Nightcap's own controls, and the two would disagree.
