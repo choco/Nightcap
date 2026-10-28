@@ -21,20 +21,24 @@ const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
 impl Inner {
     /// One turn of the core, for a fact or a command: it applies the schedule transitions and
     /// the ends that came due, lets `react` change the state, then rewatches, writes Night
-    /// Shift, reschedules, announces the problems that appeared unless `aloud` is false, and
-    /// saves.
+    /// Shift, reschedules, announces the problems that appeared, unless `aloud` is false
+    /// because the user chose the input, and saves.
     pub(crate) fn turn<T>(
         &mut self,
         aloud: bool,
         react: impl FnOnce(&mut Self, &mut Outcome) -> T,
     ) -> (Outcome, T) {
         self.catch_up();
+        // One instant for the problems before the input and after, so that only the input
+        // tells them apart.
+        let now = self.clock.now();
+        let telling = self.telling(aloud, now);
         let mut outcome = Outcome::default();
         let answer = react(self, &mut outcome);
         self.rewatch(&mut outcome.effects);
         self.enforce(&mut outcome.effects);
         self.reschedule(&mut outcome.effects);
-        self.announce(aloud, &mut outcome.events);
+        self.announce(&telling, now, &mut outcome.events);
         self.save();
         (outcome, answer)
     }

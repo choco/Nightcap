@@ -3,13 +3,14 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event};
+use jiff::SignedDuration;
+use nightcap_core::{Effect, Event, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{
     AccessibilityDetail, Check, CheckDetail, CheckState, Command, ConfigFileDetail, FileError,
-    NotificationPermission, OnOff,
+    NightShiftDetail, NotificationPermission, OnOff, Request, Schedule,
 };
 
-use common::{at, launch, noon, permissions, tells};
+use common::{at, launch, noon, permissions, reported, tells};
 
 fn accessibility_notice() -> Event {
     Event::ProblemAppeared {
@@ -58,6 +59,37 @@ fn a_problem_the_user_causes_in_nightcap_is_not_announced() {
     assert!(!tells(
         &staged.report(permissions(false, NotificationPermission::Granted))
     ));
+}
+
+#[test]
+fn a_problem_that_appears_on_its_own_during_a_command_is_still_announced() {
+    let no_sun_times = Event::ProblemAppeared {
+        check: Check {
+            detail: CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                waited: SignedDuration::from_mins(10),
+            }),
+            state: CheckState::Broken,
+        },
+    };
+    let from_the_app: fn(&Staged) -> Outcome = |staged| staged.send(Command::Off).0;
+    let from_the_cli: fn(&Staged) -> Outcome =
+        |staged| staged.request(Request::Command(Command::Off)).0;
+
+    for command in [from_the_app, from_the_cli] {
+        let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))
+            .stage()
+            .unwrap();
+        staged.report(reported(true, Schedule::SunsetToSunrise));
+
+        staged.set_now(at("2026-10-16T01:50:00+02:00"));
+        assert!(!tells(&command(&staged)));
+        assert!(
+            staged
+                .report(Fact::TimerFired)
+                .events
+                .contains(&no_sun_times)
+        );
+    }
 }
 
 #[test]

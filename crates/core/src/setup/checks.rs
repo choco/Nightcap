@@ -4,7 +4,7 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, Command,
+    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
     NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy,
 };
@@ -43,15 +43,37 @@ pub enum Fix {
     Reload,
 }
 
+/// Whether a turn tells the problems that appear in it.
+pub(crate) enum Telling {
+    /// A fact's turn, which tells each one.
+    Aloud,
+    /// The turn of a command, a CLI request or quitting, which tells none: what its input
+    /// causes is the user's own doing, in front of them already, and is never told. The
+    /// problems in `before`, there before its input, wait for the next turn that tells.
+    Quietly { before: Vec<CheckKind> },
+}
+
 impl Inner {
-    /// Announces each problem once as it appears, unless `aloud` is false because the user
-    /// caused it themselves. A problem that ends and comes back is announced again.
-    pub(crate) fn announce(&mut self, aloud: bool, events: &mut Vec<Event>) {
-        let problems: Vec<_> = self
-            .checks(self.clock.now())
-            .into_iter()
-            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-            .collect();
+    /// How a turn whose input is about to change the core at `now` tells the problems that
+    /// appear in it: aloud, or quietly, as the user's own doing.
+    pub(crate) fn telling(&self, aloud: bool, now: Timestamp) -> Telling {
+        if aloud {
+            Telling::Aloud
+        } else {
+            Telling::Quietly {
+                before: self
+                    .problems(now)
+                    .iter()
+                    .map(|check| check.detail.kind())
+                    .collect(),
+            }
+        }
+    }
+
+    /// Announces each problem once as it appears at `now`, as `telling` allows. A problem that
+    /// ends and comes back is announced again.
+    pub(crate) fn announce(&mut self, telling: &Telling, now: Timestamp, events: &mut Vec<Event>) {
+        let problems = self.problems(now);
         self.grants
             .announced
             .retain(|kind| problems.iter().any(|check| check.detail.kind() == *kind));
@@ -60,11 +82,27 @@ impl Inner {
             if self.grants.announced.contains(&kind) {
                 continue;
             }
-            self.grants.announced.push(kind);
-            if aloud && announced(&check.detail) {
-                events.push(Event::ProblemAppeared { check });
+            match telling {
+                Telling::Aloud => {
+                    self.grants.announced.push(kind);
+                    if announced(&check.detail) {
+                        events.push(Event::ProblemAppeared { check });
+                    }
+                }
+                Telling::Quietly { before } if !before.contains(&kind) => {
+                    self.grants.announced.push(kind);
+                }
+                Telling::Quietly { .. } => {}
             }
         }
+    }
+
+    /// The checks that need the user at `now`: drift or broken.
+    fn problems(&self, now: Timestamp) -> Vec<Check> {
+        self.checks(now)
+            .into_iter()
+            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+            .collect()
     }
 
     /// Carries out a fix the user chose in Settings; the shell carries out its own.
