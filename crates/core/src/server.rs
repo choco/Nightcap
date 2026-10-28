@@ -188,12 +188,12 @@ pub(crate) mod tests {
     #[test]
     fn a_read_after_an_outcome_sees_what_its_input_left() {
         let (core, outcomes) = running(noon(None));
-        assert_eq!(core.night_shift().state, NightShift::Unavailable);
+        assert_eq!(core.snapshot().night_shift().state, NightShift::Unavailable);
 
         core.report(reported(false));
         next(&outcomes);
 
-        assert_eq!(core.night_shift().state, NightShift::Off);
+        assert_eq!(core.snapshot().night_shift().state, NightShift::Off);
     }
 
     #[test]

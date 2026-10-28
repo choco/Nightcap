@@ -9,39 +9,45 @@ use jiff::SignedDuration;
 use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Check, CheckDetail, CheckState, Checks, Command, ConfigState,
-    Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, LoginItem,
-    NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks, Payload,
+    Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting, Length,
+    LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks, Payload,
     Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay,
     TourState, WebsiteChecking,
 };
 
 use common::{
-    accessibility_granted, activate_browser, activate_browser_event, activate_event, ad_hoc,
-    add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma, figma_app, forced,
-    host_event, mail, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
+    accessibility_granted, activate, activate_browser, activate_browser_event, activate_event,
+    ad_hoc, add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma, figma_app,
+    forced, host_event, mail, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
     report_zurich_sun, reported, resettable, send, set, until_turn, yours,
 };
 
 /// Every query's answer over the socket is the one the shell gets in process.
 fn answers_alike(staged: &Staged) {
-    let core = staged.core();
+    let snapshot = staged.core().snapshot();
     assert_eq!(
         ask(staged, Query::NightShift),
-        Payload::NightShift(core.night_shift())
+        Payload::NightShift(snapshot.night_shift())
     );
     assert_eq!(
         ask(staged, Query::Front),
-        Payload::Front(Box::new(core.front()))
+        Payload::Front(Box::new(snapshot.front()))
     );
-    assert_eq!(ask(staged, Query::Rules), Payload::Rules(core.rules()));
-    assert_eq!(ask(staged, Query::Config), Payload::Config(core.config()));
+    assert_eq!(ask(staged, Query::Rules), Payload::Rules(snapshot.rules()));
+    assert_eq!(
+        ask(staged, Query::Config),
+        Payload::Config(snapshot.config())
+    );
     assert_eq!(
         ask(staged, Query::Preferences),
-        Payload::Preferences(core.preferences())
+        Payload::Preferences(snapshot.preferences())
     );
-    assert_eq!(ask(staged, Query::Checks), Payload::Checks(core.checks()));
-    assert_eq!(ask(staged, Query::Tour), Payload::Tour(core.tour()));
-    assert_eq!(ask(staged, Query::About), Payload::About(core.about()));
+    assert_eq!(
+        ask(staged, Query::Checks),
+        Payload::Checks(snapshot.checks())
+    );
+    assert_eq!(ask(staged, Query::Tour), Payload::Tour(snapshot.tour()));
+    assert_eq!(ask(staged, Query::About), Payload::About(snapshot.about()));
 }
 
 #[test]
@@ -49,7 +55,7 @@ fn night_shift_is_unknown_until_macos_reports_it() {
     let staged = noon().stage().unwrap();
 
     assert_eq!(
-        staged.core().night_shift(),
+        staged.core().snapshot().night_shift(),
         NightShiftState {
             state: NightShift::Unavailable,
             strength: None,
@@ -71,7 +77,7 @@ fn night_shift_answers_its_strength_its_schedule_and_the_schedules_next_turns() 
         .unwrap();
 
     assert_eq!(
-        staged.core().night_shift(),
+        staged.core().snapshot().night_shift(),
         NightShiftState {
             state: NightShift::Off,
             strength: Some(60),
@@ -96,19 +102,26 @@ fn night_shift_answers_when_the_schedule_next_turns_it_each_way() {
     let unscheduled = noon().then(reported(false, Schedule::Off)).stage().unwrap();
 
     // On until 07:00, then off until 22:00 the next evening.
-    let night_shift = custom.core().night_shift();
+    let night_shift = custom.core().snapshot().night_shift();
     assert_eq!(night_shift.next_off, Some(at("2026-10-17T07:00:00+02:00")));
     assert_eq!(night_shift.next_on, Some(at("2026-10-17T22:00:00+02:00")));
-    let night_shift = sun.core().night_shift();
+    let night_shift = sun.core().snapshot().night_shift();
     assert_eq!(night_shift.next_off, Some(at("2026-10-16T05:50:47Z")));
     assert_eq!(night_shift.next_on, Some(at("2026-10-16T16:31:32Z")));
-    let night_shift = unscheduled.core().night_shift();
+    let night_shift = unscheduled.core().snapshot().night_shift();
     assert_eq!((night_shift.next_on, night_shift.next_off), (None, None));
     assert_eq!(
-        custom.core().night_shift().next_transition(),
+        custom.core().snapshot().night_shift().next_transition(),
         Some(at("2026-10-17T07:00:00+02:00"))
     );
-    assert_eq!(unscheduled.core().night_shift().next_transition(), None);
+    assert_eq!(
+        unscheduled
+            .core()
+            .snapshot()
+            .night_shift()
+            .next_transition(),
+        None
+    );
     answers_alike(&custom);
 }
 
@@ -123,7 +136,7 @@ fn night_shift_answers_sunset_to_sunrise_set_aside() {
         .stage()
         .unwrap();
 
-    let night_shift = staged.core().night_shift();
+    let night_shift = staged.core().snapshot().night_shift();
 
     assert!(night_shift.set_aside);
     assert_eq!(night_shift.schedule, Some(Schedule::Off));
@@ -135,7 +148,7 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
     let staged = on_figma().stage().unwrap();
 
     assert_eq!(
-        staged.core().front(),
+        staged.core().snapshot().front(),
         Front {
             app: Some("com.apple.Safari".parse().unwrap()),
             watching: true,
@@ -195,7 +208,7 @@ fn front_answers_no_site_while_website_checking_is_off() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate_browser(&staged, "com.apple.Safari");
 
-    let front = staged.core().front();
+    let front = staged.core().snapshot().front();
 
     assert_eq!(front.app, Some("com.apple.Safari".parse().unwrap()));
     assert!(!front.watching);
@@ -218,7 +231,7 @@ fn front_answers_a_snoozed_rule_under_the_rule_that_decides() {
     );
 
     assert_eq!(
-        staged.core().front().decision,
+        staged.core().snapshot().front().decision,
         Decision {
             state: Some(OnOff::On),
             place: figma_app(),
@@ -243,7 +256,7 @@ fn front_answers_what_a_site_that_says_nothing_inherits_from_its_browser() {
         .stage()
         .unwrap();
 
-    let site = staged.core().front().places.remove(0);
+    let site = staged.core().snapshot().front().places.remove(0);
 
     assert_eq!(site.place, Place::Domain("example.com".parse().unwrap()));
     assert_eq!(
@@ -267,7 +280,7 @@ fn front_answers_that_a_reset_under_an_external_on_gives_back_the_rule_it_snooze
         .stage()
         .unwrap();
 
-    let figma = staged.core().front().places.remove(0);
+    let figma = staged.core().snapshot().front().places.remove(0);
 
     assert_eq!(figma.place, figma_app());
     assert_eq!(
@@ -359,7 +372,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                     .then(Command::Off);
             }
             let staged = scenario.stage().unwrap();
-            let front = staged.core().front();
+            let front = staged.core().snapshot().front();
             let to = front.everywhere.gives.other();
 
             _ = staged.send(if to == OnOff::On {
@@ -374,7 +387,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                 .collect();
             assert_eq!(left, front.after_switch, "{commands:?}, tour: {tour}");
             assert_eq!(
-                staged.core().front().everywhere.gives,
+                staged.core().snapshot().front().everywhere.gives,
                 to,
                 "{commands:?}, tour: {tour}"
             );
@@ -393,7 +406,7 @@ fn rules_answers_every_rule_at_every_place() {
     send(&staged, Command::Off);
 
     assert_eq!(
-        staged.core().rules(),
+        staged.core().snapshot().rules(),
         vec![
             app_rule("com.figma.Desktop"),
             ad_hoc(mail()),
@@ -415,12 +428,12 @@ fn config_answers_what_it_sets_and_where_it_is() {
         .stage()
         .unwrap();
 
-    let config = staged.core().config();
+    let config = staged.core().snapshot().config();
 
     assert_eq!(
         config,
         ConfigState {
-            path: staged.core().config().path,
+            path: staged.core().snapshot().config().path,
             found: true,
             error: None,
             strength: Some(40),
@@ -435,7 +448,7 @@ fn config_answers_what_it_sets_and_where_it_is() {
 
 #[test]
 fn config_answers_the_default_lengths_without_a_file() {
-    let config = noon().stage().unwrap().core().config();
+    let config = noon().stage().unwrap().core().snapshot().config();
 
     assert!(!config.found);
     assert_eq!(
@@ -453,7 +466,7 @@ fn config_answers_why_it_or_rules_toml_cant_be_used() {
         .stage()
         .unwrap();
 
-    let config = staged.core().config();
+    let config = staged.core().snapshot().config();
 
     assert!(matches!(
         config.error,
@@ -476,7 +489,7 @@ fn preferences_answer_the_users_choices() {
         .unwrap();
 
     assert_eq!(
-        staged.core().preferences(),
+        staged.core().snapshot().preferences(),
         Preferences {
             website_checking: WebsiteChecking {
                 state: OnOff::On,
@@ -499,7 +512,7 @@ fn preferences_answer_the_users_choices() {
 fn preferences_answer_website_checking_as_the_config_sets_it() {
     let staged = noon().config("websites = false\n").stage().unwrap();
 
-    let preferences = staged.core().preferences();
+    let preferences = staged.core().snapshot().preferences();
 
     assert_eq!(
         preferences.website_checking,
@@ -528,7 +541,7 @@ fn checks_answer_each_check_and_the_grants_behind_them() {
     let Checks {
         checks,
         permissions,
-    } = staged.core().checks();
+    } = staged.core().snapshot().checks();
 
     assert!(checks.contains(&Check {
         detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
@@ -549,7 +562,7 @@ fn checks_answer_each_check_and_the_grants_behind_them() {
 fn checks_answer_the_grants_and_the_login_item_once_reported() {
     let staged = noon().stage().unwrap();
     assert_eq!(
-        staged.core().checks().permissions,
+        staged.core().snapshot().checks().permissions,
         Permissions {
             accessibility: false,
             notifications: NotificationPermission::NotRequested,
@@ -563,7 +576,7 @@ fn checks_answer_the_grants_and_the_login_item_once_reported() {
     });
 
     assert_eq!(
-        staged.core().checks().permissions,
+        staged.core().snapshot().checks().permissions,
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Granted,
@@ -580,17 +593,23 @@ fn start_tour(staged: &Staged) {
 #[test]
 fn tour_answers_whether_one_runs_and_stands_in_for_the_schedule() {
     let off = off_by_the_schedule().stage().unwrap();
-    assert_eq!(off.core().tour(), None);
+    assert_eq!(off.core().snapshot().tour(), None);
 
     start_tour(&off);
 
-    assert_eq!(off.core().tour(), Some(TourState { stands_in: true }));
+    assert_eq!(
+        off.core().snapshot().tour(),
+        Some(TourState { stands_in: true })
+    );
     answers_alike(&off);
     off.send_app(AppCommand::EndTour);
-    assert_eq!(off.core().tour(), None);
+    assert_eq!(off.core().snapshot().tour(), None);
     let on = on_by_the_schedule().stage().unwrap();
     start_tour(&on);
-    assert_eq!(on.core().tour(), Some(TourState { stands_in: false }));
+    assert_eq!(
+        on.core().snapshot().tour(),
+        Some(TourState { stands_in: false })
+    );
 }
 
 #[test]
@@ -602,24 +621,57 @@ fn about_answers_the_version_and_the_install() {
         .unwrap();
 
     assert_eq!(
-        managed.core().about(),
+        managed.core().snapshot().about(),
         About {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
         }
     );
-    assert_eq!(self_managed.core().about().install, Install::SelfManaged);
+    assert_eq!(
+        self_managed.core().snapshot().about().install,
+        Install::SelfManaged
+    );
     answers_alike(&managed);
 }
 
 #[test]
 fn a_query_answers_as_of_the_last_input() {
     let staged = noon().stage().unwrap();
-    assert_eq!(staged.core().rules(), Vec::new());
+    assert_eq!(staged.core().snapshot().rules(), Vec::new());
 
     send(&staged, add_rule(figma()));
 
-    assert_eq!(staged.core().rules(), vec![ad_hoc(figma())]);
+    assert_eq!(staged.core().snapshot().rules(), vec![ad_hoc(figma())]);
     staged.report(reported(true, custom_hours()));
-    assert_eq!(staged.core().night_shift().state, NightShift::On);
+    assert_eq!(staged.core().snapshot().night_shift().state, NightShift::On);
+}
+
+#[test]
+fn a_snapshot_keeps_answering_as_it_was_while_one_taken_after_an_input_answers_the_change() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    let before = staged.core().snapshot();
+
+    send(&staged, add_rule(figma()));
+    activate(&staged, "com.figma.Desktop");
+    let after = staged.core().snapshot();
+
+    assert_eq!(before.rules(), Vec::new());
+    assert_eq!(before.front().app, None);
+    assert_eq!(before.front().decision.place, Place::Everywhere);
+    assert!(
+        !before
+            .export(ExportFormat::Toml)
+            .contains("com.figma.Desktop")
+    );
+    assert_eq!(after.rules(), vec![ad_hoc(figma())]);
+    assert_eq!(
+        after.front().app,
+        Some("com.figma.Desktop".parse().unwrap())
+    );
+    assert_eq!(after.front().decision.place, figma_app());
+    assert!(
+        after
+            .export(ExportFormat::Toml)
+            .contains("com.figma.Desktop")
+    );
 }

@@ -180,7 +180,7 @@ struct MenuTests {
         #expect(row.title == "Turn Off")
         #expect(row.titles == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…"])
         core.send(command: try row.choice(titled: "For 30 Minutes").command)
-        #expect(core.front().decision.state == .off)
+        #expect(core.snapshot().front().decision.state == .off)
     }
 
     @Test func undoingIsOfferedWhereItGoesTheRightWayAndARuleOfYoursCanAlwaysGo() throws {

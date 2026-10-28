@@ -2,11 +2,12 @@ import AppKit
 import KeyboardShortcuts
 import NightcapCore
 
-/// Nightcap's menu-bar item. `Menu` decides what it shows from the core's answers; this only
+/// Nightcap's menu-bar item. `Menu` decides what it shows from the core's snapshot; this only
 /// draws it, rebuilding the menu each time it opens, and sends the chosen command to the core.
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    private let current: () -> Menu
+    /// The core's latest snapshot, which the menu takes as it appears and opens.
+    private let current: () -> Snapshot
     private let icons: SiteIcons
     private let words = Wording.system
     private let choose: (Command) -> Void
@@ -14,7 +15,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let openSettings: (_ onProblem: Bool) -> Void
     private let onOpen: () -> Void
     private let onClose: () -> Void
-    /// What the open menu shows, so `refresh()` redraws it only when that changed.
+    /// What the open menu shows, so `refresh(_:)` redraws it only when that changed.
     private var shown: Menu?
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
@@ -42,7 +43,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     init(
-        current: @escaping () -> Menu,
+        current: @escaping () -> Snapshot,
         icons: SiteIcons,
         choose: @escaping (Command) -> Void,
         openSettings: @escaping (_ onProblem: Bool) -> Void,
@@ -73,31 +74,37 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 dot.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -MenuArt.dotOffset.y),
             ])
         }
-        refresh()
+        refresh(current())
     }
 
     /// Where items' titles start, in the slider's view, which puts its small sun there as the
     /// mockup does.
     private static let titleInset: CGFloat = 46
 
-    /// Redraws the icon, and the menu too while it's open and what it shows changed. A new
-    /// strength alone moves the slider in place, since rebuilding the menu would end a drag.
-    func refresh() {
-        let snapshot = current()
-        let image = MenuArt.moon(for: snapshot.moon)
-        if snapshot.problemLine != nil { image?.accessibilityDescription = words.needingAttention(snapshot.moon) }
+    /// Redraws the icon from `snapshot`, and the menu too while it's open and what it shows
+    /// changed. A new strength alone moves the slider in place, since rebuilding the menu would
+    /// end a drag.
+    func refresh(_ snapshot: Snapshot) {
+        let decided = decide(snapshot)
+        let image = MenuArt.moon(for: decided.moon)
+        if decided.problemLine != nil { image?.accessibilityDescription = words.needingAttention(decided.moon) }
         item.button?.image = image
-        item.button?.appearsDisabled = snapshot.moon == .unavailable
-        dot.isHidden = snapshot.problemLine == nil
-        guard let shown, snapshot != shown, let menu = item.menu else { return }
-        if let slider, Self.apartFromStrength(snapshot) == Self.apartFromStrength(shown),
-            let strength = Self.strength(in: snapshot)
+        item.button?.appearsDisabled = decided.moon == .unavailable
+        dot.isHidden = decided.problemLine == nil
+        guard let shown, decided != shown, let menu = item.menu else { return }
+        if let slider, Self.apartFromStrength(decided) == Self.apartFromStrength(shown),
+            let strength = Self.strength(in: decided)
         {
-            self.shown = snapshot
+            self.shown = decided
             if NSEvent.pressedMouseButtons == 0 { slider.doubleValue = Double(strength) }
         } else {
-            menuNeedsUpdate(menu)
+            rebuild(menu, showing: decided)
         }
+    }
+
+    /// The menu `snapshot` decides as it's drawn, with the front app by its name.
+    private func decide(_ snapshot: Snapshot) -> Menu {
+        Menu(snapshot, now: Date(), appName: Apps.runningName(of:), words: words)
     }
 
     private static func strength(in menu: Menu) -> UInt8? {
@@ -216,11 +223,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        let snapshot = current()
-        shown = snapshot
+        rebuild(menu, showing: decide(current()))
+    }
+
+    /// Fills `menu` afresh with what `decided` shows.
+    private func rebuild(_ menu: NSMenu, showing decided: Menu) {
+        shown = decided
         siteRow = nil
         menu.removeAllItems()
-        if let problemLine = snapshot.problemLine {
+        if let problemLine = decided.problemLine {
             let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
             line.subtitle = MenuArt.wrapped(problemLine.subtitle)
             line.image = MenuArt.warning
@@ -228,8 +239,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             menu.addItem(line)
             menu.addItem(.separator())
         }
-        menu.addItem(nightShiftItem(snapshot))
-        for entry in snapshot.entries {
+        menu.addItem(nightShiftItem(decided))
+        for entry in decided.entries {
             switch entry {
             case .strength(let value):
                 menu.addItem(strengthItem(value))

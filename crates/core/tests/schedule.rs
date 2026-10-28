@@ -30,20 +30,32 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
     staged.set_now(at("2026-10-17T07:30:00+02:00"));
     staged.report(Fact::TimerFired);
 
-    assert_eq!(staged.core().night_shift().state, NightShift::On);
-    assert_eq!(staged.core().night_shift().schedule, None);
-    assert_eq!(staged.core().night_shift().next_transition(), None);
-    assert_eq!(staged.core().front().decision.reasons, Vec::new());
+    assert_eq!(staged.core().snapshot().night_shift().state, NightShift::On);
+    assert_eq!(staged.core().snapshot().night_shift().schedule, None);
+    assert_eq!(
+        staged.core().snapshot().night_shift().next_transition(),
+        None
+    );
+    assert_eq!(
+        staged.core().snapshot().front().decision.reasons,
+        Vec::new()
+    );
 }
 
 #[test]
 fn night_shift_is_answered_with_the_schedule_what_it_says_and_its_next_turn() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    assert_eq!(staged.core().night_shift().schedule, Some(custom_hours()));
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        staged.core().night_shift().next_transition(),
+        staged.core().snapshot().night_shift().schedule,
+        Some(custom_hours())
+    );
+    assert_eq!(
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::Off)
+    );
+    assert_eq!(
+        staged.core().snapshot().night_shift().next_transition(),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }
@@ -113,7 +125,10 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
+    assert_eq!(
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::On)
+    );
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -131,8 +146,11 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
         sunsets: Vec::new(),
     });
 
-    assert_eq!(staged.core().night_shift().scheduled, None);
-    assert_eq!(staged.core().night_shift().next_transition(), None);
+    assert_eq!(staged.core().snapshot().night_shift().scheduled, None);
+    assert_eq!(
+        staged.core().snapshot().night_shift().next_transition(),
+        None
+    );
 }
 
 #[test]
@@ -169,7 +187,10 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
+    assert_eq!(
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::On)
+    );
 }
 
 #[test]
@@ -179,6 +200,12 @@ fn turning_the_schedule_off_cancels_the_wakeup() {
     let effects = staged.report(reported(false, Schedule::Off)).effects;
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
-    assert_eq!(staged.core().night_shift().next_transition(), None);
+    assert_eq!(
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::Off)
+    );
+    assert_eq!(
+        staged.core().snapshot().night_shift().next_transition(),
+        None
+    );
 }

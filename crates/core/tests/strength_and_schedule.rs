@@ -31,7 +31,7 @@ fn at_strength_60() -> Staged {
 #[test]
 fn strength_sets_it_and_answers_with_the_decision() {
     let staged = at_strength_60();
-    let decision = staged.core().front().decision;
+    let decision = staged.core().snapshot().front().decision;
 
     let (effects, response) = send(&staged, Command::Strength(40));
 
@@ -96,7 +96,7 @@ fn a_strength_above_100_is_refused() {
 #[test]
 fn set_schedule_writes_it_and_answers_with_the_decision() {
     let staged = at_strength_60();
-    let decision = staged.core().front().decision;
+    let decision = staged.core().snapshot().front().decision;
 
     let (effects, response) = send(&staged, Command::SetSchedule(custom_hours()));
 
@@ -205,15 +205,15 @@ fn the_config_answers_its_night_shift_values_beside_the_macs() {
 
     assert_eq!(
         (
-            staged.core().night_shift().strength,
-            staged.core().config().strength
+            staged.core().snapshot().night_shift().strength,
+            staged.core().snapshot().config().strength
         ),
         (Some(60), Some(40))
     );
     assert_eq!(
         (
-            staged.core().night_shift().schedule,
-            staged.core().config().schedule
+            staged.core().snapshot().night_shift().schedule,
+            staged.core().snapshot().config().schedule
         ),
         (Some(Schedule::Off), Some(Schedule::SunsetToSunrise))
     );

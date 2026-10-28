@@ -154,5 +154,8 @@ A request for Nightcap to do something, such as the switch, a temporary rule at 
 **Refusal**:
 Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too, short of a reload's, which the config file's check shows already.
 
+**Snapshot**:
+Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.
+
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.

@@ -38,10 +38,13 @@ fn a_domain_rule_turns_night_shift_off_on_its_site() {
         vec![Effect::SetNightShift { enabled: false }]
     );
 
-    assert!(staged.core().front().watching);
-    assert_eq!(staged.core().front().host.as_deref(), Some("www.figma.com"));
+    assert!(staged.core().snapshot().front().watching);
     assert_eq!(
-        staged.core().front().decision.reasons,
+        staged.core().snapshot().front().host.as_deref(),
+        Some("www.figma.com")
+    );
+    assert_eq!(
+        staged.core().snapshot().front().decision.reasons,
         vec![Reason::Rule(domain_rule("figma.com"))]
     );
 }
@@ -57,7 +60,7 @@ fn a_host_from_an_older_watch_is_dropped() {
 
     assert_eq!(report_host(&staged, 1, "www.figma.com"), Vec::new());
 
-    assert_eq!(staged.core().front().host, None);
+    assert_eq!(staged.core().snapshot().front().host, None);
 }
 
 #[test]
@@ -110,8 +113,8 @@ fn an_unreadable_host_leaves_only_app_rules() {
         .effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert!(staged.core().front().watching);
-    assert_eq!(staged.core().front().host, None);
+    assert!(staged.core().snapshot().front().watching);
+    assert_eq!(staged.core().snapshot().front().host, None);
 }
 
 #[test]
@@ -175,7 +178,7 @@ fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
             until_turn("2026-10-17T07:00:00+02:00")
         )]
     );
-    assert!(staged.core().front().watching);
+    assert!(staged.core().snapshot().front().watching);
 }
 
 #[test]
@@ -187,7 +190,7 @@ fn website_checking_is_off_until_turned_on() {
 
     assert_eq!(activate_browser(&staged, "com.apple.Safari"), Vec::new());
     assert_eq!(
-        staged.core().preferences().website_checking,
+        staged.core().snapshot().preferences().website_checking,
         WebsiteChecking {
             state: OnOff::Off,
             from_config: false,
@@ -210,7 +213,7 @@ fn the_config_decides_website_checking_when_it_sets_it() {
 
     assert_eq!(refusal(response), Refusal::WebsiteCheckingInConfig);
     assert_eq!(
-        staged.core().preferences().website_checking,
+        staged.core().snapshot().preferences().website_checking,
         WebsiteChecking {
             state: OnOff::On,
             from_config: true,
@@ -241,8 +244,8 @@ fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
 
     let (effects, _) = send(&staged, add_rule(safari()));
     assert!(effects.contains(&Effect::StopWatching));
-    assert_eq!(staged.core().front().site, None);
-    assert_eq!(staged.core().front().host, None);
+    assert_eq!(staged.core().snapshot().front().site, None);
+    assert_eq!(staged.core().snapshot().front().host, None);
     let (effects, _) = send(&staged, Command::RemoveRule(safari()));
     assert!(effects.contains(&watch("com.apple.Safari", 2)));
 }

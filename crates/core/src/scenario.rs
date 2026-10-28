@@ -1,4 +1,4 @@
-//! Cores staged in memory, for tests and the dev build's snapshots: no thread of their own, no
+//! Cores staged in memory, for tests and the dev build's renderer: no thread of their own, no
 //! socket and no disk. Each decides an input on the caller's thread before it returns. A scene is
 //! the files' text and what happens after, and the core gets there by its own code. Release
 //! builds have none of this, so the app there can't stage a core.

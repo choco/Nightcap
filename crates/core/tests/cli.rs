@@ -19,17 +19,17 @@ fn night_shift_is_answered_as_last_observed() {
 
     staged.report(reported(true, Schedule::Off));
 
-    assert_eq!(staged.core().night_shift().state, NightShift::On);
+    assert_eq!(staged.core().snapshot().night_shift().state, NightShift::On);
 }
 
 #[test]
 fn the_strength_is_answered_as_last_read() {
     let staged = noon().stage().unwrap();
-    assert_eq!(staged.core().night_shift().strength, None);
+    assert_eq!(staged.core().snapshot().night_shift().strength, None);
 
     staged.report(Fact::StrengthChanged { value: 60 });
 
-    assert_eq!(staged.core().night_shift().strength, Some(60));
+    assert_eq!(staged.core().snapshot().night_shift().strength, Some(60));
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn the_checks_answer_the_last_permission_change() {
     });
 
     assert_eq!(
-        staged.core().checks().permissions,
+        staged.core().snapshot().checks().permissions,
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Denied,

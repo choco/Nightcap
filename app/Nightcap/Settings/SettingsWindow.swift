@@ -3,12 +3,13 @@
 import KeyboardShortcuts
 import NightcapCore
 
-/// Nightcap's settings, as `Settings` decides them from the core's queries. The window only
+/// Nightcap's settings, as `Settings` decides them from the core's snapshot. The window only
 /// draws them, rebuilding the shown tab whenever they change while it's open.
 final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     typealias Tab = Settings.Tab
 
-    private let current: () -> Settings
+    /// The core's latest snapshot, which the window takes as it opens or switches tabs.
+    private let current: () -> Snapshot
     private let words = Wording.system
     private let icons: SiteIcons
     private let choose: (Command) -> Void
@@ -34,7 +35,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private static let width: CGFloat = 552
 
     init(
-        current: @escaping () -> Settings,
+        current: @escaping () -> Snapshot,
         icons: SiteIcons,
         choose: @escaping (Command) -> Void,
         perform: @escaping (AppFix) -> Void,
@@ -64,10 +65,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         window.makeKeyAndOrderFront(nil)
     }
 
-    /// Redraws only when what the core shows changed, so a click in progress isn't lost.
-    func refresh() {
+    /// Redraws from `snapshot` only when what it shows changed, so a click in progress isn't lost.
+    func refresh(_ snapshot: Snapshot) {
         guard window?.isVisible == true else { return }
-        let settings = current()
+        let settings = Settings(snapshot, words: words)
         guard settings != shown else { return }
         draw(settings)
     }
@@ -154,7 +155,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         self.tab = tab
         window?.toolbar?.selectedItemIdentifier = tab.identifier
         window?.title = words.title(of: tab)
-        draw(current())
+        draw(Settings(current(), words: words))
     }
 
     /// Builds the shown tab, sizes the window to fit it, keeping its top edge, then shows it.

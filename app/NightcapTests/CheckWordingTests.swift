@@ -30,7 +30,7 @@ func reportedSetAside(_ enabled: Bool, _ schedule: Schedule) -> Step {
 extension Core {
     /// What the check of `kind` found, as the checks query answers it.
     @MainActor func found(_ kind: CheckKind) -> Check? {
-        checks().checks.first { $0.detail.kind == kind }
+        snapshot().checks().checks.first { $0.detail.kind == kind }
     }
 }
 

@@ -18,6 +18,7 @@ mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
 pub use server::messages::{AppCommand, Effect, Event, Fact, Listener, Outcome};
+pub use server::snapshot::Snapshot;
 
 #[cfg(any(test, debug_assertions))]
 pub use scenario::{Scenario, ScenarioError, Staged, Step};
@@ -28,25 +29,21 @@ use std::fmt;
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, mpsc};
 
-use nightcap_protocol::{
-    About, Checks, Command, ConfigState, ExportFormat, Front, NightShiftState, Preferences, Rule,
-    TourState,
-};
+use nightcap_protocol::Command;
 
 use clock::SystemClock;
 use server::mailbox::{Mail, Mailbox};
 use server::react::Input;
 #[cfg(any(test, debug_assertions))]
 use server::react::react;
-use server::snapshot::{Published, Snapshot};
+use server::snapshot::Published;
 use server::start::{Setup, install_of, instance_of, zone_of};
 use server::state::Inner;
-use storage::ad_hoc_rules;
 use storage::file::{Disk, Paths};
 
 /// The core, a server on its own thread (ADR-0002): facts and commands go into its mailbox and
-/// return at once, its listener hears each one's outcome, and the queries and the other reads
-/// answer from the snapshot it publishes after each, never the mailbox.
+/// return at once, its listener hears each one's outcome, and every read takes the snapshot it
+/// publishes after each, never the mailbox.
 #[derive(uniffi::Object)]
 pub struct Core {
     published: Arc<Published>,
@@ -146,49 +143,11 @@ impl Core {
         }
     }
 
-    /// The ad-hoc rules, written for the config (ADR-0007).
-    pub fn export(&self, format: ExportFormat) -> String {
-        ad_hoc_rules::export(&self.published.latest().ad_hoc, format)
-    }
-
-    /// Night Shift as the shell last reported it, and its schedule.
-    pub fn night_shift(&self) -> NightShiftState {
-        self.published.latest().answers.night_shift
-    }
-
-    /// What's in front, and what decides Night Shift there (ADR-0018).
-    pub fn front(&self) -> Front {
-        self.published.latest().answers.front.clone()
-    }
-
-    /// Every rule at every place (ADR-0018).
-    pub fn rules(&self) -> Vec<Rule> {
-        self.published.latest().answers.rules.clone()
-    }
-
-    /// The config as Nightcap last read it, and why it or `rules.toml` can't be used.
-    pub fn config(&self) -> ConfigState {
-        self.published.latest().answers.config.clone()
-    }
-
-    /// The user's choices about how Nightcap runs.
-    pub fn preferences(&self) -> Preferences {
-        self.published.latest().answers.preferences
-    }
-
-    /// The checks, and the grants behind them.
-    pub fn checks(&self) -> Checks {
-        self.published.latest().answers.checks.clone()
-    }
-
-    /// The tour, while one runs (ADR-0016).
-    pub fn tour(&self) -> Option<TourState> {
-        self.published.latest().answers.tour
-    }
-
-    /// The Nightcap that answers: its version and its install (ADR-0011).
-    pub fn about(&self) -> About {
-        self.published.latest().answers.about.clone()
+    /// The snapshot the core published after its last input, which every query and the export
+    /// read from, so one redraw's answers all come from the same input (ADR-0002). It can lag
+    /// one input behind; the outcome that follows tells the shell to take another.
+    pub fn snapshot(&self) -> Arc<Snapshot> {
+        self.published.latest()
     }
 }
 

@@ -4,7 +4,7 @@ import Testing
 
 /// Settings as `core` answers its queries, in English with a 24-hour clock.
 private func settings(_ core: Core) -> Settings {
-    Settings(core, words: .staged)
+    Settings(core.snapshot(), words: .staged)
 }
 
 private func fix(_ title: String, _ fix: Settings.Fix) -> Settings.FixButton {
@@ -287,28 +287,28 @@ struct SettingsTests {
             tourStarted, front(tourSample),
             .command(.addRule(identity: .app(tourSample), says: .off)))
 
-        #expect(core.rules().contains { $0.setBy == .tour })
+        #expect(core.snapshot().rules().contains { $0.setBy == .tour })
         #expect(settings(core).rules == [])
     }
 
     @Test func aProblemOpensTheTabItsCheckIsIn() throws {
-        #expect(Settings.tab(for: try atNoon(reported(false, .off)).checks().checks) == .general)
+        #expect(Settings.tab(for: try atNoon(reported(false, .off)).snapshot().checks().checks) == .general)
         let broken = try atNoon(config: "[rules.off]\ndomian = [\"figma.com\"]\n", reported(false, .off))
-        #expect(Settings.tab(for: broken.checks().checks) == .rules)
+        #expect(Settings.tab(for: broken.snapshot().checks().checks) == .rules)
         #expect(settings(broken).hasProblem(in: .rules))
         #expect(!settings(broken).hasProblem(in: .general))
 
         let both = try atNoon(
             config: "[rules.off]\ndomian = [\"figma.com\"]\n", reported(false, .off), permissions(true, .granted),
             permissions(true, .denied))
-        #expect(Settings.tab(for: both.checks().checks) == .general)
+        #expect(Settings.tab(for: both.snapshot().checks().checks) == .general)
         #expect(settings(both).hasProblem(in: .general))
     }
 
     @Test func settingsSayWhichNightcapAnswers() throws {
         let core = try atNoon()
 
-        #expect(settings(core).version == core.about().version)
-        #expect(settings(core).configPath == core.config().path)
+        #expect(settings(core).version == core.snapshot().about().version)
+        #expect(settings(core).configPath == core.snapshot().config().path)
     }
 }

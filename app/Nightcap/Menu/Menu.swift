@@ -86,47 +86,40 @@ struct Menu: Equatable {
     let problemLine: ProblemLine?
     let nightShift: NightShiftItem
     var entries: [Entry]
-
-    /// What the menu is decided from: the core's answers to the queries it asks.
-    struct Answers {
-        var nightShift: NightShiftState
-        /// What's in front, and how each place in front stands.
-        var front: Front
-        /// The config's lengths a change can be picked for.
-        var lengths: [SignedDuration]
-        var checks: [Check]
-    }
-}
-
-extension Menu.Answers {
-    /// What `core` answers now. Each query reads the latest snapshot, so one asked after an
-    /// outcome can be a step ahead of another; the next outcome redraws.
-    init(asking core: Core) {
-        self.init(
-            nightShift: core.nightShift(), front: core.front(), lengths: core.config().lengths,
-            checks: core.checks().checks)
-    }
 }
 
 extension Menu {
-    /// The menu for `answers` at `now`, in `words`, which call the front app by `appName`'s name
-    /// for its bundle ID, else by the bundle ID.
-    init(_ answers: Answers, now: Date, appName: (String) -> String?, words: Wording) {
-        guard answers.nightShift.state != .unavailable else {
+    /// The menu for `snapshot` at `now`, in `words`, which call the front app by `appName`'s
+    /// name for its bundle ID, else by the bundle ID.
+    init(_ snapshot: Snapshot, now: Date, appName: (String) -> String?, words: Wording) {
+        self.init(
+            nightShift: snapshot.nightShift(), front: snapshot.front(), lengths: snapshot.config().lengths,
+            checks: snapshot.checks().checks, now: now, appName: appName, words: words)
+    }
+
+    /// The menu for these answers to the queries: `front` says what's in front and how each place
+    /// there stands, and `lengths` are the config's lengths a change can be picked for.
+    init(
+        nightShift: NightShiftState, front: Front, lengths: [SignedDuration], checks: [Check], now: Date,
+        appName: (String) -> String?, words: Wording
+    ) {
+        guard nightShift.state != .unavailable else {
             self.init(
                 moon: .unavailable, problemLine: nil,
                 nightShift: NightShiftItem(on: false, line: words.unavailable, command: nil), entries: [])
             return
         }
-        let rows = Rows(answers: answers, now: now, frontName: answers.front.app.flatMap(appName), words: words)
-        let decision = answers.front.decision
-        let everywhere = answers.front.everywhere.gives
+        let rows = Rows(
+            nightShift: nightShift, front: front, lengths: lengths, checks: checks, now: now,
+            frontName: front.app.flatMap(appName), words: words)
+        let decision = front.decision
+        let everywhere = front.everywhere.gives
         var entries: [Entry] = []
-        if let strength = answers.nightShift.strength { entries.append(.strength(strength)) }
+        if let strength = nightShift.strength { entries.append(.strength(strength)) }
         if let row = rows.everywhere() { entries.append(.row(row)) }
-        let front = rows.front()
-        if !front.isEmpty { entries.append(.separator) }
-        entries += front.map(Entry.row)
+        let inFront = rows.inFront()
+        if !inFront.isEmpty { entries.append(.separator) }
+        entries += inFront.map(Entry.row)
         let moon: Moon =
             switch decision.state ?? everywhere {
             case .off where decision.place != .everywhere && everywhere == .on: .forcedOff
@@ -150,7 +143,10 @@ extension Menu {
 
 /// What the rows read, and how they word it.
 private struct Rows {
-    let answers: Menu.Answers
+    let nightShift: NightShiftState
+    let front: Front
+    let lengths: [SignedDuration]
+    let checks: [Check]
     let now: Date
     /// The front app's name, where it has one.
     let frontName: String?
@@ -160,13 +156,13 @@ private struct Rows {
     /// lengths but the switch's own, and none that would come to the same as the switch. Nil
     /// when it would offer nothing.
     func everywhere() -> Menu.PlaceRow? {
-        let everywhere = answers.front.everywhere
+        let everywhere = front.everywhere
         let state = everywhere.gives.other
         var items: [Menu.Item] = []
         // While the tour stands in, what's under everywhere's rules is the tour's on, which the
         // switch gives back; the schedule isn't there to go back to.
         if case .schedule(let scheduled, .some) = everywhere.base, scheduled == state, !everywhere.rules.isEmpty,
-            !answers.front.afterSwitch.isEmpty
+            !front.afterSwitch.isEmpty
         {
             items.append(.choice(Menu.Choice(title: words.backToTheSchedule, command: .reset(.everywhere))))
         }
@@ -180,7 +176,7 @@ private struct Rows {
         if !items.isEmpty, !lengths.isEmpty { items.append(.separator) }
         items += lengths
         guard !items.isEmpty else { return nil }
-        let decision = answers.front.decision
+        let decision = front.decision
         return Menu.PlaceRow(
             place: .everywhere,
             title: words.turn(state),
@@ -191,8 +187,8 @@ private struct Rows {
     }
 
     /// The front app's row, then the front site's under it.
-    func front() -> [Menu.PlaceRow] {
-        answers.front.places.reversed().compactMap { at in
+    func inFront() -> [Menu.PlaceRow] {
+        front.places.reversed().compactMap { at in
             switch at.place {
             case .everywhere: nil
             case .app(let app): row(at, named: .app(name: name(of: app)), identity: .app(app))
@@ -266,10 +262,10 @@ private struct Rows {
 
     /// The line under the Night Shift item: what decides the screen.
     func line() -> String? {
-        let decision = answers.front.decision
+        let decision = front.decision
         guard let top = decision.reasons.first else {
             // Without the sun times, only macOS knows where the schedule stands, and applies it.
-            return answers.nightShift.schedule == .sunsetToSunrise ? words.followingTheSchedule : nil
+            return nightShift.schedule == .sunsetToSunrise ? words.followingTheSchedule : nil
         }
         return switch (top, named(decision.place)) {
         case (.rule(let rule), let place?) where rule.length == .indefinite:
@@ -279,13 +275,13 @@ private struct Rows {
         case (.tour, _): words.onForTheTour
         case (.schedule(_, let until?), _): words.followingTheSchedule(until: until)
         case (.schedule(_, nil), _):
-            answers.nightShift.schedule == .off ? words.noSchedule : words.followingTheSchedule
+            nightShift.schedule == .off ? words.noSchedule : words.followingTheSchedule
         }
     }
 
     /// The problem line, from the checks that are problems: drift or broken.
     func problemLine() -> Menu.ProblemLine? {
-        let problems = answers.checks.filter(\.state.isProblem).map(\.detail)
+        let problems = checks.filter(\.state.isProblem).map(\.detail)
         guard !problems.isEmpty else { return nil }
         return Menu.ProblemLine(title: words.thingsNeedAttention(problems.count), subtitle: words.needing(problems))
     }
@@ -296,7 +292,7 @@ private struct Rows {
         let quarter: TimeInterval = 15 * 60
         let start = Date(
             timeIntervalSince1970: ((now.timeIntervalSince1970 + 60 * 60) / quarter).rounded(.up) * quarter)
-        return answers.lengths.map { length in
+        return lengths.map { length in
             .choice(
                 Menu.Choice(
                     title: words.forLength(length), command: .set(place: place, state: state, length: .for(length))))
@@ -306,7 +302,6 @@ private struct Rows {
     /// Until the schedule next turns Night Shift back from `state`, shown as the time with the
     /// moment under it, since the time alone could be any clock's. Nil without a schedule.
     private func untilTurn(at place: Place, _ state: OnOff) -> Menu.Item? {
-        let nightShift = answers.nightShift
         guard let schedule = nightShift.schedule, let until = state == .on ? nightShift.nextOff : nightShift.nextOn
         else { return nil }
         return .choice(
@@ -326,7 +321,7 @@ private struct Rows {
 
     /// An app by its name while it's in front, else by its bundle ID.
     private func name(of bundleId: String) -> String {
-        (answers.front.app == bundleId ? frontName : nil) ?? bundleId
+        (front.app == bundleId ? frontName : nil) ?? bundleId
     }
 
     private static func whose(_ setBy: SetBy) -> Wording.Whose {

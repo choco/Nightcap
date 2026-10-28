@@ -300,7 +300,7 @@ enum StageArt {
             inherits: Inherited(from: .everywhere, says: .on), afterUntil: .on, afterReset: .on)
         let everywhere = PlaceInFront(
             place: .everywhere, gives: .on, rules: [], base: schedule, inherits: nil, afterUntil: .on, afterReset: .on)
-        let answers = Menu.Answers(
+        return Menu(
             nightShift: NightShiftState(
                 state: .on, strength: 60, schedule: .sunsetToSunrise, setAside: false, scheduled: .on, nextOn: nil,
                 nextOff: sunrise),
@@ -309,8 +309,8 @@ enum StageArt {
                 decision: Decision(state: .on, place: .everywhere, reasons: [schedule]), places: [mail],
                 everywhere: everywhere,
                 afterSwitch: [Rule(place: .everywhere, says: .off, length: .indefinite, setBy: .you)]),
-            lengths: [30 * 60, 60 * 60, 120 * 60], checks: [])
-        return Menu(answers, now: evening, appName: { _ in "Mail" }, words: .system)
+            lengths: [30 * 60, 60 * 60, 120 * 60], checks: [], now: evening, appName: { _ in "Mail" },
+            words: .system)
     }
 
     /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift

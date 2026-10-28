@@ -30,7 +30,7 @@ private func core(
 
 /// What onboarding asks on `core`.
 private func setup(_ core: Core) -> OnboardingFlow.Setup {
-    OnboardingFlow.Setup(core)
+    OnboardingFlow.Setup(core.snapshot())
 }
 
 /// The flow over `core`, with iMovie and Photos to suggest and figma.com among the sites. What it
@@ -42,7 +42,7 @@ private func onboarding(
 ) -> OnboardingFlow {
     OnboardingFlow(
         setup: setup(core), apps: [imovie, photos], sites: ["figma.com"],
-        rules: { core.rules() }, words: .staged, accessibilityGranted: { true }, askForAccessibility: {},
+        rules: { core.snapshot().rules() }, words: .staged, accessibilityGranted: { true }, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
             core.send(command: command)
@@ -191,7 +191,7 @@ struct OnboardingFlowTests {
         #expect(flow.footer.primary == .addRules(count: 0))
         flow.perform(.addRules(count: 0))
         #expect(sent.commands == [])
-        let rules = staged.rules()
+        let rules = staged.snapshot().rules()
         #expect(rules.first { $0.place == .app(books) }?.says == .on)
         #expect(rules.first { $0.place == .app(tv) }?.says == .on)
     }
@@ -211,7 +211,7 @@ struct OnboardingFlowTests {
         flow.perform(.addRules(count: 0))
         #expect(sent.commands == [])
         #expect(flow.addedApps == [])
-        #expect(staged.rules().contains { $0.place == .app(imovie) && $0.says == .on })
+        #expect(staged.snapshot().rules().contains { $0.place == .app(imovie) && $0.says == .on })
     }
 
     @Test func theScheduleIsSentOnlyWhenItChanges() throws {

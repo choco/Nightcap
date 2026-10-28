@@ -84,20 +84,17 @@ final class Tour {
     private weak var hint: NSTextField?
     /// Reopens the sample if the user quits it during the rule step.
     private var terminations: NSObjectProtocol?
-    private let current: () -> TourFacts.Answers
     private let press: () -> Void
     private let release: () -> Void
     private let begin: (_ start: AppCommand) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
-    /// `current` gives the core's answers to the queries the steps follow; `press` and `release`
-    /// work the shortcut as its keys would, for the keycaps; `begin` hands the core the tour's
-    /// start as the user continues from the first step, and `onEnd` runs once the tour is over.
-    /// Without `browser`, the tour has no site step.
+    /// `press` and `release` work the shortcut as its keys would, for the keycaps; `begin` hands
+    /// the core the tour's start as the user continues from the first step, and `onEnd` runs once
+    /// the tour is over. Without `browser`, the tour has no site step.
     init(
         shortcut: KeyboardShortcuts.Shortcut?,
         browser: Browser?,
-        current: @escaping () -> TourFacts.Answers,
         press: @escaping () -> Void,
         release: @escaping () -> Void,
         begin: @escaping (_ start: AppCommand) -> Void,
@@ -107,7 +104,6 @@ final class Tour {
         self.browser = browser
         site = browser.map { TourSite(domain: Self.siteURL.host()!, browser: $0.bundleId) }
         quotes = TourQuotes(sample: Self.sample, site: site, example: Self.example, words: words)
-        self.current = current
         self.press = press
         self.release = release
         self.begin = begin
@@ -136,9 +132,9 @@ final class Tour {
     private var usesSample: Bool { step == .rule || step == .snooze }
 
     /// At the top right, under the menu bar, where the moon is: on macOS 27 an app isn't told
-    /// where its status item is, so nothing points at it.
-    func start() {
-        refresh()
+    /// where its status item is, so nothing points at it. The first step follows `snapshot`.
+    func start(_ snapshot: Snapshot) {
+        refresh(snapshot)
         if let screen = NSScreen.main?.visibleFrame {
             panel.setFrameOrigin(
                 NSPoint(
@@ -160,14 +156,13 @@ final class Tour {
 
     // MARK: What the tour follows
 
-    /// Takes the core's answers after each change, however it was made, and redraws what they
-    /// change.
-    func refresh() {
-        let answers = current()
-        let report = TourFacts(answers, sample: Self.sample.bundleId, site: site?.domain)
+    /// Takes the core's snapshot after each change, however it was made, and redraws what it
+    /// changes.
+    func refresh(_ snapshot: Snapshot) {
+        let report = TourFacts(snapshot, sample: Self.sample.bundleId, site: site?.domain)
         if let before = self.report, let after = report { follow(from: before, to: after) }
         self.report = report
-        nightShiftOff = answers.nightShift.state == .off
+        nightShiftOff = snapshot.nightShift().state == .off
         guard reported else { return }
         if shown != drawn {
             draw()

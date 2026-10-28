@@ -410,7 +410,7 @@ mod tests {
             panic!("expected Night Shift");
         };
         assert_eq!(night_shift.state, NightShift::Unavailable);
-        assert_eq!(night_shift, core.night_shift());
+        assert_eq!(night_shift, core.snapshot().night_shift());
         assert!(
             outcomes.try_recv().is_err(),
             "a query reaches neither the mailbox nor the shell"
@@ -436,7 +436,10 @@ mod tests {
                 events: Vec::new(),
             }
         );
-        assert_eq!(core.preferences().website_checking.state, OnOff::On);
+        assert_eq!(
+            core.snapshot().preferences().website_checking.state,
+            OnOff::On
+        );
     }
 
     #[test]

@@ -21,7 +21,7 @@ use common::{
 #[test]
 fn website_checking_switches_unless_the_config_sets_it() {
     let staged = on_by_the_schedule().stage().unwrap();
-    let checking = |staged: &Staged| staged.core().preferences().website_checking;
+    let checking = |staged: &Staged| staged.core().snapshot().preferences().website_checking;
     let state = |state, from_config| WebsiteChecking { state, from_config };
 
     assert_eq!(checking(&staged), state(OnOff::Off, false));
@@ -123,7 +123,7 @@ fn notifications_switched_off_after_being_allowed_are_a_problem() {
 fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     let staged = noon().stage().unwrap();
     let config = |found: ConfigFileDetail, state| stands(CheckDetail::ConfigFile(found), state);
-    let path = staged.core().config().path;
+    let path = staged.core().snapshot().config().path;
 
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
@@ -244,7 +244,12 @@ fn stopping_website_checking_settles_missing_accessibility() {
     );
     _ = staged.send(Command::Websites(OnOff::Off));
     assert_eq!(
-        staged.core().preferences().website_checking.state,
+        staged
+            .core()
+            .snapshot()
+            .preferences()
+            .website_checking
+            .state,
         OnOff::Off
     );
     assert_eq!(
@@ -291,7 +296,7 @@ fn keeping_notifications_off_settles_them_switched_off() {
     _ = staged.send(Command::KeepNotificationsOff);
     let kept_off = notifications(NotificationsDetail::Off, CheckState::Off);
     assert_eq!(found(&staged, CheckKind::Notifications), kept_off);
-    assert!(!staged.core().preferences().notifications_wanted);
+    assert!(!staged.core().snapshot().preferences().notifications_wanted);
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     staged.report(permissions(true, NotificationPermission::Denied));
@@ -474,18 +479,18 @@ fn the_config_is_read_from_its_xdg_path_and_the_ad_hoc_rules_export_for_it() {
     send(&staged, add_rule(domain("figma.com")));
 
     assert_eq!(
-        staged.core().config().path,
+        staged.core().snapshot().config().path,
         etcetera::BaseStrategy::config_dir(&etcetera::base_strategy::Xdg::new().unwrap())
             .join("nightcap/config.toml")
             .display()
             .to_string()
     );
     assert_eq!(
-        staged.core().export(ExportFormat::Nix),
+        staged.core().snapshot().export(ExportFormat::Nix),
         "{ off = { app = [ \"com.figma.Desktop\" ]; domain = [ \"figma.com\" ]; }; on = { app = [ ]; domain = [ ]; }; }\n"
     );
     assert_eq!(
-        staged.core().export(ExportFormat::Toml),
+        staged.core().snapshot().export(ExportFormat::Toml),
         "[rules.off]\napp = [\"com.figma.Desktop\"]\ndomain = [\"figma.com\"]\n"
     );
 }

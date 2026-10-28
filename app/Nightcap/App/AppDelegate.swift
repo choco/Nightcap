@@ -121,11 +121,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         guard let host else { return }
-        let core = host.core
+        let snapshot = host.core.snapshot()
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
-            browser: tourBrowser(core.preferences()),
-            current: { TourFacts.Answers(asking: core) },
+            browser: tourBrowser(snapshot.preferences()),
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
             begin: { host.send($0) },
@@ -135,7 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if begun { host.send(.endTour) }
             })
         self.tour = tour
-        tour.start()
+        tour.start(snapshot)
         onShown()
     }
 
@@ -152,8 +151,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host, let accessibility = host.accessibility else { return }
         let core = host.core
         let onboarding = Onboarding(
-            setup: OnboardingFlow.Setup(core),
-            rules: { core.rules() },
+            setup: OnboardingFlow.Setup(core.snapshot()),
+            rules: { core.snapshot().rules() },
             icons: siteIcons,
             sun: host.nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
@@ -187,11 +186,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host else { return }
         let core = host.core
         statusMenu = StatusMenu(
-            current: { Menu(Menu.Answers(asking: core), now: Date(), appName: Apps.runningName(of:), words: .system) },
+            current: { core.snapshot() },
             icons: siteIcons,
             choose: { command in host.send(command) },
             openSettings: { [weak self] onProblem in
-                self?.showSettings(onProblem ? Settings.tab(for: core.checks().checks) : nil)
+                self?.showSettings(onProblem ? Settings.tab(for: core.snapshot().checks().checks) : nil)
             },
             onOpen: { [weak self] in
                 self?.tour?.menuOpened()
@@ -206,12 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeSettingsWindow(_ host: CoreHost) -> SettingsWindow {
         let core = host.core
         return SettingsWindow(
-            current: { Settings(core, words: .system) },
+            current: { core.snapshot() },
             icons: siteIcons,
             choose: { command in host.send(command) },
             perform: { fix in host.perform(fix) },
             checkForUpdates: host.updaterRunning ? { host.send(.checkForUpdates) } : nil,
-            export: { core.export(format: $0) },
+            export: { core.snapshot().export(format: $0) },
             takeTour: { [weak self] in
                 guard let self else { return }
                 settingsWindow?.close()
@@ -229,10 +228,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// which the menu and the Rules tab show (ADR-0019).
     private func askForSiteIcons() {
         guard let host else { return }
-        let core = host.core
-        guard core.preferences().websiteChecking.state == .on else { return }
-        let front = core.front().site.map { [$0] } ?? []
-        let ruled = Settings(core, words: .system).rules.compactMap { rule -> String? in
+        let snapshot = host.core.snapshot()
+        guard snapshot.preferences().websiteChecking.state == .on else { return }
+        let front = snapshot.front().site.map { [$0] } ?? []
+        let ruled = Settings(snapshot, words: .system).rules.compactMap { rule -> String? in
             if case .domain(let domain) = rule.identity { domain } else { nil }
         }
         siteIcons.ask(front + ruled)
@@ -248,17 +247,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         host.watchPermissions(closely: true)
     }
 
-    /// After each outcome, whichever fact or command it answers, the CLI's included. The menu-bar
-    /// item appears once onboarding is finished; onboarding asks for notifications itself, and
-    /// without it they're asked for as the item first appears.
+    /// After each outcome, whichever fact or command it answers, the CLI's included, from one
+    /// snapshot, so the menu, Settings and the tour all show the same input's answers. The
+    /// menu-bar item appears once onboarding is finished; onboarding asks for notifications
+    /// itself, and without it they're asked for as the item first appears.
     private func refresh() {
-        if statusMenu == nil, onboarding == nil, let host, host.core.preferences().onboardingFinished {
+        guard let host else { return }
+        let snapshot = host.core.snapshot()
+        if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
             showStatusMenu()
             host.askForNotifications()
         }
-        statusMenu?.refresh()
-        settingsWindow?.refresh()
+        statusMenu?.refresh(snapshot)
+        settingsWindow?.refresh(snapshot)
         onboarding?.refresh()
-        tour?.refresh()
+        tour?.refresh(snapshot)
     }
 }

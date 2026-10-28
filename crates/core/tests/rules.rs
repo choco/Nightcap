@@ -27,11 +27,11 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
-        staged.core().front().app,
+        staged.core().snapshot().front().app,
         Some("com.figma.Desktop".parse().unwrap())
     );
     assert_eq!(
-        staged.core().front().decision,
+        staged.core().snapshot().front().decision,
         Decision {
             state: Some(OnOff::Off),
             place: figma_app(),
@@ -82,9 +82,9 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
     assert!(message.contains("apps"), "{message}");
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(
-        staged.core().config().error,
+        staged.core().snapshot().config().error,
         Some(FileError::Malformed {
-            path: staged.core().config().path,
+            path: staged.core().snapshot().config().path,
             line: Some(2),
             message: message.clone(),
         })
@@ -121,16 +121,16 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
 
     assert_eq!(outcome.effects, Vec::new());
     let malformed = FileError::Malformed {
-        path: staged.core().config().path,
+        path: staged.core().snapshot().config().path,
         line: Some(2),
         message: "invalid type: string \"com.figma.Desktop\", expected a sequence".to_owned(),
     };
     assert_eq!(refusal(response), Refusal::InvalidConfig(malformed));
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
     assert_eq!(
-        staged.core().config().error,
+        staged.core().snapshot().config().error,
         Some(FileError::Malformed {
-            path: staged.core().config().path,
+            path: staged.core().snapshot().config().path,
             line: Some(2),
             message: "invalid type: string \"com.figma.Desktop\", expected a sequence".to_owned(),
         })
@@ -175,7 +175,7 @@ fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
     assert_eq!(resettable(&staged), Vec::new());
-    assert_eq!(staged.core().front().decision.place, figma_app());
+    assert_eq!(staged.core().snapshot().front().decision.place, figma_app());
 }
 
 #[test]
@@ -189,7 +189,10 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
 
     assert_eq!(activate(&staged, "com.apple.Terminal"), Vec::new());
     assert_eq!(activate(&staged, "com.figma.Desktop"), Vec::new());
-    assert_eq!(staged.core().front().decision.state, Some(OnOff::On));
+    assert_eq!(
+        staged.core().snapshot().front().decision.state,
+        Some(OnOff::On)
+    );
 }
 
 #[test]
@@ -338,6 +341,7 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
         Some(why),
         staged
             .core()
+            .snapshot()
             .config()
             .ad_hoc_error
             .map(Refusal::AdHocRulesOff)
@@ -353,7 +357,7 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone_and_name_its_line(
 
     assert!(
         matches!(
-            &staged.core().config().ad_hoc_error,
+            &staged.core().snapshot().config().ad_hoc_error,
             Some(FileError::Invalid {
                 line: 5,
                 problem: Problem::NotABundleId { entry },
@@ -361,7 +365,7 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone_and_name_its_line(
             }) if entry == "com.figma.Desktop "
         ),
         "{:?}",
-        staged.core().config().ad_hoc_error
+        staged.core().snapshot().config().ad_hoc_error
     );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(invalid));
@@ -373,7 +377,7 @@ fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
 
     activate(&staged, "unity.Team Cherry.Hollow Knight");
 
-    assert_eq!(staged.core().front().app, None);
+    assert_eq!(staged.core().snapshot().front().app, None);
 }
 
 #[test]
@@ -559,11 +563,11 @@ fn export_writes_both_lists() {
     );
 
     assert_eq!(
-        staged.core().export(ExportFormat::Nix),
+        staged.core().snapshot().export(ExportFormat::Nix),
         "{ off = { app = [ \"com.figma.Desktop\" ]; domain = [ ]; }; on = { app = [ ]; domain = [ \"youtube.com\" ]; }; }\n"
     );
     assert_eq!(
-        staged.core().export(ExportFormat::Toml),
+        staged.core().snapshot().export(ExportFormat::Toml),
         "[rules.off]\napp = [\"com.figma.Desktop\"]\n\n[rules.on]\ndomain = [\"youtube.com\"]\n"
     );
 }
@@ -644,7 +648,7 @@ fn a_config_that_cant_be_is_refused() {
 #[test]
 fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
     let staged = noon().stage().unwrap();
-    let path = staged.core().config().path;
+    let path = staged.core().snapshot().config().path;
 
     for (config, line) in [
         (
@@ -687,6 +691,7 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
         );
         let found = staged
             .core()
+            .snapshot()
             .checks()
             .checks
             .into_iter()

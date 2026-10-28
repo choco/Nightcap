@@ -23,7 +23,12 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
         websites: Some(true),
     });
     assert_eq!(
-        staged.core().preferences().website_checking.state,
+        staged
+            .core()
+            .snapshot()
+            .preferences()
+            .website_checking
+            .state,
         OnOff::On
     );
 
@@ -45,14 +50,19 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
         websites: Some(true),
     });
 
-    let checking = staged.core().preferences().website_checking;
+    let checking = staged.core().snapshot().preferences().website_checking;
     assert_eq!(checking.state, OnOff::Off);
     assert!(checking.from_config);
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     staged.write_config(None);
     staged.request(Request::Command(Command::Reload));
     assert_eq!(
-        staged.core().preferences().website_checking.state,
+        staged
+            .core()
+            .snapshot()
+            .preferences()
+            .website_checking
+            .state,
         OnOff::Off
     );
 }
@@ -60,13 +70,16 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
 #[test]
 fn onboarding_is_finished_once_the_user_goes_through_it_or_the_config_answers_it() {
     let staged = noon().stage().unwrap();
-    let finished = |staged: &Staged| staged.core().preferences().onboarding_finished;
+    let finished = |staged: &Staged| staged.core().snapshot().preferences().onboarding_finished;
     assert!(!finished(&staged));
     staged.send_app(AppCommand::FinishOnboarding {
         websites: Some(false),
     });
     assert!(finished(&staged));
-    assert_eq!(staged.core().preferences().onboarding_completed, 1);
+    assert_eq!(
+        staged.core().snapshot().preferences().onboarding_completed,
+        1
+    );
 
     let answered = noon()
         .config("websites = false\n[night_shift]\nstrength = 40\nschedule = \"off\"\n")
@@ -85,10 +98,15 @@ fn finishing_onboarding_where_it_never_asked_about_websites_leaves_website_check
     staged.send_app(AppCommand::FinishOnboarding { websites: None });
 
     assert_eq!(
-        staged.core().preferences().website_checking.state,
+        staged
+            .core()
+            .snapshot()
+            .preferences()
+            .website_checking
+            .state,
         OnOff::Off
     );
-    assert!(staged.core().preferences().onboarding_finished);
+    assert!(staged.core().snapshot().preferences().onboarding_finished);
 }
 
 #[test]
@@ -103,7 +121,7 @@ fn onboarding_asks_about_night_shift_what_the_config_leaves_and_the_mac_can_do()
         if reported {
             report_night_shift(&staged, Schedule::Off, 60);
         }
-        staged.core().preferences().onboarding_asks
+        staged.core().snapshot().preferences().onboarding_asks
     };
     let asking = |strength, schedule| OnboardingAsks { strength, schedule };
 
@@ -124,7 +142,7 @@ fn onboarding_asks_about_night_shift_what_the_config_leaves_and_the_mac_can_do()
         sun_schedule_set_aside: false,
     });
     assert_eq!(
-        unread.core().preferences().onboarding_asks,
+        unread.core().snapshot().preferences().onboarding_asks,
         asking(false, true)
     );
 }

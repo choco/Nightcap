@@ -3,19 +3,71 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use nightcap_protocol::{OnOff, Payload, Query, Response, RuleIdentity};
+use nightcap_protocol::{
+    About, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload, Preferences,
+    Query, Response, Rule, RuleIdentity, TourState,
+};
 
 use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
 
-/// The core after one input, as each read sees it.
-#[derive(Debug)]
-pub(crate) struct Snapshot {
+/// The core as it stood after one input, which a read takes whole (ADR-0002): every query and
+/// the export answer from it as of that input, whatever the core decides after.
+#[derive(Debug, uniffi::Object)]
+pub struct Snapshot {
     /// What the queries answer, in process and over the socket.
     pub(crate) answers: Answers,
     /// The ad-hoc rules, for an export (ADR-0007).
     pub(crate) ad_hoc: Vec<(RuleIdentity, OnOff)>,
+}
+
+#[uniffi::export]
+impl Snapshot {
+    /// Night Shift as the shell last reported it, and its schedule.
+    pub fn night_shift(&self) -> NightShiftState {
+        self.answers.night_shift
+    }
+
+    /// What's in front, and what decides Night Shift there (ADR-0018).
+    pub fn front(&self) -> Front {
+        self.answers.front.clone()
+    }
+
+    /// Every rule at every place (ADR-0018).
+    pub fn rules(&self) -> Vec<Rule> {
+        self.answers.rules.clone()
+    }
+
+    /// The config as Nightcap last read it, and why it or `rules.toml` can't be used.
+    pub fn config(&self) -> ConfigState {
+        self.answers.config.clone()
+    }
+
+    /// The user's choices about how Nightcap runs.
+    pub fn preferences(&self) -> Preferences {
+        self.answers.preferences
+    }
+
+    /// The checks, and the grants behind them.
+    pub fn checks(&self) -> Checks {
+        self.answers.checks.clone()
+    }
+
+    /// The tour, while one runs (ADR-0016).
+    pub fn tour(&self) -> Option<TourState> {
+        self.answers.tour
+    }
+
+    /// The Nightcap that answers: its version and its install (ADR-0011).
+    pub fn about(&self) -> About {
+        self.answers.about.clone()
+    }
+
+    /// The ad-hoc rules, written for the config (ADR-0007).
+    pub fn export(&self, format: ExportFormat) -> String {
+        ad_hoc_rules::export(&self.ad_hoc, format)
+    }
 }
 
 impl Snapshot {
@@ -29,20 +81,17 @@ impl Snapshot {
 
     /// The CLI's query, answered as of this snapshot (ADR-0010).
     pub(crate) fn answer(&self, query: &Query) -> Response {
-        let answers = &self.answers;
-        match query {
-            Query::NightShift => Response::Ok(Payload::NightShift(answers.night_shift)),
-            Query::Front => Response::Ok(Payload::Front(Box::new(answers.front.clone()))),
-            Query::Rules => Response::Ok(Payload::Rules(answers.rules.clone())),
-            Query::Config => Response::Ok(Payload::Config(answers.config.clone())),
-            Query::Preferences => Response::Ok(Payload::Preferences(answers.preferences)),
-            Query::Checks => Response::Ok(Payload::Checks(answers.checks.clone())),
-            Query::Tour => Response::Ok(Payload::Tour(answers.tour)),
-            Query::About => Response::Ok(Payload::About(answers.about.clone())),
-            Query::Export(format) => {
-                Response::Ok(Payload::Export(ad_hoc_rules::export(&self.ad_hoc, *format)))
-            }
-        }
+        Response::Ok(match query {
+            Query::NightShift => Payload::NightShift(self.night_shift()),
+            Query::Front => Payload::Front(Box::new(self.front())),
+            Query::Rules => Payload::Rules(self.rules()),
+            Query::Config => Payload::Config(self.config()),
+            Query::Preferences => Payload::Preferences(self.preferences()),
+            Query::Checks => Payload::Checks(self.checks()),
+            Query::Tour => Payload::Tour(self.tour()),
+            Query::About => Payload::About(self.about()),
+            Query::Export(format) => Payload::Export(self.export(*format)),
+        })
     }
 }
 

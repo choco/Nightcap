@@ -83,16 +83,16 @@ struct TourQuotes: Equatable {
         decision: Decision = Decision(state: .on, place: .everywhere, reasons: [.tour]),
         nightShift: NightShift = .on, words: Wording
     ) -> Menu.PlaceRow {
-        let answers = Menu.Answers(
+        let menu = Menu(
             nightShift: NightShiftState(
                 state: nightShift, strength: nil, schedule: nil, setAside: false, scheduled: nil, nextOn: nil,
                 nextOff: nil),
             front: Front(
                 app: app.bundleId, watching: domain != nil, host: domain, site: domain, decision: decision,
                 places: places, everywhere: everywhere, afterSwitch: afterSwitch),
-            lengths: [], checks: [])
+            lengths: [], checks: [], now: snoozeEnd, appName: { _ in app.name }, words: words)
         let place = places[0].place
-        return Menu(answers, now: snoozeEnd, appName: { _ in app.name }, words: words).rows.first { $0.place == place }!
+        return menu.rows.first { $0.place == place }!
     }
 
     /// The row's item that sends the command `wanted` picks out, which each scene's row offers.

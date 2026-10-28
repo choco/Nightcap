@@ -96,12 +96,12 @@ struct Settings: Equatable {
     /// The version of the Nightcap that answers.
     let version: String
 
-    /// Settings as `core` answers its queries now.
-    init(_ core: Core, words: Wording) {
-        let preferences = core.preferences()
-        let answered = core.checks()
+    /// Settings as `snapshot` answers its queries.
+    init(_ snapshot: Snapshot, words: Wording) {
+        let preferences = snapshot.preferences()
+        let answered = snapshot.checks()
         let checks = answered.checks
-        let rules = core.rules()
+        let rules = snapshot.rules()
         let websites = preferences.websiteChecking
         let on = websites.state == .on
         websiteChecking = Switch(on: on, locked: websites.fromConfig, command: .websites(on ? .off : .on))
@@ -119,7 +119,7 @@ struct Settings: Equatable {
                 kind: check.detail.kind, state: check.state, text: words.check(check.detail),
                 restore: fixes.restore, accept: fixes.accept)
         }
-        configPath = core.config().path
+        configPath = snapshot.config().path
         self.rules = Self.rows(of: rules, words: words)
         forNow = Self.forNow(rules).compactMap { place, rules in
             place.identity.map { identity in
@@ -129,7 +129,7 @@ struct Settings: Equatable {
                     action: Action(title: words.end, command: .reset(place)))
             }
         }
-        version = core.about().version
+        version = snapshot.about().version
     }
 
     /// The check of `kind` the window shows, if any.

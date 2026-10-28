@@ -90,10 +90,10 @@ func minutes(_ count: Int64) -> Lasting {
 }
 
 @MainActor extension Core {
-    /// The menu as the menu-bar UI decides it from this core's answers at `now`, in English with a
-    /// 24-hour clock in Zurich, with each app in front by its name in `names`.
+    /// The menu as the menu-bar UI decides it from this core's snapshot at `now`, in English with
+    /// a 24-hour clock in Zurich, with each app in front by its name in `names`.
     func menu(at now: Date = Date(), names: [String: String] = appNames) -> Menu {
-        Menu(Menu.Answers(asking: self), now: now, appName: { names[$0] }, words: .staged)
+        Menu(snapshot(), now: now, appName: { names[$0] }, words: .staged)
     }
 
     /// An app comes to the front.

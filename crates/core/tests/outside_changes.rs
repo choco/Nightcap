@@ -113,7 +113,10 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
         }]
     );
     assert_eq!(resettable(&staged), Vec::new());
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
+    assert_eq!(
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::On)
+    );
 }
 
 #[test]
@@ -125,9 +128,12 @@ fn a_change_against_the_coming_transition_is_still_an_outside_change() {
     staged.set_now(at("2026-10-16T21:59:00+02:00"));
     staged.report(reported(false, custom_hours()));
 
-    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        staged.core().night_shift().next_transition(),
+        staged.core().snapshot().night_shift().scheduled,
+        Some(OnOff::Off)
+    );
+    assert_eq!(
+        staged.core().snapshot().night_shift().next_transition(),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }

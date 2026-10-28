@@ -432,13 +432,13 @@ final class OnboardingFlow {
 }
 
 extension OnboardingFlow.Setup {
-    /// What onboarding asks, as `core` answers its queries now: the core decides what its Night
+    /// What onboarding asks, as `snapshot` answers its queries: the core decides what its Night
     /// Shift steps ask, as it does whether it opens.
-    init(_ core: Core) {
-        let nightShift = core.nightShift()
-        let config = core.config()
-        let checks = core.checks()
-        let asks = core.preferences().onboardingAsks
+    init(_ snapshot: Snapshot) {
+        let nightShift = snapshot.nightShift()
+        let config = snapshot.config()
+        let checks = snapshot.checks()
+        let asks = snapshot.preferences().onboardingAsks
         let askStrength = asks.strength
         let askSchedule = asks.schedule
         // Only an install that opens itself at login has the check.

@@ -25,14 +25,6 @@ struct TourFacts: Equatable {
     let sample: TourPlace
     /// Nil where the tour has no site step.
     let site: TourPlace?
-
-    /// What the tour asks the core, as one redraw read it.
-    struct Answers {
-        var nightShift: NightShiftState
-        var front: Front
-        var rules: [Rule]
-        var tour: TourState?
-    }
 }
 
 /// The tour sample or the site, as its step follows it.
@@ -45,20 +37,15 @@ struct TourPlace: Equatable {
     let snoozed: Bool
 }
 
-extension TourFacts.Answers {
-    /// What `core` answers now.
-    init(asking core: Core) {
-        self.init(nightShift: core.nightShift(), front: core.front(), rules: core.rules(), tour: core.tour())
-    }
-}
-
 extension TourFacts {
-    /// What the steps follow for the sample with bundle ID `sample`, and the site at `site`, or
-    /// nil while no tour runs.
-    init?(_ answers: Answers, sample: String, site: String?) {
-        guard let tour = answers.tour else { return nil }
+    /// What the steps follow in `snapshot` for the sample with bundle ID `sample`, and the site at
+    /// `site`, or nil while no tour runs.
+    init?(_ snapshot: Snapshot, sample: String, site: String?) {
+        guard let tour = snapshot.tour() else { return nil }
+        let front = snapshot.front()
+        let everyRule = snapshot.rules()
         let followed = { (place: Place, inFront: Bool) in
-            let rules = answers.rules.filter { $0.place == place }
+            let rules = everyRule.filter { $0.place == place }
             let rule = rules.first { $0.length == .indefinite }
             // A place's temporary rules come shortest first.
             let shortest = rules.first { $0.length != .indefinite }
@@ -68,8 +55,8 @@ extension TourFacts {
         }
         self.init(
             standsIn: tour.standsIn,
-            everywhereOn: answers.front.everywhere.gives == .on,
-            sample: followed(.app(sample), answers.front.app == sample),
-            site: site.map { followed(.domain($0), answers.front.site == $0) })
+            everywhereOn: front.everywhere.gives == .on,
+            sample: followed(.app(sample), front.app == sample),
+            site: site.map { followed(.domain($0), front.site == $0) })
     }
 }

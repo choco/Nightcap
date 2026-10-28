@@ -370,6 +370,7 @@ pub(crate) fn minutes(count: i64) -> Lasting {
 pub(crate) fn check(staged: &Staged, kind: CheckKind) -> Option<Check> {
     staged
         .core()
+        .snapshot()
         .checks()
         .checks
         .into_iter()

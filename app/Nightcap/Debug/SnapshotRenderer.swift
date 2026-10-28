@@ -44,7 +44,7 @@ enum SnapshotRenderer {
         let icons = SiteIcons(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
-            current: { Settings(settingsCore, words: .system) }, icons: icons, choose: { _ in },
+            current: { settingsCore.snapshot() }, icons: icons, choose: { _ in },
             perform: { _ in },
             checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
@@ -71,8 +71,8 @@ enum SnapshotRenderer {
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))
             return Onboarding(
-                setup: OnboardingFlow.Setup(core),
-                rules: { core.rules() },
+                setup: OnboardingFlow.Setup(core.snapshot()),
+                rules: { core.snapshot().rules() },
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
                 now: { evening },
@@ -107,8 +107,6 @@ enum SnapshotRenderer {
         let tour = Tour(
             shortcut: shortcut,
             browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
-            // Each panel takes its facts below, so the tour never asks.
-            current: { TourFacts.Answers(asking: try! Core.staged(scenario: Scenario(now: Date()))) },
             press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
         let away = TourPlace(inFront: false, rule: nil, snoozed: false)
         let inFront = TourPlace(inFront: true, rule: nil, snoozed: false)

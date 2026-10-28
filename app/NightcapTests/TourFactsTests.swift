@@ -9,7 +9,7 @@ private let away = TourPlace(inFront: false, rule: nil, snoozed: false)
 /// What the tour's steps follow, from `core`'s answers, whose switch is always the Night Shift
 /// item's.
 private func facts(_ core: Core, site: String? = site) throws -> TourFacts {
-    let facts = try #require(TourFacts(TourFacts.Answers(asking: core), sample: tourSample, site: site))
+    let facts = try #require(TourFacts(core.snapshot(), sample: tourSample, site: site))
     #expect(facts.everywhereOn == core.menu().nightShift.on)
     return facts
 }
@@ -19,7 +19,7 @@ struct TourFactsTests {
     @Test func noTourRunsNoFacts() throws {
         let core = try onByTheSchedule()
 
-        #expect(TourFacts(TourFacts.Answers(asking: core), sample: tourSample, site: site) == nil)
+        #expect(TourFacts(core.snapshot(), sample: tourSample, site: site) == nil)
     }
 
     @Test func theSamplesFactsFollowItToTheFrontIntoItsRuleAndAway() throws {

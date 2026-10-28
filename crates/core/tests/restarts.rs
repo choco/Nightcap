@@ -101,7 +101,7 @@ fn terminating_watches_no_browser_its_own_app_rule_kept_unwatched() {
         staged.stop().effects,
         vec![Effect::SetNightShift { enabled: true }]
     );
-    assert!(!staged.core().front().watching);
+    assert!(!staged.core().snapshot().front().watching);
 }
 
 #[test]

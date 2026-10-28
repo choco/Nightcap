@@ -66,7 +66,7 @@ fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour(
     );
     assert_eq!(report(&staged, true), Vec::new());
 
-    assert_eq!(staged.core().front().decision, on_for_the_tour());
+    assert_eq!(staged.core().snapshot().front().decision, on_for_the_tour());
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -83,7 +83,7 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
     assert_eq!(report(&staged, false), Vec::new());
 
     assert_eq!(
-        staged.core().front().decision.reasons,
+        staged.core().snapshot().front().decision.reasons,
         vec![Reason::Schedule {
             state: OnOff::Off,
             until: Some(at("2026-10-16T22:00:00+02:00")),
@@ -141,7 +141,7 @@ fn the_tour_sets_aside_everywheres_rule_until_a_time_and_puts_it_back_with_its_e
     );
 
     assert_eq!(
-        staged.core().front().decision.reasons[0],
+        staged.core().snapshot().front().decision.reasons[0],
         Reason::Rule(yours(
             Place::Everywhere,
             OnOff::Off,
@@ -172,7 +172,7 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
 
     assert_eq!(start_tour(&staged), Vec::new());
     assert!(matches!(
-        staged.core().front().decision.reasons[..],
+        staged.core().snapshot().front().decision.reasons[..],
         [Reason::Schedule { .. }]
     ));
     assert_eq!(staged.send_app(AppCommand::EndTour).effects, Vec::new());
@@ -260,7 +260,13 @@ fn rules_added_mid_tour_stay_out_of_exports_and_files_and_go_with_their_snoozes(
             },
         ]
     );
-    assert!(!staged.core().export(ExportFormat::Toml).contains(SAMPLE));
+    assert!(
+        !staged
+            .core()
+            .snapshot()
+            .export(ExportFormat::Toml)
+            .contains(SAMPLE)
+    );
     let kept = staged.file(File::Rules).unwrap_or_default();
     assert!(
         !kept.contains(SAMPLE) && !kept.contains("choco.me"),
@@ -375,6 +381,7 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
     assert!(
         staged
             .core()
+            .snapshot()
             .export(ExportFormat::Toml)
             .contains("[rules.off]")
     );
@@ -465,16 +472,16 @@ fn sample_place() -> Place {
 #[test]
 fn no_tour_runs_before_it_starts_or_once_it_ends() {
     let staged = on_by_the_schedule().stage().unwrap();
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().snapshot().tour(), None);
 
     start_tour(&staged);
-    assert!(staged.core().tour().is_some());
+    assert!(staged.core().snapshot().tour().is_some());
     staged.send_app(AppCommand::EndTour);
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().snapshot().tour(), None);
 
     start_tour(&staged);
     staged.stop();
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().snapshot().tour(), None);
 }
 
 #[test]
@@ -539,7 +546,7 @@ fn tour_in_safari() -> Scenario {
 #[test]
 fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
     let staged = tour_in_safari().stage().unwrap();
-    let site = || staged.core().front().site.map(String::from);
+    let site = || staged.core().snapshot().front().site.map(String::from);
     assert_eq!(site(), None);
 
     report_host(&staged, 1, SITE);
@@ -549,7 +556,7 @@ fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
     report_host(&staged, 1, "example.com");
     assert_eq!(site().as_deref(), Some("example.com"));
     assert_eq!(
-        staged.core().front().app,
+        staged.core().snapshot().front().app,
         Some("com.apple.Safari".parse().unwrap())
     );
 }
@@ -557,23 +564,35 @@ fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
 #[test]
 fn the_tour_stands_in_as_night_shift_was_when_it_started_whatever_the_switch_does() {
     let everywhere_off = |staged: &Staged| {
-        let decision = staged.core().front().decision;
+        let decision = staged.core().snapshot().front().decision;
         (decision.place, decision.state) == (Place::Everywhere, Some(OnOff::Off))
     };
     let staged = off_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     report(&staged, true);
-    assert_eq!(staged.core().tour(), Some(TourState { stands_in: true }));
+    assert_eq!(
+        staged.core().snapshot().tour(),
+        Some(TourState { stands_in: true })
+    );
     send(&staged, Command::Toggle);
     report(&staged, false);
-    assert_eq!(staged.core().tour(), Some(TourState { stands_in: true }));
+    assert_eq!(
+        staged.core().snapshot().tour(),
+        Some(TourState { stands_in: true })
+    );
     assert!(everywhere_off(&staged));
 
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
-    assert_eq!(staged.core().tour(), Some(TourState { stands_in: false }));
+    assert_eq!(
+        staged.core().snapshot().tour(),
+        Some(TourState { stands_in: false })
+    );
     send(&staged, Command::Toggle);
     report(&staged, false);
-    assert_eq!(staged.core().tour(), Some(TourState { stands_in: false }));
+    assert_eq!(
+        staged.core().snapshot().tour(),
+        Some(TourState { stands_in: false })
+    );
     assert!(everywhere_off(&staged));
 }
