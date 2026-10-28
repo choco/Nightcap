@@ -8,7 +8,7 @@ use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
 
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
-use crate::{Effect, Event, Outcome};
+use crate::{Cause, Effect, Event, Outcome};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
 /// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
@@ -19,21 +19,21 @@ const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
 const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
 
 impl Inner {
-    /// One turn of the core, for a fact or a command: it applies the schedule transitions and
-    /// the ends that came due, lets `react` change the state, then rewatches, writes Night
-    /// Shift, reschedules, announces the problems that appeared, unless `aloud` is false
-    /// because the user chose the input, and saves.
+    /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
+    /// the schedule transitions and the ends that came due, lets `react` change the state, then
+    /// rewatches, writes Night Shift, reschedules, announces the problems that appeared, unless
+    /// the user chose the input, and saves.
     pub(crate) fn turn<T>(
         &mut self,
-        aloud: bool,
+        cause: Cause,
         react: impl FnOnce(&mut Self, &mut Outcome) -> T,
     ) -> (Outcome, T) {
         self.catch_up();
         // One instant for the problems before the input and after, so that only the input
         // tells them apart.
         let now = self.clock.now();
-        let telling = self.telling(aloud, now);
-        let mut outcome = Outcome::default();
+        let telling = self.telling(cause, now);
+        let mut outcome = Outcome::new(cause);
         let answer = react(self, &mut outcome);
         self.rewatch(&mut outcome.effects);
         self.enforce(&mut outcome.effects);

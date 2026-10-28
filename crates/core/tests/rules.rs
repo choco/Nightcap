@@ -98,12 +98,9 @@ fn reload_applies_a_changed_config() {
     activate(&staged, "com.figma.Desktop");
 
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
-    let (outcome, response) = staged.request(Request::Command(Command::Reload));
+    let (effects, response) = send(&staged, Command::Reload);
 
-    assert_eq!(
-        outcome.effects,
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
         response,
         Response::Ok(Payload::Rules(vec![listed(app_rule("com.figma.Desktop"))]))
@@ -118,9 +115,9 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         .unwrap();
 
     staged.write_config(Some("[rules.off]\napp = \"com.figma.Desktop\"\n"));
-    let (outcome, response) = staged.request(Request::Command(Command::Reload));
+    let (effects, response) = send(&staged, Command::Reload);
 
-    assert_eq!(outcome.effects, Vec::new());
+    assert_eq!(effects, Vec::new());
     let malformed = FileError::Malformed {
         path: staged.core().snapshot().config().path,
         line: Some(2),

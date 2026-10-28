@@ -1,7 +1,9 @@
 //! What crosses between the shell and the core (ADR-0002): the facts the shell reports, the
-//! commands only the app sends, the outcome of each, with the effects it carries out and the
-//! events it tells, and the listener that hears it.
+//! commands only the app sends, the outcome of each, with what it answers, the effects it
+//! carries out and the events it tells, and the listener that hears it with the snapshot its
+//! input left.
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use jiff::Timestamp;
@@ -9,6 +11,8 @@ use nightcap_protocol::{
     Check, Command, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity,
     Schedule,
 };
+
+use crate::Snapshot;
 
 /// Something macOS observed, which the shell reports.
 #[derive(Debug, uniffi::Enum)]
@@ -146,13 +150,40 @@ pub enum Event {
     Refused { command: Command, why: Refusal },
 }
 
+/// What an outcome answers (ADR-0002), as a fact about its input: what that means for the user
+/// is each client's to say.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, uniffi::Enum)]
+pub enum Cause {
+    /// The shell's launch, `Fact::Launched`.
+    Launch,
+    /// Any other fact the shell reported.
+    Fact,
+    /// A command from the app or the CLI, the app's own among them.
+    Command,
+    /// The app quitting, whose outcome `Core::stop` returns.
+    Quit,
+}
+
 /// What one fact or command led to, in the order the core decided it.
-#[derive(Debug, Default, PartialEq, Eq, uniffi::Record)]
+#[derive(Debug, PartialEq, Eq, uniffi::Record)]
 pub struct Outcome {
+    /// What the outcome answers.
+    pub cause: Cause,
     /// What macOS must do, in order.
     pub effects: Vec<Effect>,
     /// What happened, for the clients to tell.
     pub events: Vec<Event>,
+}
+
+impl Outcome {
+    /// An outcome of `cause` with nothing decided yet.
+    pub fn new(cause: Cause) -> Self {
+        Self {
+            cause,
+            effects: Vec::new(),
+            events: Vec::new(),
+        }
+    }
 }
 
 /// Hears the outcome of every fact and command, whoever sent it, in the order the core decided
@@ -160,5 +191,6 @@ pub struct Outcome {
 /// it hands the outcome on and returns: the shell's hops to the main queue.
 #[uniffi::export(foreign)]
 pub trait Listener: Send + Sync {
-    fn outcome(&self, outcome: Outcome);
+    /// `snapshot` was published after this outcome's input, before the next is decided.
+    fn outcome(&self, outcome: Outcome, snapshot: Arc<Snapshot>);
 }

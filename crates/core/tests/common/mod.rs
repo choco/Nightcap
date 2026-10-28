@@ -87,14 +87,14 @@ pub(crate) fn in_books_at_noon() -> Scenario {
 /// Sends a command as the CLI does, with its effects and the response.
 pub(crate) fn send(staged: &Staged, command: Command) -> (Vec<Effect>, Response) {
     let (outcome, response) = staged.request(Request::Command(command));
-    (outcome.effects, response)
+    (outcome.unwrap().effects, response)
 }
 
 /// What `queries` answer over the socket, in the order asked, as the CLI asks them in one
 /// request; asking changes nothing.
 pub(crate) fn ask(staged: &Staged, queries: Vec<Query>) -> Vec<Answer> {
     let (outcome, response) = staged.request(Request::Queries(queries));
-    assert_eq!(outcome, Outcome::default());
+    assert_eq!(outcome, None);
     let Response::Ok(Payload::Answers(answers)) = response else {
         panic!("expected answers, got {response:?}");
     };

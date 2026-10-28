@@ -9,7 +9,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, Outcome, Scenario, Staged};
+use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
@@ -183,6 +183,7 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
     assert_eq!(
         outcome,
         Outcome {
+            cause: Cause::Fact,
             effects: Vec::new(),
             events: vec![Event::Adopted {
                 place: figma_app(),
@@ -229,6 +230,7 @@ fn flipping_back_from_outside_takes_off_both_linked_rules() {
     assert_eq!(
         outcome,
         Outcome {
+            cause: Cause::Fact,
             effects: Vec::new(),
             events: vec![Event::Adopted {
                 place: figma_app(),

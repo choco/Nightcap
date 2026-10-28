@@ -2,11 +2,12 @@ import Foundation
 import NightcapCore
 import os
 
-/// Carries out what the core decides (ADR-0002). The inbox hands it each outcome on the main
-/// queue, in the order the core decided them: the outcome's effects go to the adapters that drive
-/// macOS, in order, then its events to whoever subscribed, then the UI redraws once. No effect
-/// needs the core to have heard what the one before it changed. The app's own fixes, which never
-/// reach the core, are carried out here too.
+/// Carries out what the core decides (ADR-0002). The inbox hands it each outcome, with the
+/// snapshot its input left, on the main queue, in the order the core decided them: the outcome's
+/// effects go to the adapters that drive macOS, in order, then its events to whoever subscribed,
+/// then the UI redraws once, from that snapshot. No effect needs the core to have heard what the
+/// one before it changed. The app's own fixes, which never reach the core, are carried out here
+/// too.
 final class Executor {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let core: Core
@@ -22,7 +23,7 @@ final class Executor {
     private let rereading: Rereading
     private let showOnboarding: () -> Void
     private var eventHandlers: [(Event) -> Void] = []
-    private var changeHandlers: [() -> Void] = []
+    private var changeHandlers: [(Cause, Snapshot) -> Void] = []
     /// Run once, after the next outcome is carried out.
     private var nextChangeHandlers: [() -> Void] = []
 
@@ -56,7 +57,7 @@ final class Executor {
         self.systemSettings = systemSettings
         self.rereading = rereading
         self.showOnboarding = showOnboarding
-        inbox.receive = { [weak self] outcome in self?.carryOut(outcome) }
+        inbox.receive = { [weak self] outcome, snapshot in self?.carryOut(outcome, snapshot) }
     }
 
     // MARK: Subscriptions
@@ -66,8 +67,9 @@ final class Executor {
         eventHandlers.append(handler)
     }
 
-    /// Calls `handler` once each outcome is carried out, so what shows the core's state redraws.
-    func onChange(_ handler: @escaping () -> Void) {
+    /// Calls `handler` once each outcome is carried out, with what it answers and the snapshot its
+    /// input left, so what shows the core's state redraws from it.
+    func onChange(_ handler: @escaping (Cause, Snapshot) -> Void) {
         changeHandlers.append(handler)
     }
 
@@ -95,19 +97,20 @@ final class Executor {
     }
 
     /// Releases every force as the app quits (ADR-0008). The core decides what came before, then
-    /// what releases them, and both are carried out here, in order, before the app exits.
+    /// what releases them, and both are carried out here, in order, before the app exits. The core
+    /// decides nothing after, so its snapshot is the one quitting left.
     func stop() {
         let released = core.stop()
         inbox.handOver()
-        carryOut(released)
+        carryOut(released, core.snapshot())
     }
 
-    private func carryOut(_ outcome: Outcome) {
+    private func carryOut(_ outcome: Outcome, _ snapshot: Snapshot) {
         outcome.effects.forEach(carryOut)
         for event in outcome.events {
             eventHandlers.forEach { $0(event) }
         }
-        changeHandlers.forEach { $0() }
+        changeHandlers.forEach { $0(outcome.cause, snapshot) }
         let next = nextChangeHandlers
         nextChangeHandlers = []
         next.forEach { $0() }

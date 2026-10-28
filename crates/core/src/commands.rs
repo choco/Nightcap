@@ -15,14 +15,14 @@ use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config;
 use crate::storage::config::{ConfigError, NightShiftConfig};
 use crate::storage::file::File;
-use crate::{Effect, Event, Outcome};
+use crate::{Cause, Effect, Event, Outcome};
 
 impl Inner {
     /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
     /// as an event, short of a reload's: the config file's check says why already. A problem it
     /// causes isn't announced: the user is looking at what they chose.
     pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.turn(false, |inner, outcome| {
+        self.turn(Cause::Command, |inner, outcome| {
             let answer = inner.run_command(&command, &mut outcome.effects);
             if let Err(why) = &answer
                 && command != Command::Reload
@@ -40,7 +40,7 @@ impl Inner {
     /// Runs a command the CLI sent, whose refusal is in the answer alone. A problem it causes
     /// isn't announced: the CLI already printed what went wrong.
     pub(crate) fn answer(&mut self, command: &Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.turn(false, |inner, outcome| {
+        self.turn(Cause::Command, |inner, outcome| {
             inner.run_command(command, &mut outcome.effects)
         })
     }

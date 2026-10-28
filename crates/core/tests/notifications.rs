@@ -72,7 +72,7 @@ fn a_problem_that_appears_on_its_own_during_a_command_is_still_announced() {
     };
     let from_the_app: fn(&Staged) -> Outcome = |staged| staged.send(Command::Off).0;
     let from_the_cli: fn(&Staged) -> Outcome =
-        |staged| staged.request(Request::Command(Command::Off)).0;
+        |staged| staged.request(Request::Command(Command::Off)).0.unwrap();
 
     for command in [from_the_app, from_the_cli] {
         let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))

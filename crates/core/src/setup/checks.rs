@@ -9,11 +9,11 @@ use nightcap_protocol::{
     NotificationsDetail, OpenAtLoginDetail, Schedule, SetBy,
 };
 
-use crate::Event;
 use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
+use crate::{Cause, Event};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
@@ -31,19 +31,19 @@ pub(crate) enum Telling {
 }
 
 impl Inner {
-    /// How a turn whose input is about to change the core at `now` tells the problems that
-    /// appear in it: aloud, or quietly, as the user's own doing.
-    pub(crate) fn telling(&self, aloud: bool, now: Timestamp) -> Telling {
-        if aloud {
-            Telling::Aloud
-        } else {
-            Telling::Quietly {
+    /// How a turn whose outcome answers `cause`, and whose input is about to change the core at
+    /// `now`, tells the problems that appear in it: aloud for a fact, or quietly, as the user's
+    /// own doing.
+    pub(crate) fn telling(&self, cause: Cause, now: Timestamp) -> Telling {
+        match cause {
+            Cause::Launch | Cause::Fact => Telling::Aloud,
+            Cause::Command | Cause::Quit => Telling::Quietly {
                 before: self
                     .problems(now)
                     .iter()
                     .map(|check| check.detail.kind())
                     .collect(),
-            }
+            },
         }
     }
 

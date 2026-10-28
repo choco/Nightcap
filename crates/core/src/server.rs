@@ -41,7 +41,7 @@ pub(crate) fn spawn(
 
 /// Decides each piece of mail in turn, until the app quits or every sender is gone. Each
 /// snapshot is published before the outcome or the answer goes out, so whoever hears of a change
-/// reads it.
+/// reads it, and the listener hears each outcome with the snapshot its input left.
 fn serve(
     mut inner: Inner,
     inbox: &mpsc::Receiver<Mail>,
@@ -52,16 +52,16 @@ fn serve(
         match mail {
             Mail::Input(input) => {
                 let outcome = react(&mut inner, input);
-                published.publish(Snapshot::of(&inner));
-                listener.outcome(outcome);
+                let snapshot = published.publish(Snapshot::of(&inner));
+                listener.outcome(outcome, snapshot);
             }
             Mail::Command { command, reply } => {
                 let (outcome, answer) = inner.answer(&command);
-                published.publish(Snapshot::of(&inner));
+                let snapshot = published.publish(Snapshot::of(&inner));
                 // The receiver is gone only if the client already hung up, and then no one is
                 // waiting.
                 let _ = reply.send(answer);
-                listener.outcome(outcome);
+                listener.outcome(outcome, snapshot);
             }
             Mail::Stop { reply } => {
                 let outcome = react(&mut inner, Input::Terminating);
@@ -86,26 +86,30 @@ pub(crate) mod tests {
     };
 
     use super::Listener;
+    use super::mailbox::Mail;
     use crate::clock::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};
-    use crate::{Core, Effect, Fact, Outcome};
+    use crate::{AppCommand, Cause, Core, Effect, Fact, Outcome, Runs, Snapshot};
+
+    /// An outcome as the listener hears it, with the snapshot its input left.
+    pub(crate) type Heard = (Outcome, Arc<Snapshot>);
 
     /// Stands in for the shell: every outcome arrives on a channel the test can wait on.
-    pub(crate) struct ChannelListener(Mutex<mpsc::Sender<Outcome>>);
+    pub(crate) struct ChannelListener(Mutex<mpsc::Sender<Heard>>);
 
     impl ChannelListener {
-        pub(crate) fn new() -> (Self, mpsc::Receiver<Outcome>) {
+        pub(crate) fn new() -> (Self, mpsc::Receiver<Heard>) {
             let (sender, outcomes) = mpsc::channel();
             (Self(Mutex::new(sender)), outcomes)
         }
     }
 
     impl Listener for ChannelListener {
-        fn outcome(&self, outcome: Outcome) {
+        fn outcome(&self, outcome: Outcome, snapshot: Arc<Snapshot>) {
             // A test that stopped listening has what it needed.
-            let _ = self.0.lock().unwrap().send(outcome);
+            let _ = self.0.lock().unwrap().send((outcome, snapshot));
         }
     }
 
@@ -127,7 +131,7 @@ pub(crate) mod tests {
     }
 
     /// A core on its own thread, with the outcomes it tells its listener.
-    fn running(inner: Inner) -> (Core, mpsc::Receiver<Outcome>) {
+    fn running(inner: Inner) -> (Core, mpsc::Receiver<Heard>) {
         let (listener, outcomes) = ChannelListener::new();
         (
             Core::run(inner, None, Arc::new(listener)).unwrap(),
@@ -135,7 +139,11 @@ pub(crate) mod tests {
         )
     }
 
-    fn next(outcomes: &mpsc::Receiver<Outcome>) -> Outcome {
+    fn next(outcomes: &mpsc::Receiver<Heard>) -> Outcome {
+        next_heard(outcomes).0
+    }
+
+    fn next_heard(outcomes: &mpsc::Receiver<Heard>) -> Heard {
         outcomes.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 
@@ -182,7 +190,56 @@ pub(crate) mod tests {
             next(&outcomes).effects,
             vec![Effect::SetNightShift { enabled: true }]
         );
-        assert_eq!(next(&outcomes), Outcome::default());
+        assert_eq!(next(&outcomes), Outcome::new(Cause::Fact));
+    }
+
+    #[test]
+    fn each_outcome_says_what_its_input_was() {
+        let (core, outcomes) = running(noon(None));
+        let Runs::Thread(mailbox) = &core.runs else {
+            panic!("a running core decides on its own thread");
+        };
+        let (reply, answered) = mpsc::channel();
+
+        core.report(Fact::Launched);
+        core.report(reported(false));
+        core.send(Command::On);
+        core.send_app(AppCommand::BeginTrial { stands_in: false });
+        mailbox
+            .post(Mail::Command {
+                command: Command::Off,
+                reply,
+            })
+            .unwrap();
+
+        let causes: Vec<Cause> = (0..5).map(|_| next(&outcomes).cause).collect();
+        assert_eq!(
+            causes,
+            [
+                Cause::Launch,
+                Cause::Fact,
+                Cause::Command,
+                Cause::Command,
+                Cause::Command
+            ]
+        );
+        assert!(answered.recv().unwrap().is_ok());
+        assert_eq!(core.stop().cause, Cause::Quit);
+    }
+
+    #[test]
+    fn the_listener_hears_each_outcome_with_the_snapshot_its_input_left() {
+        let (core, outcomes) = running(noon(None));
+
+        core.report(reported(false));
+        core.send(Command::On);
+
+        let (_, after_the_report) = next_heard(&outcomes);
+        let (_, after_the_command) = next_heard(&outcomes);
+        assert_eq!(after_the_report.night_shift().state, NightShift::Off);
+        assert_eq!(after_the_report.rules(), Vec::new());
+        assert_eq!(after_the_command.rules().len(), 1);
+        assert!(Arc::ptr_eq(&after_the_command, &core.snapshot()));
     }
 
     #[test]

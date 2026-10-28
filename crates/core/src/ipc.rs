@@ -167,8 +167,8 @@ mod tests {
     use super::{bind, serve};
     use crate::server::mailbox::{Mail, Mailbox};
     use crate::server::snapshot::{Published, Snapshot};
-    use crate::server::tests::{ChannelListener, noon};
-    use crate::{Core, CoreError, Outcome};
+    use crate::server::tests::{ChannelListener, Heard, noon};
+    use crate::{Cause, Core, CoreError, Outcome};
 
     /// The socket, in a folder that serving creates.
     fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
@@ -186,7 +186,7 @@ mod tests {
 
     /// A core on its own thread at noon, serving `socket`, with the outcomes it tells its
     /// listener.
-    fn served_core(socket: &Path) -> (Core, mpsc::Receiver<Outcome>) {
+    fn served_core(socket: &Path) -> (Core, mpsc::Receiver<Heard>) {
         let (listener, outcomes) = ChannelListener::new();
         let core = Core::run(
             noon(Some(socket)),
@@ -453,8 +453,8 @@ mod tests {
             Response::Ok(Payload::Decision(_))
         ));
         assert_eq!(
-            outcomes.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Outcome::default()
+            outcomes.recv_timeout(Duration::from_secs(5)).unwrap().0,
+            Outcome::new(Cause::Command)
         );
         assert_eq!(
             core.snapshot().preferences().website_checking.state,
@@ -468,7 +468,7 @@ mod tests {
         let socket = socket_in(&dir);
         let (core, _outcomes) = served_core(&socket);
 
-        assert_eq!(core.stop(), Outcome::default());
+        assert_eq!(core.stop(), Outcome::new(Cause::Quit));
 
         assert!(!socket.exists());
     }

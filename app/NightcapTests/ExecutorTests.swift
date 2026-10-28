@@ -75,6 +75,7 @@ private final class Mac: NightShiftWriting, LoginItemRegistering, Updating, Wake
 /// too, with the inbox the core would tell. The inbox holds the executor weakly, as the app holds
 /// it, so this does.
 private struct FakeShell {
+    let core: Core
     let mac: Mac
     let inbox: Inbox
     let executor: Executor
@@ -83,13 +84,19 @@ private struct FakeShell {
     init(_ core: Core, nightShift: Bool = true) {
         let mac = Mac()
         let inbox = Inbox()
+        self.core = core
         self.mac = mac
         self.inbox = inbox
         executor = Executor(
             core: core, inbox: inbox, nightShift: nightShift ? mac : nil, loginItem: mac, updater: mac, wakeups: mac,
             browser: mac, accessibility: mac, notifications: mac, systemSettings: mac, rereading: mac,
             showOnboarding: { mac.record(.showOnboarding) })
-        executor.onChange { mac.record(.redraw) }
+        executor.onChange { _, _ in mac.record(.redraw) }
+    }
+
+    /// Tells the inbox `outcome`, with the snapshot the core last published, as the core would.
+    func tell(_ outcome: Outcome) {
+        inbox.outcome(outcome: outcome, snapshot: core.snapshot())
     }
 }
 
@@ -102,7 +109,7 @@ private func mainQueueTurns() async {
 
 /// An outcome of `effects` alone.
 nonisolated private func outcome(_ effects: Effect...) -> Outcome {
-    Outcome(effects: effects, events: [])
+    Outcome(cause: .fact, effects: effects, events: [])
 }
 
 private let sunrise = at("2026-10-17T07:00:00+02:00")
@@ -113,8 +120,8 @@ struct ExecutorTests {
     @Test func eachEffectReachesItsAdapterInTheOrderTheCoreGaveThem() async throws {
         let shell = FakeShell(try onByTheSchedule())
 
-        shell.inbox.outcome(
-            outcome: outcome(
+        shell.tell(
+            outcome(
                 .watchBrowser(bundleId: "com.apple.Safari", generation: 1), .setNightShift(enabled: false),
                 .setSchedule(schedule: customHours), .setStrength(value: 40, commit: false),
                 .scheduleWakeup(at: sunrise), .cancelWakeup, .stopWatching, .registerLoginItem,
@@ -133,8 +140,8 @@ struct ExecutorTests {
     @Test func aSavedStrengthIsReadBackAndAPreviewIsnt() async throws {
         let shell = FakeShell(try onByTheSchedule())
 
-        shell.inbox.outcome(
-            outcome: outcome(.setStrength(value: 40, commit: false), .setStrength(value: 60, commit: true)))
+        shell.tell(
+            outcome(.setStrength(value: 40, commit: false), .setStrength(value: 60, commit: true)))
         await mainQueueTurns()
 
         #expect(
@@ -147,7 +154,7 @@ struct ExecutorTests {
         let shell = FakeShell(try onByTheSchedule())
         shell.mac.refusesLoginItem = true
 
-        shell.inbox.outcome(outcome: outcome(.registerLoginItem, .unregisterLoginItem))
+        shell.tell(outcome(.registerLoginItem, .unregisterLoginItem))
         await mainQueueTurns()
 
         #expect(
@@ -159,8 +166,8 @@ struct ExecutorTests {
     @Test func whileNightShiftIsUnavailableItsEffectsAreDroppedAndTheRestCarriedOut() async throws {
         let shell = FakeShell(try onByTheSchedule(), nightShift: false)
 
-        shell.inbox.outcome(
-            outcome: outcome(
+        shell.tell(
+            outcome(
                 .setNightShift(enabled: false), .setSchedule(schedule: customHours),
                 .setStrength(value: 60, commit: true), .scheduleWakeup(at: sunrise)))
         await mainQueueTurns()
@@ -175,33 +182,79 @@ struct ExecutorTests {
         shell.executor.onEvent { mac.record(.told($0, subscriber: 2)) }
         shell.executor.onNextChange { mac.record(.nextRedraw) }
         let refused = Event.refused(command: .toggle, why: .nightShiftUnavailable)
-        let updated = Event.updated(from: "1.1.0", to: "1.2.0")
+        let adopted = Event.adopted(place: .everywhere, snoozed: nil, state: .off, until: sunrise)
 
-        shell.inbox.outcome(outcome: Outcome(effects: [.setNightShift(enabled: false)], events: [refused, updated]))
-        shell.inbox.outcome(outcome: outcome())
+        shell.tell(Outcome(cause: .fact, effects: [.setNightShift(enabled: false)], events: [refused, adopted]))
+        shell.tell(outcome())
         await mainQueueTurns()
 
         #expect(
             mac.calls == [
                 .setNightShift(false), .told(refused, subscriber: 1), .told(refused, subscriber: 2),
-                .told(updated, subscriber: 1), .told(updated, subscriber: 2), .redraw, .nextRedraw, .redraw,
+                .told(adopted, subscriber: 1), .told(adopted, subscriber: 2), .redraw, .nextRedraw, .redraw,
             ])
+    }
+
+    @Test func eachChangeSaysWhatItsOutcomeAnswersWithTheSnapshotItsInputLeft() async throws {
+        let core = try onByTheSchedule()
+        let shell = FakeShell(core)
+        let launched = core.snapshot()
+        core.send(command: .off)
+        let switchedOff = core.snapshot()
+        var heard: [(cause: Cause, snapshot: Snapshot)] = []
+        shell.executor.onChange { heard.append(($0, $1)) }
+
+        shell.inbox.outcome(outcome: Outcome(cause: .launch, effects: [], events: []), snapshot: launched)
+        shell.inbox.outcome(outcome: Outcome(cause: .command, effects: [], events: []), snapshot: switchedOff)
+        await mainQueueTurns()
+        shell.executor.stop()
+
+        #expect(heard.map(\.cause) == [.launch, .command, .quit])
+        #expect(heard[0].snapshot === launched)
+        #expect(heard[1].snapshot === switchedOff)
+        #expect(heard.prefix(2).map { $0.snapshot.front().everywhere.gives } == [.on, .off])
+    }
+
+    /// The redraw asks as AppDelegate's does, from each change's snapshot: the latest alone, with
+    /// website checking off again, would hide the turn on.
+    @Test func aTurnOnAndATurnOffQueuedTogetherStillAskForAccessibilityOnceForTheOn() async throws {
+        let core = try Core.staged(
+            scenario: Scenario(
+                now: at("2026-10-16T12:00:00+02:00"),
+                steps: [.appCommand(.finishOnboarding(websites: false)), permissions(false, .granted)]))
+        let shell = FakeShell(core)
+        let executor = shell.executor
+        var ask = AccessibilityAsk(core.snapshot())
+        executor.onChange { _, snapshot in
+            if ask.isDue(after: snapshot) { executor.perform(.askForAccessibility) }
+        }
+        core.send(command: .websites(.on))
+        let turnedOn = core.snapshot()
+        core.send(command: .websites(.off))
+        let turnedOff = core.snapshot()
+
+        shell.inbox.outcome(outcome: Outcome(cause: .command, effects: [], events: []), snapshot: turnedOn)
+        shell.inbox.outcome(outcome: Outcome(cause: .command, effects: [], events: []), snapshot: turnedOff)
+        await mainQueueTurns()
+
+        #expect(shell.mac.calls == [.redraw, .askForAccessibility, .redraw])
     }
 
     @Test func outcomesFromTheCoresThreadAreCarriedOutOnTheMainQueueInTheOrderTold() async throws {
         let shell = FakeShell(try onByTheSchedule())
         let inbox = shell.inbox
+        let snapshot = shell.core.snapshot()
         let strengths = Array(UInt8(0)...100)
 
         await withCheckedContinuation { done in
             var left = strengths.count
-            shell.executor.onChange {
+            shell.executor.onChange { _, _ in
                 left -= 1
                 if left == 0 { done.resume() }
             }
             Thread.detachNewThread {
                 for strength in strengths {
-                    inbox.outcome(outcome: outcome(.setStrength(value: strength, commit: false)))
+                    inbox.outcome(outcome: outcome(.setStrength(value: strength, commit: false)), snapshot: snapshot)
                 }
             }
         }
@@ -219,7 +272,7 @@ struct ExecutorTests {
                 config: "websites = true\n[rules.off]\napp = [\"com.figma.Desktop\"]\n",
                 accessibilityGranted, reported(true), front("com.figma.Desktop"), reported(false),
                 front("com.apple.Safari", browser: true)))
-        shell.inbox.outcome(outcome: outcome(.watchBrowser(bundleId: "com.apple.Safari", generation: 1)))
+        shell.tell(outcome(.watchBrowser(bundleId: "com.apple.Safari", generation: 1)))
 
         shell.executor.stop()
 

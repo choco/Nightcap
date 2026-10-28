@@ -11,7 +11,7 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, Length, OnOff, Payload, Place, Refusal, Request, Response, Schedule, TimeOfDay,
+    Command, Length, OnOff, Payload, Place, Refusal, Response, Schedule, TimeOfDay,
 };
 
 use common::{
@@ -231,10 +231,10 @@ fn reloading_applies_only_the_night_shift_value_that_changed() {
     staged.write_config(Some(
         "[night_shift]\nstrength = 50\nschedule = \"sunset-to-sunrise\"\n",
     ));
-    let (outcome, _) = staged.request(Request::Command(Command::Reload));
+    let (effects, _) = send(&staged, Command::Reload);
 
     assert_eq!(
-        outcome.effects,
+        effects,
         vec![Effect::SetStrength {
             value: 50,
             commit: true
@@ -252,13 +252,13 @@ fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_
     launch(&staged);
 
     staged.write_config(Some(""));
-    let (taken_out, _) = staged.request(Request::Command(Command::Reload));
+    let (taken_out, _) = send(&staged, Command::Reload);
     staged.write_config(Some("[night_shift]\nstrength = 40\n"));
-    let (put_back, _) = staged.request(Request::Command(Command::Reload));
+    let (put_back, _) = send(&staged, Command::Reload);
 
-    assert_eq!(taken_out.effects, Vec::new());
+    assert_eq!(taken_out, Vec::new());
     assert_eq!(
-        put_back.effects,
+        put_back,
         vec![Effect::SetStrength {
             value: 40,
             commit: true
@@ -278,8 +278,8 @@ fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
         "schedule = \"24:00-07:00\"",
     ] {
         staged.write_config(Some(format!("[night_shift]\n{night_shift}\n").as_str()));
-        let (outcome, response) = staged.request(Request::Command(Command::Reload));
-        assert_eq!(outcome.effects, Vec::new(), "{night_shift}");
+        let (effects, response) = send(&staged, Command::Reload);
+        assert_eq!(effects, Vec::new(), "{night_shift}");
         assert!(
             matches!(refusal(response), Refusal::InvalidConfig(_)),
             "{night_shift}"

@@ -8,7 +8,7 @@ use nightcap_protocol::Command;
 
 use crate::rules::schedule::SunTimes;
 use crate::server::state::Inner;
-use crate::{AppCommand, Fact, Outcome};
+use crate::{AppCommand, Cause, Fact, Outcome};
 
 /// Something that changes the core: a fact the platform reports, a command from the app, or the
 /// app quitting. The CLI's requests are answered apart, since their response goes back over the
@@ -23,18 +23,25 @@ pub(crate) enum Input {
     Terminating,
 }
 
-/// The outcome `input` leads to. Only a fact can announce a problem: a command, and quitting,
-/// are the user's own doing.
+/// The outcome `input` leads to, which says what it answers.
 pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
     match input {
         Input::Fact(fact) => {
+            let cause = match fact {
+                Fact::Launched => Cause::Launch,
+                _ => Cause::Fact,
+            };
             inner
-                .turn(true, |inner, outcome| inner.fact(fact, outcome))
+                .turn(cause, |inner, outcome| inner.fact(fact, outcome))
                 .0
         }
         Input::Command(command) => inner.choose(command).0,
-        Input::AppCommand(command) => inner.turn(false, |inner, _| inner.app_command(command)).0,
-        Input::Terminating => inner.turn(false, |inner, _| inner.terminating()).0,
+        Input::AppCommand(command) => {
+            inner
+                .turn(Cause::Command, |inner, _| inner.app_command(command))
+                .0
+        }
+        Input::Terminating => inner.turn(Cause::Quit, |inner, _| inner.terminating()).0,
     }
 }
 

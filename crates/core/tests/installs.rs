@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, Outcome, Staged};
+use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Staged};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem,
     NotSelfManaged, OnOff, OpenAtLoginDetail, Payload, Refusal, Response,
@@ -62,6 +62,7 @@ fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
     assert_eq!(
         started,
         Outcome {
+            cause: Cause::Command,
             effects: vec![Effect::CheckForUpdates],
             events: Vec::new(),
         }
@@ -69,6 +70,7 @@ fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
     assert_eq!(
         refused,
         Outcome {
+            cause: Cause::Command,
             effects: Vec::new(),
             events: vec![Event::Refused {
                 command: Command::CheckForUpdates,
@@ -282,7 +284,7 @@ fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
 
     let (outcome, answer) = staged.send(Command::OpenAtLogin(OnOff::Off));
 
-    assert_eq!(outcome, Outcome::default());
+    assert_eq!(outcome, Outcome::new(Cause::Command));
     assert!(answer.is_ok());
     assert_eq!(
         check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),

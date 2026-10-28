@@ -103,7 +103,7 @@ impl Snapshot {
 }
 
 /// The snapshot last published, which the core's thread replaces after each input. A read can
-/// lag one input behind; the outcome that follows tells the shell to read again.
+/// lag one input behind; the outcome that follows carries the snapshot its input left.
 #[derive(Debug)]
 pub(crate) struct Published(Mutex<Arc<Snapshot>>);
 
@@ -112,8 +112,11 @@ impl Published {
         Self(Mutex::new(Arc::new(snapshot)))
     }
 
-    pub(crate) fn publish(&self, snapshot: Snapshot) {
-        *self.lock() = Arc::new(snapshot);
+    /// Publishes `snapshot`, and hands it back as the reads now take it.
+    pub(crate) fn publish(&self, snapshot: Snapshot) -> Arc<Snapshot> {
+        let published = Arc::new(snapshot);
+        *self.lock() = published.clone();
+        published
     }
 
     pub(crate) fn latest(&self) -> Arc<Snapshot> {

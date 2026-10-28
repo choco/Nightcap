@@ -16,7 +16,7 @@ mod setup;
 mod storage;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use server::messages::{AppCommand, Effect, Event, Fact, Listener, Outcome};
+pub use server::messages::{AppCommand, Cause, Effect, Event, Fact, Listener, Outcome};
 pub use server::snapshot::Snapshot;
 
 #[cfg(any(test, debug_assertions))]
@@ -70,7 +70,8 @@ impl Core {
     /// subsystem for logging and its socket. Fails if that instance is already running.
     /// `bundle_writable` says whether the user can replace the app bundle, which makes it a
     /// self-managed install. `time_zone` is the system's IANA time zone ID. `listener` hears
-    /// the outcome of every fact and command, on the core's thread.
+    /// the outcome of every fact and command, with the snapshot its input left, on the core's
+    /// thread.
     #[uniffi::constructor]
     pub fn start(
         bundle_id: String,
@@ -121,7 +122,7 @@ impl Core {
 
     /// Releases every force as the app quits (ADR-0008), once everything before it is decided,
     /// and returns what the shell must carry out before it exits. The core decides nothing
-    /// after.
+    /// after, so the snapshot it publishes is the one quitting left.
     pub fn stop(&self) -> Outcome {
         match &self.runs {
             Runs::Thread(mailbox) => {
@@ -129,11 +130,11 @@ impl Core {
                 match mailbox.post(Mail::Stop { reply }) {
                     Ok(()) => released.recv().unwrap_or_else(|_| {
                         tracing::error!("the core's thread ended before releasing every force");
-                        Outcome::default()
+                        Outcome::new(Cause::Quit)
                     }),
                     Err(error) => {
                         tracing::warn!("asked to stop again: {error}");
-                        Outcome::default()
+                        Outcome::new(Cause::Quit)
                     }
                 }
             }
@@ -143,8 +144,8 @@ impl Core {
     }
 
     /// The snapshot the core published after its last input, which every query and the export
-    /// read from, so one redraw's answers all come from the same input (ADR-0002). It can lag
-    /// one input behind; the outcome that follows tells the shell to take another.
+    /// read from, so one draw's answers all come from the same input (ADR-0002). It can lag one
+    /// input behind; the outcome that follows carries the snapshot its input left.
     pub fn snapshot(&self) -> Arc<Snapshot> {
         self.published.latest()
     }

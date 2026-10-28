@@ -83,7 +83,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.executor = executor
         accessibilityAsk = AccessibilityAsk(core.snapshot())
         executor.onEvent { [notifications] event in notifications.tell(event) }
-        executor.onChange { [weak self] in self?.refresh() }
+        executor.onChange { [weak self] _, snapshot in self?.refresh(snapshot) }
         reporter.launch()
         listenForShortcut()
     }
@@ -276,14 +276,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reporter.watchPermissions(closely: true)
     }
 
-    /// After each outcome, whichever fact or command it answers, the CLI's included, from one
-    /// snapshot, so the menu, Settings, onboarding and the tour all show the same input's
-    /// answers. Accessibility is asked for as website checking turns on without it. The menu-bar
-    /// item appears once onboarding is finished; onboarding asks for notifications itself, and
-    /// without it they're asked for as the item first appears.
-    private func refresh() {
-        guard let core, let reporter, let executor else { return }
-        let snapshot = core.snapshot()
+    /// After each outcome, whichever fact or command it answers, the CLI's included, from the
+    /// snapshot its input left, so the menu, Settings, onboarding and the tour all show the same
+    /// input's answers, those of the outcome just carried out. Accessibility is asked for as
+    /// website checking turns on without it, which each outcome's own snapshot shows even when
+    /// another input followed at once. The menu-bar item appears once onboarding is finished;
+    /// onboarding asks for notifications itself, and without it they're asked for as the item
+    /// first appears.
+    private func refresh(_ snapshot: Snapshot) {
+        guard let reporter, let executor else { return }
         if accessibilityAsk?.isDue(after: snapshot) == true { executor.perform(.askForAccessibility) }
         if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
             showStatusMenu(snapshot)
