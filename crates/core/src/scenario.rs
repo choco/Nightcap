@@ -14,9 +14,9 @@ use serde::de::DeserializeOwned;
 
 use crate::clock::{Clock, ManualClock};
 use crate::server::react::{Input, react};
+use crate::server::snapshot::{Published, Snapshot};
 use crate::server::start::{Setup, install_of, instance_of, zone_of};
 use crate::server::state::Inner;
-use crate::server::{Published, Snapshot};
 use crate::storage::file::{File, Memory, Paths};
 use crate::{Core, Fact, Outcome, Runs, UiCommand};
 

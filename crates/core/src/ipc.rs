@@ -20,7 +20,8 @@ use nightcap_protocol::{
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::CoreError;
-use crate::server::{Mail, Mailbox, Published};
+use crate::server::mailbox::{Mail, Mailbox};
+use crate::server::snapshot::Published;
 
 /// How long a client may take to send a line, and how long it waits for the core's thread.
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -183,8 +184,9 @@ mod tests {
     };
 
     use super::{bind, serve};
+    use crate::server::mailbox::{Mail, Mailbox};
+    use crate::server::snapshot::{Published, Snapshot};
     use crate::server::tests::{ChannelListener, noon};
-    use crate::server::{Mail, Mailbox, Published, Snapshot};
     use crate::{Core, CoreError, Effect, Outcome};
 
     /// The socket, in a folder that serving creates.

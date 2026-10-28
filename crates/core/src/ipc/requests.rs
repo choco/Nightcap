@@ -4,7 +4,7 @@
 
 use nightcap_protocol::{ErrorCode, ErrorReply, Instance, Payload, Request, Response};
 
-use crate::server::Snapshot;
+use crate::server::snapshot::Snapshot;
 use crate::server::state::Inner;
 use crate::{Effect, Outcome};
 

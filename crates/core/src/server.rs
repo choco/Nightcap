@@ -3,10 +3,10 @@
 //! they arrived: after each, it publishes a snapshot for the reads, then hands the outcome to the
 //! shell's listener.
 
-mod mailbox;
+pub(crate) mod mailbox;
 pub(crate) mod messages;
 pub(crate) mod react;
-mod snapshot;
+pub(crate) mod snapshot;
 pub(crate) mod start;
 pub(crate) mod state;
 pub(crate) mod turn;
@@ -15,12 +15,11 @@ pub(crate) mod watch;
 use std::sync::{Arc, mpsc};
 use std::thread;
 
-pub(crate) use mailbox::{Mail, Mailbox};
-pub(crate) use snapshot::{Published, Snapshot};
-
 use crate::CoreError;
+use mailbox::{Mail, Mailbox};
 use messages::Listener;
 use react::{Input, react};
+use snapshot::{Published, Snapshot};
 use state::Inner;
 
 /// Starts the core's thread on `inner`, which publishes to `published` and tells `listener`,
