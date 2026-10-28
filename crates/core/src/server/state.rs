@@ -86,7 +86,6 @@ impl Inner {
             onboarding: self.onboarding,
             notifications_wanted: self.grants.notifications_wanted,
             open_at_login: self.grants.open_at_login,
-            announced: self.grants.announced.clone(),
             night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)
                 .map(OnOff::from),
             until: self

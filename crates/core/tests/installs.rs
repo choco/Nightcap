@@ -5,8 +5,8 @@ mod common;
 
 use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Staged};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem,
-    NotSelfManaged, OnOff, OpenAtLoginDetail, Payload, Refusal, Response,
+    CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem, NotSelfManaged,
+    OnOff, OpenAtLoginDetail, Payload, Refusal, Response,
 };
 
 use common::{check, launch, noon, refusal, send};
@@ -304,27 +304,5 @@ fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
     assert_eq!(
         check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),
         Some(CheckState::Drifted)
-    );
-}
-
-#[test]
-fn opening_at_login_removed_in_system_settings_is_announced() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
-    _ = staged.send(Command::OpenAtLogin(OnOff::On));
-    staged.report(login_item(LoginItem::Enabled));
-
-    assert!(
-        staged
-            .report(login_item(LoginItem::NotRegistered))
-            .events
-            .contains(&Event::ProblemAppeared {
-                check: Check {
-                    detail: CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed),
-                    state: CheckState::Drifted,
-                },
-            })
     );
 }

@@ -3,8 +3,9 @@ import NightcapCore
 import UserNotifications
 import os
 
-/// Nightcap's notifications: what the core tells, as notices, what's new after an update, and
-/// Sparkle's reminders. A click on one opens the page its notice names.
+/// Nightcap's notifications: what the core tells, as notices, the problems the app announces,
+/// what's new after an update, and Sparkle's reminders. A click on one opens the page its notice
+/// names.
 final class Notifications: NSObject {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
 

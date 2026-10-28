@@ -1,11 +1,11 @@
 //! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
-//! the checks query answers, from which each client words them and the app picks their fixes;
-//! and the event that announces a problem when it appears.
+//! the checks query answers, from which each client words them, and the app picks their fixes
+//! and announces the problems that appear.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState,
-    ConfigFileDetail, FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
+    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, ConfigFileDetail,
+    FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
     NotificationsDetail, OpenAtLoginDetail, Schedule, SetBy,
 };
 
@@ -13,75 +13,11 @@ use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
-use crate::{Cause, Event};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
 /// back on (macOS 27).
 pub(crate) const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
-
-/// Whether a turn tells the problems that appear in it.
-pub(crate) enum Telling {
-    /// A fact's turn, which tells each one.
-    Aloud,
-    /// The turn of a command, a CLI request or quitting, which tells none: what its input
-    /// causes is the user's own doing, in front of them already, and is never told. The
-    /// problems in `before`, there before its input, wait for the next turn that tells.
-    Quietly { before: Vec<CheckKind> },
-}
-
-impl Inner {
-    /// How a turn whose outcome answers `cause`, and whose input is about to change the core at
-    /// `now`, tells the problems that appear in it: aloud for a fact, or quietly, as the user's
-    /// own doing.
-    pub(crate) fn telling(&self, cause: Cause, now: Timestamp) -> Telling {
-        match cause {
-            Cause::Launch | Cause::Fact => Telling::Aloud,
-            Cause::Command | Cause::Quit => Telling::Quietly {
-                before: self
-                    .problems(now)
-                    .iter()
-                    .map(|check| check.detail.kind())
-                    .collect(),
-            },
-        }
-    }
-
-    /// Announces each problem once as it appears at `now`, as `telling` allows. A problem that
-    /// ends and comes back is announced again.
-    pub(crate) fn announce(&mut self, telling: &Telling, now: Timestamp, events: &mut Vec<Event>) {
-        let problems = self.problems(now);
-        self.grants
-            .announced
-            .retain(|kind| problems.iter().any(|check| check.detail.kind() == *kind));
-        for check in problems {
-            let kind = check.detail.kind();
-            if self.grants.announced.contains(&kind) {
-                continue;
-            }
-            match telling {
-                Telling::Aloud => {
-                    self.grants.announced.push(kind);
-                    if announced(&check.detail) {
-                        events.push(Event::ProblemAppeared { check });
-                    }
-                }
-                Telling::Quietly { before } if !before.contains(&kind) => {
-                    self.grants.announced.push(kind);
-                }
-                Telling::Quietly { .. } => {}
-            }
-        }
-    }
-
-    /// The checks that need the user at `now`: drift or broken.
-    fn problems(&self, now: Timestamp) -> Vec<Check> {
-        self.checks(now)
-            .into_iter()
-            .filter(|check| check.state.is_problem())
-            .collect()
-    }
-}
 
 impl Inner {
     /// Everything Nightcap depends on, compared with what the user set up.
@@ -194,34 +130,6 @@ fn state(detail: &CheckDetail) -> CheckState {
         )
         | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
         | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => CheckState::Broken,
-    }
-}
-
-/// Whether a problem with what a check found is announced as it appears on its own. Night Shift
-/// being unavailable is a fact about the Mac, switched-off notifications can't announce
-/// themselves, and a login item waiting for approval follows the user's own choice, which macOS
-/// announces itself.
-fn announced(detail: &CheckDetail) -> bool {
-    match detail {
-        CheckDetail::NightShift(
-            NightShiftDetail::SetAside | NightShiftDetail::NoSunTimes { .. },
-        )
-        | CheckDetail::Accessibility(AccessibilityDetail::NotAllowed)
-        | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed)
-        | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
-        | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => true,
-        CheckDetail::NightShift(
-            NightShiftDetail::Unavailable | NightShiftDetail::Available { .. },
-        )
-        | CheckDetail::Accessibility(
-            AccessibilityDetail::Allowed | AccessibilityDetail::NotNeeded,
-        )
-        | CheckDetail::Notifications(_)
-        | CheckDetail::OpenAtLogin(
-            OpenAtLoginDetail::AwaitingApproval | OpenAtLoginDetail::Opens | OpenAtLoginDetail::Off,
-        )
-        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. } | ConfigFileDetail::Missing)
-        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => false,
     }
 }
 

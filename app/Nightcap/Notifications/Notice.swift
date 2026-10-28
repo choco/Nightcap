@@ -2,8 +2,8 @@ import Foundation
 import NightcapCore
 
 /// What a notification says: about something the core told, an outside change adopted as a
-/// snooze, a problem that appeared on its own, or a command the core refused, which left what the
-/// user chose undone; or about the first launch after an update.
+/// snooze or a command the core refused, which left what the user chose undone; or about a
+/// problem that appeared on its own, or the first launch after an update, which the app tells.
 struct Notice: Equatable {
     let title: String
     let body: String
@@ -35,8 +35,6 @@ struct Notice: Equatable {
             guard let snoozed else { return nil }
             self.init(
                 title: words.turnedOutsideNightcap(state), body: words.snoozed(rule(snoozed), state, until: until))
-        case .problemAppeared(let check):
-            self.init(problem: check.detail, words: words)
         case .refused(_, let why):
             self.init(title: words.refused, body: words.refusal(why, rule: rule))
         }
@@ -55,9 +53,11 @@ struct Notice: Equatable {
             opens: URL(string: "https://nightcap.choco.me/changelog/#v\(version)"))
     }
 
-    /// A problem as the core announces it: never Night Shift unavailable, notifications switched
-    /// off or a login item waiting for approval, nor a check that's no problem.
-    private init?(problem detail: CheckDetail, words: Wording) {
+    /// A problem as the app announces it, or nil for one it never does, nor a check that's no
+    /// problem: the one filter of what can be told. Night Shift being unavailable is a fact about
+    /// the Mac, switched-off notifications can't announce themselves, and a login item waiting
+    /// for approval follows the user's own choice, which macOS announces itself.
+    init?(problem detail: CheckDetail, words: Wording) {
         let notice: (title: String, body: String)
         switch detail {
         case .nightShift(.setAside): notice = words.scheduleSetAside

@@ -103,7 +103,6 @@ impl Inner {
                 open_at_login: persisted.open_at_login,
                 schedule_set_aside: false,
                 schedule_off_accepted: persisted.schedule_off_accepted,
-                announced: persisted.announced.clone(),
             },
             loaded: Loaded {
                 config_error,

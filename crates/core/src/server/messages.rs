@@ -8,8 +8,7 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    Check, Command, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity,
-    Schedule,
+    Command, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity, Schedule,
 };
 
 use crate::Snapshot;
@@ -138,10 +137,6 @@ pub enum Event {
         state: OnOff,
         until: Option<Timestamp>,
     },
-    /// A check became a problem the user didn't cause, to announce once: what it found, and
-    /// where that leaves it. Night Shift being unavailable, notifications switched off and a
-    /// login item waiting for approval never are.
-    ProblemAppeared { check: Check },
     /// The core refused a command from the app, other than a reload, whose refusal the config
     /// file's check shows; the CLI hears its refusal as the reply.
     Refused { command: Command, why: Refusal },

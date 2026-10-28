@@ -276,11 +276,6 @@ pub(crate) fn watch(bundle_id: &str, generation: u64) -> Effect {
     }
 }
 
-/// Whether an outcome tells the user anything.
-pub(crate) fn tells(outcome: &Outcome) -> bool {
-    !outcome.events.is_empty()
-}
-
 pub(crate) fn figma() -> RuleIdentity {
     RuleIdentity::App("com.figma.Desktop".parse().unwrap())
 }

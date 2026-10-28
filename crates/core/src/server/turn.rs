@@ -1,5 +1,5 @@
 //! One turn of the core, for every fact and command: it catches up on the schedule, then
-//! rewatches, writes Night Shift, reschedules its wakeup, announces and saves. Writing Night
+//! rewatches, writes Night Shift, reschedules its wakeup and saves. Writing Night
 //! Shift and reading its status callbacks reconcile against the schedule the core computes
 //! (ADR-0004).
 
@@ -22,24 +22,18 @@ const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
 impl Inner {
     /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
     /// the schedule transitions and the ends that came due, lets `react` change the state, then
-    /// rewatches, writes Night Shift, reschedules, announces the problems that appeared, unless
-    /// the user chose the input, and saves.
+    /// rewatches, writes Night Shift, reschedules and saves.
     pub(crate) fn turn<T>(
         &mut self,
         cause: Cause,
         react: impl FnOnce(&mut Self, &mut Outcome) -> T,
     ) -> (Outcome, T) {
         self.catch_up();
-        // One instant for the problems before the input and after, so that only the input
-        // tells them apart.
-        let now = self.clock.now();
-        let telling = self.telling(cause, now);
         let mut outcome = Outcome::new(cause);
         let answer = react(self, &mut outcome);
         self.rewatch(&mut outcome.effects);
         self.enforce(&mut outcome.effects);
         self.reschedule(&mut outcome.effects);
-        self.announce(&telling, now, &mut outcome.events);
         self.save();
         (outcome, answer)
     }

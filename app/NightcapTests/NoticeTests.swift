@@ -8,11 +8,11 @@ private let figma = Notice.FrontApp(bundleId: "com.figma.Desktop", name: "Figma"
 private let morning = Date(timeIntervalSince1970: 1_792_213_200)
 
 /// The notice for a check that became a problem.
-private func problem(_ detail: CheckDetail, _ state: CheckState) -> Notice? {
-    Notice(.problemAppeared(check: Check(detail: detail, state: state)), frontApp: nil, words: .staged)
+private func problem(_ detail: CheckDetail) -> Notice? {
+    Notice(problem: detail, words: .staged)
 }
 
-/// What each event from the core says as a notification.
+/// What each notification says, about an event from the core, a problem or an update.
 struct NoticeTests {
     @Test func anOutsideChangeNamesTheSnoozedRuleByItsAppInFrontAndItsEnd() {
         let adopted = Event.adopted(
@@ -78,28 +78,28 @@ struct NoticeTests {
     }
 
     @Test func aProblemSaysWhatAppeared() {
-        let night = problem(.nightShift(.setAside), .drifted)
+        let night = problem(.nightShift(.setAside))
         #expect(night?.title == "Sunset to sunrise needs Location Services")
         #expect(
             night?.body
                 == "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services "
                 + "back on, or to keep the schedule off.")
-        let sun = problem(.nightShift(.noSunTimes(waited: 600)), .broken)
+        let sun = problem(.nightShift(.noSunTimes(waited: 600)))
         #expect(sun?.title == "Nightcap can’t follow sunset to sunrise")
         #expect(
             sun?.body
                 == "macOS hasn’t worked out sunrise and sunset. Custom hours in Night Shift’s settings work "
                 + "without them.")
-        let accessibility = problem(.accessibility(.notAllowed), .drifted)
+        let accessibility = problem(.accessibility(.notAllowed))
         #expect(accessibility?.title == "Website checking needs Accessibility")
         #expect(accessibility?.body == "Open Nightcap’s settings to allow it, or to stop checking websites.")
-        let login = problem(.openAtLogin(.removed), .drifted)
+        let login = problem(.openAtLogin(.removed))
         #expect(login?.title == "Nightcap no longer opens at login")
         #expect(login?.body == "Open Nightcap’s settings to turn it back on, or to keep it off.")
     }
 
     @Test func aFilesProblemSaysWhatsWrongFromItsPath() {
-        let config = { (error: FileError) in problem(.configFile(.error(error)), .broken) }
+        let config = { (error: FileError) in problem(.configFile(.error(error))) }
         let malformed = config(
             .malformed(
                 path: "/n/config.toml", line: 2, message: "unknown field `domian`, expected `app` or `domain`"))
@@ -112,7 +112,7 @@ struct NoticeTests {
             config(.unreadable(path: "/n/config.toml", message: "Permission denied (os error 13)"))?.body
                 == "couldn't read /n/config.toml: Permission denied (os error 13)")
 
-        let rules = { (error: FileError) in problem(.adHocRules(.off(error)), .broken) }
+        let rules = { (error: FileError) in problem(.adHocRules(.off(error))) }
         let newer = rules(.newer(path: "/n/rules.toml", version: 3))
         #expect(newer?.title == "Ad-hoc rules are off")
         #expect(newer?.body == "/n/rules.toml is version 3, from a newer Nightcap than this one")
@@ -125,11 +125,11 @@ struct NoticeTests {
                 + "hyphens and periods")
     }
 
-    @Test func whatTheCoreNeverAnnouncesTellsNothing() {
-        #expect(problem(.nightShift(.unavailable), .broken) == nil)
-        #expect(problem(.notifications(.switchedOff), .drifted) == nil)
-        #expect(problem(.openAtLogin(.awaitingApproval), .drifted) == nil)
-        #expect(problem(.configFile(.valid(rules: 1)), .ok) == nil)
+    @Test func whatTheAppNeverAnnouncesTellsNothing() {
+        #expect(problem(.nightShift(.unavailable)) == nil)
+        #expect(problem(.notifications(.switchedOff)) == nil)
+        #expect(problem(.openAtLogin(.awaitingApproval)) == nil)
+        #expect(problem(.configFile(.valid(rules: 1))) == nil)
     }
 
     @Test func aRefusalSaysWhyTheChangeWasntMade() {

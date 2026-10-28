@@ -7,7 +7,7 @@ mod common;
 use jiff::SignedDuration;
 use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, normalize_domain};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
     NotificationPermission, NotificationsDetail, OnOff, Problem, Refusal, Request, Schedule,
     WebsiteChecking,
@@ -15,7 +15,7 @@ use nightcap_protocol::{
 
 use common::{
     add_rule, at, check, custom_hours, domain, figma, noon, on_by_the_schedule, permissions,
-    refusal, report_zurich_sun, reported, send, tells,
+    refusal, report_zurich_sun, reported, send,
 };
 
 #[test]
@@ -341,15 +341,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
     report_zurich_sun(&staged);
     staged.report(reported(true, Schedule::SunsetToSunrise));
 
-    let events = staged
-        .report(reported_set_aside(false, Schedule::Off))
-        .events;
-    assert!(events.contains(&Event::ProblemAppeared {
-        check: Check {
-            detail: CheckDetail::NightShift(NightShiftDetail::SetAside),
-            state: CheckState::Drifted,
-        },
-    }));
+    staged.report(reported_set_aside(false, Schedule::Off));
     assert_eq!(found(&staged, CheckKind::NightShift), set_aside());
 
     staged.report(reported(true, Schedule::SunsetToSunrise));
@@ -384,18 +376,14 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
         available(Schedule::Off)
     );
     let staged = staged.restart_at(at("2026-10-16T01:45:00+02:00"));
-    assert!(!tells(
-        &staged.report(reported_set_aside(false, Schedule::Off))
-    ));
+    staged.report(reported_set_aside(false, Schedule::Off));
     assert_eq!(
         found(&staged, CheckKind::NightShift),
         available(Schedule::Off)
     );
 
     staged.report(reported(true, Schedule::SunsetToSunrise));
-    assert!(tells(
-        &staged.report(reported_set_aside(false, Schedule::Off))
-    ));
+    staged.report(reported_set_aside(false, Schedule::Off));
     assert_eq!(found(&staged, CheckKind::NightShift), set_aside());
 }
 
@@ -443,27 +431,19 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
     let following = available(Schedule::SunsetToSunrise);
 
     staged.set_now(at("2026-10-16T01:49:00+02:00"));
-    assert!(!tells(&staged.report(Fact::TimerFired)));
+    staged.report(Fact::TimerFired);
     assert_eq!(found(&staged, CheckKind::NightShift), following);
 
     staged.set_now(at("2026-10-16T01:50:00+02:00"));
-    let no_sun_times = Check {
-        detail: CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-            waited: SignedDuration::from_mins(10),
-        }),
-        state: CheckState::Broken,
-    };
-    assert!(
-        staged
-            .report(Fact::TimerFired)
-            .events
-            .contains(&Event::ProblemAppeared {
-                check: no_sun_times.clone(),
-            })
-    );
+    staged.report(Fact::TimerFired);
     assert_eq!(
         found(&staged, CheckKind::NightShift),
-        Some((no_sun_times.detail, no_sun_times.state))
+        Some((
+            CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                waited: SignedDuration::from_mins(10),
+            }),
+            CheckState::Broken
+        ))
     );
 
     staged.set_now(at("2026-10-16T01:51:00+02:00"));

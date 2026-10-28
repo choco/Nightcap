@@ -3,11 +3,11 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, File};
+use nightcap_core::{Effect, Fact, File};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ExportFormat, FileError,
-    Lasting, Length, OnOff, Payload, Place, Problem, Reason, Refusal, Request, Response, Rule,
-    RuleAdded, RuleIdentity, SetBy,
+    Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail, Decision, ExportFormat,
+    FileError, Lasting, Length, OnOff, Payload, Place, Problem, Reason, Refusal, Request, Response,
+    Rule, RuleAdded, RuleIdentity, SetBy,
 };
 
 use common::{
@@ -62,34 +62,24 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
         .stage()
         .unwrap();
 
-    let outcome = launch(&staged);
+    launch(&staged);
 
-    let [
-        Event::ProblemAppeared {
-            check:
-                Check {
-                    detail:
-                        CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
-                            message,
-                            ..
-                        })),
-                    ..
-                },
-        },
-    ] = outcome.events.as_slice()
+    let snapshot = staged.core().snapshot();
+    let error = snapshot.config().error.unwrap();
+    let FileError::Malformed {
+        line: Some(2),
+        message,
+        ..
+    } = &error
     else {
-        panic!("expected one announcement, got {outcome:?}");
+        panic!("expected the config malformed on line 2, got {error:?}");
     };
     assert!(message.contains("apps"), "{message}");
     assert_eq!(rules(&staged), Vec::new());
-    assert_eq!(
-        staged.core().snapshot().config().error,
-        Some(FileError::Malformed {
-            path: staged.core().snapshot().config().path,
-            line: Some(2),
-            message: message.clone(),
-        })
-    );
+    assert!(snapshot.checks().checks.contains(&Check {
+        detail: CheckDetail::ConfigFile(ConfigFileDetail::Error(error.clone())),
+        state: CheckState::Broken,
+    }));
 }
 
 #[test]

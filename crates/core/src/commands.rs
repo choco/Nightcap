@@ -19,8 +19,7 @@ use crate::{Cause, Effect, Event, Outcome};
 
 impl Inner {
     /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
-    /// as an event, short of a reload's: the config file's check says why already. A problem it
-    /// causes isn't announced: the user is looking at what they chose.
+    /// as an event, short of a reload's: the config file's check says why already.
     pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
         self.turn(Cause::Command, |inner, outcome| {
             let answer = inner.run_command(&command, &mut outcome.effects);
@@ -37,8 +36,7 @@ impl Inner {
         })
     }
 
-    /// Runs a command the CLI sent, whose refusal is in the answer alone. A problem it causes
-    /// isn't announced: the CLI already printed what went wrong.
+    /// Runs a command the CLI sent, whose refusal is in the answer alone.
     pub(crate) fn answer(&mut self, command: &Command) -> (Outcome, Result<Payload, Refusal>) {
         self.turn(Cause::Command, |inner, outcome| {
             inner.run_command(command, &mut outcome.effects)

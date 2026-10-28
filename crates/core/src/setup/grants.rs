@@ -1,10 +1,10 @@
 //! The grants and the login item as macOS reports them, beside the choices their checks compare
 //! them with.
 
-use nightcap_protocol::{CheckKind, LoginItem, NotificationPermission};
+use nightcap_protocol::{LoginItem, NotificationPermission};
 
 /// The grants and the login item as macOS last reported them, and sunset to sunrise set aside,
-/// each with the choice its check compares it with; and the problems already announced.
+/// each with the choice its check compares it with.
 pub(crate) struct Grants {
     /// None until the shell first reports it.
     pub(crate) accessibility: Option<bool>,
@@ -19,8 +19,6 @@ pub(crate) struct Grants {
     pub(crate) schedule_set_aside: bool,
     /// See `saved_state::Persisted::schedule_off_accepted`.
     pub(crate) schedule_off_accepted: bool,
-    /// See `saved_state::Persisted::announced`.
-    pub(crate) announced: Vec<CheckKind>,
 }
 
 impl Grants {

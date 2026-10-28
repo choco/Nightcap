@@ -58,7 +58,7 @@ A fix that takes the change as the user's new choice, such as keeping notificati
 _Avoid_: dismiss, ignore
 
 **Announce**:
-Post one notification when a problem appears, unless the user caused it.
+Post one notification when a problem appears on its own, as the snapshot after a fact shows it, never one the user caused with a command. The app remembers what it told until the problem ends, across relaunches, and tells one that comes back again.
 
 ### Menu
 

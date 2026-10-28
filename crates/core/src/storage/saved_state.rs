@@ -5,7 +5,7 @@ use std::io;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use nightcap_protocol::{CheckKind, Length, OnOff, Place, Rule, SetBy};
+use nightcap_protocol::{Length, OnOff, Place, Rule, SetBy};
 use serde::{Deserialize, Serialize};
 
 use crate::storage::config::NightShiftConfig;
@@ -34,8 +34,6 @@ pub(crate) struct Persisted {
     /// Whether the user wants Nightcap to open at login: set when they choose it or the login
     /// item turns up enabled, cleared only when they choose otherwise (ADR-0011).
     pub(crate) open_at_login: bool,
-    /// The problems already announced with a notification, so a restart doesn't repeat them.
-    pub(crate) announced: Vec<CheckKind>,
     /// What Nightcap was holding Night Shift at: forced off before a crash, or released on a
     /// clean exit. The next run finds Night Shift there and knows it wasn't the user.
     pub(crate) night_shift: Option<OnOff>,
@@ -254,7 +252,6 @@ mod tests {
             onboarding: 1,
             notifications_wanted: true,
             open_at_login: true,
-            announced: vec![CheckKind::Accessibility],
             night_shift: Some(OnOff::Off),
             until: Some(at("2026-10-17T07:00:00+02:00")),
             applied_from_config: NightShiftConfig {
