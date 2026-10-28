@@ -14,7 +14,7 @@
 		"format": "biome check --write"
 	},
 	"dependencies": {
-		"react": "19.3.0",
+		"react": "19.3.1",
 		"react-dom": "19.3.0"
 	},
 	"devDependencies": {
