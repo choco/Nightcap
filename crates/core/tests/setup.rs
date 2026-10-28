@@ -9,7 +9,7 @@ use nightcap_core::{AppCommand, Event, Fact, Fix, Scenario, Staged, normalize_do
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
-    NotificationPermission, NotificationsDetail, OnOff, Refusal, Request, Schedule,
+    NotificationPermission, NotificationsDetail, OnOff, Problem, Refusal, Request, Schedule,
     WebsiteChecking,
 };
 
@@ -155,8 +155,8 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         config(
             ConfigFileDetail::Error(FileError::Invalid {
                 path,
-                line: Some(2),
-                message: "night_shift.strength is 0 to 100, not 101".to_owned(),
+                line: 2,
+                problem: Problem::StrengthOutOfRange { strength: 101 },
             }),
             CheckState::Broken
         )

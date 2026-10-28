@@ -88,7 +88,7 @@ struct NoticeTests {
         #expect(malformed?.title == "Nightcap’s config is invalid")
         #expect(malformed?.body == "/n/config.toml: line 2: unknown field `domian`, expected `app` or `domain`")
         #expect(
-            config(.invalid(path: "/n/config.toml", line: 3, message: "night_shift.strength is 0 to 100, not 101"))?
+            config(.invalid(path: "/n/config.toml", line: 3, problem: .strengthOutOfRange(strength: 101)))?
                 .body == "/n/config.toml: line 3: night_shift.strength is 0 to 100, not 101")
         #expect(
             config(.unreadable(path: "/n/config.toml", message: "Permission denied (os error 13)"))?.body
@@ -102,8 +102,9 @@ struct NoticeTests {
             rules(.malformed(path: "/n/rules.toml", line: nil, message: "expected a table"))?.body
                 == "/n/rules.toml: expected a table")
         #expect(
-            rules(.invalid(path: "/n/rules.toml", line: nil, message: "app:a/b isn't a bundle ID"))?.body
-                == "/n/rules.toml: app:a/b isn't a bundle ID")
+            rules(.invalid(path: "/n/rules.toml", line: 3, problem: .notABundleId(entry: "a/b")))?.body
+                == "/n/rules.toml: line 3: “a/b” isn’t a bundle ID like com.figma.Desktop: only letters, digits, "
+                + "hyphens and periods")
     }
 
     @Test func whatTheCoreNeverAnnouncesTellsNothing() {

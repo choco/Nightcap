@@ -14,6 +14,12 @@
     "%@ has Nightcap’s site open." : {
 
     },
+    "%@ is in both rules.off and rules.on: a domain has one rule" : {
+
+    },
+    "%@ is in both rules.off and rules.on: an app has one rule" : {
+
+    },
     "%@ is version %lld, from a newer Nightcap than this one" : {
       "localizations" : {
         "en" : {
@@ -1640,6 +1646,12 @@
     "figma.com" : {
 
     },
+    "lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at least one" : {
+
+    },
+    "lengths is a key of its own, before any table, not one under [menu]" : {
+
+    },
     "macOS asks you to allow it, once." : {
 
     },
@@ -1653,6 +1665,12 @@
 
     },
     "macOS turned Night Shift’s schedule off." : {
+
+    },
+    "night_shift.schedule is “off”, “sunset-to-sunrise” or custom hours such as “22:00-07:00”, not “%@”" : {
+
+    },
+    "night_shift.strength is 0 to 100, not %lld" : {
 
     },
     "notifications" : {
@@ -1671,6 +1689,9 @@
 
     },
     "opening at login" : {
+
+    },
+    "rules are listed by what they say, under [rules.off] and [rules.on]" : {
 
     },
     "the config file" : {
@@ -1695,6 +1716,12 @@
 
     },
     "“%@”" : {
+
+    },
+    "“%@” isn’t a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods" : {
+
+    },
+    "“%@” isn’t a domain like figma.com: no scheme, path, port or wildcard" : {
 
     },
     "“%@” › “%@”" : {

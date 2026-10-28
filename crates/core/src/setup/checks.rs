@@ -288,8 +288,8 @@ impl From<&ConfigError> for FileError {
                 problem,
             } => Self::Invalid {
                 path: path.display().to_string(),
-                line: Some(*line),
-                message: problem.to_string(),
+                line: *line,
+                problem: problem.clone(),
             },
         }
     }
@@ -311,10 +311,14 @@ impl From<&AdHocError> for FileError {
                 path: path.display().to_string(),
                 version: *version,
             },
-            AdHocError::Invalid { path, error } => Self::Invalid {
+            AdHocError::Invalid {
+                path,
+                line,
+                problem,
+            } => Self::Invalid {
                 path: path.display().to_string(),
-                line: None,
-                message: error.to_string(),
+                line: *line,
+                problem: problem.clone(),
             },
         }
     }

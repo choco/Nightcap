@@ -10,8 +10,8 @@ use nightcap_protocol::{
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
     FileError, Front, Inherited, Install, Lasting, Length, LoginItem, NightShift, NightShiftDetail,
     NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
-    OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Refusal, Rule,
-    RuleIdentity, Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
+    OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Problem, Reason, Refusal,
+    Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -138,13 +138,25 @@ pub enum FileError {
     },
     Invalid {
         path: String,
-        line: Option<u32>,
-        message: String,
+        line: u32,
+        problem: Problem,
     },
     Newer {
         path: String,
         version: u32,
     },
+}
+
+#[uniffi::remote(Enum)]
+pub enum Problem {
+    UnsaidRules,
+    NotABundleId { entry: String },
+    NotADomain { entry: String },
+    BothWays { identity: RuleIdentity },
+    StrengthOutOfRange { strength: u8 },
+    NotASchedule { schedule: String },
+    NotLengths { lengths: Vec<String> },
+    LengthsUnderMenu,
 }
 
 #[uniffi::remote(Enum)]

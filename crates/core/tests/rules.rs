@@ -6,8 +6,8 @@ mod common;
 use nightcap_core::{Effect, Event, Fact, File};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ExportFormat, FileError,
-    Lasting, Length, OnOff, Payload, Place, Reason, Refusal, Request, Response, Rule, RuleIdentity,
-    SetBy,
+    Lasting, Length, OnOff, Payload, Place, Problem, Reason, Refusal, Request, Response, Rule,
+    RuleIdentity, SetBy,
 };
 
 use common::{
@@ -68,10 +68,10 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
             check:
                 Check {
                     detail:
-                        CheckDetail::ConfigFile(ConfigFileDetail::Error(
-                            FileError::Malformed { message, .. }
-                            | FileError::Invalid { message, .. },
-                        )),
+                        CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
+                            message,
+                            ..
+                        })),
                     ..
                 },
         },
@@ -339,15 +339,22 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
 }
 
 #[test]
-fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
-    let invalid = "version = 2\n[rules.off]\napp = [\"com.figma.Desktop \"]\n";
+fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone_and_name_its_line() {
+    let invalid = "version = 2\n[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n";
     let staged = noon().rules(invalid).stage().unwrap();
 
-    assert!(matches!(
-        staged.core().config().ad_hoc_error,
-        Some(FileError::Invalid { message, .. })
-            if message.contains("\"com.figma.Desktop \" isn't a bundle ID")
-    ));
+    assert!(
+        matches!(
+            &staged.core().config().ad_hoc_error,
+            Some(FileError::Invalid {
+                line: 5,
+                problem: Problem::NotABundleId { entry },
+                ..
+            }) if entry == "com.figma.Desktop "
+        ),
+        "{:?}",
+        staged.core().config().ad_hoc_error
+    );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(invalid));
 }
@@ -558,40 +565,52 @@ fn rules_are_listed_by_what_they_say() {
 fn a_config_that_cant_be_is_refused() {
     let staged = noon().stage().unwrap();
 
-    for (config, said) in [
+    let lengths = |lengths: &[&str]| Problem::NotLengths {
+        lengths: lengths.iter().map(|length| (*length).to_owned()).collect(),
+    };
+    for (config, why) in [
         (
             "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.figma.desktop\"]\n",
-            "both rules.off and rules.on",
+            Problem::BothWays { identity: figma() },
         ),
         (
             "[rules]\napp = [\"com.figma.Desktop\"]\n",
-            "under [rules.off] and [rules.on]",
+            Problem::UnsaidRules,
         ),
-        ("lengths = [\"45m\", \"forever\"]\n", "lengths are like"),
-        ("lengths = [\"30s\"]\n", "lengths are like"),
-        ("lengths = []\n", "lengths are like"),
         (
-            "[menu]\nlengths = [\"45m\"]\n",
-            "lengths is a key of its own, before any table, not one under [menu]",
+            "lengths = [\"45m\", \"forever\"]\n",
+            lengths(&["45m", "forever"]),
         ),
+        ("lengths = [\"30s\"]\n", lengths(&["30s"])),
+        ("lengths = []\n", lengths(&[])),
+        ("[menu]\nlengths = [\"45m\"]\n", Problem::LengthsUnderMenu),
         (
             "[rules.off]\napp = [\"com.figma.Desktop \"]\n",
-            "\"com.figma.Desktop \" isn't a bundle ID",
+            Problem::NotABundleId {
+                entry: "com.figma.Desktop ".to_owned(),
+            },
         ),
-        ("[rules.on]\napp = [\"\"]\n", "\"\" isn't a bundle ID"),
+        (
+            "[rules.on]\napp = [\"\"]\n",
+            Problem::NotABundleId {
+                entry: String::new(),
+            },
+        ),
         (
             "[rules.off]\ndomain = [\"https://figma.com\"]\n",
-            "\"https://figma.com\" isn't a domain",
+            Problem::NotADomain {
+                entry: "https://figma.com".to_owned(),
+            },
         ),
     ] {
         staged.write_config(Some(config));
         let (_, response) = staged.request(Request::Reload);
-        let Response::Refused(Refusal::InvalidConfig(FileError::Invalid { message, .. })) =
+        let Response::Refused(Refusal::InvalidConfig(FileError::Invalid { problem, .. })) =
             response
         else {
             panic!("{config:?} was accepted: {response:?}");
         };
-        assert!(message.contains(said), "{config:?}: {message}");
+        assert_eq!(problem, why, "{config:?}");
     }
 }
 
@@ -633,7 +652,7 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
                 &response,
                 Response::Refused(Refusal::InvalidConfig(FileError::Invalid {
                     path: at_path,
-                    line: Some(at),
+                    line: at,
                     ..
                 })) if *at == line && *at_path == path
             ),
@@ -650,7 +669,7 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
             matches!(
                 &found,
                 Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    line: Some(at),
+                    line: at,
                     ..
                 }))) if *at == line
             ),

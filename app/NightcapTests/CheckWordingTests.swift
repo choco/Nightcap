@@ -85,6 +85,50 @@ struct CheckWordingTests {
                 == (.broken, "Line 2: night_shift.strength is 0 to 100, not 101."))
     }
 
+    @Test func anInvalidConfigNamesTheEntryOrValueOnItsLine() throws {
+        let invalid = { (config: String) in try check(atNoon(config: config), .configFile)! }
+
+        #expect(
+            try invalid("websites = true\n[rules]\napp = [\"com.figma.Desktop\"]\n")
+                == (.broken, "Line 3: rules are listed by what they say, under [rules.off] and [rules.on]."))
+        #expect(
+            try invalid("[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n")
+                == (
+                    .broken,
+                    "Line 4: “com.figma.Desktop ” isn’t a bundle ID like com.figma.Desktop: only letters, digits, "
+                        + "hyphens and periods."
+                ))
+        #expect(
+            try invalid("[rules.on]\ndomain = [\"figma.com\"]\n[rules.off]\ndomain = [\"https://figma.com\"]\n")
+                == (
+                    .broken,
+                    "Line 4: “https://figma.com” isn’t a domain like figma.com: no scheme, path, port or wildcard."
+                ))
+        #expect(
+            try invalid("[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.figma.desktop\"]\n")
+                == (.broken, "Line 4: com.figma.Desktop is in both rules.off and rules.on: an app has one rule."))
+        #expect(
+            try invalid("[rules.off]\ndomain = [\"figma.com\"]\n[rules.on]\ndomain = [\"Figma.com\"]\n")
+                == (.broken, "Line 4: figma.com is in both rules.off and rules.on: a domain has one rule."))
+        #expect(
+            try invalid("[night_shift]\nschedule = \"dusk\"\n")
+                == (
+                    .broken,
+                    "Line 2: night_shift.schedule is “off”, “sunset-to-sunrise” or custom hours such as "
+                        + "“22:00-07:00”, not “dusk”."
+                ))
+        #expect(
+            try invalid("\nlengths = [\"45m\", \"forever\"]\n")
+                == (
+                    .broken,
+                    "Line 2: lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at "
+                        + "least one."
+                ))
+        #expect(
+            try invalid("websites = true\n\n[menu]\nlengths = [\"45m\"]\n")
+                == (.broken, "Line 3: lengths is a key of its own, before any table, not one under [menu]."))
+    }
+
     @Test func theAdHocRulesCheckCountsThemOrSaysWhyTheyAreOff() throws {
         let core = try atNoon()
         #expect(check(core, .adHocRules)! == (.ok, "No ad-hoc rules."))
@@ -109,6 +153,15 @@ struct CheckWordingTests {
                     .broken,
                     "Ad-hoc rules are off: \(path): line 3: invalid type: string \"com.figma.Desktop\", "
                         + "expected a sequence."
+                ))
+
+        let invalid = try atNoon(rules: "version = 2\n[rules.on]\ndomain = [\"figma.com\", \"*.figma.com\"]\n")
+        #expect(
+            check(invalid, .adHocRules)!
+                == (
+                    .broken,
+                    "Ad-hoc rules are off: \(path): line 3: “*.figma.com” isn’t a domain like figma.com: no "
+                        + "scheme, path, port or wildcard."
                 ))
     }
 

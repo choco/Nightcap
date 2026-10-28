@@ -767,14 +767,40 @@ pub enum FileError {
         line: Option<u32>,
         message: String,
     },
-    /// Well-formed, but an entry or a value can't be: why, and its line where Nightcap knows it.
+    /// Well-formed, but an entry or a value can't be: which, and its line.
     Invalid {
         path: String,
-        line: Option<u32>,
-        message: String,
+        line: u32,
+        problem: Problem,
     },
     /// It's from a newer Nightcap, which wrote this version of it.
     Newer { path: String, version: u32 },
+}
+
+/// What makes a well-formed config or `rules.toml` invalid, with the entry or value as the file
+/// writes it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Problem {
+    /// Rules straight under `[rules]`, which names no say: they're listed under `[rules.off]`
+    /// and `[rules.on]` (ADR-0006).
+    UnsaidRules,
+    /// An app's entry that isn't a bundle ID: letters, digits, hyphens and periods.
+    NotABundleId { entry: String },
+    /// A site's entry that isn't a bare domain: no scheme, path, port or wildcard.
+    NotADomain { entry: String },
+    /// An app or domain under both `rules.off` and `rules.on`, which has one rule (ADR-0006).
+    BothWays { identity: RuleIdentity },
+    /// `night_shift.strength` past 100 (ADR-0014).
+    StrengthOutOfRange { strength: u8 },
+    /// A `night_shift.schedule` that's none of "off", "sunset-to-sunrise" or custom hours such
+    /// as "22:00-07:00".
+    NotASchedule { schedule: String },
+    /// `lengths` that aren't each from a minute to a day in whole minutes, or that are none
+    /// (ADR-0018).
+    NotLengths { lengths: Vec<String> },
+    /// `lengths` under a `[menu]` table, where it's a key of its own, before any table.
+    LengthsUnderMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1335,12 +1361,85 @@ mod tests {
             ),
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config,
-                    line: None,
-                    message: "night_shift.strength is 0 to 100, not 101".to_owned(),
+                    path: config.clone(),
+                    line: 3,
+                    problem: Problem::StrengthOutOfRange { strength: 101 },
                 })),
                 CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":null,"message":"night_shift.strength is 0 to 100, not 101"}}},"state":"broken"}"#,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":{"strength_out_of_range":{"strength":101}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 2,
+                    problem: Problem::UnsaidRules,
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"problem":"unsaid_rules"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 7,
+                    problem: Problem::BothWays {
+                        identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":7,"problem":{"both_ways":{"identity":"app:com.figma.Desktop"}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 2,
+                    problem: Problem::NotASchedule {
+                        schedule: "dusk".to_owned(),
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"problem":{"not_a_schedule":{"schedule":"dusk"}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 1,
+                    problem: Problem::NotLengths {
+                        lengths: vec!["45m".to_owned(), "forever".to_owned()],
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":1,"problem":{"not_lengths":{"lengths":["45m","forever"]}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config,
+                    line: 3,
+                    problem: Problem::LengthsUnderMenu,
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":"lengths_under_menu"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
+                    path: rules.clone(),
+                    line: 3,
+                    problem: Problem::NotABundleId {
+                        entry: "com.figma.Desktop ".to_owned(),
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":3,"problem":{"not_a_bundle_id":{"entry":"com.figma.Desktop "}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
+                    path: rules.clone(),
+                    line: 4,
+                    problem: Problem::NotADomain {
+                        entry: "https://figma.com".to_owned(),
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":4,"problem":{"not_a_domain":{"entry":"https://figma.com"}}}}},"state":"broken"}"#,
             ),
             (
                 CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 0 }),

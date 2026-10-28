@@ -48,16 +48,14 @@ extension Wording {
     }
 
     /// Where in the file and what, without the path, which Settings shows under the config's
-    /// setting, its path: "Line 4: unknown field `domian`, expected `app` or `domain`." An
-    /// invalid entry or value with no line keeps its first letter: it starts with the key or
-    /// entry it names, as the file writes it.
+    /// setting, its path: "Line 4: unknown field `domian`, expected `app` or `domain`." toml's
+    /// message with no line gains a capital.
     private func inTheFile(_ error: FileError) -> String {
         switch error {
         case .unreadable(_, let message): text("Couldn't read it: \(message).")
-        case .malformed(_, let line?, let message), .invalid(_, let line?, let message):
-            text("Line \(Int(line)): \(message).")
+        case .malformed(_, let line?, let message): text("Line \(Int(line)): \(message).")
         case .malformed(_, nil, let message): text("\(message.prefix(1).uppercased() + message.dropFirst()).")
-        case .invalid(_, nil, let message): text("\(message).")
+        case .invalid(_, let line, let problem): text("Line \(Int(line)): \(self.problem(problem)).")
         case .newer(_, let version): text("It’s version \(Int(version)), from a newer Nightcap than this one.")
         }
     }
@@ -67,12 +65,40 @@ extension Wording {
         switch error {
         case .unreadable(let path, let message):
             text("couldn't read \(path): \(message)")
-        case .malformed(let path, let line?, let message), .invalid(let path, let line?, let message):
+        case .malformed(let path, let line?, let message):
             text("\(path): line \(Int(line)): \(message)")
-        case .malformed(let path, nil, let message), .invalid(let path, nil, let message):
+        case .malformed(let path, nil, let message):
             text("\(path): \(message)")
+        case .invalid(let path, let line, let problem):
+            text("\(path): line \(Int(line)): \(self.problem(problem))")
         case .newer(let path, let version):
             text("\(path) is version \(Int(version)), from a newer Nightcap than this one")
+        }
+    }
+
+    /// What makes an entry or a value in a file invalid, from the key or entry as the file
+    /// writes it, which keeps its first letter: "night_shift.strength is 0 to 100, not 101".
+    private func problem(_ problem: Problem) -> String {
+        switch problem {
+        case .unsaidRules: text("rules are listed by what they say, under [rules.off] and [rules.on]")
+        case .notABundleId(let entry):
+            text("“\(entry)” isn’t a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods")
+        case .notADomain(let entry):
+            text("“\(entry)” isn’t a domain like figma.com: no scheme, path, port or wildcard")
+        case .bothWays(.app(let bundleId)):
+            text("\(bundleId) is in both rules.off and rules.on: an app has one rule")
+        case .bothWays(.domain(let domain)):
+            text("\(domain) is in both rules.off and rules.on: a domain has one rule")
+        case .strengthOutOfRange(let strength): text("night_shift.strength is 0 to 100, not \(Int(strength))")
+        case .notASchedule(let schedule):
+            text(
+                """
+                night_shift.schedule is “off”, “sunset-to-sunrise” or custom hours such as “22:00-07:00”, \
+                not “\(schedule)”
+                """)
+        case .notLengths:
+            text("lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at least one")
+        case .lengthsUnderMenu: text("lengths is a key of its own, before any table, not one under [menu]")
         }
     }
 

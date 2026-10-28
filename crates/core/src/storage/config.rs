@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::{fmt, io};
 
 use jiff::SignedDuration;
-use nightcap_protocol::{IdentityError, OnOff, RuleIdentity, Schedule, TimeOfDay};
+use nightcap_protocol::{OnOff, Problem, RuleIdentity, Schedule, TimeOfDay};
 use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
@@ -86,15 +86,15 @@ pub(crate) fn default_lengths() -> Vec<SignedDuration> {
     ]
 }
 
-/// Why the config can't be used. What it says can quote the file, and so a domain, so the log
-/// gets only its `kind` (ADR-0009).
+/// Why the config can't be used, which each client words from the checks. What it says can
+/// quote the file, and so a domain, so the log gets only its `kind` (ADR-0009).
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigError {
     #[error("couldn't read {}: {error}", .path.display())]
     Unreadable { path: PathBuf, error: io::Error },
     #[error("{}: {error}", .path.display())]
     Malformed { path: PathBuf, error: Malformed },
-    #[error("{}: line {line}: {problem}", .path.display())]
+    #[error("{}: line {line} is invalid", .path.display())]
     Invalid {
         path: PathBuf,
         line: u32,
@@ -143,34 +143,13 @@ impl fmt::Display for Malformed {
 
 /// The line, counted from 1, that the byte at `offset` in `contents` is on. A file past
 /// `u32::MAX` lines is past any the core reads, so its last lines all count as that one.
-fn line_at(contents: &[u8], offset: usize) -> u32 {
+pub(crate) fn line_at(contents: &[u8], offset: usize) -> u32 {
     let breaks = contents
         .iter()
         .take(offset)
         .filter(|&&byte| byte == b'\n')
         .count();
     u32::try_from(breaks).map_or(u32::MAX, |breaks| breaks.saturating_add(1))
-}
-
-/// What makes a well-formed config invalid.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum Problem {
-    #[error("rules are listed by what they say, under [rules.off] and [rules.on]")]
-    UnsaidRules,
-    #[error(transparent)]
-    Entry(IdentityError),
-    #[error("{0} is in both rules.off and rules.on: an app or domain has one rule")]
-    BothWays(RuleIdentity),
-    #[error("night_shift.strength is 0 to 100, not {0}")]
-    Strength(u8),
-    #[error(
-        "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not {0:?}"
-    )]
-    Schedule(String),
-    #[error("lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {0:?}")]
-    Lengths(Vec<String>),
-    #[error("lengths is a key of its own, before any table, not one under [menu]")]
-    MenuTable,
 }
 
 /// The config. A missing file means no rules, as on a fresh brew install.
@@ -215,25 +194,27 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
         let apps = lists
             .app
             .iter()
-            .map(|entry| (entry, entry.get_ref().parse().map(RuleIdentity::App)));
+            .map(|entry| (entry, app_entry(entry.get_ref())));
         let domains = lists
             .domain
             .iter()
-            .map(|entry| (entry, entry.get_ref().parse().map(RuleIdentity::Domain)));
+            .map(|entry| (entry, domain_entry(entry.get_ref())));
         for (entry, identity) in apps.chain(domains) {
             let at = |problem| Spanned::new(entry.span(), problem);
-            let identity = identity.map_err(|error| at(Problem::Entry(error)))?;
+            let identity = identity.map_err(at)?;
             if let Some((other, _)) = rules
                 .iter()
                 .find(|(other, said)| *other == identity && *said != says)
             {
-                return Err(at(Problem::BothWays(other.clone())));
+                return Err(at(Problem::BothWays {
+                    identity: other.clone(),
+                }));
             }
             rules.push((identity, says));
         }
     }
     if let Some(menu) = &file.menu {
-        return Err(Spanned::new(menu.span(), Problem::MenuTable));
+        return Err(Spanned::new(menu.span(), Problem::LengthsUnderMenu));
     }
     let night_shift = night_shift(file.night_shift)?;
     let lengths = match file.lengths {
@@ -246,7 +227,14 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
                 .collect::<Option<Vec<_>>>()
                 .filter(|read| !read.is_empty());
             let span = lengths.span();
-            read.ok_or_else(|| Spanned::new(span, Problem::Lengths(lengths.into_inner())))?
+            read.ok_or_else(|| {
+                Spanned::new(
+                    span,
+                    Problem::NotLengths {
+                        lengths: lengths.into_inner(),
+                    },
+                )
+            })?
         }
     };
     Ok(Config {
@@ -256,6 +244,26 @@ fn checked(file: File) -> Result<Config, Spanned<Problem>> {
         lengths,
         found: true,
     })
+}
+
+/// The rule identity an app's entry names, or why it names none.
+pub(crate) fn app_entry(entry: &str) -> Result<RuleIdentity, Problem> {
+    entry
+        .parse()
+        .map(RuleIdentity::App)
+        .map_err(|_| Problem::NotABundleId {
+            entry: entry.to_owned(),
+        })
+}
+
+/// The rule identity a site's entry names, or why it names none.
+pub(crate) fn domain_entry(entry: &str) -> Result<RuleIdentity, Problem> {
+    entry
+        .parse()
+        .map(RuleIdentity::Domain)
+        .map_err(|_| Problem::NotADomain {
+            entry: entry.to_owned(),
+        })
 }
 
 /// A preset length: a whole number of minutes, from one to a day.
@@ -274,15 +282,23 @@ fn night_shift(file: NightShiftFile) -> Result<NightShiftConfig, Spanned<Problem
     {
         return Err(Spanned::new(
             strength.span(),
-            Problem::Strength(*strength.get_ref()),
+            Problem::StrengthOutOfRange {
+                strength: *strength.get_ref(),
+            },
         ));
     }
     let schedule = file
         .schedule
         .map(|text| {
             let span = text.span();
-            schedule(text.get_ref())
-                .ok_or_else(|| Spanned::new(span, Problem::Schedule(text.into_inner())))
+            schedule(text.get_ref()).ok_or_else(|| {
+                Spanned::new(
+                    span,
+                    Problem::NotASchedule {
+                        schedule: text.into_inner(),
+                    },
+                )
+            })
         })
         .transpose()?;
     Ok(NightShiftConfig {

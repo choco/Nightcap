@@ -7,7 +7,8 @@ use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
     Decision, FileError, Hello, Install, Lasting, Length, NightShift, NightShiftDetail,
     NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
-    PROTOCOL_VERSION, Place, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
+    PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy,
+    TimeOfDay,
 };
 
 use crate::client::Report;
@@ -199,24 +200,50 @@ fn file_error(error: &FileError) -> String {
             path,
             line: Some(line),
             message,
-        }
-        | FileError::Invalid {
-            path,
-            line: Some(line),
-            message,
         } => format!("{path}: line {line}: {message}"),
         FileError::Malformed {
             path,
             line: None,
             message,
-        }
-        | FileError::Invalid {
-            path,
-            line: None,
-            message,
         } => format!("{path}: {message}"),
+        FileError::Invalid {
+            path,
+            line,
+            problem,
+        } => format!("{path}: line {line}: {}", self::problem(problem)),
         FileError::Newer { path, version } => {
             format!("{path} is version {version}, from a newer Nightcap than this one")
+        }
+    }
+}
+
+/// What makes an entry or a value in a file invalid, starting from the key or entry, as the file
+/// writes it.
+fn problem(problem: &Problem) -> String {
+    match problem {
+        Problem::UnsaidRules => {
+            "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned()
+        }
+        Problem::NotABundleId { entry } => format!(
+            "{entry:?} isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods"
+        ),
+        Problem::NotADomain { entry } => {
+            format!("{entry:?} isn't a domain like figma.com: no scheme, path, port or wildcard")
+        }
+        Problem::BothWays { identity } => {
+            format!("{identity} is in both rules.off and rules.on: an app or domain has one rule")
+        }
+        Problem::StrengthOutOfRange { strength } => {
+            format!("night_shift.strength is 0 to 100, not {strength}")
+        }
+        Problem::NotASchedule { schedule } => format!(
+            "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not {schedule:?}"
+        ),
+        Problem::NotLengths { lengths } => format!(
+            "lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {lengths:?}"
+        ),
+        Problem::LengthsUnderMenu => {
+            "lengths is a key of its own, before any table, not one under [menu]".to_owned()
         }
     }
 }
@@ -772,18 +799,10 @@ mod tests {
         assert_eq!(
             invalid(FileError::Invalid {
                 path: path(),
-                line: Some(2),
-                message: "night_shift.strength is 0 to 100, not 101".to_owned(),
+                line: 2,
+                problem: Problem::StrengthOutOfRange { strength: 101 },
             }),
             "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 2: night_shift.strength is 0 to 100, not 101"
-        );
-        assert_eq!(
-            invalid(FileError::Invalid {
-                path: path(),
-                line: None,
-                message: "night_shift.strength is 0 to 100, not 101".to_owned(),
-            }),
-            "The config file is invalid: /Users/me/.config/nightcap/config.toml: night_shift.strength is 0 to 100, not 101"
         );
         assert_eq!(
             ad_hoc(AdHocRulesDetail::On { rules: 0 }),
@@ -798,6 +817,66 @@ mod tests {
             })),
             "Ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml is version 3, from a newer Nightcap than this one."
         );
+        assert_eq!(
+            ad_hoc(AdHocRulesDetail::Off(FileError::Invalid {
+                path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
+                line: 3,
+                problem: Problem::NotABundleId {
+                    entry: "com.figma.Desktop ".to_owned(),
+                },
+            })),
+            "Ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml: line 3: \"com.figma.Desktop \" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods."
+        );
+    }
+
+    #[test]
+    fn a_files_problem_names_the_entry_or_value_as_written() {
+        for (found, said) in [
+            (
+                Problem::UnsaidRules,
+                "rules are listed by what they say, under [rules.off] and [rules.on]",
+            ),
+            (
+                Problem::NotABundleId {
+                    entry: String::new(),
+                },
+                "\"\" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods",
+            ),
+            (
+                Problem::NotADomain {
+                    entry: "https://figma.com".to_owned(),
+                },
+                "\"https://figma.com\" isn't a domain like figma.com: no scheme, path, port or wildcard",
+            ),
+            (
+                Problem::BothWays {
+                    identity: "app:com.figma.Desktop".parse().unwrap(),
+                },
+                "app:com.figma.Desktop is in both rules.off and rules.on: an app or domain has one rule",
+            ),
+            (
+                Problem::StrengthOutOfRange { strength: 101 },
+                "night_shift.strength is 0 to 100, not 101",
+            ),
+            (
+                Problem::NotASchedule {
+                    schedule: "dusk".to_owned(),
+                },
+                "night_shift.schedule is \"off\", \"sunset-to-sunrise\" or custom hours such as \"22:00-07:00\", not \"dusk\"",
+            ),
+            (
+                Problem::NotLengths {
+                    lengths: vec!["45m".to_owned(), "forever".to_owned()],
+                },
+                "lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not [\"45m\", \"forever\"]",
+            ),
+            (
+                Problem::LengthsUnderMenu,
+                "lengths is a key of its own, before any table, not one under [menu]",
+            ),
+        ] {
+            assert_eq!(problem(&found), said, "{found:?}");
+        }
     }
 
     #[test]
