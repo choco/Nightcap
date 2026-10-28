@@ -174,9 +174,9 @@ struct PlaceRowWordingTests {
     @Test func aSiteGoesBackToItsBrowsersSayByTheBrowsersName() throws {
         let example = Place.domain("example.com")
         let core = try onByTheSchedule(
-            config:
-                "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-            front("com.apple.Safari", browser: true), host("example.com"),
+            config: "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n",
+            front("com.apple.Safari", browser: true),
+            host("example.com"),
             .command(.set(place: example, state: .on, length: minutes(30))))
 
         let row = try #require(core.siteRow)

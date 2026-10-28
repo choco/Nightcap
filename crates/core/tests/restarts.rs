@@ -87,24 +87,6 @@ fn terminating_releases_every_force() {
 }
 
 #[test]
-fn terminating_watches_no_browser_its_own_app_rule_kept_unwatched() {
-    let staged = late()
-        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
-        .then(accessibility_granted())
-        .then(reported(true, custom_hours()))
-        .stage()
-        .unwrap();
-    activate_browser(&staged, "com.apple.Safari");
-    staged.report(reported(false, custom_hours()));
-
-    assert_eq!(
-        staged.stop().effects,
-        vec![Effect::SetNightShift { enabled: true }]
-    );
-    assert!(!staged.core().snapshot().front().watching);
-}
-
-#[test]
 fn terminating_stops_watching_and_releases_without_waiting_for_the_host() {
     let staged = late()
         .config("websites = true\n[rules.off]\napp = [\"com.figma.Desktop\"]\n")

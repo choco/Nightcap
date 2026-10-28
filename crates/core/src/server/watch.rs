@@ -1,6 +1,6 @@
 //! The context rules match against: the front app, and the host of the browser in front, which
-//! Nightcap reads by watching it while website checking allows (ADR-0012) and the host could
-//! change what Night Shift does (ADR-0018). Only the host ever reaches the core (ADR-0009).
+//! Nightcap reads by watching it while website checking allows, short of on the way out
+//! (ADR-0012, ADR-0008). Only the host ever reaches the core (ADR-0009).
 
 use nightcap_protocol::BundleId;
 
@@ -59,15 +59,13 @@ impl Inner {
         }
     }
 
-    /// Watches the frontmost browser while website checking is on and its host could change
-    /// anything: not on the way out, nor while its own place says off and no site could say on
-    /// (ADR-0008, ADR-0012, ADR-0018).
+    /// Watches the frontmost browser while website checking is on, whatever its own place says,
+    /// since a site in it that says on decides over it, but not on the way out (ADR-0012,
+    /// ADR-0008).
     pub(crate) fn rewatch(&mut self, effects: &mut Vec<Effect>) {
-        let host_matters = (self.places).host_matters(&self.facts.world(self.clock.now()));
-        let wanted =
-            self.facts.context.app.clone().filter(|_| {
-                self.watching.is_browser && self.facts.website_checking() && host_matters
-            });
+        let wanted = self.facts.context.app.clone().filter(|_| {
+            self.watching.is_browser && self.facts.website_checking() && !self.places.released()
+        });
         match (&self.watching.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
             (_, Some(bundle_id)) => {

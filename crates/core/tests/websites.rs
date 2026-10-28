@@ -1,20 +1,13 @@
 #![cfg(debug_assertions)]
 //! Website checking: watching the front browser's host for the domain rules (ADR-0009, ADR-0012).
 
-#![expect(
-    clippy::unwrap_used,
-    reason = "clippy.toml lets tests unwrap, but not the helpers beside them"
-)]
-
 mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
-use nightcap_protocol::{
-    Command, Lasting, OnOff, Place, Reason, Refusal, RuleIdentity, WebsiteChecking,
-};
+use nightcap_protocol::{Command, Lasting, OnOff, Place, Reason, Refusal, WebsiteChecking};
 
 use common::{
-    accessibility_granted, activate, activate_browser, add_rule, custom_hours, domain_rule, late,
+    accessibility_granted, activate, activate_browser, custom_hours, domain_rule, late, minutes,
     noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send, set,
     until_turn, watch, with_figma_domain, yours,
 };
@@ -128,34 +121,34 @@ fn hosts_compare_in_normal_form() {
 }
 
 #[test]
-fn a_browser_whose_place_says_off_is_watched_while_a_site_in_it_could_say_on() {
+fn a_browser_its_own_rule_keeps_off_is_watched_and_a_site_in_it_can_turn_night_shift_on() {
     let staged = late()
         .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
         .stage()
         .unwrap();
     grant_accessibility(&staged);
     staged.report(reported(true, custom_hours()));
-    let safari_app = Place::App("com.apple.Safari".parse().unwrap());
+    let example = Place::Domain("example.com".parse().unwrap());
 
     assert_eq!(
         activate_browser(&staged, "com.apple.Safari"),
+        vec![watch("com.apple.Safari", 1)]
+    );
+    assert_eq!(
+        report_host(&staged, 1, "www.example.com"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    let (effects, _) = send(
-        &staged,
-        set(safari_app.clone(), OnOff::On, Lasting::UntilScheduleTurns),
+    staged.report(reported(false, custom_hours()));
+    assert_eq!(
+        staged.core().snapshot().front().site,
+        Some("example.com".parse().unwrap())
     );
-    assert!(effects.contains(&watch("com.apple.Safari", 1)));
-    let (effects, _) = send(&staged, Command::Reset(safari_app));
-    assert!(effects.contains(&Effect::StopWatching));
-    let (effects, _) = send(
-        &staged,
-        Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
-            says: OnOff::On,
-        },
-    );
-    assert!(effects.contains(&watch("com.apple.Safari", 2)));
+    let (effects, _) = send(&staged, set(example.clone(), OnOff::On, minutes(30)));
+    assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
+    staged.report(reported(true, custom_hours()));
+    let (effects, _) = send(&staged, Command::Reset(example));
+    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert!(staged.core().snapshot().front().watching);
 }
 
 #[test]
@@ -218,20 +211,4 @@ fn the_config_decides_website_checking_when_it_sets_it() {
             from_config: true,
         }
     );
-}
-
-fn safari() -> RuleIdentity {
-    RuleIdentity::App("com.apple.Safari".parse().unwrap())
-}
-
-#[test]
-fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
-    let staged = on_figma().stage().unwrap();
-
-    let (effects, _) = send(&staged, add_rule(safari()));
-    assert!(effects.contains(&Effect::StopWatching));
-    assert_eq!(staged.core().snapshot().front().site, None);
-    assert_eq!(staged.core().snapshot().front().host, None);
-    let (effects, _) = send(&staged, Command::RemoveRule(safari()));
-    assert!(effects.contains(&watch("com.apple.Safari", 2)));
 }

@@ -478,15 +478,10 @@ impl Places {
             .filter_map(|rule| rule.length.end())
     }
 
-    /// Whether a browser's host could change anything: not on the way out (ADR-0008), nor
-    /// while the front app's own place says off and no site could say on (ADR-0012).
-    pub(crate) fn host_matters(&self, world: &World<'_>) -> bool {
-        !self.released
-            && world.context.app.as_ref().is_none_or(|app| {
-                (self.live.indefinite.iter().chain(&self.live.temporary))
-                    .any(|rule| matches!(rule.place, Place::Domain(_)) && rule.says == OnOff::On)
-                    || self.says(&Place::App(app.clone()), world) != Some(OnOff::Off)
-            })
+    /// Whether the forces are released, on the way out, where only everywhere's rules still
+    /// decide (ADR-0008).
+    pub(crate) fn released(&self) -> bool {
+        self.released
     }
 
     /// The places in front but everywhere, most specific first, as deciding reads them: the

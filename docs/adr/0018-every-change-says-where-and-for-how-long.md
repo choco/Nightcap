@@ -62,7 +62,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - A temporary rule for everywhere, such as on until sunrise over the switch's off, gives the indefinite rule back when it ends.
 - A temporary rule set over another takes its place: on until sunrise, then off for an hour, leaves the place to its indefinite rule once the hour is up. Over a snooze, a length comes to the same as putting the rule back, so the menu offers only that.
 - Turning Night Shift off everywhere leaves a snoozed rule's app warm, since the snooze is more specific.
-- A browser whose own place says off is still watched while a site in it could say on (ADR-0012).
+- A browser whose own place says off is still watched, since a site in it decides over it (ADR-0012).
 - Telling the user what an outside change was taken as needs notification permission. If it is denied, only `status` and the logs say so.
 
 ## Rejected alternatives

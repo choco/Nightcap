@@ -255,7 +255,7 @@ fn front_answers_a_snoozed_rule_under_the_rule_that_decides() {
 #[test]
 fn front_answers_what_a_site_that_says_nothing_inherits_from_its_browser() {
     let staged = on_by_the_schedule()
-        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n")
+        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
         .then(activate_browser_event("com.apple.Safari"))
         .then(host_event(1, "www.example.com"))
         .stage()

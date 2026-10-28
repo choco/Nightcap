@@ -207,9 +207,7 @@ fn reset_puts_a_snoozed_rule_back_early() {
 #[test]
 fn a_reset_leaves_the_places_rule_else_what_it_inherits() {
     let staged = on_by_the_schedule()
-        .config(
-            "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-        )
+        .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
         .then(accessibility_granted())
         .then(activate_browser_event("com.apple.Safari"))
         .then(host_event(1, "www.example.com"))
@@ -219,8 +217,7 @@ fn a_reset_leaves_the_places_rule_else_what_it_inherits() {
     let example = Place::Domain("example.com".parse().unwrap());
     let mail_app = Place::App("com.apple.mail".parse().unwrap());
     // Each place's rule, else what it inherits, then for everywhere the schedule: Safari's
-    // config rule, which the site inherits, then everywhere's on, which Mail inherits. A site
-    // that could say on has Safari watched.
+    // config rule, which the site inherits, then everywhere's on, which Mail inherits.
     let left = [
         (&safari, OnOff::Off, None),
         (&example, OnOff::Off, None),

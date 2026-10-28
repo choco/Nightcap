@@ -232,8 +232,7 @@ struct MenuTests {
     /// Like the Rest of Safari or Like the Rest of figma.com what it inherits, and Back to the
     /// Schedule the schedule deciding everywhere, each the way its row turns the place.
     @Test func theItemsThatUndoDoWhatTheirTitlesSay() throws {
-        let safariAndYouTube =
-            "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n"
+        let safariOff = "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n"
         let situations: [() throws -> Core] = [
             { try forced() },
             { try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns))) },
@@ -249,7 +248,7 @@ struct MenuTests {
             },
             {
                 try onByTheSchedule(
-                    config: safariAndYouTube, front("com.apple.Safari", browser: true), host("example.com"),
+                    config: safariOff, front("com.apple.Safari", browser: true), host("example.com"),
                     .command(.set(place: .domain("example.com"), state: .on, length: minutes(30))))
             },
             {
@@ -360,16 +359,21 @@ struct MenuTests {
         #expect(siteTitle(core.siteRow) == ("Turn On at This Site", "figma.com"))
     }
 
-    @Test func aSiteThatSaysNothingTurnsTheOtherWayFromItsBrowser() throws {
+    /// A site that says on decides over its browser's rule, so a browser its own rule keeps off
+    /// is watched, and its site's row turns Night Shift on there (ADR-0012).
+    @Test func aSiteInABrowserKeptOffTurnsNightShiftOnThere() throws {
         let core = try onByTheSchedule(
-            config:
-                "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-            front("com.apple.Safari", browser: true), host("example.com"))
+            config: "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n",
+            front("com.apple.Safari", browser: true),
+            host("example.com"))
+        #expect(core.snapshot().front().decision.state == .off)
 
         let row = try #require(core.siteRow)
 
         #expect(siteTitle(row) == ("Turn On at This Site", "example.com"))
         #expect(try row.choice(titled: "Always").command == .addRule(identity: .domain("example.com"), says: .on))
+        core.send(command: try row.choice(titled: "For 30 Minutes").command)
+        #expect(core.snapshot().front().decision.state == .on)
     }
 
     @Test func theMenuOpensWithAStrengthSliderOnceTheStrengthIsKnown() throws {

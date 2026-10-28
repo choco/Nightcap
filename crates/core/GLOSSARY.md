@@ -101,7 +101,7 @@ Whether Nightcap reads the front browser's host, which domain rules need. Off un
 _Avoid_: website monitoring, site tracking
 
 **Watch**:
-Nightcap reading one browser's host while it's in front, which website checking allows unless the browser's own place says off and no site in it could say on. Nothing is watched once Nightcap has released its forces on the way out.
+Nightcap reading one browser's host while it's in front, which website checking allows whatever the browser's own place says, since a site in it decides over it. Nothing is watched once Nightcap has released its forces on the way out.
 
 **Browser list**:
 The browsers Nightcap knows how to watch.
