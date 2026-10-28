@@ -63,10 +63,7 @@ impl Inner {
     /// anything: not on the way out, nor while its own place says off and no site could say on
     /// (ADR-0008, ADR-0012, ADR-0018).
     pub(crate) fn rewatch(&mut self, effects: &mut Vec<Effect>) {
-        let host_matters = self
-            .places
-            .look(&self.facts.world(self.clock.now()))
-            .host_matters;
+        let host_matters = (self.places).host_matters(&self.facts.world(self.clock.now()));
         let wanted =
             self.facts.context.app.clone().filter(|_| {
                 self.watching.is_browser && self.facts.website_checking() && host_matters

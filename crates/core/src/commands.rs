@@ -5,7 +5,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     CheckKind, CheckState, Command, FileError, Install, LoginItem, NightShift, OnOff, Payload,
-    Refusal, RuleAdded, RuleIdentity,
+    Place, Refusal, RuleAdded, RuleIdentity,
 };
 
 use crate::rules::places::Places;
@@ -79,7 +79,9 @@ impl Inner {
             }
             Command::Toggle => {
                 let world = self.facts.world(now);
-                let to = self.places.look(&world).everywhere.gives.other();
+                let to = (self.places.says(&Place::Everywhere, &world))
+                    .unwrap_or(world.observed)
+                    .other();
                 self.places.switch(to, &world);
                 Ok(())
             }
@@ -155,7 +157,7 @@ impl Inner {
             Command::Reload => {
                 return self
                     .reload(effects)
-                    .map(|()| Payload::Rules(self.every_rule(now)));
+                    .map(|()| Payload::Rules(self.places.listed()));
             }
             Command::CheckForUpdates => {
                 if let Install::NotSelfManaged(why) = self.install {
@@ -167,7 +169,7 @@ impl Inner {
             }
         };
         done.map(|()| {
-            let decision = self.places.look(&self.facts.world(now)).decision;
+            let decision = self.places.decide(&self.facts.world(now));
             match added {
                 Some(rule) => Payload::RuleAdded { rule, decision },
                 None => Payload::Decision(decision),
@@ -205,17 +207,15 @@ impl Inner {
     /// Takes `next` as the places once `rules.toml` keeps the ad-hoc rules it has, if they
     /// changed.
     fn commit_rules(&mut self, next: Places) -> Result<(), Refusal> {
-        if next.kept().ad_hoc != self.places.kept().ad_hoc {
+        if next.ad_hoc() != self.places.ad_hoc() {
             self.check_ad_hoc_rules_on()?;
-            self.ad_hoc_store
-                .save(&next.kept().ad_hoc)
-                .map_err(|error| {
-                    tracing::warn!("couldn't save rules.toml: {error}");
-                    Refusal::AdHocRulesNotSaved {
-                        path: self.files.path(File::Rules).display().to_string(),
-                        failure: error.kind().into(),
-                    }
-                })?;
+            self.ad_hoc_store.save(&next.ad_hoc()).map_err(|error| {
+                tracing::warn!("couldn't save rules.toml: {error}");
+                Refusal::AdHocRulesNotSaved {
+                    path: self.files.path(File::Rules).display().to_string(),
+                    failure: error.kind().into(),
+                }
+            })?;
         }
         self.places = next;
         Ok(())
@@ -225,12 +225,12 @@ impl Inner {
     /// (ADR-0007), from `rules.toml` too. The config wins over them whether or not the file can
     /// be written, and the next load drops them again.
     pub(crate) fn graduate(&mut self, rules: Vec<(RuleIdentity, OnOff)>) {
-        let before = self.places.kept().ad_hoc.len();
+        let before = self.places.ad_hoc().len();
         self.places.set_config(rules);
-        let graduated = before - self.places.kept().ad_hoc.len();
+        let graduated = before - self.places.ad_hoc().len();
         if graduated > 0 {
             tracing::info!("{graduated} ad-hoc rules graduated into the config");
-            if let Err(error) = self.ad_hoc_store.save(&self.places.kept().ad_hoc) {
+            if let Err(error) = self.ad_hoc_store.save(&self.places.ad_hoc()) {
                 tracing::warn!("couldn't save rules.toml: {error}");
             }
         }

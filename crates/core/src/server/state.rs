@@ -75,13 +75,12 @@ impl Inner {
     /// a run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
         Persisted {
-            rules: self.places.kept().rules.clone(),
+            rules: self.places.kept().temporary.clone(),
             linked: self.places.kept().linked.clone(),
             websites: self.facts.websites,
             notifications_wanted: self.grants.notifications_wanted,
             open_at_login: self.grants.open_at_login,
-            night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)
-                .map(OnOff::from),
+            night_shift: wanted(&self.places.decide(&self.facts.world(now))).map(OnOff::from),
             until: self
                 .facts
                 .timeline

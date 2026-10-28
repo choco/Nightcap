@@ -113,7 +113,7 @@ impl Inner {
             }
             _ => {}
         }
-        let wanted = wanted(&self.places.look(&self.facts.world(now)).decision)?;
+        let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
         if enabled == wanted {
             return None;
         }
@@ -134,13 +134,7 @@ impl Inner {
         }
         let observed = OnOff::from(enabled);
         tracing::info!("Night Shift turned {observed} outside Nightcap");
-        let adoption = self.places.adopt(observed, &self.facts.world(now))?;
-        Some(Event::Adopted {
-            place: adoption.place,
-            snoozed: adoption.snoozed,
-            state: adoption.state,
-            until: adoption.until,
-        })
+        self.places.adopt(observed, &self.facts.world(now))
     }
 
     /// Applies every schedule transition that came due since the last turn, and ends the rules
@@ -205,13 +199,11 @@ impl Inner {
             .sun_times_awaited_since
             .map(|since| since + SUN_TIMES_PATIENCE)
             .filter(|ends| *ends > now);
-        let look = self.places.look(&self.facts.world(now));
-        let ends = look.rules.iter().filter_map(|(rule, _)| rule.length.end());
         let next = transition
             .or(retry)
             .into_iter()
             .chain(patience_ends)
-            .chain(ends)
+            .chain(self.places.ends())
             .min();
         if next != self.reconciling.wakeup {
             self.reconciling.wakeup = next;
@@ -234,8 +226,8 @@ impl Inner {
         if self.watching.awaits_first_read() {
             return;
         }
-        let look = self.places.look(&self.facts.world(self.clock.now()));
-        let Some(wanted) = wanted(&look.decision) else {
+        let decision = self.places.decide(&self.facts.world(self.clock.now()));
+        let Some(wanted) = wanted(&decision) else {
             return;
         };
         if wanted != (self.facts.night_shift == NightShift::On)

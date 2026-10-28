@@ -4,11 +4,10 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    About, Checks, ConfigState, Front, Inherited, ListedRule, NightShiftState, OnOff, Permissions,
-    Place, PlaceInFront, Preferences, Schedule, TrialState, WebsiteChecking,
+    About, Checks, ConfigState, Front, ListedRule, NightShiftState, OnOff, Permissions,
+    Preferences, Schedule, TrialState, WebsiteChecking,
 };
 
-use crate::rules::places::look::PlaceLook;
 use crate::server::state::Inner;
 use crate::storage::file::File;
 
@@ -30,7 +29,6 @@ impl Answers {
     pub(crate) fn new(inner: &Inner, now: Timestamp) -> Self {
         let facts = &inner.facts;
         let timeline = &facts.timeline;
-        let look = inner.places.look(&facts.world(now));
         Self {
             night_shift: NightShiftState {
                 state: facts.night_shift,
@@ -44,23 +42,8 @@ impl Answers {
                 next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
                 next_off: timeline.next_turn(facts.applied_until, OnOff::On),
             },
-            front: Front {
-                app: facts.context.app.clone(),
-                watching: inner.watching.is_watching(),
-                host: facts
-                    .context
-                    .host
-                    .as_ref()
-                    .map(|host| host.as_str().to_owned()),
-                site: look.site.as_ref().and_then(|site| match &site.place {
-                    Place::Domain(domain) => Some(domain.clone()),
-                    Place::Everywhere | Place::App(_) => None,
-                }),
-                decision: look.decision.clone(),
-                places: look.site.iter().chain(&look.app).map(in_front).collect(),
-                everywhere: in_front(&look.everywhere),
-            },
-            rules: inner.every_rule(now),
+            front: (inner.places).front(&facts.world(now), inner.watching.is_watching()),
+            rules: inner.places.listed(),
             config: ConfigState {
                 path: inner.files.path(File::Config).display().to_string(),
                 strength: inner.loaded.config_night_shift.strength,
@@ -84,44 +67,11 @@ impl Answers {
                     login_item: inner.grants.login_item,
                 },
             },
-            trial: inner.places.trial().map(|trial| TrialState {
-                stands_in: trial.stands_in(),
-            }),
+            trial: inner.places.trial(),
             about: About {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 install: inner.install,
             },
         }
-    }
-}
-
-/// A place in front as `front()` answers it.
-fn in_front(at: &PlaceLook) -> PlaceInFront {
-    PlaceInFront {
-        place: at.place.clone(),
-        gives: at.gives,
-        rules: at.rules.clone(),
-        base: at.base.clone(),
-        inherits: at
-            .inherits
-            .clone()
-            .map(|(from, says)| Inherited { from, says }),
-    }
-}
-
-impl Inner {
-    /// Every rule at every place, each with its snooze: the apps' and sites' indefinite ones
-    /// first, the config's, then the ad-hoc ones, then the trial's, then each place's others
-    /// together, shortest first.
-    pub(crate) fn every_rule(&self, now: Timestamp) -> Vec<ListedRule> {
-        self.places
-            .look(&self.facts.world(now))
-            .rules
-            .into_iter()
-            .map(|(rule, snooze)| ListedRule {
-                rule: rule.clone(),
-                snooze: snooze.cloned(),
-            })
-            .collect()
     }
 }

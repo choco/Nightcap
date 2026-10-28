@@ -375,7 +375,7 @@ mod tests {
             })
         );
         assert_eq!(
-            inner.every_rule(inner.clock.now()),
+            inner.places.listed(),
             vec![ListedRule {
                 rule: Rule {
                     place: Place::from(mail),

@@ -9,7 +9,6 @@ use nightcap_protocol::{
     OpenAtLoginDetail, Schedule, SetBy,
 };
 
-use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
@@ -20,13 +19,10 @@ pub(crate) const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(
 impl Inner {
     /// Everything Nightcap depends on, compared with what the user set up.
     pub(crate) fn checks(&self, now: Timestamp) -> Vec<Check> {
-        let look = self.places.look(&self.facts.world(now));
         // No file holds u32::MAX rules, so the count never saturates.
         let rules_from = |set_by| {
-            let count = look
-                .rules
-                .iter()
-                .filter(|(rule, _)| is_app_or_site_rule(rule) && rule.set_by == set_by)
+            let count = (self.places.indefinite().iter())
+                .filter(|rule| rule.set_by == set_by)
                 .count();
             u32::try_from(count).unwrap_or(u32::MAX)
         };

@@ -476,6 +476,17 @@ pub enum Reason {
     },
 }
 
+impl Reason {
+    /// What it says.
+    pub fn says(&self) -> OnOff {
+        match self {
+            Self::Rule(rule) => rule.says,
+            Self::StandIn => OnOff::On,
+            Self::Schedule { state, .. } => *state,
+        }
+    }
+}
+
 /// A change to Night Shift: a place, what it says there, how long it lasts and who set it
 /// (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]

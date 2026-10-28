@@ -1,15 +1,16 @@
-//! The rules at every place, and the commands that change them (ADR-0018, ADR-0006).
+//! The rules at every place: what they decide, and the commands that change them (ADR-0018,
+//! ADR-0006), with what a trial found, which its end puts back (ADR-0016), and the release on
+//! the way out (ADR-0008).
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    BundleId, Lasting, Length, OnOff, Place, Reason, Refusal, Rule, RuleAdded, RuleIdentity, SetBy,
+    BundleId, Decision, Domain, Front, Inherited, Lasting, Length, ListedRule, OnOff, Place,
+    PlaceInFront, Reason, Refusal, Rule, RuleAdded, RuleIdentity, SetBy, TrialState,
 };
 
-use crate::rules::domain::Host;
+use crate::Event;
+use crate::rules::domain::{self, Host};
 use crate::rules::schedule::Timeline;
-use crate::rules::trial::Trial;
-
-pub(crate) mod look;
 
 /// What rules match against.
 #[derive(Default)]
@@ -22,7 +23,6 @@ pub(crate) struct Context {
 
 /// What the places read but don't own, lent for one call.
 pub(crate) struct World<'a> {
-    /// The front app and host.
     pub context: &'a Context,
     pub timeline: &'a Timeline,
     /// Where the schedule is read: every transition up to here has been applied.
@@ -35,99 +35,114 @@ pub(crate) struct World<'a> {
     pub website_checking: bool,
 }
 
-/// What `state.json` and `rules.toml` keep: every rule but the indefinite ones at apps and
-/// sites, Adoption's link between two of them, and the ad-hoc rules.
+/// Every rule, as what decides now, or as a trial found them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Kept {
-    /// Each place's temporary rules and everywhere's indefinite one, a place's together and its
-    /// shortest first, at most one of each length.
-    pub rules: Vec<Rule>,
+pub(crate) struct Rules {
+    /// The apps' and sites' indefinite rules, one per place: the config's, then the user's
+    /// ad-hoc ones, which `rules.toml` keeps, then a trial's (ADR-0006).
+    indefinite: Vec<Rule>,
+    /// Every other rule, which `state.json` keeps: each place's together, shortest first, one
+    /// of each length, everywhere's indefinite one among them.
+    pub temporary: Vec<Rule>,
     /// The place an outside change set a rule until the schedule turns at together with
     /// everywhere's: taking off either takes off both (ADR-0018).
     pub linked: Option<Place>,
-    pub ad_hoc: Vec<(RuleIdentity, OnOff)>,
 }
 
-/// The rules at every place (ADR-0018), with what a trial found, which its end puts back
-/// (ADR-0016), and the release on the way out (ADR-0008).
+/// The rules at every place (ADR-0018).
 ///
-/// Nothing ends by itself: a caller expires what ended by its `now` before it changes
-/// anything, so no change lands on a rule that already ended, and `look` shows the places as of
-/// the last `expire`. A change that's refused leaves the places as they were.
+/// Nothing ends by itself: a caller expires what ended by its `now` before it changes anything,
+/// so no change lands on a rule that already ended. A change that's refused leaves the places as
+/// they were.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Places {
     /// What decides now, and outside a trial what's kept.
-    live: Kept,
-    config: Vec<(RuleIdentity, OnOff)>,
-    /// The indefinite rules at apps and sites: the config's, then the ad-hoc ones, then the
-    /// trial's, one per place, the config's where it has one (ADR-0006).
-    indefinite: Vec<Rule>,
+    live: Rules,
     trial: Option<Trial>,
-    /// On the way out, the only rules that still decide: everywhere's, short of one until a
-    /// time.
-    released: Option<Vec<Rule>>,
+    /// On the way out, only everywhere's rules short of one until a time still decide: macOS
+    /// keeps Night Shift where the user put it until its next transition, but nothing else of
+    /// Nightcap's may outlive it (ADR-0008).
+    released: bool,
 }
 
-/// What an outside change was adopted as (ADR-0018): the deciding place set to `state` until
-/// the schedule turns, and the rule that snoozes, if one decided.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Adoption {
-    pub place: Place,
-    pub snoozed: Option<RuleIdentity>,
-    pub state: OnOff,
-    pub until: Option<Timestamp>,
+/// A trial that runs (ADR-0016).
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Trial {
+    /// The rules as it found them, which `state.json` and `rules.toml` keep while it runs, and
+    /// its end puts back, short of what ended meanwhile.
+    found: Rules,
+    /// It has Night Shift on, standing in for the schedule.
+    stands_in: bool,
 }
 
 impl Places {
     /// The places as `state.json` and `rules.toml` kept them, with no config rules until
     /// `set_config`.
-    pub(crate) fn new(kept: Kept) -> Self {
-        let mut places = Self {
-            live: kept,
-            config: Vec::new(),
-            indefinite: Vec::new(),
-            trial: None,
-            released: None,
+    pub(crate) fn new(
+        temporary: Vec<Rule>,
+        linked: Option<Place>,
+        ad_hoc: Vec<(RuleIdentity, OnOff)>,
+    ) -> Self {
+        let mut live = Rules {
+            indefinite: ad_hoc
+                .into_iter()
+                .map(|(identity, says)| indefinite(identity, says, SetBy::You))
+                .collect(),
+            temporary,
+            linked,
         };
-        places.tidy();
-        places.lay_out();
-        places
+        live.tidy();
+        Self {
+            live,
+            trial: None,
+            released: false,
+        }
     }
 
-    /// What `state.json` and `rules.toml` keep: mid-trial, what the trial found.
-    pub(crate) fn kept(&self) -> &Kept {
-        self.trial.as_ref().map_or(&self.live, Trial::found)
+    /// What `state.json` keeps: mid-trial, what the trial found.
+    pub(crate) fn kept(&self) -> &Rules {
+        self.trial.as_ref().map_or(&self.live, |trial| &trial.found)
     }
 
-    /// Takes the config's rules, dropping the ad-hoc and trial rules for the places it now has,
+    /// The ad-hoc rules `rules.toml` keeps: mid-trial, those the trial found.
+    pub(crate) fn ad_hoc(&self) -> Vec<(RuleIdentity, OnOff)> {
+        self.kept()
+            .indefinite
+            .iter()
+            .filter(|rule| rule.set_by == SetBy::You)
+            .filter_map(|rule| Some((rule.place.identity()?, rule.says)))
+            .collect()
+    }
+
+    /// The apps' and sites' indefinite rules, as they decide now.
+    pub(crate) fn indefinite(&self) -> &[Rule] {
+        &self.live.indefinite
+    }
+
+    /// Takes the config's rules, dropping the user's and a trial's for the places it now has,
     /// which have graduated (ADR-0007), from what the trial's end puts back too.
-    pub(crate) fn set_config(&mut self, rules: Vec<(RuleIdentity, OnOff)>) {
-        for kept in self.kept_mut() {
-            kept.ad_hoc
-                .retain(|(identity, _)| !rules.iter().any(|(config, _)| config == identity));
+    pub(crate) fn set_config(&mut self, config: Vec<(RuleIdentity, OnOff)>) {
+        let config: Vec<Rule> = config
+            .into_iter()
+            .map(|(identity, says)| indefinite(identity, says, SetBy::Config))
+            .collect();
+        for rules in self.kept_mut() {
+            rules.indefinite.retain(|rule| {
+                rule.set_by != SetBy::Config && !config.iter().any(|each| each.place == rule.place)
+            });
+            rules.indefinite.splice(0..0, config.iter().cloned());
         }
-        if let Some(trial) = &mut self.trial {
-            trial.graduate(&rules);
-        }
-        self.config = rules;
-        self.lay_out();
     }
 
     /// The switch (ADR-0018): takes off everywhere's rules that say otherwise, shortest first,
     /// and if the stand-in or the schedule still says otherwise, sets an indefinite rule of the
     /// user's saying `to`.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
-        self.peel_everywhere(to, world);
-        if self.says(&Place::Everywhere, world) == Some(to) {
-            return;
+        while self.peel(&Place::Everywhere, Some(to)) {}
+        if self.says(&Place::Everywhere, world) != Some(to) {
+            tracing::info!("switched {to} everywhere, indefinitely");
+            self.put(rule(Place::Everywhere, to, Length::Indefinite, SetBy::You));
         }
-        self.put(Rule {
-            place: Place::Everywhere,
-            says: to,
-            length: Length::Indefinite,
-            set_by: SetBy::You,
-        });
-        tracing::info!("switched {to} everywhere, indefinitely");
     }
 
     /// Sets a rule of the user's at a place, saying `state` for `length` (ADR-0018). It takes
@@ -140,101 +155,78 @@ impl Places {
         world: &World<'_>,
     ) -> Result<(), Refusal> {
         let length = match length {
-            Lasting::For(duration) => {
-                if duration <= SignedDuration::ZERO {
-                    return Err(Refusal::TooShort);
-                }
-                let until = world
+            Lasting::For(duration) if duration <= SignedDuration::ZERO => {
+                return Err(Refusal::TooShort);
+            }
+            Lasting::For(duration) => Length::Until {
+                until: world
                     .now
                     .checked_add(duration)
-                    .map_err(|_| Refusal::TooLong { length: duration })?;
-                Length::Until { until }
+                    .map_err(|_| Refusal::TooLong { length: duration })?,
+            },
+            Lasting::Until(until) if until <= world.now => return Err(Refusal::Passed),
+            Lasting::Until(until) => Length::Until { until },
+            Lasting::UntilScheduleTurns => Length::UntilScheduleTurns {
+                until: Some(
+                    world
+                        .timeline
+                        .next_turn(world.applied_until, state)
+                        .ok_or(Refusal::NoSchedule)?,
+                ),
+            },
+            Lasting::Indefinite if *place != Place::Everywhere => {
+                return Err(Refusal::IndefiniteIsAdded);
             }
-            Lasting::Until(until) => {
-                if until <= world.now {
-                    return Err(Refusal::Passed);
-                }
-                Length::Until { until }
-            }
-            Lasting::UntilScheduleTurns => {
-                let until = world
-                    .timeline
-                    .next_turn(world.applied_until, state)
-                    .ok_or(Refusal::NoSchedule)?;
-                Length::UntilScheduleTurns { until: Some(until) }
-            }
-            Lasting::Indefinite => {
-                if *place != Place::Everywhere {
-                    return Err(Refusal::IndefiniteIsAdded);
-                }
-                Length::Indefinite
-            }
+            Lasting::Indefinite => Length::Indefinite,
         };
-        tracing::info!("{} {state} {length:?}", loggable_place(place));
-        self.put(Rule {
-            place: place.clone(),
-            says: state,
-            length,
-            set_by: SetBy::You,
-        });
+        tracing::info!("{} {state} {length:?}", loggable(place));
+        self.put(rule(place.clone(), state, length, SetBy::You));
         Ok(())
     }
 
     /// Takes off a place's temporary rules, which puts back its indefinite rule, and for
     /// everywhere its indefinite one too, which puts back the schedule.
     pub(crate) fn reset(&mut self, place: &Place) {
-        self.clear(place);
-        tracing::info!("reset {}", loggable_place(place));
+        tracing::info!("reset {}", loggable(place));
+        while self.peel(place, None) {}
     }
 
     /// Takes an outside change as flipping what the user sees (ADR-0018): takes off what the
     /// deciding place says, and sets `state` until the schedule next turns it back over an
-    /// indefinite rule or the schedule, everywhere too where an app or a site decides and
-    /// everywhere says otherwise. Gives what it set, unless taking off what said otherwise was
-    /// enough.
-    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Adoption> {
-        loop {
-            let decision = self.decide(world);
-            if decision.state == Some(state) || !self.peel(&decision.place, state) {
-                break;
-            }
+    /// indefinite rule or the schedule, everywhere too, linked, where an app or a site decides
+    /// and everywhere says otherwise. Gives what it set, unless taking off what said otherwise
+    /// was enough.
+    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Event> {
+        let mut decision = self.decide(world);
+        while decision.state != Some(state) && self.peel(&decision.place, Some(state)) {
+            decision = self.decide(world);
         }
-        let decision = self.decide(world);
         if decision.state == Some(state) {
             return None;
         }
         let until = world.timeline.next_turn(world.applied_until, state);
-        let deciding = decision.place;
-        let mut places = vec![deciding.clone()];
-        if deciding != Place::Everywhere {
-            self.peel_everywhere(state, world);
+        let adopted = |place| {
+            let length = Length::UntilScheduleTurns { until };
+            rule(place, state, length, SetBy::OutsideChange)
+        };
+        let place = decision.place;
+        self.put(adopted(place.clone()));
+        if place != Place::Everywhere {
+            while self.peel(&Place::Everywhere, Some(state)) {}
             if self.says(&Place::Everywhere, world) != Some(state) {
-                places.push(Place::Everywhere);
+                self.put(adopted(Place::Everywhere));
+                self.live.linked = Some(place.clone());
             }
         }
-        for place in &places {
-            self.put(Rule {
-                place: place.clone(),
-                says: state,
-                length: Length::UntilScheduleTurns { until },
-                set_by: SetBy::OutsideChange,
-            });
+        let snoozed = decision.reasons.iter().find_map(|reason| match reason {
+            Reason::Rule(rule) if rule.length == Length::Indefinite => rule.place.identity(),
+            _ => None,
+        });
+        if snoozed.is_some() {
+            tracing::info!("snoozed {} after an outside change", loggable(&place));
         }
-        if places.len() > 1 {
-            self.live.linked = Some(deciding.clone());
-        }
-        let snoozed = decision
-            .reasons
-            .into_iter()
-            .find_map(|reason| match reason {
-                Reason::Rule(rule) if rule.length == Length::Indefinite => rule.place.identity(),
-                _ => None,
-            });
-        if let Some(identity) = &snoozed {
-            tracing::info!("snoozed {} after an outside change", loggable(identity));
-        }
-        Some(Adoption {
-            place: deciding,
+        Some(Event::Adopted {
+            place,
             snoozed,
             state,
             until,
@@ -253,80 +245,51 @@ impl Places {
         says: OnOff,
     ) -> Result<RuleAdded, Refusal> {
         let place = Place::from(identity.clone());
-        let there = self
-            .indefinite_at(&place)
-            .map(|rule| (rule.says, rule.set_by));
-        let added = match there {
-            Some((said, set_by)) if said == says => RuleAdded::AlreadySays { set_by },
-            Some((said, SetBy::Config)) => {
+        let set_by = self.trial.as_ref().map_or(SetBy::You, |_| SetBy::Trial);
+        let rules = &mut self.live.indefinite;
+        let added = match rules.iter_mut().find(|rule| rule.place == place) {
+            Some(rule) if rule.says == says => RuleAdded::AlreadySays {
+                set_by: rule.set_by,
+            },
+            Some(rule) if rule.set_by == SetBy::Config => {
                 return Err(Refusal::ConfigSays {
                     identity: identity.clone(),
-                    says: said,
+                    says: rule.says,
                 });
             }
-            Some(_) => RuleAdded::Changed {
-                set_by: self.make_rule(identity, says),
-            },
-            None => RuleAdded::New {
-                set_by: self.make_rule(identity, says),
-            },
+            Some(rule) => {
+                rule.says = says;
+                RuleAdded::Changed {
+                    set_by: rule.set_by,
+                }
+            }
+            None => {
+                rules.push(indefinite(identity.clone(), says, set_by));
+                RuleAdded::New { set_by }
+            }
         };
-        self.clear(&place);
-        self.lay_out();
+        tracing::info!("{} rule {}: {added:?}", loggable(&place), says);
+        self.reset(&place);
         Ok(added)
-    }
-
-    /// Makes the user's rule say `says`: the ad-hoc one, else during a trial the trial's. Gives
-    /// who the rule is set by.
-    fn make_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> SetBy {
-        if let Some((_, kept)) = self
-            .live
-            .ad_hoc
-            .iter_mut()
-            .find(|(kept, _)| kept == identity)
-        {
-            *kept = says;
-            tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
-            SetBy::You
-        } else if let Some(trial) = &mut self.trial {
-            tracing::info!("trial rule {}: {says}", loggable(identity));
-            trial.set_rule(identity, says);
-            SetBy::Trial
-        } else {
-            self.live.ad_hoc.push((identity.clone(), says));
-            tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
-            SetBy::You
-        }
     }
 
     /// Removes the user's rule or a trial's, and the place's temporary rules; a config rule
     /// changes only in the config (ADR-0006).
     pub(crate) fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {
-        if self
-            .trial
-            .as_mut()
-            .is_some_and(|trial| trial.remove_rule(identity))
-        {
-            tracing::info!("removed a trial rule: {}", loggable(identity));
-        } else if let Some(index) = self
-            .live
-            .ad_hoc
+        let place = Place::from(identity.clone());
+        let rules = &mut self.live.indefinite;
+        let identity = identity.clone();
+        match rules
             .iter()
-            .position(|(kept, _)| kept == identity)
+            .find(|rule| rule.place == place)
+            .map(|rule| rule.set_by)
         {
-            self.live.ad_hoc.remove(index);
-            tracing::info!("removed an ad-hoc rule: {}", loggable(identity));
-        } else if self.config.iter().any(|(config, _)| config == identity) {
-            return Err(Refusal::ConfigRule {
-                identity: identity.clone(),
-            });
-        } else {
-            return Err(Refusal::NoSuchRule {
-                identity: identity.clone(),
-            });
+            None => return Err(Refusal::NoSuchRule { identity }),
+            Some(SetBy::Config) => return Err(Refusal::ConfigRule { identity }),
+            Some(_) => rules.retain(|rule| rule.place != place),
         }
-        self.clear(&Place::from(identity.clone()));
-        self.lay_out();
+        tracing::info!("removed the rule for {}", loggable(&place));
+        self.reset(&place);
         Ok(())
     }
 
@@ -334,24 +297,18 @@ impl Places {
     /// likewise.
     pub(crate) fn expire(&mut self, at: Timestamp) {
         let ended = |rule: &Rule| rule.length.end().is_some_and(|end| end <= at);
-        for rule in self.live.rules.iter().filter(|rule| ended(rule)) {
-            tracing::info!("a rule ended: {}", loggable_place(&rule.place));
+        for rule in self.live.temporary.iter().filter(|rule| ended(rule)) {
+            tracing::info!("a rule ended: {}", loggable(&rule.place));
         }
-        for kept in self.kept_mut() {
-            kept.rules.retain(|rule| !ended(rule));
-        }
-        self.tidy();
+        self.take_off_wherever(ended);
     }
 
     /// An edited schedule ends every rule waiting on its next turn (ADR-0018), and those a
     /// trial's end would put back likewise.
     pub(crate) fn schedule_edited(&mut self) {
-        let waiting =
-            |rule: &Rule| matches!(rule.length, Length::UntilScheduleTurns { until: Some(_) });
-        for kept in self.kept_mut() {
-            kept.rules.retain(|rule| !waiting(rule));
-        }
-        self.tidy();
+        self.take_off_wherever(|rule| {
+            matches!(rule.length, Length::UntilScheduleTurns { until: Some(_) })
+        });
     }
 
     /// Begins a trial unless one runs (ADR-0016), standing in for the schedule with Night Shift
@@ -362,189 +319,301 @@ impl Places {
             tracing::warn!("a trial began while one runs; keeping the first");
             return;
         }
-        tracing::info!(
-            "trial began{}",
-            if stands_in {
-                ", standing in for the schedule with Night Shift on"
-            } else {
-                ""
-            }
-        );
-        self.trial = Some(Trial::new(self.live.clone(), stands_in));
+        tracing::info!("trial began, standing in: {stands_in}");
+        self.trial = Some(Trial {
+            found: self.live.clone(),
+            stands_in,
+        });
         if stands_in {
-            self.clear(&Place::Everywhere);
+            self.reset(&Place::Everywhere);
         }
-        self.lay_out();
     }
 
-    /// Ends a trial: puts back the ad-hoc rules and every other rule as it found them, short of
-    /// what ran out by `now`, and drops the rules added during it.
+    /// Ends a trial: puts back the rules as it found them, short of what ran out by `now`.
     pub(crate) fn end_trial(&mut self, now: Timestamp) {
-        let Some(trial) = self.trial.take() else {
-            return;
-        };
-        tracing::info!("trial ended");
-        self.live = trial.end();
-        self.expire(now);
-        self.lay_out();
+        if let Some(trial) = self.trial.take() {
+            tracing::info!("trial ended");
+            self.live = trial.found;
+            self.expire(now);
+        }
     }
 
     /// On the way out, ends a trial, then leaves only everywhere's rules to decide, short of one
-    /// until a time: macOS keeps Night Shift where the user put it until its next transition,
-    /// but nothing else of Nightcap's may outlive it (ADR-0008). What's kept stays, for the
-    /// next run.
+    /// until a time (ADR-0008). What's kept stays, for the next run.
     pub(crate) fn release(&mut self, now: Timestamp) {
         self.end_trial(now);
-        self.released = Some(
-            self.rules_at(&Place::Everywhere)
-                .filter(|rule| !matches!(rule.length, Length::Until { .. }))
-                .cloned()
-                .collect(),
-        );
+        self.released = true;
     }
 
     /// The trial that runs, if one does (ADR-0016).
-    pub(crate) fn trial(&self) -> Option<&Trial> {
-        self.trial.as_ref()
+    pub(crate) fn trial(&self) -> Option<TrialState> {
+        self.trial.as_ref().map(|trial| TrialState {
+            stands_in: trial.stands_in,
+        })
     }
 
-    /// Whether a trial runs that stands in for the schedule.
-    fn stands_in(&self) -> bool {
-        self.trial.as_ref().is_some_and(Trial::stands_in)
+    /// What Night Shift should be: what the most specific place in front that says something
+    /// says, and what it rests on.
+    pub(crate) fn decide(&self, world: &World<'_>) -> Decision {
+        self.in_front(world)
+            .into_iter()
+            .chain([Place::Everywhere])
+            .find_map(|place| {
+                let reasons = self.reasons(&place, world);
+                Some(Decision {
+                    state: Some(reasons.first()?.says()),
+                    place,
+                    reasons,
+                })
+            })
+            .unwrap_or(Decision {
+                state: None,
+                place: Place::Everywhere,
+                reasons: Vec::new(),
+            })
     }
 
-    /// An app's or site's indefinite rule, if it has one.
-    fn indefinite_at(&self, place: &Place) -> Option<&Rule> {
-        self.indefinite.iter().find(|rule| rule.place == *place)
+    /// What a place itself says, or None when nothing there says anything.
+    pub(crate) fn says(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
+        self.reasons(place, world).first().map(Reason::says)
+    }
+
+    /// What's in front, as `front()` answers it, with whether a browser is `watching`: each
+    /// place in front with its rules and what they sit on, its own say, else the one it inherits
+    /// from the first place after it that says something, else Night Shift as last reported.
+    /// The site is the most specific domain with a rule covering the host, else the tab domain
+    /// (ADR-0017), while website checking knows the host.
+    pub(crate) fn front(&self, world: &World<'_>, watching: bool) -> Front {
+        let mut places = self.in_front(world);
+        let site = (world.context.host.as_ref())
+            .filter(|_| world.website_checking)
+            .map(|host| match places.first() {
+                Some(Place::Domain(domain)) => domain.clone(),
+                _ => {
+                    places.insert(0, Place::Domain(host.tab_domain()));
+                    host.tab_domain()
+                }
+            });
+        let mut after: Option<Inherited> = None;
+        let mut stand = |place: Place| {
+            let says = self.says(&place, world);
+            let stands = PlaceInFront {
+                gives: says
+                    .or(after.as_ref().map(|after| after.says))
+                    .unwrap_or(world.observed),
+                rules: self.rules_at(&place).cloned().collect(),
+                base: self.under(&place, world).into_iter().next(),
+                inherits: after.clone(),
+                place: place.clone(),
+            };
+            if let Some(says) = says {
+                after = Some(Inherited { from: place, says });
+            }
+            stands
+        };
+        let everywhere = stand(Place::Everywhere);
+        // Deciding reads every domain covering the host; only the most specific is in front.
+        let mut places: Vec<PlaceInFront> = (places.into_iter().rev())
+            .map(&mut stand)
+            .filter(|stands| match &stands.place {
+                Place::Domain(domain) => Some(domain) == site.as_ref(),
+                Place::App(_) | Place::Everywhere => true,
+            })
+            .collect();
+        places.reverse();
+        Front {
+            app: world.context.app.clone(),
+            watching,
+            host: (world.context.host.as_ref()).map(|host| host.as_str().to_owned()),
+            site,
+            decision: self.decide(world),
+            places,
+            everywhere,
+        }
+    }
+
+    /// Every rule at every place, as they decide now, each with its snooze: the shortest rule
+    /// at its place, where that's shorter and says the other way. The apps' and sites'
+    /// indefinite rules come first: the config's, then the ad-hoc ones, then a trial's.
+    pub(crate) fn listed(&self) -> Vec<ListedRule> {
+        (self.live.indefinite.iter().chain(&self.live.temporary))
+            .map(|rule| ListedRule {
+                rule: rule.clone(),
+                snooze: (self.rules_at(&rule.place).next())
+                    .filter(|shortest| rank(shortest) < rank(rule) && shortest.says != rule.says)
+                    .cloned(),
+            })
+            .collect()
+    }
+
+    /// When each rule with an end ends.
+    pub(crate) fn ends(&self) -> impl Iterator<Item = Timestamp> {
+        self.live
+            .temporary
+            .iter()
+            .filter_map(|rule| rule.length.end())
+    }
+
+    /// Whether a browser's host could change anything: not on the way out (ADR-0008), nor
+    /// while the front app's own place says off and no site could say on (ADR-0012).
+    pub(crate) fn host_matters(&self, world: &World<'_>) -> bool {
+        !self.released
+            && world.context.app.as_ref().is_none_or(|app| {
+                (self.live.indefinite.iter().chain(&self.live.temporary))
+                    .any(|rule| matches!(rule.place, Place::Domain(_)) && rule.says == OnOff::On)
+                    || self.says(&Place::App(app.clone()), world) != Some(OnOff::Off)
+            })
+    }
+
+    /// The places in front but everywhere, most specific first, as deciding reads them: the
+    /// domains with a rule covering the host, longest first, then the app.
+    fn in_front(&self, world: &World<'_>) -> Vec<Place> {
+        let mut domains: Vec<&Domain> = Vec::new();
+        if let Some(host) = &world.context.host
+            && !self.released
+        {
+            for rule in self.live.indefinite.iter().chain(&self.live.temporary) {
+                if let Place::Domain(domain) = &rule.place
+                    && domain::covers(domain, host)
+                    && !domains.contains(&domain)
+                {
+                    domains.push(domain);
+                }
+            }
+            domains.sort_by(|a, b| (b.as_str().len().cmp(&a.as_str().len())).then(a.cmp(b)));
+        }
+        (domains.into_iter().cloned().map(Place::Domain))
+            .chain(world.context.app.clone().map(Place::App))
+            .collect()
+    }
+
+    /// What a place rests on, shortest first: its rules, then what they sit on. On the way out,
+    /// only everywhere's rules short of one until a time, and the schedule (ADR-0008).
+    fn reasons(&self, place: &Place, world: &World<'_>) -> Vec<Reason> {
+        if self.released && *place != Place::Everywhere {
+            return Vec::new();
+        }
+        (self.rules_at(place))
+            .filter(|rule| !(self.released && matches!(rule.length, Length::Until { .. })))
+            .cloned()
+            .map(Reason::Rule)
+            .chain(self.under(place, world))
+            .collect()
     }
 
     /// A place's rules that a reset takes off, shortest first.
     fn rules_at<'a>(&'a self, place: &'a Place) -> impl Iterator<Item = &'a Rule> {
         self.live
-            .rules
+            .temporary
             .iter()
             .filter(move |rule| rule.place == *place)
     }
 
-    /// Takes off everywhere's rules that say other than `state`, shortest first.
-    fn peel_everywhere(&mut self, state: OnOff, world: &World<'_>) {
-        while self.says(&Place::Everywhere, world) != Some(state)
-            && self.peel(&Place::Everywhere, state)
-        {}
+    /// What a place's rules sit on: an app's or site's indefinite rule, or for everywhere the
+    /// stand-in, then the schedule once it's known.
+    fn under(&self, place: &Place, world: &World<'_>) -> Vec<Reason> {
+        match place {
+            Place::Everywhere => {
+                let stands_in = self.trial.as_ref().is_some_and(|trial| trial.stands_in);
+                let schedule = (world.timeline)
+                    .scheduled_state(world.applied_until)
+                    .map(|state| Reason::Schedule {
+                        state: OnOff::from(state),
+                        until: world.timeline.next_transition(world.applied_until),
+                    });
+                (stands_in.then_some(Reason::StandIn))
+                    .into_iter()
+                    .chain(schedule)
+                    .collect()
+            }
+            Place::App(_) | Place::Domain(_) => (self.live.indefinite.iter())
+                .find(|rule| rule.place == *place)
+                .map(|rule| Reason::Rule(rule.clone()))
+                .into_iter()
+                .collect(),
+        }
     }
 
-    /// Takes off a place's shortest rule that a reset would, if it says other than `state`,
-    /// with the one Adoption set beside it, and says whether it did.
-    fn peel(&mut self, place: &Place, state: OnOff) -> bool {
-        let Some(index) = self.live.rules.iter().position(|rule| rule.place == *place) else {
+    /// Takes off a place's shortest rule that a reset would, unless it says `keep`, with the one
+    /// Adoption linked to it, and says whether it did.
+    fn peel(&mut self, place: &Place, keep: Option<OnOff>) -> bool {
+        let rules = &mut self.live.temporary;
+        let Some(index) = rules.iter().position(|rule| rule.place == *place) else {
             return false;
         };
-        if self
-            .live
-            .rules
-            .get(index)
-            .is_some_and(|shortest| shortest.says == state)
-        {
+        if rules.get(index).is_some_and(|rule| Some(rule.says) == keep) {
             return false;
         }
-        let taken = self.live.rules.remove(index);
-        if matches!(taken.length, Length::UntilScheduleTurns { .. }) {
-            self.take_off_partner(place);
+        if is_turn(&rules.remove(index))
+            && let Some(linked) =
+                (self.live.linked).take_if(|linked| linked == place || *place == Place::Everywhere)
+        {
+            let partner = if *place == Place::Everywhere {
+                linked
+            } else {
+                Place::Everywhere
+            };
+            (self.live.temporary).retain(|rule| !(rule.place == partner && is_turn(rule)));
         }
         true
-    }
-
-    /// Takes off what a reset takes off at `place`, with the rule Adoption set beside one of
-    /// them.
-    fn clear(&mut self, place: &Place) {
-        let until_schedule_turns = self.live.rules.iter().any(|rule| {
-            rule.place == *place && matches!(rule.length, Length::UntilScheduleTurns { .. })
-        });
-        self.live.rules.retain(|rule| rule.place != *place);
-        if until_schedule_turns {
-            self.take_off_partner(place);
-        }
-    }
-
-    /// Takes off the rule until the schedule turns that Adoption set beside `place`'s, once
-    /// that one is gone, and the link between them.
-    fn take_off_partner(&mut self, place: &Place) {
-        let partner = match &self.live.linked {
-            Some(linked) if linked == place => Place::Everywhere,
-            Some(linked) if *place == Place::Everywhere => linked.clone(),
-            _ => return,
-        };
-        self.live.linked = None;
-        self.live.rules.retain(|rule| {
-            !(rule.place == partner && matches!(rule.length, Length::UntilScheduleTurns { .. }))
-        });
-    }
-
-    /// Whether Adoption linked `place`'s rule until the schedule turns to another's.
-    fn linked_at(&self, place: &Place) -> bool {
-        self.live
-            .linked
-            .as_ref()
-            .is_some_and(|linked| linked == place || *place == Place::Everywhere)
     }
 
     /// Puts a rule among its place's, shortest first, where it takes off the place's rules of
     /// its length and shorter. Taking off one that Adoption linked leaves its partner unlinked.
     fn put(&mut self, rule: Rule) {
-        let replaced = |each: &Rule| each.place == rule.place && rank(each) <= rank(&rule);
-        let unlinks =
-            self.live.rules.iter().any(|each| {
-                replaced(each) && matches!(each.length, Length::UntilScheduleTurns { .. })
-            });
-        if unlinks && self.linked_at(&rule.place) {
-            self.live.linked = None;
-        }
-        let rules = &mut self.live.rules;
+        let rules = &mut self.live.temporary;
         // A place's rules are together, so those before its first are other places' and stay.
-        let first = rules.iter().position(|each| each.place == rule.place);
-        rules.retain(|each| !replaced(each));
-        rules.insert(first.unwrap_or(rules.len()), rule);
+        let first = (rules.iter().position(|each| each.place == rule.place)).unwrap_or(rules.len());
+        rules.retain(|each| each.place != rule.place || rank(each) > rank(&rule));
+        rules.insert(first, rule);
+        self.live.tidy();
+    }
+
+    /// Takes off the temporary rules `ended` picks, from what's live and what a trial's end
+    /// would put back.
+    fn take_off_wherever(&mut self, ended: impl Fn(&Rule) -> bool) {
+        for rules in self.kept_mut() {
+            rules.temporary.retain(|rule| !ended(rule));
+            rules.tidy();
+        }
     }
 
     /// What's live and what a trial's end would put back.
-    fn kept_mut(&mut self) -> impl Iterator<Item = &mut Kept> {
-        std::iter::once(&mut self.live).chain(self.trial.iter_mut().map(Trial::found_mut))
+    fn kept_mut(&mut self) -> impl Iterator<Item = &mut Rules> {
+        std::iter::once(&mut self.live).chain(self.trial.iter_mut().map(|trial| &mut trial.found))
     }
+}
 
-    /// Drops Adoption's link once either of its rules is gone.
+impl Rules {
+    /// Drops Adoption's link unless both its places still hold the rules it set.
     fn tidy(&mut self) {
-        for kept in self.kept_mut() {
-            let rules = &kept.rules;
-            kept.linked.take_if(|linked| {
-                ![&*linked, &Place::Everywhere].into_iter().all(|end| {
-                    rules.iter().any(|rule| {
-                        rule.place == *end
-                            && matches!(rule.length, Length::UntilScheduleTurns { .. })
-                    })
+        let temporary = &self.temporary;
+        self.linked.take_if(|linked| {
+            ![&*linked, &Place::Everywhere].into_iter().all(|end| {
+                temporary.iter().any(|rule| {
+                    rule.place == *end && is_turn(rule) && rule.set_by == SetBy::OutsideChange
                 })
-            });
-        }
+            })
+        });
     }
+}
 
-    /// The config rules, then the ad-hoc rules, then the trial's.
-    fn lay_out(&mut self) {
-        let rule = |set_by| {
-            move |(identity, says): &(RuleIdentity, OnOff)| Rule {
-                place: Place::from(identity.clone()),
-                says: *says,
-                length: Length::Indefinite,
-                set_by,
-            }
-        };
-        let config = self.config.iter().map(rule(SetBy::Config));
-        let ad_hoc = self.live.ad_hoc.iter().map(rule(SetBy::You));
-        let trial = self
-            .trial
-            .iter()
-            .flat_map(Trial::rules)
-            .map(rule(SetBy::Trial));
-        self.indefinite = config.chain(ad_hoc).chain(trial).collect();
+fn rule(place: Place, says: OnOff, length: Length, set_by: SetBy) -> Rule {
+    Rule {
+        place,
+        says,
+        length,
+        set_by,
     }
+}
+
+/// An app's or a site's indefinite rule.
+fn indefinite(identity: RuleIdentity, says: OnOff, set_by: SetBy) -> Rule {
+    rule(Place::from(identity), says, Length::Indefinite, set_by)
+}
+
+fn is_turn(rule: &Rule) -> bool {
+    matches!(rule.length, Length::UntilScheduleTurns { .. })
 }
 
 /// Where a rule's length puts it among its place's, shortest first.
@@ -556,26 +625,12 @@ fn rank(rule: &Rule) -> u8 {
     }
 }
 
-/// Whether a rule is an app's or a site's indefinite one: the config's, the user's or a
-/// trial's, as the app's rule list and `nightcap rules` show them.
-pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
-    rule.place != Place::Everywhere && rule.length == Length::Indefinite
-}
-
-/// A place as the log may show it: a domain is named by its kind only (ADR-0009).
-fn loggable_place(place: &Place) -> String {
-    match place.identity() {
-        None => "everywhere".to_owned(),
-        Some(identity) => loggable(&identity),
-    }
-}
-
-/// A rule identity as the log may show it: `tracing-oslog` logs everything as public, so a
-/// domain rule is named by its kind only (ADR-0009).
-fn loggable(identity: &RuleIdentity) -> String {
-    match identity {
-        RuleIdentity::App(_) => identity.to_string(),
-        RuleIdentity::Domain(_) => "a domain rule".to_owned(),
+/// A place as the log may show it: `tracing-oslog` logs everything as public, so a domain is
+/// named by its kind only (ADR-0009).
+fn loggable(place: &Place) -> String {
+    match place {
+        Place::Domain(_) => "a domain".to_owned(),
+        Place::Everywhere | Place::App(_) => place.to_string(),
     }
 }
 
@@ -583,16 +638,15 @@ fn loggable(identity: &RuleIdentity) -> String {
 mod tests {
     use jiff::civil;
     use jiff::tz::TimeZone;
-    use nightcap_protocol::Decision;
 
-    use super::look::says;
     use super::*;
     use crate::rules::schedule::{CheckedSchedule, SunTimes};
 
-    pub(super) const DAY: &str = "2026-10-16T12:00:00+02:00";
-    pub(super) const NIGHT: &str = "2026-10-16T23:00:00+02:00";
-    pub(super) const EVENING: &str = "2026-10-16T22:00:00+02:00";
-    pub(super) const MORNING: &str = "2026-10-17T07:00:00+02:00";
+    const DAY: &str = "2026-10-16T12:00:00+02:00";
+    const NIGHT: &str = "2026-10-16T23:00:00+02:00";
+    const HALF_PAST: &str = "2026-10-16T23:30:00+02:00";
+    const EVENING: &str = "2026-10-16T22:00:00+02:00";
+    const MORNING: &str = "2026-10-17T07:00:00+02:00";
 
     fn at(instant: &str) -> Timestamp {
         instant.parse().unwrap()
@@ -600,14 +654,14 @@ mod tests {
 
     /// What the places are lent: Zurich, custom hours from 22:00 to 07:00 applied up to `now`,
     /// Night Shift last reported on, website checking on, and nothing in front.
-    pub(super) struct Lent {
+    struct Lent {
         context: Context,
         timeline: Timeline,
-        pub(super) now: Timestamp,
+        now: Timestamp,
     }
 
     impl Lent {
-        pub(super) fn at(now: &str) -> Self {
+        fn at(now: &str) -> Self {
             Self {
                 context: Context::default(),
                 timeline: Timeline {
@@ -623,23 +677,23 @@ mod tests {
         }
 
         /// With the schedule not yet reported.
-        pub(super) fn unscheduled(now: &str) -> Self {
+        fn unscheduled(now: &str) -> Self {
             let mut lent = Self::at(now);
             lent.timeline.schedule = None;
             lent
         }
 
-        pub(super) fn app(mut self, bundle_id: &str) -> Self {
+        fn app(mut self, bundle_id: &str) -> Self {
             self.context.app = Some(bundle_id.parse().unwrap());
             self
         }
 
-        pub(super) fn host(mut self, host: &str) -> Self {
+        fn host(mut self, host: &str) -> Self {
             self.context.host = Host::new(host);
             self
         }
 
-        pub(super) fn world(&self) -> World<'_> {
+        fn world(&self) -> World<'_> {
             World {
                 context: &self.context,
                 timeline: &self.timeline,
@@ -651,94 +705,72 @@ mod tests {
         }
     }
 
-    pub(super) fn identity(text: &str) -> RuleIdentity {
+    fn identity(text: &str) -> RuleIdentity {
         text.parse().unwrap()
     }
 
-    pub(super) fn place(text: &str) -> Place {
+    fn place(text: &str) -> Place {
         Place::from(identity(text))
     }
 
     /// A config rule, as the config gives it.
-    pub(super) fn config(text: &str, says: OnOff) -> (RuleIdentity, OnOff) {
+    fn config(text: &str, says: OnOff) -> (RuleIdentity, OnOff) {
         (identity(text), says)
     }
 
     /// A config rule, as it decides.
-    pub(super) fn config_rule(text: &str, says: OnOff) -> Rule {
-        Rule {
-            place: place(text),
-            says,
-            length: Length::Indefinite,
-            set_by: SetBy::Config,
-        }
+    fn config_rule(text: &str, says: OnOff) -> Reason {
+        Reason::Rule(indefinite(identity(text), says, SetBy::Config))
     }
 
-    pub(super) fn places(config: Vec<(RuleIdentity, OnOff)>, kept: Kept) -> Places {
-        let mut places = Places::new(kept);
+    fn places(config: Vec<(RuleIdentity, OnOff)>, temporary: Vec<Rule>) -> Places {
+        let mut places = Places::new(temporary, None, Vec::new());
         places.set_config(config);
         places
     }
 
-    pub(super) fn with_config(rules: Vec<(RuleIdentity, OnOff)>) -> Places {
-        places(rules, Kept::default())
-    }
-
-    /// A rule of the user's.
-    pub(super) fn yours(place: Place, says: OnOff, length: Length) -> Rule {
-        Rule {
-            place,
-            says,
-            length,
-            set_by: SetBy::You,
-        }
+    fn yours(place: Place, says: OnOff, length: Length) -> Rule {
+        rule(place, says, length, SetBy::You)
     }
 
     /// A rule an outside change set, until the schedule turns at `until`.
     fn adopted(place: Place, says: OnOff, until: &str) -> Rule {
-        Rule {
-            place,
-            says,
-            length: until_turn(until),
-            set_by: SetBy::OutsideChange,
-        }
+        rule(place, says, until_turn(until), SetBy::OutsideChange)
     }
 
-    pub(super) fn until(instant: &str) -> Length {
+    fn until(instant: &str) -> Length {
         Length::Until { until: at(instant) }
     }
 
-    pub(super) fn until_turn(instant: &str) -> Length {
+    fn until_turn(instant: &str) -> Length {
         Length::UntilScheduleTurns {
             until: Some(at(instant)),
         }
     }
 
-    pub(super) fn kept_rules(rules: Vec<Rule>) -> Kept {
-        Kept {
-            rules,
-            linked: None,
-            ad_hoc: Vec::new(),
-        }
-    }
-
-    pub(super) fn schedule(state: OnOff, until: &str) -> Reason {
+    fn schedule(state: OnOff, until: &str) -> Reason {
         Reason::Schedule {
             state,
             until: Some(at(until)),
         }
     }
 
-    pub(super) fn minutes(count: i64) -> Lasting {
+    fn minutes(count: i64) -> Lasting {
         Lasting::For(SignedDuration::from_mins(count))
+    }
+
+    /// What `state.json` and `rules.toml` keep.
+    fn kept(places: &Places) -> (Vec<Rule>, Option<Place>, Vec<(RuleIdentity, OnOff)>) {
+        let kept = places.kept();
+        (kept.temporary.clone(), kept.linked.clone(), places.ad_hoc())
     }
 
     /// The places' invariants: one indefinite rule per app or site; in what decides and in
     /// what's kept, each place's other rules together, shortest first, one of each length, and
     /// none indefinite but everywhere's; and a link only between two rules an outside change
     /// set until the schedule turns, everywhere's and another place's.
-    fn assert_sound(places: &Places, world: &World<'_>) {
-        let indefinite = &places.indefinite;
+    fn assert_sound(places: &Places) {
+        let indefinite = &places.live.indefinite;
         for (index, rule) in indefinite.iter().enumerate() {
             assert!(
                 !indefinite[index + 1..]
@@ -748,9 +780,8 @@ mod tests {
                 rule.place
             );
         }
-        places.look(world);
         for kept in [&places.live, places.kept()] {
-            let rules = &kept.rules;
+            let rules = &kept.temporary;
             for (index, rule) in rules.iter().enumerate() {
                 assert!(
                     rule.length != Length::Indefinite || rule.place == Place::Everywhere,
@@ -774,7 +805,7 @@ mod tests {
                     assert!(
                         rules.iter().any(|rule| rule.place == *end
                             && rule.set_by == SetBy::OutsideChange
-                            && matches!(rule.length, Length::UntilScheduleTurns { .. })),
+                            && is_turn(rule)),
                         "{end} has no rule for the link to {linked}"
                     );
                 }
@@ -783,51 +814,138 @@ mod tests {
     }
 
     #[test]
-    fn an_external_on_in_front_of_a_config_rule_snoozes_it_until_the_schedule_turns() {
-        let lent = Lent::at(DAY).app("com.figma.Desktop");
-        let world = lent.world();
-        let mut places = with_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
-
-        let adoption = places.adopt(OnOff::On, &world);
-
-        assert_eq!(
-            adoption,
-            Some(Adoption {
-                place: place("app:com.figma.Desktop"),
-                snoozed: Some(identity("app:com.figma.Desktop")),
-                state: OnOff::On,
-                until: Some(at(MORNING)),
-            })
+    fn the_most_specific_place_in_front_that_says_something_decides_by_its_shortest_rule() {
+        let safari = || {
+            let youtube = config("domain:youtube.com", OnOff::On);
+            places(
+                vec![config("app:com.apple.Safari", OnOff::Off), youtube],
+                Vec::new(),
+            )
+        };
+        let google = config("domain:google.com", OnOff::Off);
+        let docs = || place("domain:docs.google.com");
+        let figma = place("app:com.figma.Desktop");
+        let morning = yours(figma.clone(), OnOff::On, until_turn(MORNING));
+        let half_past = yours(figma.clone(), OnOff::Off, until(HALF_PAST));
+        let in_figma =
+            |temporary| places(vec![config("app:com.figma.Desktop", OnOff::Off)], temporary);
+        let until_one = yours(
+            Place::Everywhere,
+            OnOff::On,
+            until("2026-10-16T13:00:00+02:00"),
         );
-        let look = places.look(&world);
-        assert_eq!(look.decision.state, Some(OnOff::On));
-        let figma = look.app.unwrap();
+        let indefinitely = yours(Place::Everywhere, OnOff::Off, Length::Indefinite);
+        let mut standing_in = places(Vec::new(), Vec::new());
+        standing_in.begin_trial(true);
+        let in_safari = |now, host| Lent::at(now).app("com.apple.Safari").host(host);
+        let cases = [
+            (
+                safari(),
+                in_safari(DAY, "www.youtube.com"),
+                Some("youtube.com"),
+                place("domain:youtube.com"),
+                vec![config_rule("domain:youtube.com", OnOff::On)],
+            ),
+            (
+                safari(),
+                in_safari(DAY, "apple.com"),
+                Some("apple.com"),
+                place("app:com.apple.Safari"),
+                vec![config_rule("app:com.apple.Safari", OnOff::Off)],
+            ),
+            (
+                places(vec![google.clone()], Vec::new()),
+                in_safari(NIGHT, "mail.google.com"),
+                Some("google.com"),
+                place("domain:google.com"),
+                vec![config_rule("domain:google.com", OnOff::Off)],
+            ),
+            (
+                places(
+                    vec![google.clone(), config("domain:docs.google.com", OnOff::On)],
+                    Vec::new(),
+                ),
+                in_safari(NIGHT, "docs.google.com"),
+                Some("docs.google.com"),
+                docs(),
+                vec![config_rule("domain:docs.google.com", OnOff::On)],
+            ),
+            (
+                places(vec![google], vec![yours(docs(), OnOff::On, until(EVENING))]),
+                in_safari(DAY, "a.docs.google.com"),
+                Some("docs.google.com"),
+                docs(),
+                vec![Reason::Rule(yours(docs(), OnOff::On, until(EVENING)))],
+            ),
+            (
+                in_figma(vec![morning.clone()]),
+                Lent::at(NIGHT).app("com.figma.Desktop"),
+                None,
+                figma.clone(),
+                vec![
+                    Reason::Rule(morning.clone()),
+                    config_rule("app:com.figma.Desktop", OnOff::Off),
+                ],
+            ),
+            (
+                in_figma(vec![half_past.clone(), morning.clone()]),
+                Lent::at(NIGHT).app("com.figma.Desktop"),
+                None,
+                figma,
+                vec![
+                    Reason::Rule(half_past),
+                    Reason::Rule(morning),
+                    config_rule("app:com.figma.Desktop", OnOff::Off),
+                ],
+            ),
+            (
+                places(Vec::new(), vec![until_one.clone(), indefinitely.clone()]),
+                Lent::at(DAY).app("com.apple.mail"),
+                None,
+                Place::Everywhere,
+                vec![
+                    Reason::Rule(until_one),
+                    Reason::Rule(indefinitely),
+                    schedule(OnOff::Off, EVENING),
+                ],
+            ),
+            (
+                standing_in.clone(),
+                Lent::at(DAY),
+                None,
+                Place::Everywhere,
+                vec![Reason::StandIn, schedule(OnOff::Off, EVENING)],
+            ),
+            (
+                places(Vec::new(), Vec::new()),
+                Lent::unscheduled(NIGHT),
+                None,
+                Place::Everywhere,
+                Vec::new(),
+            ),
+        ];
+
+        for (places, lent, site, deciding, reasons) in cases {
+            let front = places.front(&lent.world(), false);
+            assert_eq!(front.site, site.map(|site| site.parse().unwrap()));
+            assert_eq!(
+                front.decision,
+                Decision {
+                    state: reasons.first().map(Reason::says),
+                    place: deciding,
+                    reasons,
+                }
+            );
+        }
+        let unscheduled = Lent::unscheduled(NIGHT);
+        let nothing = places(Vec::new(), Vec::new());
         assert_eq!(
-            figma.rules,
-            vec![adopted(place("app:com.figma.Desktop"), OnOff::On, MORNING)]
+            nothing.front(&unscheduled.world(), false).everywhere.gives,
+            OnOff::On
         );
-        assert_eq!(
-            figma.base,
-            Some(Reason::Rule(config_rule(
-                "app:com.figma.Desktop",
-                OnOff::Off
-            )))
-        );
-        assert_sound(&places, &world);
-    }
-
-    #[test]
-    fn a_reset_puts_a_snoozed_rule_back_and_takes_off_the_rule_linked_to_its_snooze() {
-        let lent = Lent::at(DAY).app("com.figma.Desktop");
-        let world = lent.world();
-        let mut places = with_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
-        places.adopt(OnOff::On, &world);
-
-        places.reset(&place("app:com.figma.Desktop"));
-
-        let look = places.look(&world);
-        assert_eq!(look.decision.state, Some(OnOff::Off));
-        assert_eq!(places.live, Kept::default());
+        let day = Lent::at(DAY);
+        let everywhere = standing_in.front(&day.world(), false).everywhere;
+        assert_eq!(everywhere.base, Some(Reason::StandIn));
     }
 
     #[test]
@@ -836,22 +954,25 @@ mod tests {
         let world = lent.world();
         let figma = place("app:com.figma.Desktop");
         let snoozed = || {
-            let mut places = with_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
+            let mut places = places(
+                vec![config("app:com.figma.Desktop", OnOff::Off)],
+                Vec::new(),
+            );
             places.adopt(OnOff::On, &world);
             places
         };
 
         let linked = snoozed();
         assert_eq!(
-            linked.live,
-            Kept {
-                rules: vec![
+            kept(&linked),
+            (
+                vec![
                     adopted(figma.clone(), OnOff::On, MORNING),
                     adopted(Place::Everywhere, OnOff::On, MORNING),
                 ],
-                linked: Some(figma.clone()),
-                ad_hoc: Vec::new(),
-            }
+                Some(figma.clone()),
+                Vec::new(),
+            )
         );
         let mut flipped_back = snoozed();
         flipped_back.adopt(OnOff::Off, &world);
@@ -861,23 +982,34 @@ mod tests {
         ended.expire(at(MORNING));
         let mut edited = snoozed();
         edited.schedule_edited();
+        let mut reset = snoozed();
+        reset.reset(&figma);
         let mut replaced = snoozed();
         replaced
             .set(&figma, OnOff::Off, Lasting::UntilScheduleTurns, &world)
             .unwrap();
 
-        for places in [&flipped_back, &switched, &ended, &edited] {
-            assert_eq!(places.live, Kept::default());
+        for places in [&flipped_back, &switched, &ended, &edited, &reset] {
+            assert_eq!(kept(places), (Vec::new(), None, Vec::new()));
         }
+        assert_eq!(reset.decide(&world).state, Some(OnOff::Off));
         assert_eq!(replaced.live.linked, None);
         assert!(
             replaced
                 .live
-                .rules
+                .temporary
                 .contains(&adopted(Place::Everywhere, OnOff::On, MORNING))
         );
-        for places in [linked, flipped_back, switched, ended, edited, replaced] {
-            assert_sound(&places, &world);
+        for places in [
+            linked,
+            flipped_back,
+            switched,
+            ended,
+            edited,
+            reset,
+            replaced,
+        ] {
+            assert_sound(&places);
         }
     }
 
@@ -886,7 +1018,10 @@ mod tests {
         let lent = Lent::at(NIGHT).app("com.figma.Desktop");
         let world = lent.world();
         let figma = place("app:com.figma.Desktop");
-        let mut places = with_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
+        let mut places = places(
+            vec![config("app:com.figma.Desktop", OnOff::Off)],
+            Vec::new(),
+        );
 
         places.set(&figma, OnOff::On, minutes(30), &world).unwrap();
         places
@@ -899,53 +1034,11 @@ mod tests {
             .set(&Place::Everywhere, OnOff::Off, Lasting::Indefinite, &world)
             .unwrap();
 
-        assert_eq!(places.live.rules.len(), 2);
-        assert_sound(&places, &world);
+        assert_eq!(places.live.temporary.len(), 2);
+        assert_sound(&places);
         places.reset(&figma);
         places.reset(&Place::Everywhere);
-        assert_eq!(places.live.rules, Vec::new());
-    }
-
-    #[test]
-    fn the_config_wins_and_keeps_one_rule_per_identity() {
-        let lent = Lent::at(NIGHT);
-        let world = lent.world();
-        let mail = identity("app:com.apple.mail");
-        let notes = identity("app:com.apple.Notes");
-        let mut places = places(
-            Vec::new(),
-            Kept {
-                rules: Vec::new(),
-                linked: None,
-                ad_hoc: vec![(mail.clone(), OnOff::Off)],
-            },
-        );
-        places.begin_trial(false);
-        places.add_rule(&notes, OnOff::Off).unwrap();
-        places.add_rule(&mail, OnOff::On).unwrap();
-
-        places.set_config(vec![
-            config("app:com.apple.mail", OnOff::Off),
-            config("app:com.apple.Notes", OnOff::On),
-        ]);
-
-        let rules: Vec<_> = places
-            .look(&world)
-            .rules
-            .into_iter()
-            .map(|(rule, _)| rule.clone())
-            .collect();
-        assert_eq!(
-            rules,
-            vec![
-                config_rule("app:com.apple.mail", OnOff::Off),
-                config_rule("app:com.apple.Notes", OnOff::On),
-            ]
-        );
-        assert_eq!(places.kept().ad_hoc, Vec::new());
-        assert_sound(&places, &world);
-        places.end_trial(lent.now);
-        assert_eq!(places.kept().ad_hoc, Vec::new());
+        assert_eq!(places.live.temporary, Vec::new());
     }
 
     #[test]
@@ -956,11 +1049,7 @@ mod tests {
         let figma = place("app:com.figma.Desktop");
         let before = places(
             vec![config("app:com.figma.Desktop", OnOff::Off)],
-            kept_rules(vec![yours(
-                figma.clone(),
-                OnOff::On,
-                until("2026-10-16T23:30:00+02:00"),
-            )]),
+            vec![yours(figma.clone(), OnOff::On, until(HALF_PAST))],
         );
         type Change<'a> = &'a dyn Fn(&mut Places) -> Result<(), Refusal>;
         let refused: [(Change<'_>, Refusal); 8] = [
@@ -1036,19 +1125,13 @@ mod tests {
             OnOff::On,
             until("2026-10-17T01:00:00+02:00"),
         );
-        let found = Kept {
-            rules: vec![
-                yours(figma.clone(), OnOff::On, until("2026-10-16T23:30:00+02:00")),
-                late.clone(),
-                yours(Place::Everywhere, OnOff::Off, until_turn(MORNING)),
-            ],
-            linked: None,
-            ad_hoc: vec![(mail.clone(), OnOff::Off)],
-        };
-        let mut places = places(
-            vec![config("app:com.figma.Desktop", OnOff::Off)],
-            found.clone(),
-        );
+        let found = vec![
+            yours(figma.clone(), OnOff::On, until(HALF_PAST)),
+            late.clone(),
+            yours(Place::Everywhere, OnOff::Off, until_turn(MORNING)),
+        ];
+        let mut places = Places::new(found.clone(), None, vec![(mail.clone(), OnOff::Off)]);
+        places.set_config(vec![config("app:com.figma.Desktop", OnOff::Off)]);
         places.begin_trial(false);
 
         places.switch(OnOff::Off, &world);
@@ -1061,105 +1144,39 @@ mod tests {
             .add_rule(&identity("domain:choco.me"), OnOff::Off)
             .unwrap();
         places.adopt(OnOff::Off, &world);
-        assert_eq!(places.kept(), &found);
-        places.expire(at("2026-10-16T23:30:00+02:00"));
+        assert_eq!(kept(&places), (found, None, vec![(mail, OnOff::Off)]));
+        places.expire(at(HALF_PAST));
         places.schedule_edited();
         places.set_config(vec![
             config("app:com.figma.Desktop", OnOff::Off),
             config("app:com.apple.mail", OnOff::On),
         ]);
 
-        assert_eq!(places.kept(), &kept_rules(vec![late]));
-        assert_sound(&places, &world);
+        assert_eq!(kept(&places), (vec![late], None, Vec::new()));
+        assert_sound(&places);
         places.end_trial(at("2026-10-17T01:00:00+02:00"));
-        assert_eq!(places.kept(), &Kept::default());
-        assert_eq!(places.look(&world).rules.len(), 2);
-    }
-
-    #[test]
-    fn a_trials_end_puts_back_what_it_found_short_of_what_ended() {
-        let lent = Lent::at(NIGHT);
-        let world = lent.world();
-        let indefinitely = yours(Place::Everywhere, OnOff::Off, Length::Indefinite);
-        let mut places = places(
-            Vec::new(),
-            kept_rules(vec![
-                yours(
-                    Place::Everywhere,
-                    OnOff::On,
-                    until("2026-10-16T23:30:00+02:00"),
-                ),
-                indefinitely.clone(),
-            ]),
-        );
-        places.begin_trial(true);
-        assert_eq!(places.live.rules, Vec::new());
-        places.switch(OnOff::Off, &world);
-
-        places.end_trial(at("2026-10-16T23:45:00+02:00"));
-
-        assert_eq!(places.live.rules, vec![indefinitely]);
-        let look = places.look(&world);
-        assert_eq!(look.everywhere.base, Some(schedule(OnOff::On, MORNING)));
-    }
-
-    #[test]
-    fn after_the_release_only_everywheres_rules_short_of_one_until_a_time_decide() {
-        let lent = Lent::at(NIGHT).app("com.figma.Desktop");
-        let world = lent.world();
-        let indefinitely = yours(Place::Everywhere, OnOff::Off, Length::Indefinite);
-        let kept = kept_rules(vec![
-            yours(
-                place("app:com.figma.Desktop"),
-                OnOff::On,
-                until_turn(MORNING),
-            ),
-            yours(
-                Place::Everywhere,
-                OnOff::On,
-                until("2026-10-16T23:30:00+02:00"),
-            ),
-            indefinitely.clone(),
-        ]);
-        let mut places = places(
-            vec![config("app:com.figma.Desktop", OnOff::Off)],
-            kept.clone(),
-        );
-        places.begin_trial(true);
-        places.switch(OnOff::On, &world);
-
-        places.release(lent.now);
-
-        assert_eq!(
-            places.look(&world).decision,
-            Decision {
-                state: Some(OnOff::Off),
-                place: Place::Everywhere,
-                reasons: vec![Reason::Rule(indefinitely), schedule(OnOff::On, MORNING)],
-            }
-        );
-        assert_eq!(places.kept(), &kept);
+        assert_eq!(kept(&places), (Vec::new(), None, Vec::new()));
+        assert_eq!(places.listed().len(), 2);
     }
 
     #[test]
     fn the_switch_keeps_everywheres_rules_that_say_its_way() {
-        let soon = "2026-10-16T23:30:00+02:00";
         let everywhere = |says: OnOff, length: Length| yours(Place::Everywhere, says, length);
         let cases = [
             (Vec::new(), false),
             (vec![everywhere(OnOff::Off, Length::Indefinite)], false),
             (vec![everywhere(OnOff::On, Length::Indefinite)], false),
-            (vec![everywhere(OnOff::Off, until(soon))], false),
+            (vec![everywhere(OnOff::Off, until(HALF_PAST))], false),
             (
                 vec![
-                    everywhere(OnOff::On, until(soon)),
+                    everywhere(OnOff::On, until(HALF_PAST)),
                     everywhere(OnOff::Off, Length::Indefinite),
                 ],
                 false,
             ),
             (
                 vec![
-                    everywhere(OnOff::Off, until(soon)),
+                    everywhere(OnOff::Off, until(HALF_PAST)),
                     everywhere(OnOff::On, Length::Indefinite),
                 ],
                 false,
@@ -1173,7 +1190,7 @@ mod tests {
             ),
             (
                 vec![
-                    everywhere(OnOff::Off, until(soon)),
+                    everywhere(OnOff::Off, until(HALF_PAST)),
                     everywhere(OnOff::On, until_turn(MORNING)),
                     everywhere(OnOff::Off, Length::Indefinite),
                 ],
@@ -1186,12 +1203,12 @@ mod tests {
         for lent in [Lent::at(NIGHT), Lent::at(DAY), Lent::unscheduled(NIGHT)] {
             let world = lent.world();
             for (rules, stand_in) in &cases {
-                let mut places = places(Vec::new(), kept_rules(rules.clone()));
+                let mut places = places(Vec::new(), rules.clone());
                 if *stand_in {
                     places.begin_trial(true);
                     places.switch(OnOff::Off, &world);
                 }
-                let before = places.look(&world).everywhere;
+                let before = places.front(&world, false).everywhere;
                 let to = before.gives.other();
 
                 places.switch(to, &world);
@@ -1201,10 +1218,10 @@ mod tests {
                 // says otherwise.
                 let left: Vec<Rule> = match before.rules.iter().position(|rule| rule.says == to) {
                     Some(first) => before.rules[first..].to_vec(),
-                    None if before.base.as_ref().map(says) == Some(to) => Vec::new(),
+                    None if before.base.as_ref().map(Reason::says) == Some(to) => Vec::new(),
                     None => vec![yours(Place::Everywhere, to, Length::Indefinite)],
                 };
-                let after = places.look(&world).everywhere;
+                let after = places.front(&world, false).everywhere;
                 assert_eq!(after.rules, left, "{rules:?}");
                 assert_eq!(after.gives, to, "{rules:?}");
             }

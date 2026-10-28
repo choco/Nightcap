@@ -9,7 +9,7 @@ use nightcap_protocol::{Install, Instance, NightShift, NotSelfManaged, Notificat
 
 use crate::clock::Clock;
 use crate::commands::Loaded;
-use crate::rules::places::{Context, Kept, Places};
+use crate::rules::places::{Context, Places};
 use crate::rules::schedule::{SunTimes, Timeline};
 use crate::server::state::{Facts, Inner};
 use crate::server::turn::Reconciling;
@@ -77,11 +77,7 @@ impl Inner {
                 websites: persisted.websites,
                 config_websites: config.websites,
             },
-            places: Places::new(Kept {
-                rules: persisted.rules.clone(),
-                linked: persisted.linked.clone(),
-                ad_hoc,
-            }),
+            places: Places::new(persisted.rules.clone(), persisted.linked.clone(), ad_hoc),
             strength: None,
             reconciling: Reconciling::new(persisted.night_shift),
             watching: Watching::default(),

@@ -76,7 +76,7 @@ impl Snapshot {
         let now = inner.clock.now();
         Self {
             answers: Answers::new(inner, now),
-            ad_hoc: inner.places.kept().ad_hoc.clone(),
+            ad_hoc: inner.places.ad_hoc(),
         }
     }
 

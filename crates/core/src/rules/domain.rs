@@ -38,3 +38,19 @@ pub(crate) fn covers(domain: &Domain, host: &Host) -> bool {
         .strip_suffix(domain.as_str())
         .is_some_and(|rest| rest.is_empty() || rest.ends_with('.'))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_domain_covers_itself_and_its_subdomains_on_label_boundaries() {
+        let figma: Domain = "figma.com".parse().unwrap();
+        let covered = |host: &str| covers(&figma, &Host::new(host).unwrap());
+
+        assert!(covered("figma.com"));
+        assert!(covered("www.figma.com"));
+        assert!(!covered("notfigma.com"));
+        assert!(!covered("figma.com.example.net"));
+    }
+}
