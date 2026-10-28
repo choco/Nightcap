@@ -11,18 +11,16 @@ private let answersAll = """
     """
 
 /// The snapshot a managed release's launch leaves at noon, or a self-managed release's where
-/// `selfManaged`, with `config` and `state` as its files, after macOS reported Night Shift off
-/// with no schedule at a strength of 60 where `reported`.
-private func launch(
-    config: String? = nil, state: String? = nil, selfManaged: Bool = false, reported: Bool = true
-) throws -> Snapshot {
+/// `selfManaged`, with `config` as its config, after macOS reported Night Shift off with no
+/// schedule at a strength of 60 where `reported`.
+private func launch(config: String? = nil, selfManaged: Bool = false, reported: Bool = true) throws -> Snapshot {
     let nightShift: [Step] = [
         .fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false)),
         .fact(.strengthChanged(value: 60)),
     ]
     return try Core.staged(
         scenario: Scenario(
-            now: at("2026-10-16T12:00:00+02:00"), bundleWritable: selfManaged, config: config, state: state,
+            now: at("2026-10-16T12:00:00+02:00"), bundleWritable: selfManaged, config: config,
             steps: (reported ? nightShift : []) + [.fact(.launched)])
     ).snapshot()
 }
@@ -83,47 +81,6 @@ struct OnboardingRecordTests {
 
             #expect(record.launched(snapshot))
             #expect(!record.finished)
-        }
-    }
-
-    /// As 1.2 left `state.json` for a user who went through onboarding, updating.
-    @Test func aUserWhoWentThroughOnboardingWhileStateJsonKeptItDoesntSeeItAgain() throws {
-        let snapshot = try launch(state: #"{"version":2,"websites":true,"onboarding":1}"#)
-        withScratchDefaults { defaults in
-            let record = OnboardingRecord(defaults: defaults)
-
-            record.takeOver(snapshot.about())
-
-            #expect(record.finished)
-            #expect(!record.launched(snapshot))
-        }
-    }
-
-    @Test func aFirstRunWithNeitherRecordOpensOnboarding() throws {
-        let snapshot = try launch()
-        withScratchDefaults { defaults in
-            let record = OnboardingRecord(defaults: defaults)
-
-            record.takeOver(snapshot.about())
-
-            #expect(record.completed == 0)
-            #expect(record.launched(snapshot))
-        }
-    }
-
-    /// The app takes over what `state.json` kept only while it has no record of its own: from its
-    /// first launch on, its own record counts.
-    @Test func theAppsOwnRecordIsntTakenOverAgain() throws {
-        let fresh = try launch()
-        let kept = try launch(state: #"{"version":2,"onboarding":1}"#)
-        withScratchDefaults { defaults in
-            let record = OnboardingRecord(defaults: defaults)
-            record.takeOver(fresh.about())
-
-            record.takeOver(kept.about())
-
-            #expect(record.completed == 0)
-            #expect(record.launched(kept))
         }
     }
 }

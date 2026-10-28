@@ -40,10 +40,6 @@ pub(crate) struct Inner {
     pub(crate) watching: Watching,
     pub(crate) grants: Grants,
     pub(crate) loaded: Loaded,
-    /// `Persisted::onboarding` as the core found it at start, which `About::legacy_onboarding`
-    /// answers whatever the core writes meanwhile. It goes in the release after next, with the
-    /// field it answers.
-    pub(crate) legacy_onboarding: u32,
     /// What was last written to `state.json`.
     pub(crate) saved: Persisted,
 }
@@ -85,7 +81,6 @@ impl Inner {
             rules: self.places.kept().rules.clone(),
             linked: self.places.kept().linked.clone(),
             websites: self.facts.websites,
-            onboarding: self.legacy_onboarding,
             notifications_wanted: self.grants.notifications_wanted,
             open_at_login: self.grants.open_at_login,
             night_shift: wanted(&self.places.look(&self.facts.world(now)).decision)

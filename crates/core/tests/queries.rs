@@ -540,7 +540,6 @@ fn about_answers_the_version_and_the_install() {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             manages_itself: false,
-            legacy_onboarding: 0,
         }
     );
     assert_eq!(

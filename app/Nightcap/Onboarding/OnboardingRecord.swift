@@ -24,14 +24,6 @@ struct OnboardingRecord {
     /// answered all it would ask.
     var finished: Bool { completed >= Self.current }
 
-    /// Takes over the version `state.json` kept up to 1.2, as `about` answers it, the first time
-    /// the app has no record of its own. It goes in the release after next, with
-    /// `About.legacyOnboarding`.
-    func takeOver(_ about: About) {
-        guard defaults.object(forKey: Self.key) == nil else { return }
-        defaults.set(Int(about.legacyOnboarding), forKey: Self.key)
-    }
-
     /// Whether onboarding opens, as the launch's outcome leaves `snapshot`: unless the user went
     /// through the current one, or the config and the install answer all it would ask, which it
     /// records as gone through. The config can answer website checking and Night Shift's steps;

@@ -475,7 +475,6 @@ pub struct About {
     pub version: String,
     pub install: Install,
     pub manages_itself: bool,
-    pub legacy_onboarding: u32,
 }
 
 #[uniffi::remote(Enum)]

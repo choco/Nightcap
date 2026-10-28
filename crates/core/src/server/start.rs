@@ -106,7 +106,6 @@ impl Inner {
                 applied_from_config: persisted.applied_from_config,
                 ad_hoc_error,
             },
-            legacy_onboarding: persisted.onboarding,
             saved: persisted,
         };
         inner.graduate(config.rules);

@@ -25,12 +25,6 @@ pub(crate) struct Persisted {
     pub(crate) linked: Option<Place>,
     /// Website checking as last chosen in the app or the CLI (ADR-0012).
     pub(crate) websites: bool,
-    /// The last onboarding version the user went through, as 1.2 and earlier kept it: read, so
-    /// the app can take it over (`About::legacy_onboarding`), and never written, since the app
-    /// keeps its own. It goes in the release after next, once every install has run one that
-    /// answers it.
-    #[serde(skip_serializing)]
-    pub(crate) onboarding: u32,
     /// Whether the user wants Nightcap's notifications: set once they're allowed, and cleared
     /// only when the user accepts them off. The notifications check compares against it.
     pub(crate) notifications_wanted: bool,
@@ -172,7 +166,6 @@ mod tests {
             ],
             linked: Some(figma()),
             websites: true,
-            onboarding: 0,
             notifications_wanted: true,
             open_at_login: true,
             night_shift: Some(OnOff::Off),
@@ -193,21 +186,6 @@ mod tests {
         store.save(&state).unwrap();
 
         assert_eq!(store.load(), state);
-    }
-
-    #[test]
-    fn the_onboarding_version_loads_and_is_never_saved() {
-        let files = holding(Some(r#"{"version":2,"websites":true,"onboarding":1}"#));
-        let store = Store::new(files.clone());
-
-        let state = store.load();
-        store.save(&state).unwrap();
-
-        assert_eq!(state.onboarding, 1);
-        let saved = files.get(file::File::State).unwrap();
-        assert!(!saved.contains("onboarding"), "{saved}");
-        assert_eq!(store.load().onboarding, 0);
-        assert!(store.load().websites);
     }
 
     #[test]

@@ -81,7 +81,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.executor = executor
         accessibilityAsk = AccessibilityAsk(core.snapshot())
         let onboardingRecord = onboardingRecord
-        onboardingRecord.takeOver(core.snapshot().about())
         let whatsNew = WhatsNew(defaults: .standard, words: .system)
         let announcer = Announcer(defaults: .standard, words: .system)
         executor.onEvent { [notifications] event in notifications.tell(event) }

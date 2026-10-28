@@ -16,7 +16,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -417,10 +417,6 @@ pub struct About {
     /// wants: an installer owns a managed install, and a dev build would shadow the installed
     /// app (ADR-0011).
     pub manages_itself: bool,
-    /// The last onboarding version the user went through as `state.json` kept it up to 1.2, 0
-    /// for none, which the app takes over the first time it has no record of its own. It goes in
-    /// the release after next, once every install has run one that answers it.
-    pub legacy_onboarding: u32,
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
@@ -1397,9 +1393,8 @@ mod tests {
                     version: "1.2.0".to_owned(),
                     install: Install::SelfManaged,
                     manages_itself: true,
-                    legacy_onboarding: 1,
                 }),
-                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true,"legacy_onboarding":1}}"#,
+                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true}}"#,
             ),
         ];
 

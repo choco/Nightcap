@@ -1563,7 +1563,6 @@ mod tests {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
                 manages_itself: true,
-                legacy_onboarding: 1,
             },
             night_shift: NightShiftState {
                 state: NightShift::On,
