@@ -175,7 +175,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOnboarding() {
-        guard let core, let reporter else { return }
+        guard let core, let reporter, let executor else { return }
         let accessibility = accessibility
         let onboarding = Onboarding(
             core.snapshot(),
@@ -187,7 +187,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             now: { Date() },
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             accessibilityGranted: { accessibility.granted },
-            askForAccessibility: { accessibility.ask() },
+            askForAccessibility: { executor.perform(.askForAccessibility) },
             choose: { command in core.send(command: command) },
             notifications: { reporter.notificationPermission },
             askForNotifications: { reporter.askForNotifications() },
