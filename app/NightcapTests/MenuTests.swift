@@ -188,15 +188,13 @@ struct MenuTests {
     @Test func lengthsThatComeToTheSameAsUndoingAreLeftOut() throws {
         let core = try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)))
 
-        #expect(
-            core.appRow?.titles
-                == ["Put the Rule Back", "—", "For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…"])
+        #expect(core.appRow?.titles == ["Put the Rule Back"])
         core.bringToFront("com.apple.mail")
         core.send(command: .set(place: mailApp, state: .off, length: minutes(30)))
         #expect(core.appRow?.titles == ["Like Everywhere Else", "—", "Always"])
     }
 
-    @Test func aRuleUntilATimeOverWhatSaysTheSameKeepsTheLengths() throws {
+    @Test func aTemporaryRuleOverWhatSaysTheSameKeepsTheLengths() throws {
         let core = try onByTheSchedule(
             front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(120))), .command(.off))
 
@@ -205,22 +203,13 @@ struct MenuTests {
                 == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…", "Until 07:00", "—", "Always"])
     }
 
-    /// Only the CLI stacks a rule until a time over a longer one at its place that says the same,
-    /// with the other way under both. The menu decides from what the place's rules and what's
-    /// under them say, not from what the place would give once its rule until a time ends, so it
-    /// leaves the lengths out there, though one would turn the place the row's way for a while
-    /// before the longer rule came back.
-    @Test func overTwoRulesThatSayTheSameOverTheOtherWayTheMenuLeavesTheLengthsOut() throws {
-        // `nightcap on --app com.figma.Desktop --until-schedule`, then `--for 30m`, over the
-        // config's rule.
-        let figma = try forced(
-            .command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)),
-            .command(.set(place: figmaApp, state: .on, length: minutes(30))))
-        #expect(figma.appRow?.titles == ["Put the Rule Back"])
-        // `nightcap off`, then `nightcap off --for 1h`, at 23:00 over the schedule's on.
-        let everywhere = try onByTheSchedule(
+    /// `nightcap off`, then `nightcap off --for 1h`, at 23:00 over the schedule's on: a length
+    /// sits over everywhere's indefinite off, where the switch would take both off.
+    @Test func overEverywheresIndefiniteRuleItsRowKeepsTheLengths() throws {
+        let core = try onByTheSchedule(
             .command(.off), .command(.set(place: .everywhere, state: .off, length: minutes(60))))
-        #expect(everywhere.everywhereRow == nil)
+
+        #expect(core.everywhereRow?.titles == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…"])
     }
 
     @Test func backToTheScheduleIsOfferedOnlyWhereTheSwitchWouldKeepARuleOfEverywheres() throws {
@@ -234,7 +223,8 @@ struct MenuTests {
         let row = try #require(core.everywhereRow)
         #expect(row.titles == ["Back to the Schedule"])
         core.send(command: try row.choice(titled: "Back to the Schedule").command)
-        #expect(core.snapshot().front().everywhere.rules.isEmpty)
+        let everywhere = core.snapshot().front().everywhere
+        #expect(everywhere.temporary == nil && everywhere.indefinite == nil)
     }
 
     /// Each item that resets a place, in the situations the menu's tests stage, does what its
@@ -302,11 +292,10 @@ struct MenuTests {
                     // A site left with no rules of its own gives way to the domain that covers it.
                     let after = try #require(standing(place) ?? before.inherits.flatMap { standing($0.from) })
                     #expect(after.gives == state, "\(choice.title) at \(place)")
-                    #expect(after.rules.isEmpty, "\(choice.title) at \(place)")
+                    #expect(after.temporary == nil, "\(choice.title) at \(place)")
                     switch choice.title {
                     case "Put the Rule Back":
-                        let rule: Rule? = if case .rule(let rule) = before.base { rule } else { nil }
-                        #expect(rule?.says == state)
+                        #expect(before.indefinite?.says == state)
                     case "Like Everywhere Else", "Like the Rest of Safari", "Like the Rest of figma.com":
                         #expect(before.inherits?.says == state)
                     case "Back to the Schedule":
@@ -315,6 +304,7 @@ struct MenuTests {
                             continue
                         }
                         #expect(scheduled == state)
+                        #expect(after.indefinite == nil)
                     default:
                         Issue.record("\(choice.title) resets \(place)")
                     }

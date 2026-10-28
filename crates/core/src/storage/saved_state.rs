@@ -17,11 +17,12 @@ const VERSION: u32 = 2;
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub(crate) struct Persisted {
-    /// Every rule but the indefinite ones at apps and sites, which the config and `rules.toml`
-    /// keep (ADR-0018).
+    /// Every place's temporary rule, and everywhere's indefinite one: the apps' and sites'
+    /// indefinite rules are the config's and `rules.toml`'s (ADR-0018). Where it holds more of
+    /// a kind at a place, the first of each stays.
     pub(crate) rules: Vec<Rule>,
-    /// The place an outside change set a rule until the schedule turns at together with
-    /// everywhere's, so taking off either takes off both.
+    /// The place an outside change set a temporary rule at together with everywhere's, so
+    /// taking off either takes off both.
     pub(crate) linked: Option<Place>,
     /// Website checking as last chosen in the app or the CLI (ADR-0012).
     pub(crate) websites: bool,

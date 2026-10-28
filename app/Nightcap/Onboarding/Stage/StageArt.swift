@@ -360,10 +360,8 @@ enum StageArt {
                             operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
                     }
                     line(row.title, item, .labelColor, title, middle)
-                    if !row.items.isEmpty {
-                        Paint.glyph(
-                            "chevron.right", 9, .labelColor, centredAt: NSPoint(x: box.maxX - 20, y: box.minY + middle))
-                    }
+                    Paint.glyph(
+                        "chevron.right", 9, .labelColor, centredAt: NSPoint(x: box.maxX - 20, y: box.minY + middle))
                 case .separator:
                     NSColor.nightcapSeparator.setFill()
                     NSRect(x: box.minX + 10, y: box.minY + middle, width: box.width - 20, height: 0.5).fill()

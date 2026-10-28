@@ -30,46 +30,46 @@ _Avoid_: temperature, warmth
 ### Changes
 
 **Rule**:
-A change to Night Shift: a place, what it says there, a length and who set it. At one place, the shortest rule decides.
+A change to Night Shift: a place, what it says there, a length and who set it. A place holds an indefinite rule and a temporary one at most, and the temporary one decides over the other.
 _Avoid_: layer
 
 **Place**:
 Where a rule applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule that covers the tab, else the tab's own domain.
 
 **Place in front**:
-A place that applies now: the site in front, the front app and everywhere, most specific first. Each gives its own say, else the one it inherits from the first place after it that says something, else Night Shift as last reported. What's in front answers how each stands: what it gives, its rules and what they sit on, and what it inherits and from where.
+A place that applies now: the site in front, the front app and everywhere, most specific first. Each gives its own say, else the one it inherits from the first place after it that says something, else Night Shift as last reported. What's in front answers how each stands: what it gives, its temporary rule and its indefinite one, for everywhere the stand-in or the schedule under them, and what it inherits and from where.
 
 **Deciding place**:
 The most specific place in front that says something: the site, then the app, then everywhere, which always does once the schedule is known. What it says is what Night Shift does.
 
 **Length**:
-How long a rule lasts: indefinitely, until the schedule next turns it back, or until a time, picked or a length from now. A place has one rule of each length at most.
+How long a rule lasts: indefinitely, until the schedule next turns it back, or until a time, picked or a length from now.
 _Avoid_: duration
 
 **Temporary rule**:
-A rule until the schedule next turns it back or until a time, which gives back what was under it when it ends.
+A rule until the schedule next turns it back or until a time, one at most at a place, which a new one replaces whatever its length. When it ends, the place's indefinite rule decides again, and for everywhere without one, the stand-in or the schedule.
 _Avoid_: timer, hold, timed disable, manual state
 
 **Set by**:
 Who set a rule: the config, the user, the user during a trial, or an outside change Nightcap adopted.
 
 **Snooze**:
-A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends. The rules query lists each rule with its snooze: its place's shortest rule, where that is one.
+A temporary rule over an indefinite one at its place that says the other way. The indefinite one waits underneath and comes back when it ends. The rules query lists each indefinite rule with its snooze.
 _Avoid_: pause, override
 
 **Switch**:
-Everywhere's on and off: the Night Shift item, the shortcut's tap, `nightcap on`, `off` and `toggle`. It takes off everywhere's rules that say otherwise, shortest first, and if the schedule still says otherwise, sets an indefinite one.
+Everywhere's on and off: the Night Shift item, the shortcut's tap, `nightcap on`, `off` and `toggle`. It takes off everywhere's temporary rule, then its indefinite one, while they say otherwise, and if the stand-in or the schedule still says otherwise, sets an indefinite one.
 _Avoid_: toggle, as a noun
 
 **Reset**:
-Taking off a place's temporary rules, which puts back its indefinite rule, and for everywhere its indefinite one too, which puts back the schedule.
+Taking off a place's temporary rule, which puts back its indefinite rule, and for everywhere its indefinite one too, which puts back the stand-in or the schedule.
 
 **Outside change**:
 Night Shift switched outside Nightcap, in Control Center or System Settings.
 _Avoid_: external change
 
 **Adoption**:
-Taking an outside change as flipping what the user sees: it takes off what the deciding place says, and sets the other state over an indefinite rule or the schedule until the schedule next turns it back.
+Taking an outside change as flipping what the user sees: it takes off what the deciding place says, and sets the other state as its temporary rule, over an indefinite rule or the schedule, until the schedule next turns it back.
 
 **Trial**:
 A stretch the app begins and ends, during which every change lives in memory only: Nightcap keeps what it found, which `state.json` and `rules.toml` go on holding, and its end puts that back, short of what would have ended meanwhile. The CLI begins none (ADR-0016).
@@ -136,7 +136,7 @@ Reading the config again, which is the only way a change to it takes effect.
 Night Shift held other than macOS would have it, by a rule. Nightcap releases every force on a clean exit (ADR-0008).
 
 **Decision**:
-What Night Shift should be for the current context, the place that decides it, and what it rests on: that place's rules, shortest first, then for everywhere the stand-in or the schedule.
+What Night Shift should be for the current context, the place that decides it, and what it rests on: that place's temporary rule, its indefinite one, then for everywhere the stand-in or the schedule.
 
 **Reason**:
 One thing behind a decision: a rule, the stand-in or the schedule.
@@ -161,4 +161,4 @@ Why Nightcap refused a command, which then changes nothing: what the client need
 Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.
 
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, every rule with its snooze, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, every rule, each indefinite one with its snooze, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.

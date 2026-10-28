@@ -71,7 +71,7 @@ struct Settings: Equatable {
         let button: CommandButton?
     }
 
-    /// An app or site that temporary rules alone keep on or off for now, and ending them.
+    /// An app or site that a temporary rule alone keeps on or off for now, and ending it.
     struct ForNowRow: Equatable {
         let identity: RuleIdentity
         /// "Night Shift off until 20:00".
@@ -90,7 +90,7 @@ struct Settings: Equatable {
     /// The apps' and sites' indefinite rules: the config's, then the user's. A trial's never
     /// show (ADR-0016).
     let rules: [RuleRow]
-    /// The apps and sites Night Shift is on or off in for now, by temporary rules alone: a
+    /// The apps and sites Night Shift is on or off in for now, by a temporary rule alone: a
     /// snoozed rule shows on its own row, and everywhere's on the menu's Night Shift item.
     let forNow: [ForNowRow]
     /// The version of the Nightcap that answers.
@@ -120,12 +120,12 @@ struct Settings: Equatable {
         }
         configPath = snapshot.config().path
         self.rules = Self.rows(of: rules, words: words)
-        forNow = Self.forNow(rules.map(\.rule)).compactMap { place, rules in
-            place.identity().map { identity in
+        forNow = Self.forNow(rules.map(\.rule)).compactMap { rule in
+            rule.place.identity().map { identity in
                 ForNowRow(
                     identity: identity,
-                    label: words.forNow(rules.map { Wording.Change(state: $0.says, until: $0.length.end()) }),
-                    button: CommandButton(title: words.end, command: .reset(place)))
+                    label: words.forNow(Wording.TemporaryRule(state: rule.says, until: rule.length.end())),
+                    button: CommandButton(title: words.end, command: .reset(rule.place)))
             }
         }
         version = snapshot.about().version
@@ -219,19 +219,13 @@ struct Settings: Equatable {
             button: shown.button)
     }
 
-    /// The apps and sites with temporary rules and no indefinite one, each with its rules,
-    /// shortest first as the rules query lists them, in the order the places got their first.
-    private static func forNow(_ rules: [Rule]) -> [(place: Place, rules: [Rule])] {
-        var places: [(place: Place, rules: [Rule])] = []
-        for rule in rules where rule.place != .everywhere && rule.length != .indefinite {
-            guard !rules.contains(where: { $0.place == rule.place && isAppOrSiteRule($0) }) else { continue }
-            if let index = places.firstIndex(where: { $0.place == rule.place }) {
-                places[index].rules.append(rule)
-            } else {
-                places.append((rule.place, [rule]))
-            }
+    /// The temporary rules at apps and sites with no indefinite one, as the rules query lists
+    /// them.
+    private static func forNow(_ rules: [Rule]) -> [Rule] {
+        rules.filter { rule in
+            rule.place != .everywhere && rule.length != .indefinite
+                && !rules.contains { $0.place == rule.place && isAppOrSiteRule($0) }
         }
-        return places
     }
 
     /// Whether a rule is an app's or a site's indefinite one, as the Rules tab lists them.

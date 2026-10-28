@@ -56,11 +56,11 @@ struct PlaceRowWordingTests {
         #expect(siteRow.subtitle == "Everywhere but at figma.com")
     }
 
-    /// The switch keeps everywhere's rule until the schedule turns, which says its way, and going
-    /// back to the schedule takes that off too.
-    @Test func everywheresRowGoesBackToTheScheduleFromChangesOfItsOwn() throws {
+    /// The switch keeps everywhere's indefinite rule, which says its way, and going back to the
+    /// schedule takes that off too.
+    @Test func everywheresRowGoesBackToTheScheduleFromRulesOfItsOwn() throws {
         let core = try onByTheSchedule(
-            .command(.set(place: .everywhere, state: .on, length: .untilScheduleTurns)),
+            .command(.set(place: .everywhere, state: .on, length: .indefinite)),
             .command(.set(place: .everywhere, state: .off, length: minutes(30))))
 
         let row = try #require(core.everywhereRow)
@@ -115,31 +115,18 @@ struct PlaceRowWordingTests {
         #expect(row.title == "Turn Off in Figma")
         #expect(row.subtitle == "On until 07:00, then your config’s rule")
         #expect(row.choice(sending: .reset(figmaApp))?.title == "Put the Rule Back")
+        // A new temporary rule would take the place of the snooze, as putting the rule back does.
+        #expect(row.choice(sending: .set(place: figmaApp, state: .off, length: minutes(30))) == nil)
     }
 
-    @Test func aChangeOverAnotherIsToldTopDownThenTheRule() throws {
-        let off = try forced(
-            .command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)),
-            .command(.set(place: figmaApp, state: .off, length: minutes(30))))
-        let on = try staged(
-            "2026-10-16T12:00:00+02:00", config: "[rules.on]\napp = [\"com.apple.iBooksX\"]\n", reported(false),
-            front("com.apple.iBooksX"), reported(true),
-            .command(.set(place: .app("com.apple.iBooksX"), state: .off, length: .untilScheduleTurns)),
-            .command(.set(place: .app("com.apple.iBooksX"), state: .on, length: minutes(30))))
-        // Without the sun times, an outside change holds the site in front with no end.
-        let untilTurnedBack = try staged(
+    /// Without the sun times, an outside change holds the site in front with no end.
+    @Test func aTemporaryRuleWithNoEndIsToldUntilTurnedBack() throws {
+        let core = try staged(
             "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.on]\ndomain = [\"figma.com\"]\n",
             accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
-            host("figma.com"), reported(true, .sunsetToSunrise), reported(false, .sunsetToSunrise),
-            .command(.set(place: .domain("figma.com"), state: .on, length: minutes(30))))
+            host("figma.com"), reported(true, .sunsetToSunrise), reported(false, .sunsetToSunrise))
 
-        #expect(
-            try #require(off.appRow).subtitle == "Off until 23:30, then on until 07:00, then your config’s rule")
-        #expect(
-            try #require(on.appRow).subtitle == "On until 12:30, then off until 22:00, then your config’s rule")
-        #expect(
-            try #require(untilTurnedBack.siteRow).subtitle
-                == "On until 12:30, then off until you turn it on, then your config’s rule")
+        #expect(try #require(core.siteRow).subtitle == "Off until you turn it on, then your config’s rule")
     }
 
     @Test func aChangeAtAnAppWithNoRuleGoesBackLikeEverywhereElse() throws {
@@ -197,31 +184,6 @@ struct PlaceRowWordingTests {
         #expect(row.title == "Turn Off at This Site")
         #expect(row.subtitle == "On until 23:30")
         #expect(row.choice(sending: .reset(example))?.title == "Like the Rest of Safari")
-    }
-
-    /// Without the sun times, an outside change holds the app or site in front, and everywhere, with
-    /// no end, and a change over that hold leaves its row nothing to offer.
-    @Test func aRowWithNothingToOfferIsGreyedWithWhatItsPlaceSays() throws {
-        let app = try staged(
-            "2026-10-16T23:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-            reported(true, .sunsetToSunrise), front("com.figma.Desktop"), reported(false, .sunsetToSunrise),
-            reported(true, .sunsetToSunrise), .command(.set(place: figmaApp, state: .off, length: minutes(30))))
-        let site = try staged(
-            "2026-10-16T23:00:00+02:00", config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n",
-            accessibilityGranted, reported(true, .sunsetToSunrise), front("com.apple.Safari", browser: true),
-            host("figma.com"), reported(false, .sunsetToSunrise), reported(true, .sunsetToSunrise),
-            .command(.set(place: .domain("figma.com"), state: .off, length: minutes(30))))
-        let says = "Off until 23:30, then on until you turn it off, then your config’s rule"
-
-        let appRow = try #require(app.appRow)
-        let siteRow = try #require(site.siteRow)
-
-        #expect(appRow.items.isEmpty)
-        #expect(appRow.title == "In Figma")
-        #expect(appRow.subtitle == says)
-        #expect(siteRow.items.isEmpty)
-        #expect(siteRow.title == "At This Site")
-        #expect(siteRow.subtitle == says)
     }
 
 }

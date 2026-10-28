@@ -232,17 +232,13 @@ fn a_reset_leaves_the_places_rule_else_what_it_inherits() {
         if let Some(bundle_id) = comes_to_front {
             activate(&staged, bundle_id);
         }
-        send(
-            &staged,
-            set(place.clone(), leaves, Lasting::UntilScheduleTurns),
-        );
         send(&staged, set(place.clone(), leaves.other(), minutes(30)));
         assert_eq!(standing(&staged, place).gives, leaves.other(), "{place}");
 
         send(&staged, Command::Reset(place.clone()));
 
         let reset = standing(&staged, place);
-        assert_eq!((reset.gives, reset.rules), (leaves, Vec::new()), "{place}");
+        assert_eq!((reset.gives, reset.temporary), (leaves, None), "{place}");
     }
     assert_eq!(
         staged.core().snapshot().front().everywhere.base,

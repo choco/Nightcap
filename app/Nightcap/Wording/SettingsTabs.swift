@@ -108,26 +108,13 @@ extension Wording {
     /// Ends what's on or off for now at a place.
     var end: String { text("End") }
 
-    /// What a place's temporary rules say, top down: "Night Shift on until 23:30, then off until
-    /// 22:00".
-    func forNow(_ changes: [Change]) -> String {
-        guard let first = changes.first else { return "" }
-        let start =
-            switch (first.state, first.until) {
-            case (.on, let until?): text("Night Shift on until \(time(until))")
-            case (.off, let until?): text("Night Shift off until \(time(until))")
-            case (.on, nil): text("Night Shift on until you turn it off")
-            case (.off, nil): text("Night Shift off until you turn it on")
-            }
-        return changes.dropFirst().reduce(start) { line, change in
-            let next =
-                switch (change.state, change.until) {
-                case (.on, let until?): text("on until \(time(until))")
-                case (.off, let until?): text("off until \(time(until))")
-                case (.on, nil): text("on until you turn it off")
-                case (.off, nil): text("off until you turn it on")
-                }
-            return text("\(line), then \(next)")
+    /// What a place's temporary rule says: "Night Shift on until 23:30".
+    func forNow(_ temporary: TemporaryRule) -> String {
+        switch (temporary.state, temporary.until) {
+        case (.on, let until?): text("Night Shift on until \(time(until))")
+        case (.off, let until?): text("Night Shift off until \(time(until))")
+        case (.on, nil): text("Night Shift on until you turn it off")
+        case (.off, nil): text("Night Shift off until you turn it on")
         }
     }
 

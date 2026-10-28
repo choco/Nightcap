@@ -207,7 +207,7 @@ fn a_rule_until_a_time_gives_back_what_was_under_it() {
 }
 
 #[test]
-fn a_new_rule_until_a_time_replaces_the_places_and_keeps_its_longer_one() {
+fn a_new_temporary_rule_replaces_the_places_and_keeps_its_indefinite_one() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
@@ -228,7 +228,7 @@ fn a_new_rule_until_a_time_replaces_the_places_and_keeps_its_longer_one() {
 }
 
 #[test]
-fn a_new_rule_takes_off_its_places_rules_of_its_length_and_shorter() {
+fn a_new_temporary_rule_replaces_the_places_whatever_its_length() {
     let staged = forced();
     let soon = "2026-10-16T23:30:00+02:00";
     let turn = |says| match says {
@@ -246,18 +246,14 @@ fn a_new_rule_takes_off_its_places_rules_of_its_length_and_shorter() {
             &staged,
             set(place.clone(), OnOff::On, Lasting::UntilScheduleTurns),
         );
-        send(&staged, set(place.clone(), OnOff::Off, minutes(30)));
 
         send(
             &staged,
-            set(place.clone(), OnOff::On, Lasting::Until(at(soon))),
+            set(place.clone(), OnOff::Off, Lasting::Until(at(soon))),
         );
         assert_eq!(
             rules_at(&staged),
-            vec![
-                yours(place.clone(), OnOff::On, until(soon)),
-                yours(place.clone(), OnOff::On, turn(OnOff::On)),
-            ],
+            vec![yours(place.clone(), OnOff::Off, until(soon))],
             "{place}"
         );
 
@@ -320,7 +316,7 @@ fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
 }
 
 #[test]
-fn until_the_schedule_turns_sits_over_everywheres_indefinite_rule_and_ends_its_shorter_one() {
+fn until_the_schedule_turns_sits_over_everywheres_indefinite_rule_in_place_of_its_temporary_one() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));

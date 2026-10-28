@@ -332,9 +332,6 @@
     "Apps" : {
 
     },
-    "At This Site" : {
-
-    },
     "At sunrise" : {
 
     },
@@ -726,9 +723,6 @@
 
     },
     "If you turn Night Shift on in Control Center while a rule holds it off, Nightcap snoozes the rule until the schedule’s next change, and says so in a notification." : {
-
-    },
-    "In %@" : {
 
     },
     "In %@, a length of time" : {
@@ -1804,18 +1798,6 @@
 
     },
     "notifications" : {
-
-    },
-    "off until %@" : {
-
-    },
-    "off until you turn it on" : {
-
-    },
-    "on until %@" : {
-
-    },
-    "on until you turn it off" : {
 
     },
     "opening at login" : {

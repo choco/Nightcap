@@ -192,8 +192,8 @@ impl From<&protocol::Decision> for Decision {
     }
 }
 
-/// What a decision rests on first: its place's shortest rule, the tour holding Night Shift on,
-/// or the schedule.
+/// What a decision rests on first: its place's temporary rule, else its indefinite one, the tour
+/// holding Night Shift on, or the schedule.
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum Reason {

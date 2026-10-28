@@ -52,7 +52,6 @@ struct Menu: Equatable {
         let site: String?
         /// What the place says, or for everywhere's row the place in front that keeps its own say.
         let subtitle: String?
-        /// The submenu; empty while there's nothing to offer, which greys the row.
         let items: [Item]
     }
 
@@ -139,25 +138,25 @@ private struct Rows {
 
     /// A place's row (ADR-0018), which turns the place the other way from what it gives: undoing
     /// first, a reset back to what's under its rules where that goes the row's way, and removing a
-    /// rule of the user's; then its lengths, short of those that would come to the same as
-    /// undoing; then at an app or site Always, its rule. Everywhere's offers nothing the switch
-    /// would do anyway, and with nothing to offer is left out, where an app's or site's is greyed.
+    /// rule of the user's; else its lengths; then at an app or site Always, its rule. Everywhere's
+    /// offers nothing the switch would do anyway, and with nothing to offer is left out; an app's
+    /// or site's always offers undoing or its lengths.
     func row(_ at: PlaceInFront) -> Menu.PlaceRow? {
         let place = at.place
         let state = at.gives.other()
         let named = named(place)
-        let rule = at.rule
+        let rule = at.indefinite
         // What a reset leaves: an app's or site's rule, else what it inherits; for everywhere, the
-        // stand-in or the schedule.
-        let under = named == nil ? at.baseSays : rule?.says ?? at.inherits?.says
+        // stand-in or the schedule. Where it goes the row's way, the place has a temporary rule.
+        let left = named == nil ? at.base?.says() : rule?.says ?? at.inherits?.says
         let undo: String? =
             switch (named, rule, at.inherits?.from) {
-            case _ where at.rules.isEmpty || under != state: nil
-            // The switch keeps everywhere's rules that say its way, so only where one does would
-            // going back to the schedule differ from it. While a trial stands in, the schedule
-            // isn't there to go back to.
+            case _ where left != state: nil
+            // The switch keeps everywhere's indefinite rule where it says its way, so only there
+            // would going back to the schedule differ from it. While a trial stands in, the
+            // schedule isn't there to go back to.
             case (nil, _, _):
-                if case .schedule(_, .some) = at.base, at.hasRule(saying: state) {
+                if case .schedule(_, .some) = at.base, rule?.says == state {
                     words.backToTheSchedule
                 } else {
                     nil
@@ -174,13 +173,15 @@ private struct Rows {
         if let rule, rule.setBy != .config, let identity = place.identity() {
             undoing.append(.choice(Menu.Choice(title: words.removeYourRule, command: .removeRule(identity))))
         }
-        // A new rule takes off its place's rules of its length and shorter, so over a rule until a
-        // time with the row's way under it, a length would come to the same as taking that off.
-        let window = named.map { words.timePickerTitle(state, at: $0) } ?? words.timePickerTitle(state)
-        var lengths =
-            at.changedForATime && (under == state || at.hasRule(saying: state))
-            ? [] : picks(at: place, state, window: window)
-        if under != state, let until = untilTurn(at: place, state) { lengths.append(until) }
+        // A new temporary rule takes the place of the one there, so over one with the row's way
+        // under it, a length would come to the same as undoing, or as the switch everywhere.
+        // Everywhere's schedule already turns it back where it goes the row's way.
+        var lengths: [Menu.Item] = []
+        if (rule?.says ?? left) != state {
+            let window = named.map { words.timePickerTitle(state, at: $0) } ?? words.timePickerTitle(state)
+            lengths = picks(at: place, state, window: window)
+            if left != state, let until = untilTurn(at: place, state) { lengths.append(until) }
+        }
         let always: Menu.Choice? =
             switch (place.identity(), rule) {
             case (nil, _): nil
@@ -194,31 +195,24 @@ private struct Rows {
             }
         let groups: [[Menu.Item]] = [undoing, lengths, always.map { [.choice($0)] } ?? []]
         let items = Array(groups.filter { !$0.isEmpty }.joined(separator: [.separator]))
-        let offers = items.contains { item in
-            switch item {
-            case .choice(let choice): choice.enabled
-            case .pickTime: true
-            case .separator: false
-            }
-        }
         guard let named else {
             // The app or site in front keeps the other way, which the row can't change there.
             let keeps = front.decision.state != state ? self.named(front.decision.place) : nil
-            return offers
-                ? Menu.PlaceRow(
+            return items.isEmpty
+                ? nil
+                : Menu.PlaceRow(
                     place: place, title: words.turn(state), site: nil, subtitle: keeps.map(words.everywhereBut),
                     items: items)
-                : nil
         }
         let site: String? = if case .domain(let domain) = place { domain } else { nil }
         return Menu.PlaceRow(
             place: place,
-            title: offers ? words.turn(state, at: named) : words.nothingToOffer(at: named),
+            title: words.turn(state, at: named),
             site: site,
             subtitle: words.placeSays(
-                at.rules.map { Wording.Change(state: $0.says, until: $0.length.end()) },
+                at.temporary.map { Wording.TemporaryRule(state: $0.says, until: $0.length.end()) },
                 then: rule.map { (says: $0.says, whose: Self.whose($0.setBy)) }),
-            items: offers ? items : [])
+            items: items)
     }
 
     /// The line under the Night Shift item: what decides the screen.

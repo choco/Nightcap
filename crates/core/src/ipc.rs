@@ -427,7 +427,8 @@ mod tests {
                 everywhere: PlaceInFront {
                     place: Place::Everywhere,
                     gives: OnOff::Off,
-                    rules: Vec::new(),
+                    temporary: None,
+                    indefinite: None,
                     base: None,
                     inherits: None,
                 },

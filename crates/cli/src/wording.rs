@@ -640,8 +640,9 @@ fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
         .join(", ")
 }
 
-/// Each place's rules but an app's or site's indefinite one, shortest first, a line per place,
-/// with times in `zone`: "app:com.figma.Desktop: on until 07:00".
+/// Each place's temporary rule, and everywhere's indefinite one after it, a line per place, with
+/// times in `zone`: "app:com.figma.Desktop: on until 07:00", "Everywhere: on until 07:00, then off
+/// until you turn it on".
 fn places_rules(rules: &[ListedRule], zone: &TimeZone) -> Vec<String> {
     let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
     for rule in rules

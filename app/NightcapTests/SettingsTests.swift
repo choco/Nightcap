@@ -265,7 +265,7 @@ struct SettingsTests {
         #expect(settings(core).rules.first?.label == "Snoozed until you turn it off")
     }
 
-    @Test func aRuleIsSnoozedOnlyWhileItsPlacesShortestRuleSaysTheOtherWay() throws {
+    @Test func aRuleIsSnoozedOnlyWhileItsPlacesTemporaryRuleSaysTheOtherWay() throws {
         let core = try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)))
         #expect(settings(core).rules.first?.label == "Snoozed until 07:00")
 
@@ -279,10 +279,9 @@ struct SettingsTests {
             ])
     }
 
-    @Test func theRulesTabListsWhatTemporaryRulesSetWhereNoIndefiniteOneDoes() throws {
+    @Test func theRulesTabListsWhatATemporaryRuleSetsWhereNoIndefiniteOneDoes() throws {
         let core = try onByTheSchedule(
             config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-            .command(.set(place: mailApp, state: .off, length: .untilScheduleTurns)),
             .command(.set(place: mailApp, state: .on, length: minutes(30))),
             // A snooze shows on its rule, and everywhere's own on the Night Shift item.
             .command(.set(place: figmaApp, state: .on, length: minutes(30))),
@@ -291,7 +290,7 @@ struct SettingsTests {
         #expect(
             settings(core).forNow == [
                 Settings.ForNowRow(
-                    identity: .app("com.apple.mail"), label: "Night Shift on until 23:30, then off until 22:00",
+                    identity: .app("com.apple.mail"), label: "Night Shift on until 23:30",
                     button: Settings.CommandButton(title: "End", command: .reset(mailApp)))
             ])
     }

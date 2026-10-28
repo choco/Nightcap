@@ -12,23 +12,14 @@ extension Wording {
         }
     }
 
-    /// An app's or site's row while it has something to offer: "Turn Off in Figma". A site's says
-    /// "This Site" and names the site on a line of its own under it, so that a long domain doesn't
-    /// widen the menu.
+    /// An app's or site's row: "Turn Off in Figma". A site's says "This Site" and names the site
+    /// on a line of its own under it, so that a long domain doesn't widen the menu.
     func turn(_ state: OnOff, at place: Place) -> String {
         switch (state, place) {
         case (.on, .app(let name)): text("Turn On in \(name)")
         case (.off, .app(let name)): text("Turn Off in \(name)")
         case (.on, .site): text("Turn On at This Site")
         case (.off, .site): text("Turn Off at This Site")
-        }
-    }
-
-    /// An app's or site's row with nothing to offer, which is greyed: "In Figma".
-    func nothingToOffer(at place: Place) -> String {
-        switch place {
-        case .app(let name): text("In \(name)")
-        case .site: text("At This Site")
         }
     }
 
@@ -61,17 +52,17 @@ extension Wording {
         }
     }
 
-    /// Takes everywhere's changes off, back to what the schedule says.
+    /// Takes everywhere's temporary rule and indefinite one off, back to what the schedule says.
     var backToTheSchedule: String { text("Back to the Schedule") }
 
-    /// Ends the change over a place's rule, which snoozes it.
+    /// Ends the temporary rule over a place's rule, which snoozes it.
     var putTheRuleBack: String { text("Put the Rule Back") }
 
-    /// Ends the change at a place with no rule, back to everywhere's say.
+    /// Ends the temporary rule at a place with no rule, back to everywhere's say.
     var likeEverywhereElse: String { text("Like Everywhere Else") }
 
-    /// Ends the change at a site with no rule, back to the say of its browser or of a domain that
-    /// covers it: "Like the Rest of Safari", "Like the Rest of figma.com".
+    /// Ends the temporary rule at a site with no rule, back to the say of its browser or of a
+    /// domain that covers it: "Like the Rest of Safari", "Like the Rest of figma.com".
     func likeTheRest(of place: Place) -> String {
         switch place {
         case .app(let browser): text("Like the Rest of \(browser)")
@@ -96,7 +87,7 @@ extension Wording {
     /// Under Always, greyed, where the place's rule is the config's.
     var yourConfigDecides: String { text("Your config decides") }
 
-    /// Asks for the time a change ends.
+    /// Asks for the time a temporary rule ends.
     var custom: String { text("Custom…") }
 
     /// A preset length, in whole minutes: "For 30 Minutes", "For 1 Hour", "For 1 Hour 30 Minutes".
@@ -109,7 +100,7 @@ extension Wording {
         }
     }
 
-    /// A change until the schedule next turns Night Shift back, at `turn`: "Until 07:00".
+    /// A temporary rule until the schedule next turns Night Shift back, at `turn`: "Until 07:00".
     func until(_ turn: Date) -> String {
         text("Until \(time(turn))")
     }
@@ -126,10 +117,10 @@ extension Wording {
         }
     }
 
-    /// The line under an app's or site's row: what its place says, top down, from its changes to
-    /// its rule, such as "On until 07:00, then your config’s rule". None where it says nothing.
-    func placeSays(_ changes: [Change], then rule: (says: OnOff, whose: Whose)?) -> String? {
-        guard let first = changes.first else {
+    /// The line under an app's or site's row: what its place says, its temporary rule then its
+    /// rule, such as "On until 07:00, then your config’s rule". None where it says nothing.
+    func placeSays(_ temporary: TemporaryRule?, then rule: (says: OnOff, whose: Whose)?) -> String? {
+        guard let temporary else {
             return rule.map { rule in
                 switch rule.says {
                 case .on: text("Always on: \(whose(rule.whose))")
@@ -137,18 +128,7 @@ extension Wording {
                 }
             }
         }
-        var after = changes.dropFirst().map(thenChange)
-        if let rule { after.append(whose(rule.whose)) }
-        return after.reduce(change(first.state, until: first.until)) { line, next in text("\(line), then \(next)") }
-    }
-
-    /// A change after another in a line: "off until 07:00".
-    private func thenChange(_ change: Change) -> String {
-        switch (change.state, change.until) {
-        case (.on, let until?): text("on until \(time(until))")
-        case (.off, let until?): text("off until \(time(until))")
-        case (.on, nil): text("on until you turn it off")
-        case (.off, nil): text("off until you turn it on")
-        }
+        let line = change(temporary.state, until: temporary.until)
+        return rule.map { rule in text("\(line), then \(whose(rule.whose))") } ?? line
     }
 }

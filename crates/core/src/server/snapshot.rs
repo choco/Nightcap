@@ -34,8 +34,9 @@ impl Snapshot {
         self.answers.front.clone()
     }
 
-    /// Every rule at every place, each with its snooze: the apps' and sites' indefinite rules
-    /// first, then each place's others together, shortest first (ADR-0018).
+    /// Every rule at every place, each indefinite one with its snooze: the apps' and sites'
+    /// indefinite rules first, then every place's temporary rule, then everywhere's indefinite
+    /// one (ADR-0018).
     pub fn rules(&self) -> Vec<ListedRule> {
         self.answers.rules.clone()
     }

@@ -172,8 +172,9 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                 PlaceInFront {
                     place: Place::Domain("figma.com".parse().unwrap()),
                     gives: OnOff::Off,
-                    rules: Vec::new(),
-                    base: Some(Reason::Rule(domain_rule("figma.com"))),
+                    temporary: None,
+                    indefinite: Some(domain_rule("figma.com")),
+                    base: None,
                     inherits: Some(Inherited {
                         from: Place::Everywhere,
                         says: OnOff::On,
@@ -182,7 +183,8 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                 PlaceInFront {
                     place: Place::App("com.apple.Safari".parse().unwrap()),
                     gives: OnOff::On,
-                    rules: Vec::new(),
+                    temporary: None,
+                    indefinite: None,
                     base: None,
                     inherits: Some(Inherited {
                         from: Place::Everywhere,
@@ -193,7 +195,8 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
             everywhere: PlaceInFront {
                 place: Place::Everywhere,
                 gives: OnOff::On,
-                rules: Vec::new(),
+                temporary: None,
+                indefinite: None,
                 base: Some(Reason::Schedule {
                     state: OnOff::On,
                     until: Some(at("2026-10-17T07:00:00+02:00")),
@@ -285,18 +288,15 @@ fn front_answers_an_external_on_over_the_rule_it_snoozed() {
 
     assert_eq!(figma.place, figma_app());
     assert_eq!(
-        figma.rules,
-        vec![adopted(
+        figma.temporary,
+        Some(adopted(
             figma_app(),
             OnOff::On,
             Some("2026-10-17T07:00:00+02:00")
-        )]
+        ))
     );
     assert_eq!(figma.gives, OnOff::On);
-    assert_eq!(
-        figma.base,
-        Some(Reason::Rule(app_rule("com.figma.Desktop")))
-    );
+    assert_eq!(figma.indefinite, Some(app_rule("com.figma.Desktop")));
 }
 
 #[test]

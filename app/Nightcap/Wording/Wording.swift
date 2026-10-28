@@ -26,9 +26,9 @@ struct Wording {
         case config, yours, tour, outsideChange
     }
 
-    /// A change at a place for a while: on or off, until a time, or with no end until the user
-    /// turns it back.
-    struct Change: Equatable {
+    /// A temporary rule as the words tell it: on or off, until a time, or with no end until the
+    /// user turns it back.
+    struct TemporaryRule: Equatable {
         let state: OnOff
         let until: Date?
     }

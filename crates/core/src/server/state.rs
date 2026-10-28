@@ -74,9 +74,10 @@ impl Inner {
     /// Mid-trial, the state the trial's end would leave, with Night Shift as the trial holds it:
     /// a run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
+        let (rules, linked) = self.places.kept();
         Persisted {
-            rules: self.places.kept().temporary.clone(),
-            linked: self.places.kept().linked.clone(),
+            rules,
+            linked,
             websites: self.facts.websites,
             notifications_wanted: self.grants.notifications_wanted,
             open_at_login: self.grants.open_at_login,

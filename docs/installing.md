@@ -154,10 +154,10 @@ Times are RFC 3339, in UTC. A place is written as the CLI's arguments take one: 
 | `front.site` | The site in front while website checking reads the front tab: the domain of the most specific rule that covers it, else the tab's own domain short of `www.`; else null. |
 | `front.decision.state` | What Night Shift should be now, `on` or `off`, which the app makes it within a moment; null while nothing decides it yet. |
 | `front.decision.place` | Where it's decided: the site in front, the front app, or `everywhere`. |
-| `front.decision.reason` | What the decision rests on first. `"kind": "rule"`: that place's shortest rule, with its fields beside `kind`. `"kind": "schedule"`: the schedule, `until` its next turn. `"kind": "tour"`: the tour, holding Night Shift on. Null while nothing decides. |
+| `front.decision.reason` | What the decision rests on first. `"kind": "rule"`: that place's temporary rule, else its indefinite one, with its fields beside `kind`. `"kind": "schedule"`: the schedule, `until` its next turn. `"kind": "tour"`: the tour, holding Night Shift on. Null while nothing decides. |
 | `tour` | Null unless the app's tour runs. Then `stands_in` says whether it holds Night Shift on in place of the schedule. Rules and changes made during the tour last until it ends. |
 | `rules` | The apps' and sites' rules, as `nightcap rules list` lists them: each a rule, with its `snooze`, the change over it that says the other way until it ends, or null. |
-| `changes` | Every other rule: what the menu, `on`, `off` and `toggle` set at a place, and the changes in Control Center or System Settings that Nightcap adopted, shortest first at each place. `nightcap reset` takes them off. |
+| `changes` | Every other rule: each place's temporary rule, one at most, which the menu or `on` and `off` with a length set, or a change in Control Center or System Settings that Nightcap adopted; then everywhere's indefinite one, from `on`, `off` and `toggle`. `nightcap reset` takes them off. |
 | `website_checking.state` | Whether Nightcap reads the front browser's tab, `on` or `off`. |
 | `website_checking.from_config` | Whether the config's `websites` sets it. |
 | `config.path` | Where Nightcap reads the config, whether or not it's there. |

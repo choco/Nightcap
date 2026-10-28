@@ -35,7 +35,7 @@ uniffi::custom_type!(Timestamp, SystemTime, {
 });
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -145,15 +145,17 @@ pub enum Command {
     Off,
     /// The switch, the other way from what everywhere says now.
     Toggle,
-    /// Sets a rule of the user's at a place, saying on or off for a length (ADR-0018). An
-    /// indefinite one is everywhere's alone: an app's or site's is added with `AddRule`.
+    /// Sets a rule of the user's at a place, saying on or off for a length (ADR-0018): a
+    /// temporary one in place of the one there, whatever its length. An indefinite one is
+    /// everywhere's alone, which takes off its temporary one too: an app's or site's is added
+    /// with `AddRule`.
     Set {
         place: Place,
         state: OnOff,
         length: Lasting,
     },
-    /// Takes off a place's temporary rules, which puts back its indefinite rule, and for
-    /// everywhere its indefinite one too, which puts back the schedule.
+    /// Takes off a place's temporary rule, which puts back its indefinite rule, and for
+    /// everywhere its indefinite one too, which puts back the stand-in or the schedule.
     Reset(Place),
     /// Adds an ad-hoc rule, replacing the user's own rule for the same app or domain (ADR-0006).
     AddRule { identity: RuleIdentity, says: OnOff },
@@ -223,7 +225,8 @@ impl From<RuleIdentity> for Place {
     }
 }
 
-/// How long a rule that `Set` asks for lasts (ADR-0018).
+/// How long a rule that `Set` asks for lasts (ADR-0018): a temporary rule's length, or everywhere's
+/// indefinite one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Lasting {
@@ -245,8 +248,9 @@ pub enum Lasting {
 pub enum Query {
     NightShift,
     Front,
-    /// Every rule at every place, each with its snooze: the apps' and sites' indefinite rules
-    /// first, then each place's others together, shortest first.
+    /// Every rule at every place, each indefinite one with its snooze: the apps' and sites'
+    /// indefinite rules first, then every place's temporary rule, then everywhere's indefinite
+    /// one.
     Rules,
     Config,
     Preferences,
@@ -375,11 +379,12 @@ pub struct PlaceInFront {
     pub place: Place,
     /// Its own say, else the one it inherits, else Night Shift as last reported.
     pub gives: OnOff,
-    /// Its rules over its base, shortest first: its temporary rules, and for everywhere its
-    /// indefinite one too.
-    pub rules: Vec<Rule>,
-    /// What its rules sit on: an app's or site's indefinite rule, or for everywhere the stand-in,
-    /// else the schedule once it's known.
+    /// Its temporary rule, which decides over the rest until it ends.
+    pub temporary: Option<Rule>,
+    /// Its indefinite rule: an app's or site's, or everywhere's, the switch's.
+    pub indefinite: Option<Rule>,
+    /// What everywhere's rules sit on: the stand-in, else the schedule once it's known. None at
+    /// an app or a site.
     pub base: Option<Reason>,
     /// The first less specific place in front that says something, and what it says.
     pub inherits: Option<Inherited>,
@@ -441,7 +446,8 @@ pub struct About {
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
-/// decides it, and what that place rests on, its shortest rule first (ADR-0018).
+/// decides it, and what that place rests on: its temporary rule, its indefinite one, then for
+/// everywhere the stand-in or the schedule (ADR-0018).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Decision {
     /// None while everywhere decides and the schedule isn't known yet.
@@ -476,6 +482,7 @@ pub enum Reason {
     },
 }
 
+#[uniffi::export]
 impl Reason {
     /// What it says.
     pub fn says(&self) -> OnOff {
@@ -503,12 +510,13 @@ pub struct Rule {
 pub struct ListedRule {
     #[serde(flatten)]
     pub rule: Rule,
-    /// The rule that snoozes it: its place's shortest, where that's shorter and says the other
-    /// way. It waits underneath, and comes back when its snooze ends (ADR-0018).
+    /// The temporary rule that snoozes an indefinite one: its place's, where that says the other
+    /// way. The indefinite rule waits underneath, and comes back when its snooze ends (ADR-0018).
     pub snooze: Option<Rule>,
 }
 
-/// How long a rule lasts (ADR-0018). At one place, the shortest decides.
+/// How long a rule lasts (ADR-0018). A place has an indefinite rule and a temporary one at most,
+/// and the temporary one decides over it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Length {
@@ -1405,14 +1413,15 @@ mod tests {
             places: vec![PlaceInFront {
                 place: figma_site(),
                 gives: OnOff::Off,
-                rules: vec![Rule {
+                temporary: Some(Rule {
                     length: Length::Until {
                         until: at("2026-10-16T19:30:00Z"),
                     },
                     set_by: SetBy::You,
                     ..figma_rule()
-                }],
-                base: Some(Reason::Rule(figma_rule())),
+                }),
+                indefinite: Some(figma_rule()),
+                base: None,
                 inherits: Some(Inherited {
                     from: Place::Everywhere,
                     says: OnOff::On,
@@ -1421,7 +1430,8 @@ mod tests {
             everywhere: PlaceInFront {
                 place: Place::Everywhere,
                 gives: OnOff::On,
-                rules: Vec::new(),
+                temporary: None,
+                indefinite: None,
                 base: Some(Reason::Schedule {
                     state: OnOff::On,
                     until: Some(at("2026-10-17T05:00:00Z")),
