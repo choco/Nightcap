@@ -889,6 +889,13 @@ pub enum CheckState {
     Broken,
 }
 
+impl CheckState {
+    /// Whether the check needs the user: drift, or broken.
+    pub fn is_problem(self) -> bool {
+        matches!(self, Self::Drifted | Self::Broken)
+    }
+}
+
 /// Whether Nightcap reads the front browser's host, which domain rules need (ADR-0012).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebsiteChecking {
@@ -1345,6 +1352,14 @@ mod tests {
         let wire = r#"{"ok":{"answers":[{"trial":null},{"export":"{ }"},{"rules":[]}]}}"#;
         assert_eq!(json(&in_order), wire);
         assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), in_order);
+    }
+
+    #[test]
+    fn drift_and_broken_checks_are_problems() {
+        assert!(!CheckState::Ok.is_problem());
+        assert!(!CheckState::Off.is_problem());
+        assert!(CheckState::Drifted.is_problem());
+        assert!(CheckState::Broken.is_problem());
     }
 
     #[test]

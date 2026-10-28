@@ -78,7 +78,7 @@ impl Inner {
     fn problems(&self, now: Timestamp) -> Vec<Check> {
         self.checks(now)
             .into_iter()
-            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+            .filter(|check| check.state.is_problem())
             .collect()
     }
 }

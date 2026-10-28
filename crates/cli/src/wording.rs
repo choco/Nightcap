@@ -4,8 +4,8 @@
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
-    Decision, FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, Checks, ConfigFileDetail, Decision,
+    FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
     NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
     PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded, RuleIdentity, Schedule,
     SetBy, TimeOfDay,
@@ -470,12 +470,12 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
     lines
 }
 
-/// Each drifted or broken check's line.
+/// Each problem's line.
 fn needs_attention(checks: &Checks) -> Vec<String> {
     checks
         .checks
         .iter()
-        .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
+        .filter(|check| check.state.is_problem())
         .map(|check| self::check(&check.detail))
         .collect()
 }
@@ -556,7 +556,7 @@ fn time_of_day(time: TimeOfDay) -> String {
 #[cfg(test)]
 mod tests {
     use nightcap_protocol::{
-        About, Check, ConfigState, Front, NightShiftState, OnboardingAsks, Permissions,
+        About, Check, CheckState, ConfigState, Front, NightShiftState, OnboardingAsks, Permissions,
         PlaceInFront, Preferences, WebsiteChecking,
     };
 
