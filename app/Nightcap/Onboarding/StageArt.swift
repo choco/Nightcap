@@ -298,7 +298,8 @@ enum StageArt {
                 nextOff: sunrise),
             front: Front(
                 app: "com.apple.mail", watching: false, host: nil, site: nil,
-                decision: Decision(state: .on, place: .everywhere, reasons: [schedule]), places: [mail, everywhere],
+                decision: Decision(state: .on, place: .everywhere, reasons: [schedule]), places: [mail],
+                everywhere: everywhere,
                 afterSwitch: [Rule(place: .everywhere, says: .off, length: .indefinite, setBy: .you)]),
             lengths: [30 * 60, 60 * 60, 120 * 60], checks: [])
         return Menu(answers, now: evening, appName: { _ in "Mail" }, words: .system)

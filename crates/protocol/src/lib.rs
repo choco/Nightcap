@@ -226,7 +226,7 @@ pub enum Response {
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
     NightShift(NightShiftState),
-    Front(Front),
+    Front(Box<Front>),
     Rules(Vec<Rule>),
     Config(ConfigState),
     Preferences(Preferences),
@@ -285,9 +285,11 @@ pub struct Front {
     /// What's in effect: the deciding place, what it says, and by which rule, else the tour
     /// standing in or the schedule.
     pub decision: Decision,
-    /// The places in front, most specific first, each as it stands: the site in front and the
-    /// front app where there are, then everywhere, which always is.
+    /// The site in front and the front app, where there are, most specific first, each as it
+    /// stands.
     pub places: Vec<PlaceInFront>,
+    /// Everywhere, the last place in front, as it stands under them.
+    pub everywhere: PlaceInFront,
     /// Everywhere's rules after the switch the other way from what it gives: the ones that say
     /// that way, else the indefinite rule it sets where the tour or the schedule still says
     /// otherwise (ADR-0018).
@@ -983,7 +985,7 @@ mod tests {
                 r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"}}"#,
             ),
             (
-                Payload::Front(Front {
+                Payload::Front(Box::new(Front {
                     app: Some("com.apple.Safari".parse().unwrap()),
                     watching: true,
                     host: Some("www.figma.com".to_owned()),
@@ -1018,27 +1020,27 @@ mod tests {
                             after_until: Some(OnOff::On),
                             after_reset: Some(OnOff::On),
                         },
-                        PlaceInFront {
-                            place: Place::Everywhere,
-                            gives: OnOff::On,
-                            rules: Vec::new(),
-                            base: Some(Reason::Schedule {
-                                state: OnOff::On,
-                                until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
-                            }),
-                            inherits: None,
-                            after_until: Some(OnOff::On),
-                            after_reset: Some(OnOff::On),
-                        },
                     ],
+                    everywhere: PlaceInFront {
+                        place: Place::Everywhere,
+                        gives: OnOff::On,
+                        rules: Vec::new(),
+                        base: Some(Reason::Schedule {
+                            state: OnOff::On,
+                            until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
+                        }),
+                        inherits: None,
+                        after_until: Some(OnOff::On),
+                        after_reset: Some(OnOff::On),
+                    },
                     after_switch: vec![Rule {
                         place: Place::Everywhere,
                         says: OnOff::Off,
                         length: Length::Indefinite,
                         set_by: SetBy::You,
                     }],
-                }),
-                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"},"after_until":"off","after_reset":"off"},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"},"after_until":"on","after_reset":"on"},{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null,"after_until":"on","after_reset":"on"}],"after_switch":[{"place":"everywhere","says":"off","length":"indefinite","set_by":"you"}]}}"#,
+                })),
+                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"},"after_until":"off","after_reset":"off"},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"},"after_until":"on","after_reset":"on"}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null,"after_until":"on","after_reset":"on"},"after_switch":[{"place":"everywhere","says":"off","length":"indefinite","set_by":"you"}]}}"#,
             ),
             (
                 Payload::Config(ConfigState {

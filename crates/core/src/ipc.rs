@@ -396,7 +396,7 @@ mod tests {
 
         assert_eq!(
             front.join().unwrap(),
-            Response::Ok(Payload::Front(Front {
+            Response::Ok(Payload::Front(Box::new(Front {
                 app: None,
                 watching: false,
                 host: None,
@@ -406,7 +406,8 @@ mod tests {
                     place: Place::Everywhere,
                     reasons: Vec::new(),
                 },
-                places: vec![PlaceInFront {
+                places: Vec::new(),
+                everywhere: PlaceInFront {
                     place: Place::Everywhere,
                     gives: OnOff::Off,
                     rules: Vec::new(),
@@ -414,14 +415,14 @@ mod tests {
                     inherits: None,
                     after_until: None,
                     after_reset: None,
-                }],
+                },
                 after_switch: vec![Rule {
                     place: Place::Everywhere,
                     says: OnOff::On,
                     length: Length::Indefinite,
                     set_by: SetBy::You,
                 }],
-            }))
+            })))
         );
         let Response::Ok(Payload::NightShift(night_shift)) = night_shift.join().unwrap() else {
             panic!("expected Night Shift");

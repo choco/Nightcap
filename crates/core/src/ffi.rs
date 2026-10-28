@@ -286,6 +286,7 @@ pub struct Front {
     pub site: Option<Domain>,
     pub decision: Decision,
     pub places: Vec<PlaceInFront>,
+    pub everywhere: PlaceInFront,
     pub after_switch: Vec<Rule>,
 }
 

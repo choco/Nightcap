@@ -39,7 +39,7 @@ impl Snapshot {
         let answers = &self.answers;
         match query {
             Query::NightShift => Response::Ok(Payload::NightShift(answers.night_shift)),
-            Query::Front => Response::Ok(Payload::Front(answers.front.clone())),
+            Query::Front => Response::Ok(Payload::Front(Box::new(answers.front.clone()))),
             Query::Rules => Response::Ok(Payload::Rules(answers.rules.clone())),
             Query::Config => Response::Ok(Payload::Config(answers.config.clone())),
             Query::Preferences => Response::Ok(Payload::Preferences(answers.preferences)),

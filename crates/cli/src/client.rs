@@ -90,7 +90,7 @@ pub(crate) fn report(instance: Instance) -> Result<Report, Failure> {
     Ok(Report {
         about,
         night_shift,
-        front,
+        front: *front,
         rules,
         config,
         preferences,

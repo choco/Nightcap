@@ -57,13 +57,8 @@ impl Answers {
                     Place::Everywhere | Place::App(_) => None,
                 }),
                 decision: look.decision.clone(),
-                places: look
-                    .site
-                    .iter()
-                    .chain(&look.app)
-                    .chain([&look.everywhere])
-                    .map(in_front)
-                    .collect(),
+                places: look.site.iter().chain(&look.app).map(in_front).collect(),
+                everywhere: in_front(&look.everywhere),
                 after_switch: look.after_switch.clone(),
             },
             rules: inner.every_rule(now),

@@ -28,7 +28,10 @@ fn answers_alike(staged: &Staged) {
         ask(staged, Query::NightShift),
         Payload::NightShift(core.night_shift())
     );
-    assert_eq!(ask(staged, Query::Front), Payload::Front(core.front()));
+    assert_eq!(
+        ask(staged, Query::Front),
+        Payload::Front(Box::new(core.front()))
+    );
     assert_eq!(ask(staged, Query::Rules), Payload::Rules(core.rules()));
     assert_eq!(ask(staged, Query::Config), Payload::Config(core.config()));
     assert_eq!(
@@ -167,19 +170,19 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                     after_until: Some(OnOff::On),
                     after_reset: Some(OnOff::On),
                 },
-                PlaceInFront {
-                    place: Place::Everywhere,
-                    gives: OnOff::On,
-                    rules: Vec::new(),
-                    base: Some(Reason::Schedule {
-                        state: OnOff::On,
-                        until: Some(at("2026-10-17T07:00:00+02:00")),
-                    }),
-                    inherits: None,
-                    after_until: Some(OnOff::On),
-                    after_reset: Some(OnOff::On),
-                },
             ],
+            everywhere: PlaceInFront {
+                place: Place::Everywhere,
+                gives: OnOff::On,
+                rules: Vec::new(),
+                base: Some(Reason::Schedule {
+                    state: OnOff::On,
+                    until: Some(at("2026-10-17T07:00:00+02:00")),
+                }),
+                inherits: None,
+                after_until: Some(OnOff::On),
+                after_reset: Some(OnOff::On),
+            },
             after_switch: vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)],
         }
     );
@@ -356,7 +359,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
             }
             let staged = scenario.stage().unwrap();
             let front = staged.core().front();
-            let to = front.places.last().unwrap().gives.other();
+            let to = front.everywhere.gives.other();
 
             _ = staged.send(if to == OnOff::On {
                 Command::On
@@ -370,7 +373,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                 .collect();
             assert_eq!(left, front.after_switch, "{commands:?}, tour: {tour}");
             assert_eq!(
-                staged.core().front().places.last().unwrap().gives,
+                staged.core().front().everywhere.gives,
                 to,
                 "{commands:?}, tour: {tour}"
             );

@@ -89,7 +89,7 @@ struct TourQuotes: Equatable {
                 nextOff: nil),
             front: Front(
                 app: app.bundleId, watching: domain != nil, host: domain, site: domain, decision: decision,
-                places: places + [everywhere], afterSwitch: afterSwitch),
+                places: places, everywhere: everywhere, afterSwitch: afterSwitch),
             lengths: [], checks: [])
         let place = places[0].place
         return Menu(answers, now: snoozeEnd, appName: { _ in app.name }, words: words).rows.first { $0.place == place }!
