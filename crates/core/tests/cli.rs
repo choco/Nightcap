@@ -3,10 +3,10 @@
 
 mod common;
 
-use nightcap_core::Fact;
+use nightcap_core::{AppCommand, Fact, Staged};
 use nightcap_protocol::{
     Command, Decision, Length, NightShift, NotificationPermission, OnOff, Payload, Permissions,
-    Place, Reason, Response, RuleIdentity, Schedule,
+    Place, Reason, Response, RuleAdded, RuleIdentity, Schedule, SetBy,
 };
 
 use common::{
@@ -64,6 +64,48 @@ fn an_added_domain_is_normalized() {
     assert_eq!(
         rules(&staged),
         vec![ad_hoc(RuleIdentity::Domain("figma.com".parse().unwrap()))]
+    );
+}
+
+#[test]
+fn adding_a_rule_answers_whether_it_was_new_changed_or_already_said_so() {
+    let staged = noon()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .stage()
+        .unwrap();
+    let figma = || RuleIdentity::App("com.figma.Desktop".parse().unwrap());
+    let site = || RuleIdentity::Domain("figma.com".parse().unwrap());
+    let added = |staged: &Staged, identity, says| {
+        let (_, response) = send(staged, Command::AddRule { identity, says });
+        let Response::Ok(Payload::RuleAdded { rule, .. }) = response else {
+            panic!("expected what adding did, got {response:?}");
+        };
+        rule
+    };
+
+    assert_eq!(added(&staged, site(), OnOff::Off), RuleAdded::New);
+    assert_eq!(
+        added(&staged, site(), OnOff::Off),
+        RuleAdded::AlreadySays { set_by: SetBy::You }
+    );
+    assert_eq!(
+        added(&staged, site(), OnOff::On),
+        RuleAdded::Changed { set_by: SetBy::You }
+    );
+    assert_eq!(
+        added(&staged, figma(), OnOff::Off),
+        RuleAdded::AlreadySays {
+            set_by: SetBy::Config
+        }
+    );
+    let books = || RuleIdentity::App("com.apple.iBooksX".parse().unwrap());
+    staged.send_app(AppCommand::StartTour);
+    assert_eq!(added(&staged, books(), OnOff::Off), RuleAdded::New);
+    assert_eq!(
+        added(&staged, books(), OnOff::On),
+        RuleAdded::Changed {
+            set_by: SetBy::Tour
+        }
     );
 }
 

@@ -20,7 +20,7 @@ impl Inner {
     fn respond(&mut self, request: &Request, effects: &mut Vec<Effect>) -> Response {
         match request {
             Request::Command(command) => match self.run_command(command, effects) {
-                Ok(decision) => Response::Ok(Payload::Decision(decision)),
+                Ok(payload) => Response::Ok(payload),
                 Err(refusal) => Response::Refused(refusal),
             },
             // The socket's thread answers queries from the snapshot, which says the same.

@@ -3,8 +3,8 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    BundleId, Decision, Domain, Lasting, Length, OnOff, Place, Reason, Refusal, Rule, RuleIdentity,
-    SetBy,
+    BundleId, Decision, Domain, Lasting, Length, OnOff, Place, Reason, Refusal, Rule, RuleAdded,
+    RuleIdentity, SetBy,
 };
 
 use crate::rules::domain::{self, Host};
@@ -315,21 +315,35 @@ impl Places {
     /// rule changes only in the config (ADR-0006). A rule added during the tour is the tour's,
     /// which nothing keeps past it, and a change to one of the user's own lasts only while it
     /// runs (ADR-0016).
-    pub(crate) fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<(), Refusal> {
+    pub(crate) fn add_rule(
+        &mut self,
+        identity: &RuleIdentity,
+        says: OnOff,
+    ) -> Result<RuleAdded, Refusal> {
         let place = Place::from(identity.clone());
-        match self.indefinite_at(&place) {
-            Some(rule) if rule.says == says => {}
-            Some(rule) if rule.set_by == SetBy::Config => {
+        let there = self
+            .indefinite_at(&place)
+            .map(|rule| (rule.says, rule.set_by));
+        let added = match there {
+            Some((said, set_by)) if said == says => RuleAdded::AlreadySays { set_by },
+            Some((said, SetBy::Config)) => {
                 return Err(Refusal::ConfigSays {
                     identity: identity.clone(),
-                    says: rule.says,
+                    says: said,
                 });
             }
-            _ => self.make_rule(identity, says),
-        }
+            Some((_, set_by)) => {
+                self.make_rule(identity, says);
+                RuleAdded::Changed { set_by }
+            }
+            None => {
+                self.make_rule(identity, says);
+                RuleAdded::New
+            }
+        };
         self.clear(&place);
         self.lay_out();
-        Ok(())
+        Ok(added)
     }
 
     /// Makes the user's rule say `says`: the ad-hoc one, else during the tour the tour's.
@@ -1601,7 +1615,11 @@ mod tests {
                 Refusal::IndefiniteIsAdded,
             ),
             (
-                &|places| places.add_rule(&identity("app:com.figma.Desktop"), OnOff::On),
+                &|places| {
+                    places
+                        .add_rule(&identity("app:com.figma.Desktop"), OnOff::On)
+                        .map(drop)
+                },
                 Refusal::ConfigSays {
                     identity: identity("app:com.figma.Desktop"),
                     says: OnOff::Off,

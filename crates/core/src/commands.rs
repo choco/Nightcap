@@ -1,11 +1,11 @@
-//! Commands, from the app and the CLI alike, each answering with the decision it leads to; the
-//! rule commits they make; and reading the config again, which is how a change to it takes
-//! effect.
+//! Commands, from the app and the CLI alike, each answering with the decision it leads to, and
+//! adding a rule with what it did too; the rule commits they make; and reading the config again,
+//! which is how a change to it takes effect.
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
-    Command, Decision, FileError, Instance, LoginItem, NightShift, NotSelfManaged, OnOff, Refusal,
-    RuleIdentity,
+    Command, FileError, Instance, LoginItem, NightShift, NotSelfManaged, OnOff, Payload, Refusal,
+    RuleAdded, RuleIdentity,
 };
 
 use crate::rules::places::Places;
@@ -21,7 +21,7 @@ impl Inner {
     /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
     /// as an event. A problem it causes isn't announced: the user is looking at what
     /// they chose.
-    pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Decision, Refusal>) {
+    pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
         self.turn(false, |inner, outcome| inner.run_chosen(command, outcome))
     }
 
@@ -31,7 +31,7 @@ impl Inner {
         &mut self,
         command: Command,
         outcome: &mut Outcome,
-    ) -> Result<Decision, Refusal> {
+    ) -> Result<Payload, Refusal> {
         let answer = self.run_command(&command, &mut outcome.effects);
         if let Err(why) = &answer {
             tracing::warn!("a command from the app was refused: {}", kind(why));
@@ -43,12 +43,13 @@ impl Inner {
         answer
     }
 
-    /// Runs a command from the CLI or the app, answering with the resulting decision.
+    /// Runs a command from the CLI or the app, answering with the resulting decision, and for
+    /// adding a rule what it did.
     pub(crate) fn run_command(
         &mut self,
         command: &Command,
         effects: &mut Vec<Effect>,
-    ) -> Result<Decision, Refusal> {
+    ) -> Result<Payload, Refusal> {
         let night_shift = self.facts.night_shift;
         let needs_night_shift = matches!(
             command,
@@ -65,6 +66,7 @@ impl Inner {
             return Err(Refusal::NightShiftUnavailable);
         }
         let now = self.clock.now();
+        let mut added = None;
         let done = match command {
             Command::On => {
                 self.places.switch(OnOff::On, &self.facts.world(now));
@@ -89,7 +91,9 @@ impl Inner {
                 self.places.reset(place);
                 Ok(())
             }
-            Command::AddRule { identity, says } => self.add_rule(identity, *says),
+            Command::AddRule { identity, says } => self
+                .add_rule(identity, *says)
+                .map(|rule| added = Some(rule)),
             Command::RemoveRule(identity) => self.remove_rule(identity),
             Command::OpenAtLogin(chosen) => {
                 if self.manages_itself {
@@ -147,13 +151,20 @@ impl Inner {
                 })
             }
         };
-        done.map(|()| self.places.look(&self.facts.world(now)).decision)
+        done.map(|()| {
+            let decision = self.places.look(&self.facts.world(now)).decision;
+            match added {
+                Some(rule) => Payload::RuleAdded { rule, decision },
+                None => Payload::Decision(decision),
+            }
+        })
     }
 
-    fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<(), Refusal> {
+    fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<RuleAdded, Refusal> {
         let mut next = self.places.clone();
-        next.add_rule(identity, says)?;
-        self.commit_rules(next)
+        let added = next.add_rule(identity, says)?;
+        self.commit_rules(next)?;
+        Ok(added)
     }
 
     fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {

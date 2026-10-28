@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, Decision, Install, Instance, Refusal, Request, Response};
+use nightcap_protocol::{Command, Install, Instance, Payload, Refusal, Request, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -287,7 +287,7 @@ impl Staged {
 
     /// Sends a command as the app does, and returns its outcome, which tells of a refusal as an
     /// event, and what the core answers.
-    pub fn send(&self, command: Command) -> (Outcome, Result<Decision, Refusal>) {
+    pub fn send(&self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
         self.inline.decide(|inner| inner.choose(command))
     }
 

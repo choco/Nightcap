@@ -227,7 +227,7 @@ fn set_elsewhere(
 }
 
 fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
-    let (command, done) = match action {
+    let (done, decision) = match action {
         RulesAction::List { json } => {
             let Payload::Rules(rules) = request(instance, &Request::Query(Query::Rules), None)?
             else {
@@ -263,26 +263,26 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
         }
         RulesAction::Add { identity, on } => {
             let says = OnOff::from(on);
-            // The reply is the decision alone, so what the add did follows from the rule there
-            // before it.
-            let Payload::Rules(rules) = request(instance, &Request::Query(Query::Rules), None)?
+            let command = protocol::Command::AddRule {
+                identity: identity.clone(),
+                says,
+            };
+            let Payload::RuleAdded { rule, decision } =
+                request(instance, &Request::Command(command), None)?
             else {
                 return Err(unexpected_reply());
             };
-            let place = Place::from(identity.clone());
-            let before = wording::app_and_site_rules(&rules)
-                .into_iter()
-                .find(|rule| rule.place == place);
-            let done = wording::rule_added(&identity, says, before.as_ref());
-            (protocol::Command::AddRule { identity, says }, done)
+            (wording::rule_added(&identity, says, rule), decision)
         }
         RulesAction::Remove { identity } => {
             let done = format!("Removed {identity}.");
-            (protocol::Command::RemoveRule(identity), done)
+            let command = protocol::Command::RemoveRule(identity);
+            let Payload::Decision(decision) = request(instance, &Request::Command(command), None)?
+            else {
+                return Err(unexpected_reply());
+            };
+            (done, decision)
         }
-    };
-    let Payload::Decision(decision) = request(instance, &Request::Command(command), None)? else {
-        return Err(unexpected_reply());
     };
     println!(
         "{done} Night Shift {}.",

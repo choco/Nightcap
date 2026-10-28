@@ -7,8 +7,8 @@ use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
     Decision, FileError, Hello, Install, Lasting, Length, NightShift, NightShiftDetail,
     NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
-    PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy,
-    TimeOfDay,
+    PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded, RuleIdentity, Schedule,
+    SetBy, TimeOfDay,
 };
 
 use crate::client::Report;
@@ -79,19 +79,19 @@ fn is_app_or_site_rule(rule: &Rule) -> bool {
     rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }
 
-/// What adding a rule for `identity` that says `says` did, given the rule Nightcap had for the
-/// same app or domain just before: added one, changed the user's own, or left one that already
-/// says so. A config rule that says otherwise is refused before this is said.
-pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, before: Option<&Rule>) -> String {
-    match before {
-        None => format!("Added {identity}, which turns Night Shift {says}."),
-        Some(rule) if rule.says == says => format!(
+/// What adding a rule for `identity` that says `says` did, as Nightcap answers it: added one,
+/// changed the user's own or the tour's, or left one that already says so. A config rule that
+/// says otherwise is refused instead.
+pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, added: RuleAdded) -> String {
+    match added {
+        RuleAdded::New => format!("Added {identity}, which turns Night Shift {says}."),
+        RuleAdded::AlreadySays { set_by } => format!(
             "The {} rule for {identity} already turns Night Shift {says}.",
-            source(rule.set_by)
+            source(set_by)
         ),
-        Some(rule) => format!(
+        RuleAdded::Changed { set_by } => format!(
             "Changed the {} rule for {identity} to turn Night Shift {says}.",
-            source(rule.set_by)
+            source(set_by)
         ),
     }
 }
@@ -882,23 +882,42 @@ mod tests {
     #[test]
     fn adding_a_rule_says_whether_it_was_added_changed_or_already_there() {
         let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
-        let there = |set_by, says| indefinite("app:com.figma.desktop", says, set_by);
 
         assert_eq!(
-            rule_added(&figma, OnOff::Off, None),
+            rule_added(&figma, OnOff::Off, RuleAdded::New),
             "Added app:com.figma.Desktop, which turns Night Shift off."
         );
         assert_eq!(
-            rule_added(&figma, OnOff::Off, Some(&there(SetBy::Config, OnOff::Off))),
+            rule_added(
+                &figma,
+                OnOff::Off,
+                RuleAdded::AlreadySays {
+                    set_by: SetBy::Config
+                }
+            ),
             "The config rule for app:com.figma.Desktop already turns Night Shift off."
         );
         assert_eq!(
-            rule_added(&figma, OnOff::On, Some(&there(SetBy::You, OnOff::On))),
+            rule_added(
+                &figma,
+                OnOff::On,
+                RuleAdded::AlreadySays { set_by: SetBy::You }
+            ),
             "The ad-hoc rule for app:com.figma.Desktop already turns Night Shift on."
         );
         assert_eq!(
-            rule_added(&figma, OnOff::On, Some(&there(SetBy::You, OnOff::Off))),
+            rule_added(&figma, OnOff::On, RuleAdded::Changed { set_by: SetBy::You }),
             "Changed the ad-hoc rule for app:com.figma.Desktop to turn Night Shift on."
+        );
+        assert_eq!(
+            rule_added(
+                &figma,
+                OnOff::Off,
+                RuleAdded::Changed {
+                    set_by: SetBy::Tour
+                }
+            ),
+            "Changed the tour rule for app:com.figma.Desktop to turn Night Shift off."
         );
     }
 

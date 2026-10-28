@@ -245,7 +245,13 @@ pub enum Payload {
     /// None while no tour runs.
     Tour(Option<TourState>),
     About(About),
+    /// What a command leads to.
     Decision(Decision),
+    /// What adding a rule did, and the decision it leads to.
+    RuleAdded {
+        rule: RuleAdded,
+        decision: Decision,
+    },
     /// Sparkle is checking; it shows what it finds in its own window.
     UpdateCheckStarted,
     Export(String),
@@ -401,6 +407,18 @@ pub struct Decision {
     pub state: Option<OnOff>,
     pub place: Place,
     pub reasons: Vec<Reason>,
+}
+
+/// What adding a rule did at its app or site (ADR-0006).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleAdded {
+    /// A rule where there was none.
+    New,
+    /// The rule there said the other way, and now says this one: the user's own, or the tour's.
+    Changed { set_by: SetBy },
+    /// The rule there already says so: the config's, the user's or the tour's.
+    AlreadySays { set_by: SetBy },
 }
 
 /// One thing a decision rests on.
@@ -1554,6 +1572,34 @@ mod tests {
             json(&Request::Command(Command::RemoveRule(figma.clone()))),
             r#"{"command":{"remove_rule":"domain:figma.com"}}"#
         );
+        let decided = || Decision {
+            state: Some(OnOff::On),
+            place: Place::Everywhere,
+            reasons: Vec::new(),
+        };
+        for (rule, wire) in [
+            (RuleAdded::New, r#""new""#),
+            (
+                RuleAdded::Changed { set_by: SetBy::You },
+                r#"{"changed":{"set_by":"you"}}"#,
+            ),
+            (
+                RuleAdded::AlreadySays {
+                    set_by: SetBy::Config,
+                },
+                r#"{"already_says":{"set_by":"config"}}"#,
+            ),
+        ] {
+            let response = Response::Ok(Payload::RuleAdded {
+                rule,
+                decision: decided(),
+            });
+            let wire = format!(
+                r#"{{"ok":{{"rule_added":{{"rule":{wire},"decision":{{"state":"on","place":"everywhere","reasons":[]}}}}}}}}"#
+            );
+            assert_eq!(json(&response), wire);
+            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
+        }
         assert_eq!(json(&Request::Query(Query::Rules)), r#"{"query":"rules"}"#);
         assert_eq!(
             json(&Request::Command(Command::Websites(OnOff::On))),

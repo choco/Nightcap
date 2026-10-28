@@ -11,7 +11,7 @@ mod common;
 use nightcap_core::{AppCommand, Effect, Fact, File, Scenario, Staged};
 use nightcap_protocol::{
     Command, Decision, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason, Refusal,
-    Request, Response, Rule, RuleIdentity, SetBy, TourState,
+    Request, Response, Rule, RuleAdded, RuleIdentity, SetBy, TourState,
 };
 
 use common::{
@@ -189,11 +189,14 @@ fn adding_the_samples_rule_mid_tour_forces_night_shift_off_while_it_is_in_front(
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
         response,
-        Response::Ok(Payload::Decision(Decision {
-            state: Some(OnOff::Off),
-            place: Place::App(SAMPLE.parse().unwrap()),
-            reasons: vec![Reason::Rule(sample_rule())],
-        }))
+        Response::Ok(Payload::RuleAdded {
+            rule: RuleAdded::New,
+            decision: Decision {
+                state: Some(OnOff::Off),
+                place: Place::App(SAMPLE.parse().unwrap()),
+                reasons: vec![Reason::Rule(sample_rule())],
+            },
+        })
     );
     report(&staged, false);
     assert_eq!(

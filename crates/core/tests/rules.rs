@@ -7,7 +7,7 @@ use nightcap_core::{Effect, Event, Fact, File};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ExportFormat, FileError,
     Lasting, Length, OnOff, Payload, Place, Problem, Reason, Refusal, Request, Response, Rule,
-    RuleIdentity, SetBy,
+    RuleAdded, RuleIdentity, SetBy,
 };
 
 use common::{
@@ -224,11 +224,16 @@ fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
     assert_eq!(
         response,
-        Response::Ok(Payload::Decision(Decision {
-            state: Some(OnOff::Off),
-            place: figma_app(),
-            reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
-        }))
+        Response::Ok(Payload::RuleAdded {
+            rule: RuleAdded::AlreadySays {
+                set_by: SetBy::Config
+            },
+            decision: Decision {
+                state: Some(OnOff::Off),
+                place: figma_app(),
+                reasons: vec![Reason::Rule(app_rule("com.figma.Desktop"))],
+            },
+        })
     );
     assert_eq!(resettable(&staged), Vec::new());
 }
@@ -269,11 +274,14 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
     assert_eq!(
         response,
-        Response::Ok(Payload::Decision(Decision {
-            state: Some(OnOff::Off),
-            place: figma_app(),
-            reasons: vec![Reason::Rule(ad_hoc(figma()))],
-        }))
+        Response::Ok(Payload::RuleAdded {
+            rule: RuleAdded::New,
+            decision: Decision {
+                state: Some(OnOff::Off),
+                place: figma_app(),
+                reasons: vec![Reason::Rule(ad_hoc(figma()))],
+            },
+        })
     );
     let staged = staged.restart_at(at("2026-10-16T23:10:00+02:00"));
     assert_eq!(rules(&staged), vec![ad_hoc(figma())]);
@@ -439,7 +447,7 @@ fn adding_a_rule_makes_the_users_rule_say_that_way_replacing_one_that_said_the_o
     send(&staged, add_rule(mail()));
     send(&staged, set(Place::from(mail()), OnOff::On, minutes(30)));
 
-    send(
+    let (_, response) = send(
         &staged,
         Command::AddRule {
             identity: mail(),
@@ -447,6 +455,16 @@ fn adding_a_rule_makes_the_users_rule_say_that_way_replacing_one_that_said_the_o
         },
     );
 
+    assert!(
+        matches!(
+            response,
+            Response::Ok(Payload::RuleAdded {
+                rule: RuleAdded::Changed { set_by: SetBy::You },
+                ..
+            })
+        ),
+        "{response:?}"
+    );
     assert_eq!(
         rules(&staged),
         vec![Rule {
@@ -476,7 +494,16 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
             .effects
             .contains(&Effect::SetNightShift { enabled: false })
     );
-    assert_eq!(answer.unwrap().place, Place::from(mail()));
+    assert!(
+        matches!(
+            &answer,
+            Ok(Payload::RuleAdded {
+                rule: RuleAdded::AlreadySays { set_by: SetBy::You },
+                decision,
+            }) if decision.place == Place::from(mail())
+        ),
+        "{answer:?}"
+    );
     assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(written));
 }
