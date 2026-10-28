@@ -109,7 +109,7 @@ impl Core {
 
     /// A command from the app, which hears of a refusal as an event.
     pub fn send(&self, command: Command) {
-        self.post(Input::Command(command));
+        self.post(Input::Command(command, None));
     }
 
     /// A command only the app sends.
@@ -136,7 +136,7 @@ impl Core {
                 }
             }
             #[cfg(any(test, debug_assertions))]
-            Runs::Inline(inline) => inline.decide(|inner| react(inner, Input::Terminating)),
+            Runs::Inline(inline) => inline.decide(|inner| react(inner, Input::Terminating).0),
         }
     }
 

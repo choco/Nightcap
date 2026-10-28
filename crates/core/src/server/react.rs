@@ -1,31 +1,39 @@
 //! What each input means for the core: one turn, deciding its outcome (ADR-0002).
 
+use std::sync::mpsc;
 use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::Command;
+use nightcap_protocol::{Command, Payload, Refusal};
 
 use crate::rules::schedule::SunTimes;
 use crate::server::state::Inner;
 use crate::{AppCommand, Cause, Fact, Outcome};
 
-/// Something that changes the core: a fact the platform reports, a command from the app, or the
-/// app quitting. The CLI's requests are answered apart, since their response goes back over the
-/// socket (ADR-0010).
+/// Where the CLI waits on a command's answer, which goes back over the socket (ADR-0010).
+pub(crate) type Reply = mpsc::Sender<Result<Payload, Refusal>>;
+
+/// The answer to a command the CLI sent, with where it waits.
+pub(crate) type Answer = (Reply, Result<Payload, Refusal>);
+
+/// Something that changes the core: a fact the platform reports, a command from the app or the
+/// CLI, or the app quitting.
 #[derive(Debug)]
 pub(crate) enum Input {
     Fact(Fact),
-    /// A command the app sent, which hears of a refusal as an event.
-    Command(Command),
+    /// A command, and where the CLI waits on its answer; the app, which waits nowhere, hears of a
+    /// refusal as an event.
+    Command(Command, Option<Reply>),
     AppCommand(AppCommand),
     /// The app is quitting, which releases every force (ADR-0008).
     Terminating,
 }
 
-/// The outcome `input` leads to, which says what it answers.
-pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
-    match input {
+/// The outcome `input` leads to, which says what it answers, and the answer the CLI waits on,
+/// to send once the snapshot `input` left is published.
+pub(crate) fn react(inner: &mut Inner, input: Input) -> (Outcome, Option<Answer>) {
+    let outcome = match input {
         Input::Fact(fact) => {
             let cause = match fact {
                 Fact::Launched => Cause::Launch,
@@ -35,14 +43,18 @@ pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
                 .turn(cause, |inner, outcome| inner.fact(fact, outcome))
                 .0
         }
-        Input::Command(command) => inner.choose(command).0,
+        Input::Command(command, reply) => {
+            let (outcome, answer) = inner.command(command, reply.is_some());
+            return (outcome, reply.map(|reply| (reply, answer)));
+        }
         Input::AppCommand(command) => {
             inner
                 .turn(Cause::Command, |inner, _| inner.app_command(command))
                 .0
         }
         Input::Terminating => inner.turn(Cause::Quit, |inner, _| inner.terminating()).0,
-    }
+    };
+    (outcome, None)
 }
 
 impl Inner {

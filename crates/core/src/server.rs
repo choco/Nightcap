@@ -54,20 +54,17 @@ fn serve(
     for mail in inbox {
         match mail {
             Mail::Input(input) => {
-                let outcome = react(&mut inner, input);
+                let (outcome, answer) = react(&mut inner, input);
                 let snapshot = published.publish(Snapshot::of(&inner));
-                listener.outcome(outcome, snapshot);
-            }
-            Mail::Command { command, reply } => {
-                let (outcome, answer) = inner.answer(&command);
-                let snapshot = published.publish(Snapshot::of(&inner));
-                // The receiver is gone only if the client already hung up, and then no one is
-                // waiting.
-                let _ = reply.send(answer);
+                if let Some((reply, answer)) = answer {
+                    // The receiver is gone only if the client already hung up, and then no one
+                    // is waiting.
+                    let _ = reply.send(answer);
+                }
                 listener.outcome(outcome, snapshot);
             }
             Mail::Stop { reply } => {
-                let outcome = react(&mut inner, Input::Terminating);
+                let (outcome, _) = react(&mut inner, Input::Terminating);
                 published.publish(Snapshot::of(&inner));
                 // The core stops whether or not anyone still waits for what it released.
                 let _ = reply.send(outcome);
@@ -90,6 +87,7 @@ pub(crate) mod tests {
 
     use super::Listener;
     use super::mailbox::Mail;
+    use super::react::Input;
     use crate::clock::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
@@ -208,10 +206,7 @@ pub(crate) mod tests {
         core.send(Command::On);
         core.send_app(AppCommand::BeginTrial { stands_in: false });
         mailbox
-            .post(Mail::Command {
-                command: Command::Off,
-                reply,
-            })
+            .post(Mail::Input(Input::Command(Command::Off, Some(reply))))
             .unwrap();
 
         let causes: Vec<Cause> = (0..5).map(|_| next(&outcomes).cause).collect();

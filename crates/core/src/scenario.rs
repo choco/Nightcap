@@ -279,19 +279,20 @@ impl Staged {
 
     /// Reports a fact as the shell does, and returns its outcome.
     pub fn report(&self, fact: Fact) -> Outcome {
-        self.inline.decide(|inner| react(inner, Input::Fact(fact)))
+        self.inline
+            .decide(|inner| react(inner, Input::Fact(fact)).0)
     }
 
     /// Sends a command as the app does, and returns its outcome, which tells of a refusal as an
     /// event, and what the core answers.
     pub fn send(&self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.inline.decide(|inner| inner.choose(command))
+        self.inline.decide(|inner| inner.command(command, false))
     }
 
     /// Sends a command only the app has, and returns its outcome.
     pub fn send_app(&self, command: AppCommand) -> Outcome {
         self.inline
-            .decide(|inner| react(inner, Input::AppCommand(command)))
+            .decide(|inner| react(inner, Input::AppCommand(command)).0)
     }
 
     /// Quits as the shell does, and returns what it must carry out before it exits.
@@ -306,7 +307,7 @@ impl Staged {
         let (outcome, response) = match over_the_wire(&request) {
             Request::Queries(queries) => (None, self.inline.published.latest().answer(&queries)),
             Request::Command(command) => {
-                let (outcome, answer) = self.inline.decide(|inner| inner.answer(&command));
+                let (outcome, answer) = self.inline.decide(|inner| inner.command(command, true));
                 (Some(outcome), Response::from(answer))
             }
         };

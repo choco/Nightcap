@@ -18,12 +18,18 @@ use crate::storage::file::File;
 use crate::{Cause, Effect, Event, Outcome};
 
 impl Inner {
-    /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
-    /// as an event, short of a reload's: the config file's check says why already.
-    pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
+    /// Runs a command from the app or the CLI. The CLI, which waits on the answer, hears of a
+    /// refusal there alone; the app, which doesn't, hears of it as an event, short of a reload's:
+    /// the config file's check says why already.
+    pub(crate) fn command(
+        &mut self,
+        command: Command,
+        waited_on: bool,
+    ) -> (Outcome, Result<Payload, Refusal>) {
         self.turn(Cause::Command, |inner, outcome| {
             let answer = inner.run_command(&command, &mut outcome.effects);
             if let Err(why) = &answer
+                && !waited_on
                 && command != Command::Reload
             {
                 tracing::warn!("a command from the app was refused: {}", kind(why));
@@ -36,17 +42,9 @@ impl Inner {
         })
     }
 
-    /// Runs a command the CLI sent, whose refusal is in the answer alone.
-    pub(crate) fn answer(&mut self, command: &Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.turn(Cause::Command, |inner, outcome| {
-            inner.run_command(command, &mut outcome.effects)
-        })
-    }
-
-    /// Runs a command from the CLI or the app, answering with the resulting decision, and for
-    /// adding a rule what it did; a reload answers with every rule, and an update check that it
-    /// started.
-    pub(crate) fn run_command(
+    /// Answers a command with the resulting decision, and for adding a rule what it did; a
+    /// reload answers with every rule, and an update check that it started.
+    fn run_command(
         &mut self,
         command: &Command,
         effects: &mut Vec<Effect>,

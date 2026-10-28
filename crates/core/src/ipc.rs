@@ -19,6 +19,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::CoreError;
 use crate::server::mailbox::{Mail, Mailbox};
+use crate::server::react::Input;
 use crate::server::snapshot::Published;
 
 /// How long a client may take to send a line, and how long it waits for the core's thread.
@@ -118,7 +119,7 @@ fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io:
         Request::Command(command) => {
             let (reply, answer) = mpsc::channel();
             mailbox
-                .post(Mail::Command { command, reply })
+                .post(Mail::Input(Input::Command(command, Some(reply))))
                 .map_err(io::Error::other)?;
             Response::from(answer.recv_timeout(TIMEOUT).map_err(|_| {
                 io::Error::new(
@@ -179,6 +180,7 @@ mod tests {
 
     use super::{bind, serve};
     use crate::server::mailbox::{Mail, Mailbox};
+    use crate::server::react::Input;
     use crate::server::snapshot::{Published, Snapshot};
     use crate::server::tests::{ChannelListener, Heard, noon};
     use crate::{Cause, Core, CoreError, Outcome};
@@ -273,7 +275,8 @@ mod tests {
         drop(UnixStream::connect(&socket).unwrap());
 
         let response = ask(&socket, Request::Command(Command::Reload));
-        let Ok(Mail::Command { command, reply }) = inbox.recv_timeout(Duration::from_secs(5))
+        let Ok(Mail::Input(Input::Command(command, Some(reply)))) =
+            inbox.recv_timeout(Duration::from_secs(5))
         else {
             panic!("the reload reaches the mailbox");
         };
