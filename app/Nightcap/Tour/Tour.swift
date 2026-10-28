@@ -375,9 +375,7 @@ final class Tour {
             endTour.onAction { [weak self] in self?.end() }
             header.append(endTour)
         }
-        let top = NSStackView(views: header)
-        top.orientation = .horizontal
-        top.distribution = .fill
+        let top = NSStackView(.horizontal, header, distribution: .fill)
         label.setContentHuggingPriority(.required, for: .horizontal)
 
         let (title, body) = texts
@@ -400,16 +398,11 @@ final class Tour {
         let lastText = views.last
         let buttons = self.buttons
         if !buttons.isEmpty {
-            let row = NSStackView(views: [NSView()] + buttons)
-            row.orientation = .horizontal
-            row.spacing = 8
-            views.append(row)
+            views.append(NSStackView(.horizontal, [NSView()] + buttons))
         }
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: Self.padding, bottom: 14, right: Self.padding)
+        let stack = NSStackView(
+            .vertical, views, alignment: .leading,
+            edgeInsets: NSEdgeInsets(top: 14, left: Self.padding, bottom: 14, right: Self.padding))
         stack.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         for view in views where view is NSStackView || view is Group {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * Self.padding).isActive = true
@@ -420,9 +413,7 @@ final class Tour {
 
     /// The moon's three looks, as the status item draws them.
     private func legend(width: CGFloat) -> NSView {
-        var views: [NSView] = []
-        for (index, (icon, name, meaning)) in words.moonLegend.enumerated() {
-            if index > 0 { views.append(Hairline()) }
+        let rows = words.moonLegend.map { icon, name, meaning in
             let moon = NSImageView(image: MenuArt.moon(for: icon)!)
             moon.contentTintColor = .labelColor
             moon.widthAnchor.constraint(equalToConstant: 16).isActive = true
@@ -431,20 +422,10 @@ final class Tour {
             title.widthAnchor.constraint(equalToConstant: 72).isActive = true
             let text = NSTextField.label(
                 meaning, size: 11, weight: .regular, color: .secondaryLabelColor, width: width - 20 - 16 - 72 - 20)
-            let row = NSStackView(views: [moon, title, text])
-            row.orientation = .horizontal
-            row.alignment = .centerY
-            row.spacing = 10
-            views.append(Padded(row, top: 8, left: 10, bottom: 8, right: 10))
+            let row = NSStackView(.horizontal, [moon, title, text], spacing: 10)
+            return Padded(row, top: 8, left: 10, bottom: 8, right: 10)
         }
-        let rowsStack = NSStackView(views: views)
-        rowsStack.orientation = .vertical
-        rowsStack.alignment = .leading
-        rowsStack.spacing = 0
-        for view in views {
-            view.widthAnchor.constraint(equalTo: rowsStack.widthAnchor).isActive = true
-        }
-        return Group(rowsStack)
+        return Group(rows: rows)
     }
 
     /// The shortcut's keys, pressed down while it's held, on the keyboard or with the mouse, and
@@ -458,12 +439,7 @@ final class Tour {
         let hint = NSTextField.label(hintText, size: 12, weight: .regular, color: .secondaryLabelColor, width: width)
         hint.alignment = .center
         self.hint = hint
-        let stack = NSStackView(views: [caps, hint])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 0, right: 0)
-        return stack
+        return NSStackView(.vertical, [caps, hint], edgeInsets: NSEdgeInsets(top: 4, left: 0, bottom: 0, right: 0))
     }
 
     // MARK: The sample

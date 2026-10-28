@@ -294,10 +294,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             settings.rules.isEmpty
             ? [Padded(NSTextField.secondary(words.noRulesYet, width: Self.width - 28), top: 11, bottom: 11)]
             : settings.rules.map(ruleRow)
-        var blocks = [
-            group(files),
+        var blocks: [NSView] = [
+            Group(rows: files),
             note(words.eachRule),
-            group(rules),
+            Group(rows: rules),
             rulesToolbar(),
             note(words.adHocRulesStay),
         ]
@@ -312,20 +312,15 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// ending them.
     private func forNowRow(_ temporary: Settings.ForNowRow) -> NSView {
         let (name, _, icon) = describe(temporary.identity)
-        let texts = NSStackView(views: [
-            NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
-            NSTextField.secondary(temporary.label, width: 300),
-        ])
-        texts.orientation = .vertical
-        texts.alignment = .leading
-        texts.spacing = 2
+        let texts = NSStackView(
+            .vertical,
+            [
+                NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
+                NSTextField.secondary(temporary.label, width: 300),
+            ], alignment: .leading, spacing: 2)
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let end = CapsuleButton(temporary.button.title, .small) { [choose] in choose(temporary.button.command) }
-        let row = NSStackView(views: [icon, texts, end])
-        row.orientation = .horizontal
-        row.distribution = .fill
-        row.alignment = .centerY
-        row.spacing = 14
+        let row = NSStackView(.horizontal, [icon, texts, end], distribution: .fill, spacing: 14)
         return Padded(row, top: 11, bottom: 11)
     }
 
@@ -333,23 +328,19 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// it: a config rule changes only in the config (ADR-0006).
     private func ruleRow(_ rule: Settings.RuleRow) -> NSView {
         let (name, detail, icon) = describe(rule.identity)
-        let texts = NSStackView(views: [
-            NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
-            NSTextField.secondary(words.rule(rule.says, detail), width: 260),
-        ])
-        texts.orientation = .vertical
-        texts.alignment = .leading
-        texts.spacing = 2
+        let texts = NSStackView(
+            .vertical,
+            [
+                NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
+                NSTextField.secondary(words.rule(rule.says, detail), width: 260),
+            ], alignment: .leading, spacing: 2)
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let button = rule.button.map { button in
             CapsuleButton(button.title, .small) { [choose] in choose(button.command) }
         }
         let row = NSStackView(
-            views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [button].compactMap { $0 })
-        row.orientation = .horizontal
-        row.distribution = .fill
-        row.alignment = .centerY
-        row.spacing = 14
+            .horizontal, [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [button].compactMap { $0 },
+            distribution: .fill, spacing: 14)
         return Padded(row, top: 11, bottom: 11)
     }
 
@@ -396,11 +387,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             copy?.title = words.copied
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [words] in copy?.title = words.copy }
         }
-        let toolbar = NSStackView(views: [addApp, addWebsite, spacer, label, format, copy])
-        toolbar.orientation = .horizontal
-        toolbar.distribution = .fill
-        toolbar.alignment = .centerY
-        toolbar.spacing = 8
+        let toolbar = NSStackView(.horizontal, [addApp, addWebsite, spacer, label, format, copy], distribution: .fill)
         toolbar.setCustomSpacing(16, after: addWebsite)
         return toolbar
     }
@@ -439,10 +426,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
         field.placeholderString = words.domainExample
         let says = saysPopup()
-        let accessory = NSStackView(views: [field, says])
-        accessory.orientation = .vertical
-        accessory.alignment = .leading
-        accessory.spacing = 8
+        let accessory = NSStackView(.vertical, [field, says], alignment: .leading)
         accessory.frame = NSRect(x: 0, y: 0, width: 280, height: 58)
         field.widthAnchor.constraint(equalToConstant: 280).isActive = true
         alert.accessoryView = accessory
@@ -476,11 +460,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     /// The tab's content: blocks stacked 16 apart inside an 18, 24, 22 margin.
     private func pane(_ blocks: [NSView]) -> NSView {
-        let stack = NSStackView(views: blocks)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 16
-        stack.edgeInsets = NSEdgeInsets(top: 18, left: 24, bottom: 22, right: 24)
+        let stack = NSStackView(
+            .vertical, blocks, alignment: .leading, spacing: 16,
+            edgeInsets: NSEdgeInsets(top: 18, left: 24, bottom: 22, right: 24))
         for block in blocks {
             block.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         }
@@ -492,40 +474,18 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let heading = NSTextField(labelWithString: title)
         heading.font = .systemFont(ofSize: 12, weight: .semibold)
         heading.textColor = .nightcapSecondary
-        let indented = NSStackView(views: [heading])
-        indented.edgeInsets = NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0)
-        let group = group(cells)
-        let block = NSStackView(views: [indented, group])
-        block.orientation = .vertical
-        block.alignment = .leading
-        block.spacing = 6
+        let indented = NSStackView(
+            .horizontal, [heading], edgeInsets: NSEdgeInsets(top: 0, left: 4, bottom: 0, right: 0))
+        let group = Group(rows: cells)
+        let block = NSStackView(.vertical, [indented, group], alignment: .leading, spacing: 6)
         group.widthAnchor.constraint(equalTo: block.widthAnchor).isActive = true
         return block
     }
 
-    /// A rounded group of cells, separated by hairlines.
-    private func group(_ cells: [NSView]) -> NSView {
-        var views: [NSView] = []
-        for (index, cell) in cells.enumerated() {
-            if index > 0 { views.append(Hairline()) }
-            views.append(cell)
-        }
-        let rows = NSStackView(views: views)
-        rows.orientation = .vertical
-        rows.alignment = .leading
-        rows.spacing = 0
-        for view in views {
-            view.widthAnchor.constraint(equalTo: rows.widthAnchor).isActive = true
-        }
-        return Group(rows)
-    }
-
     /// A setting's row with the status of its check, if it has one, right under it.
     private func cell(_ row: NSView, _ check: Settings.CheckStatus?) -> NSView {
-        let cell = NSStackView(views: [row] + (check.map { [status($0)] } ?? []))
-        cell.orientation = .vertical
-        cell.alignment = .leading
-        cell.spacing = 0
+        let cell = NSStackView(
+            .vertical, [row] + (check.map { [status($0)] } ?? []), alignment: .leading, spacing: 0)
         for view in cell.views {
             view.widthAnchor.constraint(equalTo: cell.widthAnchor).isActive = true
         }
@@ -543,16 +503,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         if let detail {
             texts.append(NSTextField.secondary(detail, width: textWidth))
         }
-        let text = NSStackView(views: texts)
-        text.orientation = .vertical
-        text.alignment = .leading
-        text.spacing = 2
+        let text = NSStackView(.vertical, texts, alignment: .leading, spacing: 2)
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let row = NSStackView(views: [text] + (accessory.map { [$0] } ?? []))
-        row.orientation = .horizontal
-        row.distribution = .fill
-        row.alignment = .centerY
-        row.spacing = 14
+        let row = NSStackView(
+            .horizontal, [text] + (accessory.map { [$0] } ?? []), distribution: .fill, spacing: 14)
         return Padded(row, top: 11, bottom: 11)
     }
 
@@ -572,24 +526,14 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let inlineWidth = inline.reduce(0) { $0 + $1.fittingSize.width + 8 }
         let text = NSTextField.secondary(check.text, width: Self.width - 28 - 18 - 8 - inlineWidth)
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [StateMark(check.state).view(), text] + inline)
-        line.orientation = .horizontal
-        line.distribution = .fill
-        line.alignment = .centerY
-        line.spacing = 8
+        let line = NSStackView(.horizontal, [StateMark(check.state).view(), text] + inline, distribution: .fill)
         guard inline.isEmpty, !fixes.isEmpty else {
             return Padded(line, top: 0, bottom: 11)
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let buttons = NSStackView(views: [spacer] + fixes)
-        buttons.orientation = .horizontal
-        buttons.distribution = .fill
-        buttons.spacing = 8
-        let status = NSStackView(views: [line, buttons])
-        status.orientation = .vertical
-        status.alignment = .leading
-        status.spacing = 8
+        let buttons = NSStackView(.horizontal, [spacer] + fixes, distribution: .fill)
+        let status = NSStackView(.vertical, [line, buttons], alignment: .leading)
         for view in [line, buttons] {
             view.widthAnchor.constraint(equalTo: status.widthAnchor).isActive = true
         }

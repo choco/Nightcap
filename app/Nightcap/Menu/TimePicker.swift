@@ -32,21 +32,17 @@ final class TimePicker: NSObject, NSWindowDelegate {
         picker.setAccessibilityLabel(words.untilTime)
         picker.onAction { [weak self] in self?.updateHint() }
         let heading = NSTextField.label(title, size: 13, weight: .semibold, color: .labelColor, width: 220)
-        let until = NSStackView(views: [NSTextField(labelWithString: words.untilTime), picker])
-        until.spacing = 8
+        let until = NSStackView(.horizontal, [NSTextField(labelWithString: words.untilTime), picker])
         let cancel = CapsuleButton(words.cancel, .regular) { [weak self] in self?.close() }
         cancel.keyEquivalent = "\u{1b}"
         let done = CapsuleButton(words.turn(state), .primary) { [weak self] in self?.done() }
         done.keyEquivalent = "\r"
-        let buttons = NSStackView(views: [NSView(), cancel, done])
-        let stack = NSStackView(views: [heading, until, hint, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
+        let buttons = NSStackView(.horizontal, [NSView(), cancel, done])
+        let stack = NSStackView(
+            .vertical, [heading, until, hint, buttons], alignment: .leading, spacing: 6,
+            edgeInsets: NSEdgeInsets(top: 14, left: Self.padding, bottom: 14, right: Self.padding))
         stack.setCustomSpacing(12, after: until)
         stack.setCustomSpacing(14, after: hint)
-        stack.edgeInsets = NSEdgeInsets(
-            top: 14, left: Self.padding, bottom: 14, right: Self.padding)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * Self.padding).isActive = true
         panel.setContent(stack)
         panel.setContentSize(stack.fittingSize)

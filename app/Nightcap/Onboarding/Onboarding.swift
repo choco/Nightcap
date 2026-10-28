@@ -227,15 +227,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         stage.strength = flow.strength
         stage.show(scene)
         pageArea.subviews.forEach { $0.removeFromSuperview() }
-        let page = pageView()
-        page.translatesAutoresizingMaskIntoConstraints = false
-        pageArea.addSubview(page)
-        NSLayoutConstraint.activate([
-            page.leadingAnchor.constraint(equalTo: pageArea.leadingAnchor),
-            page.trailingAnchor.constraint(equalTo: pageArea.trailingAnchor),
-            page.topAnchor.constraint(equalTo: pageArea.topAnchor),
-            page.bottomAnchor.constraint(equalTo: pageArea.bottomAnchor),
-        ])
+        pageArea.addPinned(pageView())
     }
 
     private func build() {
@@ -305,10 +297,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             NSTextField.label(page.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
         ]
         column += controls
-        let stack = NSStackView(views: column)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
+        let stack = NSStackView(.vertical, column, alignment: .leading)
         stack.setCustomSpacing(2, after: column[0])
         stack.setCustomSpacing(6, after: column[1])
         stack.setCustomSpacing(14, after: column[2])
@@ -348,12 +337,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .apps where flow.apps.isEmpty:
             let note = NSTextField.secondary(words.foundNoApps, width: Self.textWidth - 150)
             note.setContentHuggingPriority(.defaultLow, for: .horizontal)
-            let line = NSStackView(views: [
-                note, CapsuleButton(words.chooseApp, .regular) { [weak self] in self?.chooseApp() },
-            ])
-            line.orientation = .horizontal
-            line.distribution = .fill
-            line.spacing = 14
+            let line = NSStackView(
+                .horizontal, [note, CapsuleButton(words.chooseApp, .regular) { [weak self] in self?.chooseApp() }],
+                distribution: .fill, spacing: 14)
             return [rows([Padded(line, top: 12, left: 14, bottom: 12, right: 14)])]
         case .apps:
             return [grid(flow.apps, appItems)]
@@ -400,19 +386,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func option(_ title: String, _ detail: String, button: NSButton) -> NSView {
         let name = NSTextField.label(title, size: 13, weight: .regular, color: .labelColor, width: 400)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [name, button])
-        line.orientation = .horizontal
-        line.distribution = .fill
-        return option(line, detail)
+        return option(NSStackView(.horizontal, [name, button], distribution: .fill), detail)
     }
 
     private func option(_ top: NSView, _ detail: String) -> NSView {
         let note = Padded(
             NSTextField.secondary(detail, width: Self.textWidth - 60), top: 0, left: 20, bottom: 0, right: 0)
-        let column = NSStackView(views: [top, note])
-        column.orientation = .vertical
-        column.alignment = .leading
-        column.spacing = 2
+        let column = NSStackView(.vertical, [top, note], alignment: .leading, spacing: 2)
         top.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
         return Padded(column, top: 10, left: 12, bottom: 10, right: 12)
     }
@@ -442,11 +422,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
             let cells = lines[start..<min(start + 2, lines.count)].enumerated().map { column, line in
                 Divided(summary(line.0, line.1, done: line.2), left: column > 0) as NSView
             }
-            let row = NSStackView(views: cells.count == 2 ? cells : cells + [NSView()])
-            row.orientation = .horizontal
-            row.distribution = .fillEqually
-            row.spacing = 0
-            rowViews.append(row)
+            rowViews.append(
+                NSStackView(
+                    .horizontal, cells.count == 2 ? cells : cells + [NSView()], distribution: .fillEqually, spacing: 0))
         }
         return rows(rowViews)
     }
@@ -485,22 +463,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
             .font, value: NSFont.systemFont(ofSize: 12, weight: .semibold),
             range: NSRange(location: 0, length: (lead as NSString).length))
         let label = NSTextField(labelWithAttributedString: text)
-        let line = NSStackView(views: [glyph, label])
-        line.orientation = .horizontal
-        line.spacing = 10
+        let line = NSStackView(.horizontal, [glyph, label], spacing: 10)
         return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     /// A line of the Accessibility checklist, marked as done, current or to do.
     private func progress(_ mark: StateMark, _ text: String) -> NSView {
-        let line = NSStackView(views: [
-            mark.view(),
-            NSTextField.label(
-                text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor,
-                width: Self.textWidth - 60),
-        ])
-        line.orientation = .horizontal
-        line.spacing = 10
+        let line = NSStackView(
+            .horizontal,
+            [
+                mark.view(),
+                NSTextField.label(
+                    text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor,
+                    width: Self.textWidth - 60),
+            ], spacing: 10)
         return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
@@ -516,16 +492,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         var lines: [NSView] = []
         for start in stride(from: 0, to: cells.count, by: 3) {
-            var line = Array(cells[start..<min(start + 3, cells.count)]) as [NSView]
-            while line.count < 3 { line.append(NSView()) }
-            for (column, cell) in line.enumerated() {
-                (cell as? GridCell)?.dividedOnLeft = column > 0
+            var line = cells[start..<min(start + 3, cells.count)].enumerated().map { column, cell in
+                Divided(cell, left: column > 0) as NSView
             }
-            let row = NSStackView(views: line)
-            row.orientation = .horizontal
-            row.distribution = .fillEqually
-            row.spacing = 0
-            lines.append(row)
+            while line.count < 3 { line.append(NSView()) }
+            lines.append(NSStackView(.horizontal, line, distribution: .fillEqually, spacing: 0))
         }
         return rows(lines)
     }
@@ -563,16 +534,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         let less = NSTextField.secondary(words.lessWarm, width: 80)
         let more = NSTextField.secondary(words.moreWarm, width: 80)
-        let line = NSStackView(views: [less, slider, more])
-        line.orientation = .horizontal
-        line.spacing = 12
+        let line = NSStackView(.horizontal, [less, slider, more], spacing: 12)
         let note = NSTextField.secondary(words.strengthPreview(showing: false), width: Self.textWidth)
         previewNote = note
-        let facts = NSStackView(views: words.nightShiftFacts.map { fact($0.title, $0.text) })
-        facts.orientation = .horizontal
-        facts.alignment = .top
-        facts.distribution = .fillEqually
-        facts.spacing = 20
+        let facts = NSStackView(
+            .horizontal, words.nightShiftFacts.map { fact($0.title, $0.text) }, alignment: .top,
+            distribution: .fillEqually, spacing: 20)
         facts.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
         return [rows([Padded(line, top: 10, left: 14, bottom: 10, right: 14)]), note, facts]
     }
@@ -588,14 +555,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     private func fact(_ title: String, _ text: String) -> NSView {
         let width = (Self.textWidth - 40) / 3
-        let stack = NSStackView(views: [
-            NSTextField.label(title, size: 12, weight: .semibold, color: .labelColor, width: width),
-            NSTextField.label(text, size: 11, weight: .regular, color: .nightcapSecondary, width: width),
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
-        return stack
+        return NSStackView(
+            .vertical,
+            [
+                NSTextField.label(title, size: 12, weight: .semibold, color: .labelColor, width: width),
+                NSTextField.label(text, size: 11, weight: .regular, color: .nightcapSecondary, width: width),
+            ], alignment: .leading, spacing: 2)
     }
 
     /// Radio buttons for the schedule. They sit in rows of their own, so they're kept in step by
@@ -606,12 +571,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
             guard let self else { return .off }
             return .custom(from: flow.customHours.from, to: flow.customHours.to)
         }
-        let hours = NSStackView(views: [
-            timeField(flow.customHours.from) { [weak self] in self?.flow.customHours.from = $0 },
-            NSTextField.secondary(words.customHoursTo, width: 20),
-            timeField(flow.customHours.to) { [weak self] in self?.flow.customHours.to = $0 },
-        ])
-        hours.spacing = 6
+        let hours = NSStackView(
+            .horizontal,
+            [
+                timeField(flow.customHours.from) { [weak self] in self?.flow.customHours.from = $0 },
+                NSTextField.secondary(words.customHoursTo, width: 20),
+                timeField(flow.customHours.to) { [weak self] in self?.flow.customHours.to = $0 },
+            ], spacing: 6)
         return [
             rows([
                 radioRow(
@@ -636,10 +602,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         button.onAction { [weak self] in self?.pick(schedule()) }
         radios.append((button, schedule))
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [button, detail])
-        line.orientation = .horizontal
-        line.distribution = .fill
-        line.spacing = 12
+        let line = NSStackView(.horizontal, [button, detail], distribution: .fill, spacing: 12)
         return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
@@ -677,19 +640,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// Rows in a group, divided by hairlines, as wide as the text.
     private func rows(_ views: [NSView]) -> NSView {
-        var arranged: [NSView] = []
-        for (index, view) in views.enumerated() {
-            if index > 0 { arranged.append(Hairline()) }
-            arranged.append(view)
-        }
-        let stack = NSStackView(views: arranged)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 0
-        for view in arranged {
-            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        }
-        let group = Group(stack)
+        let group = Group(rows: views)
         group.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
         return group
     }
@@ -697,12 +648,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func summary(_ title: String, _ value: String, done: Bool = true) -> NSView {
         let name = NSTextField.label(title, size: 13, weight: .regular, color: .labelColor, width: 300)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [
-            (done ? StateMark.ok : .off).view(), name, NSTextField.secondary(value, width: 300),
-        ])
-        line.orientation = .horizontal
-        line.distribution = .fill
-        line.spacing = 10
+        let line = NSStackView(
+            .horizontal, [(done ? StateMark.ok : .off).view(), name, NSTextField.secondary(value, width: 300)],
+            distribution: .fill, spacing: 10)
         return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
@@ -730,10 +678,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         primary.isEnabled = buttons.primary.enabled
         primary.keyEquivalent = "\r"
         trailing.append(primary)
-        let start = NSStackView(views: leading)
-        start.spacing = 8
-        let end = NSStackView(views: trailing)
-        end.spacing = 8
+        let start = NSStackView(.horizontal, leading)
+        let end = NSStackView(.horizontal, trailing)
         let footer = NSView()
         for view in [start, end] {
             view.translatesAutoresizingMaskIntoConstraints = false

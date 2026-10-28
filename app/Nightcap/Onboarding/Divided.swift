@@ -7,14 +7,7 @@ final class Divided: NSView {
     init(_ content: NSView, left: Bool) {
         self.left = left
         super.init(frame: .zero)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        addPinned(content)
     }
 
     required init?(coder: NSCoder) {

@@ -20,17 +20,7 @@ final class StepDots: NSView {
             }
             views += group.map(DotView.init)
         }
-        let stack = NSStackView(views: views)
-        stack.orientation = .horizontal
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stack.topAnchor.constraint(equalTo: topAnchor),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        addPinned(NSStackView(.horizontal, views, spacing: 0))
     }
 
     required init?(coder: NSCoder) {

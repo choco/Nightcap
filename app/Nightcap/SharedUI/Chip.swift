@@ -10,14 +10,7 @@ final class Chip: NSView {
         let label = NSTextField(labelWithString: text)
         label.font = .systemFont(ofSize: 11)
         label.textColor = tinted ? .labelColor : .nightcapSecondary
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 7),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -7),
-            label.topAnchor.constraint(equalTo: topAnchor, constant: 1),
-            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-        ])
+        addPinned(label, insets: NSEdgeInsets(top: 1, left: 7, bottom: 1, right: 7))
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
     }

@@ -1,17 +1,20 @@
 import AppKit
 
-/// A rounded group of rows, sized by its content, which it clips to its corners.
+/// A rounded group of rows, each as wide as the group, divided by hairlines. It's sized by its
+/// rows, which it clips to its corners.
 final class Group: NSView {
-    init(_ content: NSView) {
+    init(rows: [NSView]) {
+        var views: [NSView] = []
+        for (index, row) in rows.enumerated() {
+            if index > 0 { views.append(Hairline()) }
+            views.append(row)
+        }
+        let stack = NSStackView(.vertical, views, alignment: .leading, spacing: 0)
+        for view in views {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        }
         super.init(frame: .zero)
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: trailingAnchor),
-            content.topAnchor.constraint(equalTo: topAnchor),
-            content.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
+        addPinned(stack)
     }
 
     required init?(coder: NSCoder) {

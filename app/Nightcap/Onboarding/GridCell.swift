@@ -3,7 +3,6 @@ import AppKit
 /// A suggestion in onboarding's grid: a checkbox, the icon and two lines. A click anywhere on it
 /// ticks it, unless its rule exists already, which the second line then says where it comes from.
 final class GridCell: NSView {
-    var dividedOnLeft = false
     private let checkbox: NSButton
 
     init(_ item: GridItem, ruled: String?, ticked: Bool, toggle: @escaping () -> Void) {
@@ -35,13 +34,8 @@ final class GridCell: NSView {
         for label in [name, detail] {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
-        let words = NSStackView(views: [name, detail])
-        words.orientation = .vertical
-        words.alignment = .leading
-        words.spacing = 0
-        let line = NSStackView(views: [checkbox, icon, words])
-        line.orientation = .horizontal
-        line.spacing = 8
+        let words = NSStackView(.vertical, [name, detail], alignment: .leading, spacing: 0)
+        let line = NSStackView(.horizontal, [checkbox, icon, words])
         line.translatesAutoresizingMaskIntoConstraints = false
         addSubview(line)
         NSLayoutConstraint.activate([
@@ -60,11 +54,5 @@ final class GridCell: NSView {
 
     override func mouseDown(with event: NSEvent) {
         toggle?()
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard dividedOnLeft else { return }
-        NSColor.nightcapSeparator.setFill()
-        NSRect(x: 0, y: 0, width: 0.5, height: bounds.height).fill()
     }
 }

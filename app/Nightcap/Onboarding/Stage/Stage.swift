@@ -79,10 +79,6 @@ final class Stage: NSView {
         let name = NSTextField(labelWithString: "Nightcap")
         name.font = .nightcapWordmark(size: 26)
         name.textColor = .labelColor
-        let row = NSStackView(views: [icon, name])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 5
-        return row
+        return NSStackView(.horizontal, [icon, name], spacing: 5)
     }
 }

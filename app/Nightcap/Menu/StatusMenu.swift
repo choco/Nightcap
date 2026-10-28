@@ -447,14 +447,11 @@ final class PointOut: NSViewController {
             said.body, size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
         let ok = CapsuleButton(words.ok, .primary) { [weak self] in self?.onOK() }
         let tour = CapsuleButton(words.takeTheTour, .regular) { [weak self] in self?.takeTour() }
-        let buttons = NSStackView(views: hidden ? [NSView(), ok] : [NSView(), tour, ok])
-        buttons.orientation = .horizontal
-        let stack = NSStackView(views: [title, text, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 6
+        let buttons = NSStackView(.horizontal, hidden ? [NSView(), ok] : [NSView(), tour, ok])
+        let stack = NSStackView(
+            .vertical, [title, text, buttons], alignment: .leading, spacing: 6,
+            edgeInsets: NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16))
         stack.setCustomSpacing(12, after: text)
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
         stack.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -32).isActive = true
         size = NSSize(width: Self.width, height: stack.fittingSize.height)
