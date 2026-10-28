@@ -12,7 +12,7 @@ final class GridCell: NSView {
         checkbox.state = ticked ? .on : .off
         checkbox.isEnabled = ruled == nil
         checkbox.setAccessibilityLabel(item.name)
-        Look.attach(checkbox, toggle)
+        checkbox.onAction(toggle)
         self.toggle = ruled == nil ? toggle : nil
         let icon: NSView
         switch item.icon {

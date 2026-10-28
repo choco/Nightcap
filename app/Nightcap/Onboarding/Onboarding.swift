@@ -298,11 +298,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func pageView() -> NSView {
         let page = words.page(flow.step, flow.page, reviewing: flow.reviewing, foundApps: !flow.apps.isEmpty)
         var column: [NSView] = [
-            Look.label(
+            NSTextField.label(
                 words.eyebrow(flow.placeInPart), size: 12, weight: .semibold, color: .nightcapMoon,
                 width: Self.textWidth),
-            Look.label(page.heading, size: 20, weight: .semibold, color: .labelColor, width: Self.textWidth),
-            Look.label(page.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
+            NSTextField.label(page.heading, size: 20, weight: .semibold, color: .labelColor, width: Self.textWidth),
+            NSTextField.label(page.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
         ]
         column += controls
         let stack = NSStackView(views: column)
@@ -339,22 +339,22 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     summary(words.strength, words.warmth(flow.strength)),
                     summary(words.schedule, words.schedule(flow.schedule)),
                 ]),
-                Look.secondary(words.skippingLeavesThem, width: Self.textWidth),
+                NSTextField.secondary(words.skippingLeavesThem, width: Self.textWidth),
             ]
         case .strength:
             return strengthControls()
         case .schedule:
             return scheduleControls()
         case .apps where flow.apps.isEmpty:
-            let note = Look.secondary(words.foundNoApps, width: Self.textWidth - 150)
+            let note = NSTextField.secondary(words.foundNoApps, width: Self.textWidth - 150)
             note.setContentHuggingPriority(.defaultLow, for: .horizontal)
             let line = NSStackView(views: [
-                note, Look.button(words.chooseApp, .regular) { [weak self] in self?.chooseApp() },
+                note, CapsuleButton(words.chooseApp, .regular) { [weak self] in self?.chooseApp() },
             ])
             line.orientation = .horizontal
             line.distribution = .fill
             line.spacing = 14
-            return [rows([Look.padded(line, top: 12, left: 14, bottom: 12, right: 14)])]
+            return [rows([Padded(line, top: 12, left: 14, bottom: 12, right: 14)])]
         case .apps:
             return [grid(flow.apps, appItems)]
         case .websites:
@@ -368,7 +368,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                     flow.notifications == .denied
                         ? option(
                             title, words.whatNotificationsTell(switchedOff: true),
-                            button: Look.button(words.openNotificationSettings, .regular) {
+                            button: CapsuleButton(words.openNotificationSettings, .regular) {
                                 SystemSettings().open(.notifications)
                             })
                         : option(
@@ -392,13 +392,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let box = NSButton(checkboxWithTitle: title, target: nil, action: nil)
         box.font = .systemFont(ofSize: 13)
         box.state = ticked ? .on : .off
-        Look.attach(box) { [weak box] in toggle(box?.state == .on) }
+        box.onAction { [weak box] in toggle(box?.state == .on) }
         return option(box, detail)
     }
 
     /// A choice that only a button outside Nightcap can make.
     private func option(_ title: String, _ detail: String, button: NSButton) -> NSView {
-        let name = Look.label(title, size: 13, weight: .regular, color: .labelColor, width: 400)
+        let name = NSTextField.label(title, size: 13, weight: .regular, color: .labelColor, width: 400)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let line = NSStackView(views: [name, button])
         line.orientation = .horizontal
@@ -407,14 +407,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     private func option(_ top: NSView, _ detail: String) -> NSView {
-        let note = Look.padded(
-            Look.secondary(detail, width: Self.textWidth - 60), top: 0, left: 20, bottom: 0, right: 0)
+        let note = Padded(
+            NSTextField.secondary(detail, width: Self.textWidth - 60), top: 0, left: 20, bottom: 0, right: 0)
         let column = NSStackView(views: [top, note])
         column.orientation = .vertical
         column.alignment = .leading
         column.spacing = 2
         top.widthAnchor.constraint(equalTo: column.widthAnchor).isActive = true
-        return Look.padded(column, top: 10, left: 12, bottom: 10, right: 12)
+        return Padded(column, top: 10, left: 12, bottom: 10, right: 12)
     }
 
     /// What onboarding set up, two to a row.
@@ -458,7 +458,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .accessibility:
             let granted = flow.accessibilityGranted
             let asked = flow.waitingForAccessibility || granted
-            let marks: [Look.Mark] = [
+            let marks: [StateMark] = [
                 asked ? .ok : .current,
                 granted ? .ok : asked ? .current : .todo,
                 granted ? .ok : .todo,
@@ -477,7 +477,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         glyph.contentTintColor = .nightcapSecondary
         glyph.widthAnchor.constraint(equalToConstant: 18).isActive = true
         let text = NSMutableAttributedString(
-            attributedString: Look.label(
+            attributedString: NSTextField.label(
                 "\(lead) \(rest)", size: 12, weight: .regular, color: .labelColor, width: Self.textWidth - 60
             )
             .attributedStringValue)
@@ -488,20 +488,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let line = NSStackView(views: [glyph, label])
         line.orientation = .horizontal
         line.spacing = 10
-        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+        return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     /// A line of the Accessibility checklist, marked as done, current or to do.
-    private func progress(_ mark: Look.Mark, _ text: String) -> NSView {
+    private func progress(_ mark: StateMark, _ text: String) -> NSView {
         let line = NSStackView(views: [
-            Look.mark(mark),
-            Look.label(
+            mark.view(),
+            NSTextField.label(
                 text, size: 12, weight: .regular, color: mark == .todo ? .nightcapSecondary : .labelColor,
                 width: Self.textWidth - 60),
         ])
         line.orientation = .horizontal
         line.spacing = 10
-        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+        return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     /// The suggestions' cells, three to a row in a group, divided by hairlines.
@@ -550,7 +550,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
             value: Double(flow.strength), minValue: 0, maxValue: 100, target: nil, action: nil)
         slider.isContinuous = true
         slider.setAccessibilityLabel(words.strength)
-        Look.attach(slider) { [weak self, weak slider] in
+        slider.onAction { [weak self, weak slider] in
             guard let self, let slider else { return }
             flow.moveStrength(to: UInt8(slider.doubleValue.rounded()), previewing: slider.dragging)
             stage?.strength = flow.strength
@@ -561,12 +561,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
             flow.moveStrength(to: UInt8(slider.doubleValue.rounded()), previewing: false)
             showPreview(false)
         }
-        let less = Look.secondary(words.lessWarm, width: 80)
-        let more = Look.secondary(words.moreWarm, width: 80)
+        let less = NSTextField.secondary(words.lessWarm, width: 80)
+        let more = NSTextField.secondary(words.moreWarm, width: 80)
         let line = NSStackView(views: [less, slider, more])
         line.orientation = .horizontal
         line.spacing = 12
-        let note = Look.secondary(words.strengthPreview(showing: false), width: Self.textWidth)
+        let note = NSTextField.secondary(words.strengthPreview(showing: false), width: Self.textWidth)
         previewNote = note
         let facts = NSStackView(views: words.nightShiftFacts.map { fact($0.title, $0.text) })
         facts.orientation = .horizontal
@@ -574,13 +574,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
         facts.distribution = .fillEqually
         facts.spacing = 20
         facts.widthAnchor.constraint(equalToConstant: Self.textWidth).isActive = true
-        return [rows([Look.padded(line, top: 10, left: 14, bottom: 10, right: 14)]), note, facts]
+        return [rows([Padded(line, top: 10, left: 14, bottom: 10, right: 14)]), note, facts]
     }
 
     /// Says so while the screen shows the strength, which it does only during a drag.
     private func showPreview(_ previewing: Bool) {
         guard let previewNote else { return }
-        let replacement = Look.label(
+        let replacement = NSTextField.label(
             words.strengthPreview(showing: previewing), size: 12, weight: .regular,
             color: previewing ? .nightcapMoon : .nightcapSecondary, width: Self.textWidth)
         previewNote.attributedStringValue = replacement.attributedStringValue
@@ -589,8 +589,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private func fact(_ title: String, _ text: String) -> NSView {
         let width = (Self.textWidth - 40) / 3
         let stack = NSStackView(views: [
-            Look.label(title, size: 12, weight: .semibold, color: .labelColor, width: width),
-            Look.label(text, size: 11, weight: .regular, color: .nightcapSecondary, width: width),
+            NSTextField.label(title, size: 12, weight: .semibold, color: .labelColor, width: width),
+            NSTextField.label(text, size: 11, weight: .regular, color: .nightcapSecondary, width: width),
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -608,19 +608,23 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         let hours = NSStackView(views: [
             timeField(flow.customHours.from) { [weak self] in self?.flow.customHours.from = $0 },
-            Look.secondary(words.customHoursTo, width: 20),
+            NSTextField.secondary(words.customHoursTo, width: 20),
             timeField(flow.customHours.to) { [weak self] in self?.flow.customHours.to = $0 },
         ])
         hours.spacing = 6
         return [
             rows([
-                radioRow(words.sunsetToSunriseChoice, detail: Look.secondary(words.followsYourLocation, width: 200)) {
+                radioRow(
+                    words.sunsetToSunriseChoice, detail: NSTextField.secondary(words.followsYourLocation, width: 200)
+                ) {
                     .sunsetToSunrise
                 },
                 radioRow(words.customHoursChoice, detail: hours, custom),
-                radioRow(words.byHandChoice, detail: Look.secondary(words.onlyWhenYouTurnItOn, width: 200)) { .off },
+                radioRow(words.byHandChoice, detail: NSTextField.secondary(words.onlyWhenYouTurnItOn, width: 200)) {
+                    .off
+                },
             ]),
-            Look.secondary(words.eitherWay, width: Self.textWidth),
+            NSTextField.secondary(words.eitherWay, width: Self.textWidth),
         ]
     }
 
@@ -629,14 +633,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
         button.font = .systemFont(ofSize: 13)
         let chosen = schedule()
         button.state = Self.sameKind(chosen, flow.schedule) ? .on : .off
-        Look.attach(button) { [weak self] in self?.pick(schedule()) }
+        button.onAction { [weak self] in self?.pick(schedule()) }
         radios.append((button, schedule))
         button.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let line = NSStackView(views: [button, detail])
         line.orientation = .horizontal
         line.distribution = .fill
         line.spacing = 12
-        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+        return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     private func pick(_ schedule: Schedule) {
@@ -655,7 +659,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         picker.font = .systemFont(ofSize: 12)
         picker.dateValue = Calendar.current.date(
             bySettingHour: Int(time.hour), minute: Int(time.minute), second: 0, of: Date())!
-        Look.attach(picker) { [weak self, weak picker] in
+        picker.onAction { [weak self, weak picker] in
             guard let self, let picker else { return }
             let parts = Calendar.current.dateComponents([.hour, .minute], from: picker.dateValue)
             set(TimeOfDay(hour: UInt8(parts.hour!), minute: UInt8(parts.minute!)))
@@ -691,13 +695,15 @@ final class Onboarding: NSObject, NSWindowDelegate {
     }
 
     private func summary(_ title: String, _ value: String, done: Bool = true) -> NSView {
-        let name = Look.label(title, size: 13, weight: .regular, color: .labelColor, width: 300)
+        let name = NSTextField.label(title, size: 13, weight: .regular, color: .labelColor, width: 300)
         name.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [Look.mark(done ? .ok : .off), name, Look.secondary(value, width: 300)])
+        let line = NSStackView(views: [
+            (done ? StateMark.ok : .off).view(), name, NSTextField.secondary(value, width: 300),
+        ])
         line.orientation = .horizontal
         line.distribution = .fill
         line.spacing = 10
-        return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
+        return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
     /// Back and a link at the left, the dots in the middle, and the step's buttons at the right.
@@ -706,19 +712,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
         var leading: [NSView] = []
         if flow.canGoBack {
             leading.append(
-                Look.button(words.back, .regular) { [weak self] in
+                CapsuleButton(words.back, .regular) { [weak self] in
                     self?.flow.goBack()
                     self?.draw()
                 })
         }
         if let link = buttons.link {
-            leading.append(Look.link(words.title(of: link)) { [weak self] in self?.run(link) })
+            leading.append(NSButton.link(words.title(of: link)) { [weak self] in self?.run(link) })
         }
         var trailing: [NSView] = []
         if let secondary = buttons.secondary {
-            trailing.append(Look.button(words.title(of: secondary), .regular) { [weak self] in self?.run(secondary) })
+            trailing.append(CapsuleButton(words.title(of: secondary), .regular) { [weak self] in self?.run(secondary) })
         }
-        let primary = Look.button(words.title(of: buttons.primary), .primary) { [weak self] in
+        let primary = CapsuleButton(words.title(of: buttons.primary), .primary) { [weak self] in
             self?.run(buttons.primary)
         }
         primary.isEnabled = buttons.primary.enabled

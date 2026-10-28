@@ -24,19 +24,19 @@ final class TimePicker: NSObject, NSWindowDelegate {
         self.words = words
         self.choose = choose
         self.onClose = onClose
-        hint = Look.secondary(Self.hintText(until: Self.next(start), words: words), width: 200)
+        hint = NSTextField.secondary(Self.hintText(until: Self.next(start), words: words), width: 200)
         super.init()
         picker.datePickerStyle = .textFieldAndStepper
         picker.datePickerElements = .hourMinute
         picker.dateValue = start
         picker.setAccessibilityLabel(words.untilTime)
-        Look.attach(picker) { [weak self] in self?.updateHint() }
-        let heading = Look.label(title, size: 13, weight: .semibold, color: .labelColor, width: 220)
+        picker.onAction { [weak self] in self?.updateHint() }
+        let heading = NSTextField.label(title, size: 13, weight: .semibold, color: .labelColor, width: 220)
         let until = NSStackView(views: [NSTextField(labelWithString: words.untilTime), picker])
         until.spacing = 8
-        let cancel = Look.button(words.cancel, .regular) { [weak self] in self?.close() }
+        let cancel = CapsuleButton(words.cancel, .regular) { [weak self] in self?.close() }
         cancel.keyEquivalent = "\u{1b}"
-        let done = Look.button(words.turn(state), .primary) { [weak self] in self?.done() }
+        let done = CapsuleButton(words.turn(state), .primary) { [weak self] in self?.done() }
         done.keyEquivalent = "\r"
         let buttons = NSStackView(views: [NSView(), cancel, done])
         let stack = NSStackView(views: [heading, until, hint, buttons])

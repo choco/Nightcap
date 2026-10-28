@@ -205,7 +205,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let toggle = NSSwitch()
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
-        Look.attach(toggle) { [choose] in choose(websites.command) }
+        toggle.onAction { [choose] in choose(websites.command) }
         return pane([
             block(
                 words.websites,
@@ -223,7 +223,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                         row(
                             title: words.scheduleAndStrength,
                             detail: words.scheduleAndStrengthDetail,
-                            accessory: Look.button(words.openNightShiftSettings, .regular) {
+                            accessory: CapsuleButton(words.openNightShiftSettings, .regular) {
                                 let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
                                 NSWorkspace.shared.open(URL(string: pane)!)
                             }),
@@ -244,21 +244,21 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                         row(
                             title: words.tour,
                             detail: words.tourDetail,
-                            accessory: Look.button(words.takeTheTour, .regular) { [takeTour] in takeTour() }),
+                            accessory: CapsuleButton(words.takeTheTour, .regular) { [takeTour] in takeTour() }),
                         nil),
                     cell(
                         row(
                             title: words.version(settings.version),
                             detail: words.updates(byItself: checkForUpdates != nil),
                             accessory: checkForUpdates.map { update in
-                                Look.button(words.checkForUpdates, .regular, update)
+                                CapsuleButton(words.checkForUpdates, .regular, update)
                             }),
                         nil),
                     cell(
                         row(
                             title: words.supportNightcap,
                             detail: words.supportNightcapDetail,
-                            accessory: Look.button(words.sponsor, .regular) {
+                            accessory: CapsuleButton(words.sponsor, .regular) {
                                 NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/choco")!)
                             }),
                         nil),
@@ -280,7 +280,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         guard let openAtLogin = settings.openAtLogin else { return [] }
         let toggle = NSSwitch()
         toggle.state = openAtLogin.on ? .on : .off
-        Look.attach(toggle) { [choose] in choose(openAtLogin.command) }
+        toggle.onAction { [choose] in choose(openAtLogin.command) }
         return [cell(row(title: words.openAtLogin, detail: nil, accessory: toggle), settings.check(.openAtLogin))]
     }
 
@@ -292,7 +292,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         }
         let rules =
             settings.rules.isEmpty
-            ? [Look.padded(Look.secondary(words.noRulesYet, width: Self.width - 28), top: 11, bottom: 11)]
+            ? [Padded(NSTextField.secondary(words.noRulesYet, width: Self.width - 28), top: 11, bottom: 11)]
             : settings.rules.map(ruleRow)
         var blocks = [
             group(files),
@@ -313,20 +313,20 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private func forNowRow(_ temporary: Settings.ForNowRow) -> NSView {
         let (name, _, icon) = describe(temporary.identity)
         let texts = NSStackView(views: [
-            Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
-            Look.secondary(temporary.label, width: 300),
+            NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
+            NSTextField.secondary(temporary.label, width: 300),
         ])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let end = Look.button(temporary.action.title, .small) { [choose] in choose(temporary.action.command) }
+        let end = CapsuleButton(temporary.action.title, .small) { [choose] in choose(temporary.action.command) }
         let row = NSStackView(views: [icon, texts, end])
         row.orientation = .horizontal
         row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 14
-        return Look.padded(row, top: 11, bottom: 11)
+        return Padded(row, top: 11, bottom: 11)
     }
 
     /// A rule's icon, name, what it says and what it is, its label and what can be done about
@@ -334,15 +334,15 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private func ruleRow(_ rule: Settings.RuleRow) -> NSView {
         let (name, detail, icon) = describe(rule.identity)
         let texts = NSStackView(views: [
-            Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
-            Look.secondary(words.rule(rule.says, detail), width: 260),
+            NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
+            NSTextField.secondary(words.rule(rule.says, detail), width: 260),
         ])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let action = rule.action.map { action in
-            Look.button(action.title, .small) { [choose] in choose(action.command) }
+            CapsuleButton(action.title, .small) { [choose] in choose(action.command) }
         }
         let row = NSStackView(
             views: [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [action].compactMap { $0 })
@@ -350,7 +350,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 14
-        return Look.padded(row, top: 11, bottom: 11)
+        return Padded(row, top: 11, bottom: 11)
     }
 
     /// An app by the name and icon of its bundle, if it's installed, and a website by its domain
@@ -373,8 +373,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     private func rulesToolbar() -> NSView {
-        let addApp = Look.button(words.addApp, .regular) { [weak self] in self?.addApp() }
-        let addWebsite = Look.button(words.addWebsite, .regular) { [weak self] in self?.addWebsite() }
+        let addApp = CapsuleButton(words.addApp, .regular) { [weak self] in self?.addApp() }
+        let addWebsite = CapsuleButton(words.addWebsite, .regular) { [weak self] in self?.addWebsite() }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let label = NSTextField(labelWithString: words.copyForConfigAs)
@@ -385,11 +385,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         format.controlSize = .small
         format.font = .systemFont(ofSize: 12)
         format.selectItem(at: exportFormat == .nix ? 0 : 1)
-        Look.attach(format) { [weak self, weak format] in
+        format.onAction { [weak self, weak format] in
             self?.exportFormat = format?.indexOfSelectedItem == 1 ? .toml : .nix
         }
-        let copy = Look.button(words.copy, .regular) {}
-        Look.attach(copy) { [weak self, weak copy] in
+        let copy = CapsuleButton(words.copy, .regular) {}
+        copy.onAction { [weak self, weak copy] in
             guard let self else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(export(exportFormat), forType: .string)
@@ -411,7 +411,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let says = saysPopup()
         Apps.pick(
             on: window, prompt: words.add, message: words.chooseAnAppForARule,
-            accessory: Look.padded(says, top: 8, bottom: 8)
+            accessory: Padded(says, top: 8, bottom: 8)
         ) { [weak self] bundleId in
             self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
         }
@@ -469,7 +469,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     private func note(_ text: String) -> NSView {
-        Look.padded(Look.secondary(text, width: Self.width - 8), top: 0, left: 4, bottom: 0, right: 4)
+        Padded(NSTextField.secondary(text, width: Self.width - 8), top: 0, left: 4, bottom: 0, right: 4)
     }
 
     // MARK: Building blocks
@@ -538,10 +538,10 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         let textWidth = Self.width - 28 - accessoryWidth
         var texts: [NSView] = []
         if let title {
-            texts.append(Look.label(title, size: 13, weight: .medium, color: .labelColor, width: textWidth))
+            texts.append(NSTextField.label(title, size: 13, weight: .medium, color: .labelColor, width: textWidth))
         }
         if let detail {
-            texts.append(Look.secondary(detail, width: textWidth))
+            texts.append(NSTextField.secondary(detail, width: textWidth))
         }
         let text = NSStackView(views: texts)
         text.orientation = .vertical
@@ -553,7 +553,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         row.distribution = .fill
         row.alignment = .centerY
         row.spacing = 14
-        return Look.padded(row, top: 11, bottom: 11)
+        return Padded(row, top: 11, bottom: 11)
     }
 
     /// A check's symbol, its line of text and what can be done about it, under its setting.
@@ -561,7 +561,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// on one.
     private func status(_ check: Settings.CheckStatus) -> NSView {
         let fixes = [check.restore, check.accept].compactMap { $0 }.map { button in
-            Look.button(button.title, .small) { [choose, perform] in
+            CapsuleButton(button.title, .small) { [choose, perform] in
                 switch button.fix {
                 case .command(let command): choose(command)
                 case .app(let fix): perform(fix)
@@ -570,15 +570,15 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         }
         let inline = fixes.count < 2 ? fixes : []
         let inlineWidth = inline.reduce(0) { $0 + $1.fittingSize.width + 8 }
-        let text = Look.secondary(check.text, width: Self.width - 28 - 18 - 8 - inlineWidth)
+        let text = NSTextField.secondary(check.text, width: Self.width - 28 - 18 - 8 - inlineWidth)
         text.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let line = NSStackView(views: [Look.mark(Look.Mark(check.state)), text] + inline)
+        let line = NSStackView(views: [StateMark(check.state).view(), text] + inline)
         line.orientation = .horizontal
         line.distribution = .fill
         line.alignment = .centerY
         line.spacing = 8
         guard inline.isEmpty, !fixes.isEmpty else {
-            return Look.padded(line, top: 0, bottom: 11)
+            return Padded(line, top: 0, bottom: 11)
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -593,7 +593,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         for view in [line, buttons] {
             view.widthAnchor.constraint(equalTo: status.widthAnchor).isActive = true
         }
-        return Look.padded(status, top: 0, bottom: 11)
+        return Padded(status, top: 0, bottom: 11)
     }
 }
 

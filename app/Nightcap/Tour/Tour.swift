@@ -324,12 +324,12 @@ final class Tour {
     /// The step's buttons, secondary first: Skip until the step is done, then Continue.
     private var buttons: [NSButton] {
         if step == .end {
-            return [firstClick(Look.button(words.done, .primary) { [weak self] in self?.end() })]
+            return [firstClick(CapsuleButton(words.done, .primary) { [weak self] in self?.end() })]
         }
         let next: () -> Void = { [weak self] in self?.advance() }
         return [
             firstClick(
-                done ? Look.button(words.continueTour, .primary, next) : Look.button(words.skip, .regular, next))
+                done ? CapsuleButton(words.continueTour, .primary, next) : CapsuleButton(words.skip, .regular, next))
         ]
     }
 
@@ -375,7 +375,7 @@ final class Tour {
 
     private func content() -> NSView {
         let inner = Self.width - 2 * Self.padding
-        let label = Look.label(stepLabel, size: 11, weight: .semibold, color: .nightcapMoon, width: inner)
+        let label = NSTextField.label(stepLabel, size: 11, weight: .semibold, color: .nightcapMoon, width: inner)
         var header: [NSView] = [label, NSView()]
         if step != .end {
             let endTour = FirstClickButton(title: words.endTour, target: nil, action: nil)
@@ -383,7 +383,7 @@ final class Tour {
             endTour.attributedTitle = NSAttributedString(
                 string: words.endTour,
                 attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
-            Look.attach(endTour) { [weak self] in self?.end() }
+            endTour.onAction { [weak self] in self?.end() }
             header.append(endTour)
         }
         let top = NSStackView(views: header)
@@ -394,13 +394,13 @@ final class Tour {
         let (title, body) = texts
         var views: [NSView] = [
             top,
-            Look.label(title, size: 15, weight: .semibold, color: .labelColor, width: inner),
+            NSTextField.label(title, size: 15, weight: .semibold, color: .labelColor, width: inner),
             // The system's label colours, which stay readable on the panel's glass.
-            Look.label(body, size: 12, weight: .regular, color: .secondaryLabelColor, width: inner),
+            NSTextField.label(body, size: 12, weight: .regular, color: .secondaryLabelColor, width: inner),
         ]
         if standsIn, step == .moon {
             views.append(
-                Look.label(
+                NSTextField.label(
                     words.onForTheTourOnceYouContinue, size: 12, weight: .regular, color: .nightcapMoon, width: inner))
         }
         switch step {
@@ -438,15 +438,15 @@ final class Tour {
             moon.contentTintColor = .labelColor
             moon.widthAnchor.constraint(equalToConstant: 16).isActive = true
             moon.heightAnchor.constraint(equalToConstant: 16).isActive = true
-            let title = Look.label(name, size: 13, weight: .regular, color: .labelColor, width: 72)
+            let title = NSTextField.label(name, size: 13, weight: .regular, color: .labelColor, width: 72)
             title.widthAnchor.constraint(equalToConstant: 72).isActive = true
-            let text = Look.label(
+            let text = NSTextField.label(
                 meaning, size: 11, weight: .regular, color: .secondaryLabelColor, width: width - 20 - 16 - 72 - 20)
             let row = NSStackView(views: [moon, title, text])
             row.orientation = .horizontal
             row.alignment = .centerY
             row.spacing = 10
-            views.append(Look.padded(row, top: 8, left: 10, bottom: 8, right: 10))
+            views.append(Padded(row, top: 8, left: 10, bottom: 8, right: 10))
         }
         let rowsStack = NSStackView(views: views)
         rowsStack.orientation = .vertical
@@ -466,7 +466,7 @@ final class Tour {
         let caps = KeyCaps(keys: keys, label: self.keys, press: press, release: release)
         caps.down = keysDown
         keyCaps = caps
-        let hint = Look.label(hintText, size: 12, weight: .regular, color: .secondaryLabelColor, width: width)
+        let hint = NSTextField.label(hintText, size: 12, weight: .regular, color: .secondaryLabelColor, width: width)
         hint.alignment = .center
         self.hint = hint
         let stack = NSStackView(views: [caps, hint])

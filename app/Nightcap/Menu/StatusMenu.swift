@@ -449,12 +449,13 @@ final class PointOut: NSViewController {
         super.init(nibName: nil, bundle: nil)
         let words = Wording.system
         let said = hidden ? words.noRoomForTheMoon : words.upHere
-        let title = Look.label(said.title, size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
+        let title = NSTextField.label(
+            said.title, size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
-        let text = Look.label(
+        let text = NSTextField.label(
             said.body, size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
-        let ok = Look.button(words.ok, .primary) { [weak self] in self?.onOK() }
-        let tour = Look.button(words.takeTheTour, .regular) { [weak self] in self?.takeTour() }
+        let ok = CapsuleButton(words.ok, .primary) { [weak self] in self?.onOK() }
+        let tour = CapsuleButton(words.takeTheTour, .regular) { [weak self] in self?.takeTour() }
         let buttons = NSStackView(views: hidden ? [NSView(), ok] : [NSView(), tour, ok])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [title, text, buttons])
