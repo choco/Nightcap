@@ -22,7 +22,7 @@ struct TourQuotes: Equatable {
 
     init(sample: TourApp, site: TourSite?, example: TourApp, words: Wording) {
         let place = Place.app(sample.bundleId)
-        let rule = Rule(place: place, says: .off, length: .indefinite, setBy: .tour)
+        let rule = Rule(place: place, says: .off, length: .indefinite, setBy: .trial)
         let snooze = Rule(place: place, says: .on, length: .until(until: Self.snoozeEnd), setBy: .you)
         let fresh = PlaceInFront(
             place: place, gives: .on, rules: [], base: nil, inherits: Self.tourOn, afterUntil: .on, afterReset: .on)
@@ -73,14 +73,14 @@ struct TourQuotes: Equatable {
 
     /// Everywhere while the tour stands in for the schedule with Night Shift on.
     private static let forTheTour = PlaceInFront(
-        place: .everywhere, gives: .on, rules: [], base: .tour, inherits: nil, afterUntil: .on, afterReset: .on)
+        place: .everywhere, gives: .on, rules: [], base: .standIn, inherits: nil, afterUntil: .on, afterReset: .on)
 
     /// The menu's row for the first of `places`, with `app` in front, on the site at `domain` if
     /// there's one: by default with the tour standing in, which decides.
     private static func row(
         in app: TourApp, on domain: String? = nil, _ places: [PlaceInFront], everywhere: PlaceInFront = forTheTour,
         afterSwitch: [Rule] = [Rule(place: .everywhere, says: .off, length: .indefinite, setBy: .you)],
-        decision: Decision = Decision(state: .on, place: .everywhere, reasons: [.tour]),
+        decision: Decision = Decision(state: .on, place: .everywhere, reasons: [.standIn]),
         nightShift: NightShift = .on, words: Wording
     ) -> Menu.PlaceRow {
         let menu = Menu(

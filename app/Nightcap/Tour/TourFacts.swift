@@ -16,9 +16,9 @@ struct TourSite: Equatable {
 
 /// What a running tour's steps follow (ADR-0016), from the core's answers, whichever way the
 /// user made a change: the sample's and the site's places, the switch's side, and whether the
-/// tour stands in for the schedule.
+/// tour's trial stands in for the schedule.
 struct TourFacts: Equatable {
-    /// The tour stands in for the schedule with Night Shift on: it was off as the tour started.
+    /// The trial stands in for the schedule with Night Shift on: the tour found it off.
     let standsIn: Bool
     /// Night Shift on everywhere, as the Night Shift item's check shows it: the switch's side.
     let everywhereOn: Bool
@@ -38,10 +38,16 @@ struct TourPlace: Equatable {
 }
 
 extension TourFacts {
+    /// Whether the tour asks its trial to stand in for the schedule with Night Shift on, as it
+    /// finds Night Shift in `snapshot`: where it's off, as the tour's first step then says.
+    static func asksForStandIn(_ snapshot: Snapshot) -> Bool {
+        snapshot.nightShift().state == .off
+    }
+
     /// What the steps follow in `snapshot` for the sample with bundle ID `sample`, and the site at
-    /// `site`, or nil while no tour runs.
+    /// `site`, or nil while no trial runs.
     init?(_ snapshot: Snapshot, sample: String, site: String?) {
-        guard let tour = snapshot.tour() else { return nil }
+        guard let trial = snapshot.trial() else { return nil }
         let front = snapshot.front()
         let everyRule = snapshot.rules()
         let followed = { (place: Place, inFront: Bool) in
@@ -54,7 +60,7 @@ extension TourFacts {
                 snoozed: rule.flatMap { rule in shortest.map { $0.says != rule.says } } ?? false)
         }
         self.init(
-            standsIn: tour.standsIn,
+            standsIn: trial.standsIn,
             everywhereOn: front.everywhere.gives == .on,
             sample: followed(.app(sample), front.app == sample),
             site: site.map { followed(.domain($0), front.site == $0) })

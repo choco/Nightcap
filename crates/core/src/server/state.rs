@@ -78,8 +78,8 @@ impl Facts {
 }
 
 impl Inner {
-    /// Mid-tour, the state the tour's end would leave, with Night Shift as the tour holds it: a
-    /// run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
+    /// Mid-trial, the state the trial's end would leave, with Night Shift as the trial holds it:
+    /// a run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
         Persisted {
             rules: self.places.kept().rules.clone(),

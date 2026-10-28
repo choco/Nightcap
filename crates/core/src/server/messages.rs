@@ -68,14 +68,15 @@ pub enum Fact {
     },
 }
 
-/// A command only the app sends, which never goes on the wire: the CLI has no tour
-/// (ADR-0016) and no onboarding.
+/// A command only the app sends, which never goes on the wire: the CLI begins no trial
+/// (ADR-0016) and has no onboarding.
 #[derive(Debug, uniffi::Enum)]
 pub enum AppCommand {
-    /// Starts the tour (ADR-0016).
-    StartTour,
-    /// Ends the tour, as it finishes or the user leaves it.
-    EndTour,
+    /// Begins a trial, unless one runs (ADR-0016), which stands in for the schedule with Night
+    /// Shift on if `stands_in`.
+    BeginTrial { stands_in: bool },
+    /// Ends the trial, which puts back what it found.
+    EndTrial,
     /// Finishes onboarding, with whether the user chose to check websites, or None where the
     /// config sets it and onboarding never asked.
     FinishOnboarding { websites: Option<bool> },

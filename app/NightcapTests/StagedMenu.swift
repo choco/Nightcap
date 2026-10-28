@@ -48,7 +48,12 @@ let zurichSun = Step.fact(
         sunrises: ["2026-10-15T05:49:20Z", "2026-10-16T05:50:47Z", "2026-10-17T05:52:14Z"].map(at),
         sunsets: ["2026-10-15T16:33:25Z", "2026-10-16T16:31:32Z", "2026-10-17T16:29:41Z"].map(at)))
 
-let tourStarted = Step.appCommand(.startTour)
+/// The tour's trial begins, as the tour begins it finding Night Shift on.
+let tourBegun = Step.appCommand(.beginTrial(standsIn: false))
+
+/// The tour's trial begins standing in for the schedule, as the tour begins it finding Night
+/// Shift off.
+let tourBegunStandingIn = Step.appCommand(.beginTrial(standsIn: true))
 
 nonisolated let tourSample = "io.github.choco.nightcap.tour-sample"
 

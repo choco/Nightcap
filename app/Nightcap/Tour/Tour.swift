@@ -6,9 +6,9 @@ import os
 /// The tour (ADR-0016): a floating panel at the top of the screen that walks through the moon, a
 /// rule the user makes for Tour Sample and sees act, snoozing that rule, the same rule for a site
 /// where website checking can, and the peek. Every step can be skipped, and the tour ended.
-/// While it runs, the core has Night Shift on for it if it was off and holds the rules added
-/// during it in memory; the steps follow its answers to the queries, and quote the menu's items
-/// as `Menu` words them.
+/// It runs in a trial of the core's, which holds the rules added during it in memory and, where
+/// the tour finds Night Shift off, stands in for the schedule with it on; the steps follow the
+/// core's answers to the queries, and quote the menu's items as `Menu` words them.
 final class Tour {
     enum Step {
         case moon, rule, snooze, site, peek, end
@@ -68,12 +68,13 @@ final class Tour {
     private let quotes: TourQuotes
     private let steps: [Step]
     private var index = 0
-    /// The core hears of the tour once the user continues from its first step.
+    /// The tour begins its trial once the user continues from its first step.
     private var begun = false
-    /// What the steps follow, from the moment the core runs the tour.
+    /// What the steps follow, from the moment the core runs the trial.
     private var report: TourFacts?
-    /// Night Shift is off as the core last heard, as the tour finds it before the core runs it.
-    private var nightShiftOff = false
+    /// Whether the tour asks its trial to stand in for the schedule, from Night Shift as the core
+    /// last heard, as the tour finds it before the trial begins.
+    private var asksForStandIn = false
     private var milestones = Milestones()
     private var drawn: Shown?
     private var keysDown = false
@@ -86,18 +87,19 @@ final class Tour {
     private var terminations: NSObjectProtocol?
     private let press: () -> Void
     private let release: () -> Void
-    private let begin: (_ start: AppCommand) -> Void
+    private let begin: (_ trial: AppCommand) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
     /// `press` and `release` work the shortcut as its keys would, for the keycaps; `begin` hands
-    /// the core the tour's start as the user continues from the first step, and `onEnd` runs once
-    /// the tour is over. Without `browser`, the tour has no site step.
+    /// the core the trial's begin as the user continues from the first step, and `onEnd` runs
+    /// once the tour is over, with whether the trial began. Without `browser`, the tour has no
+    /// site step.
     init(
         shortcut: KeyboardShortcuts.Shortcut?,
         browser: Browser?,
         press: @escaping () -> Void,
         release: @escaping () -> Void,
-        begin: @escaping (_ start: AppCommand) -> Void,
+        begin: @escaping (_ trial: AppCommand) -> Void,
         onEnd: @escaping (_ begun: Bool) -> Void
     ) {
         self.shortcut = shortcut
@@ -124,9 +126,9 @@ final class Tour {
 
     private var siteRuled: Bool { facts.site?.rule == .off }
 
-    /// Whether the tour has Night Shift on in place of the schedule: as the core decided once it
-    /// heard of the tour, and until then as it will, from Night Shift being off now.
-    private var standsIn: Bool { report?.standsIn ?? nightShiftOff }
+    /// Whether the tour has Night Shift on in place of the schedule: as the core answers once the
+    /// trial has begun, and until then as the tour will ask.
+    private var standsIn: Bool { report?.standsIn ?? asksForStandIn }
 
     /// Tour Sample stays open through the steps that use it.
     private var usesSample: Bool { step == .rule || step == .snooze }
@@ -162,7 +164,7 @@ final class Tour {
         let report = TourFacts(snapshot, sample: Self.sample.bundleId, site: site?.domain)
         if let before = self.report, let after = report { follow(from: before, to: after) }
         self.report = report
-        nightShiftOff = snapshot.nightShift().state == .off
+        asksForStandIn = TourFacts.asksForStandIn(snapshot)
         guard reported else { return }
         if shown != drawn {
             draw()
@@ -172,7 +174,7 @@ final class Tour {
     }
 
     /// Whether the step can be drawn: every step after the first follows what the core answers
-    /// once it has decided the tour's start.
+    /// once it has decided the trial's begin.
     private var reported: Bool { step == .moon || report != nil }
 
     /// Records what the step at hand saw happen between two answers.
@@ -229,7 +231,7 @@ final class Tour {
     private func advance() {
         if step == .moon, !begun {
             begun = true
-            begin(.startTour)
+            begin(.beginTrial(standsIn: asksForStandIn))
         }
         let hadSample = usesSample
         index += 1

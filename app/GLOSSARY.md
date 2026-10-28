@@ -22,11 +22,11 @@ The window that sets up Night Shift with the user, then takes them through each 
 _Avoid_: setup wizard, first run
 
 **Tour**:
-An optional walk-through in a floating panel: the moon, a rule the user makes and sees act, then snoozes and puts back, for an app and where it can for a site, and the peek. Offered by “Nightcap is up here” at the end of onboarding, once the moon is pointed out, and in Settings; every step can be skipped, and what the user changes during it lasts only while it runs.
+An optional walk-through in a floating panel: the moon, a rule the user makes and sees act, then snoozes and puts back, for an app and where it can for a site, and the peek. Offered by “Nightcap is up here” at the end of onboarding, once the moon is pointed out, and in Settings; every step can be skipped. It runs in a trial, which it begins as the user continues from its first step, with the stand-in when it finds Night Shift off, so what the user changes during it lasts only while it runs.
 _Avoid_: tutorial, walkthrough
 
 **Tour sample**:
-The tour's own app, Tour Sample, which the user adds a tour rule for from the menu, to see the rule act. The tour uses it even when one of the user's apps with a rule is running.
+The tour's own app, Tour Sample, which the user adds a rule for from the menu, a trial rule, to see the rule act. The tour uses it even when one of the user's apps with a rule is running.
 
 **Suggestion**:
 An app or website onboarding offers a rule for, already ticked if it has one: installed apps where colour matters, and websites that need true colour, mostly video streaming.

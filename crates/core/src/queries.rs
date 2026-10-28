@@ -1,11 +1,11 @@
 //! What clients can ask: Night Shift, what's in front, the rules, the config, the user's
-//! preferences, the checks, the tour and the install, as facts the snapshot carries and each
+//! preferences, the checks, the trial and the install, as facts the snapshot carries and each
 //! client words itself (ADR-0002, ADR-0010).
 
 use jiff::Timestamp;
 use nightcap_protocol::{
     About, Checks, ConfigState, FileError, Front, Inherited, NightShiftState, OnOff, Permissions,
-    Place, PlaceInFront, Preferences, Reason, Rule, Schedule, TourState, WebsiteChecking,
+    Place, PlaceInFront, Preferences, Rule, Schedule, TrialState, WebsiteChecking,
 };
 
 use crate::rules::places::PlaceLook;
@@ -21,7 +21,7 @@ pub(crate) struct Answers {
     pub(crate) config: ConfigState,
     pub(crate) preferences: Preferences,
     pub(crate) checks: Checks,
-    pub(crate) tour: Option<TourState>,
+    pub(crate) trial: Option<TrialState>,
     pub(crate) about: About,
 }
 
@@ -91,8 +91,8 @@ impl Answers {
                     login_item: inner.grants.login_item,
                 },
             },
-            tour: inner.places.tour_runs().then(|| TourState {
-                stands_in: look.everywhere.base == Some(Reason::Tour),
+            trial: inner.places.trial().map(|trial| TrialState {
+                stands_in: trial.stands_in(),
             }),
             about: About {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
@@ -120,7 +120,7 @@ fn in_front(at: &PlaceLook) -> PlaceInFront {
 
 impl Inner {
     /// Every rule at every place: the apps' and sites' indefinite ones first, the config's, then
-    /// the ad-hoc ones, then the tour's.
+    /// the ad-hoc ones, then the trial's.
     pub(crate) fn every_rule(&self, now: Timestamp) -> Vec<Rule> {
         self.places
             .look(&self.facts.world(now))

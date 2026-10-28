@@ -15,7 +15,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - Who sets what:
   - The config sets only indefinite rules, and never for everywhere (ADR-0006, ADR-0007).
   - The user sets indefinite rules, an app's or site's as ad-hoc rules and everywhere's with the switch, and rules until the schedule turns or until a time, anywhere.
-  - The tour sets indefinite rules, which last while it runs (ADR-0016).
+  - During a trial, the indefinite rules the user adds are the trial's, which last while it runs (ADR-0016).
   - An outside change is adopted as a rule until the schedule turns.
 - A change goes the other way from what its place gives now, whether that's its own say or one inherited from the place before it.
 

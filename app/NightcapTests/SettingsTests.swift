@@ -284,10 +284,10 @@ struct SettingsTests {
 
     @Test func theRulesTabNeverListsTheToursRules() throws {
         let core = try onByTheSchedule(
-            tourStarted, front(tourSample),
+            tourBegun, front(tourSample),
             .command(.addRule(identity: .app(tourSample), says: .off)))
 
-        #expect(core.snapshot().rules().contains { $0.setBy == .tour })
+        #expect(core.snapshot().rules().contains { $0.setBy == .trial })
         #expect(settings(core).rules == [])
     }
 

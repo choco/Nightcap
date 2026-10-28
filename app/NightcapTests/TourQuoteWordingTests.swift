@@ -37,7 +37,8 @@ struct TourQuoteWordingTests {
     @Test func eachQuoteIsWhereTheMenuShowsItInTheSituationItsStepDescribes() throws {
         let quotes = TourQuotes(sample: sample, site: site, example: mail, words: .staged)
         let core = try staged(
-            "2026-10-16T20:00:00+02:00", config: "websites = true\n", reported(false), tourStarted, reported(true))
+            "2026-10-16T20:00:00+02:00", config: "websites = true\n", reported(false), tourBegunStandingIn,
+            reported(true))
         let snoozes = { (command: Command) in
             if case .set(_, _, .for) = command { true } else { false }
         }

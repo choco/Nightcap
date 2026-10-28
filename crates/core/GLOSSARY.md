@@ -51,7 +51,7 @@ A rule until the schedule next turns it back or until a time, which gives back w
 _Avoid_: timer, hold, timed disable, manual state
 
 **Set by**:
-Who set a rule: the config, the user, the tour, or an outside change Nightcap adopted.
+Who set a rule: the config, the user, the user during a trial, or an outside change Nightcap adopted.
 
 **Snooze**:
 A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends.
@@ -71,8 +71,11 @@ _Avoid_: external change
 **Adoption**:
 Taking an outside change as flipping what the user sees: it takes off what the deciding place says, and sets the other state over an indefinite rule or the schedule until the schedule next turns it back.
 
-**Tour stand-in**:
-A tour started with Night Shift off has it on for the tour's length, in place of the schedule. Its end, like every tour's, puts back the user's rules as the tour found them (ADR-0016).
+**Trial**:
+A stretch the app begins and ends, during which every change lives in memory only: Nightcap keeps what it found, which `state.json` and `rules.toml` go on holding, and its end puts that back, short of what would have ended meanwhile. The CLI begins none (ADR-0016).
+
+**Stand-in**:
+Night Shift on in place of the schedule, for a trial's length, when the app asks for it as the trial begins: everywhere's rules wait aside, and the user's own changes still come first.
 
 ### Rules
 
@@ -114,8 +117,8 @@ _Avoid_: Nix rule, static rule
 An indefinite rule at an app or a site the user added at runtime, kept by Nightcap until it graduates.
 _Avoid_: runtime rule, dynamic rule
 
-**Tour rule**:
-An indefinite rule at an app or a site the user adds while the tour runs, kept in memory only until it ends: the rules query and `nightcap status` show it, but Settings, the saved state and exports never do.
+**Trial rule**:
+An indefinite rule at an app or a site the user adds during a trial, kept in memory only until it ends: the rules query and `nightcap status` show it, but Settings, the saved state and exports never do.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, whatever either says, at which point Nightcap drops its own copy.
@@ -133,10 +136,10 @@ Reading the config again, which is the only way a change to it takes effect.
 Night Shift held other than macOS would have it, by a rule. Nightcap releases every force on a clean exit (ADR-0008).
 
 **Decision**:
-What Night Shift should be for the current context, the place that decides it, and what it rests on: that place's rules, shortest first, then for everywhere the tour stand-in or the schedule.
+What Night Shift should be for the current context, the place that decides it, and what it rests on: that place's rules, shortest first, then for everywhere the stand-in or the schedule.
 
 **Reason**:
-One thing behind a decision: a rule, the tour stand-in or the schedule.
+One thing behind a decision: a rule, the stand-in or the schedule.
 
 **Wanted state**:
 What Night Shift should be right now: what the deciding place says.
@@ -149,7 +152,7 @@ Nightcap's core as it runs, with the app and the CLI as its clients: the only wr
 _Avoid_: daemon, service
 
 **Command**:
-A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload, an update check or keeping notifications off, which Nightcap may refuse. The app and the CLI send the same commands, a fix's among them where the app doesn't carry it out in macOS itself; starting and ending the tour and finishing onboarding are the app's alone.
+A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload, an update check or keeping notifications off, which Nightcap may refuse. The app and the CLI send the same commands, a fix's among them where the app doesn't carry it out in macOS itself; beginning and ending a trial and finishing onboarding are the app's alone.
 
 **Refusal**:
 Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too, short of a reload's, which the config file's check shows already.
@@ -158,4 +161,4 @@ Why Nightcap refused a command, which then changes nothing: what the client need
 Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.
 
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.

@@ -87,7 +87,7 @@ struct Settings: Equatable {
     let checks: [CheckStatus]
     /// Where the config is read from, whether or not it exists.
     let configPath: String
-    /// The apps' and sites' indefinite rules: the config's, then the user's. The tour's never
+    /// The apps' and sites' indefinite rules: the config's, then the user's. A trial's never
     /// show (ADR-0016).
     let rules: [RuleRow]
     /// The apps and sites Night Shift is on or off in for now, by temporary rules alone: a
@@ -197,7 +197,7 @@ struct Settings: Equatable {
     }
 
     /// A rule's row: a snooze can be put back, the user's rule removed, and a config rule changed
-    /// only in the config (ADR-0006). The tour's rules have none (ADR-0016).
+    /// only in the config (ADR-0006). A trial's rules have none (ADR-0016).
     private static func row(_ rule: Rule, among rules: [Rule], _ words: Wording) -> RuleRow? {
         guard let identity = rule.place.identity else { return nil }
         // The shortest rule at the place, where it says the other way.
@@ -206,7 +206,7 @@ struct Settings: Equatable {
             .flatMap { $0.says != rule.says ? $0 : nil }
         let shown: (label: String, action: Action?)
         switch (snooze, rule.setBy) {
-        case (_, .tour), (_, .outsideChange):
+        case (_, .trial), (_, .outsideChange):
             return nil
         case (let snooze?, _):
             shown = (

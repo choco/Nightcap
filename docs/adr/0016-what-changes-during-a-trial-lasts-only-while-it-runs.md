@@ -1,0 +1,39 @@
+# What changes during a trial lasts only while it runs
+
+The tour, offered at the end of onboarding and from Settings, walks through the moon, a rule the user makes and sees act, snoozing it, and the peek, in a floating panel. A rule at work needs an app in front to make one for. The tour opens an app of its own, Tour Sample, even when one of the user's apps with a rule is running: every tour then runs the same way, on the Space the user is on, and the user makes the rule from the menu as they would for any app. Where website checking can, the tour does the same for a site, on the project's own, nightcap.choco.me. And the moon, the rule and the peek show nothing while Night Shift is off, as it is all day: the tour has to warm the screen and give it back as it found it. Everything the user tries along the way would otherwise reach their own state: rules left in `rules.toml`, a rule of theirs changed or removed, temporary rules, or an outside change the core adopts. How the tour goes is a matter for the app alone: the CLI has no tour.
+
+## Decision
+
+- The core knows a trial, not the tour. The app begins one and ends it, with commands only it sends, `BeginTrial` and `EndTrial`; the CLI begins none. The tour sample, the site, the example and the steps are the app's.
+- A trial keeps the user's ad-hoc rules and every other rule of the user's or an outside change's as it found them, and its end puts them back, short of what would have ended meanwhile. So what the user changes during it, from the menu or the CLI, lasts only while it runs:
+  - A rule added during a trial is a trial rule: it lives in memory only, and never reaches `rules.toml`, Settings' rule list or `rules export`.
+  - Changing or removing one of the user's own rules stays in memory; `rules.toml` and `rules export` keep the rules the end puts back.
+  - Snoozes, other temporary rules and the switch go with the trial.
+  - The strength, website checking and Settings' other choices aren't the trial's, and stay.
+- As it begins a trial, the app can ask for the stand-in: the trial then stands in for the schedule with Night Shift on, for its length, and everywhere's rules wait aside. Night Shift really switches on. The user's own choices during the trial still come first, and a tap off then on returns to the stand-in's on, as a reset of everywhere does.
+- A trial's end, or quitting, puts back what it found, and the schedule decides again. Throughout a trial, `state.json` holds what its end would leave, with Night Shift as the trial holds it: after a crash mid-trial, the next run finds Night Shift where the last run left it, which is no outside change (ADR-0008), and switches it back.
+- The tour is the app's use of a trial:
+  - When Night Shift is off, the tour's first step says it will turn it on. The app begins the trial only once the user continues, asking for the stand-in when it finds Night Shift off, and ends it as the tour finishes, as the user leaves it, or as Nightcap quits.
+  - While the tour runs, its steps follow the core's answers to the queries, whichever way the user made a change: `front()` says whether the sample and the site are in front, `rules()` what their rules say and whether they're snoozed, and `trial()` whether the trial stands in. The switch's side is the Night Shift item's.
+  - The steps quote the menu's items from the menu-bar UI's own model of the menu, the one the menu draws, in the situation each step describes, so a step quotes what the menu shows.
+  - The app knows its trial is the tour: the Night Shift item says "On for the tour" for the stand-in, and the menu calls a trial rule the tour's.
+- Tour Sample is an app in Nightcap's bundle, beside the CLI. A window of Nightcap's own would make Nightcap the front app, and on macOS 27, opening a status item's menu while its own app is in front hands the focus to another app, so the menu would offer a rule for that one.
+
+## Consequences
+
+- The stand-in can turn Night Shift on in daytime, which the core otherwise does only on the user's command.
+- A setter of rules, and a reason for Night Shift being on, that exist only while a trial runs.
+- The app decides whether a trial stands in, from Night Shift as its last snapshot had it.
+- A config reload during a trial still graduates rules, from `rules.toml` and from what the end puts back.
+- A second app in the bundle, signed and checked with Nightcap's.
+
+## Rejected alternatives
+
+- **The core running the tour, and standing in whenever a tour starts with Night Shift off**: the core would hold a flow the CLI never sees, and how the tour goes, such as whether it warms the screen, would be the core's to decide.
+- **Keeping what the user changed during a trial**: a rule of theirs turned the other way or removed while trying the menu, or a snooze set for the sample, would outlast the tour unnoticed.
+- **Warming with the tint alone**, `BlueLightReductionFactor` at 1 with Night Shift off (ADR-0015): no core change, but the moon and the menu would say off while the screen looks warm, and the rule would have nothing to switch off.
+- **Ad-hoc rules for what a trial adds**, removed at the end: a crash mid-trial leaves them in `rules.toml`, and Settings lists them meanwhile.
+- **The sample's rule there from the start**: the user would watch a rule act without making one, and the menu would need a step of its own.
+- **The tour only at night**: it would be offered at the end of onboarding, mostly run in daytime, and show nothing.
+- **Turning Night Shift on with `on`**: an indefinite rule for everywhere, which the trial's end would have to undo, and which a crash leaves behind.
+- **The panel as a popover from the moon**: on macOS 27 the moon's clicks never arrive while a popover hangs from it, and AppKit hides popovers on a change of Space.

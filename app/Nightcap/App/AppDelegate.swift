@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onEnd: { [weak self] begun in
                 guard let self else { return }
                 self.tour = nil
-                if begun { host.send(.endTour) }
+                if begun { host.send(.endTrial) }
             })
         self.tour = tour
         tour.start(snapshot)

@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use nightcap_protocol::{
     About, Answer, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload,
-    Preferences, Query, Response, Rule, RuleIdentity, TourState,
+    Preferences, Query, Response, Rule, RuleIdentity, TrialState,
 };
 
 use crate::queries::Answers;
@@ -54,9 +54,9 @@ impl Snapshot {
         self.answers.checks.clone()
     }
 
-    /// The tour, while one runs (ADR-0016).
-    pub fn tour(&self) -> Option<TourState> {
-        self.answers.tour
+    /// The trial, while one runs (ADR-0016).
+    pub fn trial(&self) -> Option<TrialState> {
+        self.answers.trial
     }
 
     /// The Nightcap that answers: its version and its install (ADR-0011).
@@ -94,7 +94,7 @@ impl Snapshot {
             Query::Config => Answer::Config(self.config()),
             Query::Preferences => Answer::Preferences(self.preferences()),
             Query::Checks => Answer::Checks(self.checks()),
-            Query::Tour => Answer::Tour(self.tour()),
+            Query::Trial => Answer::Trial(self.trial()),
             Query::About => Answer::About(self.about()),
             Query::Export(format) => Answer::Export(self.export(*format)),
         }

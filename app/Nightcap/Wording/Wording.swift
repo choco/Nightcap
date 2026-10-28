@@ -21,7 +21,7 @@ struct Wording {
         case site(domain: String)
     }
 
-    /// Whose a rule is.
+    /// Whose a rule is. A trial's is the tour's, the only trial the app begins.
     enum Whose {
         case config, yours, tour, outsideChange
     }

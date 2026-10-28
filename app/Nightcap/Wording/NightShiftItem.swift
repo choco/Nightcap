@@ -18,7 +18,8 @@ extension Wording {
         text("Following the schedule until \(time(turn))")
     }
 
-    /// The tour stands in for the schedule with Night Shift on (ADR-0016).
+    /// A trial stands in for the schedule with Night Shift on: only the tour begins one
+    /// (ADR-0016).
     var onForTheTour: String { text("On for the tour") }
 
     /// A change everywhere decides: "Off until 23:30", or with no end "Off until you turn it on".

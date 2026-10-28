@@ -9,6 +9,7 @@ use nightcap_protocol::{
 
 use crate::rules::domain::{self, Host};
 use crate::rules::schedule::Timeline;
+use crate::rules::trial::Trial;
 
 /// What rules match against.
 #[derive(Default)]
@@ -47,7 +48,7 @@ pub(crate) struct Kept {
     pub ad_hoc: Vec<(RuleIdentity, OnOff)>,
 }
 
-/// The rules at every place (ADR-0018), with what a tour found, which its end puts back
+/// The rules at every place (ADR-0018), with what a trial found, which its end puts back
 /// (ADR-0016), and the release on the way out (ADR-0008).
 ///
 /// Nothing ends by itself: a caller expires what ended by its `now` before it changes
@@ -55,29 +56,16 @@ pub(crate) struct Kept {
 /// the last `expire`. A change that's refused leaves the places as they were.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Places {
-    /// What decides now, and outside a tour what's kept.
+    /// What decides now, and outside a trial what's kept.
     live: Kept,
     config: Vec<(RuleIdentity, OnOff)>,
     /// The indefinite rules at apps and sites: the config's, then the ad-hoc ones, then the
-    /// tour's, one per place, the config's where it has one (ADR-0006).
+    /// trial's, one per place, the config's where it has one (ADR-0006).
     indefinite: Vec<Rule>,
-    tour: Option<Tour>,
+    trial: Option<Trial>,
     /// On the way out, the only rules that still decide: everywhere's, short of one until a
     /// time.
     released: Option<Vec<Rule>>,
-}
-
-/// A tour in progress (ADR-0016).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Tour {
-    /// The ad-hoc rules and every other rule as the tour found them, which its end puts back,
-    /// short of what ended meanwhile, and which `state.json` and `rules.toml` keep.
-    found: Kept,
-    /// The rules the user added during the tour, which it keeps instead of ad-hoc ones.
-    rules: Vec<(RuleIdentity, OnOff)>,
-    /// Whether the tour has Night Shift on for itself, standing in for the schedule: it was off
-    /// as the tour started.
-    stands_in: bool,
 }
 
 /// Everything the places show, as of one call.
@@ -99,7 +87,7 @@ pub(crate) struct Look<'a> {
     pub host_matters: bool,
     /// Every rule at every place, as they decide now, each with its snooze: the shortest rule
     /// at its place, where that's shorter and says the other way. The indefinite rules at apps
-    /// and sites come first: the config's, then the ad-hoc ones, then the tour's.
+    /// and sites come first: the config's, then the ad-hoc ones, then the trial's.
     pub rules: Vec<(&'a Rule, Option<&'a Rule>)>,
 }
 
@@ -110,8 +98,8 @@ pub(crate) struct PlaceLook {
     /// What a reset takes off, shortest first: its temporary rules, and everywhere's indefinite
     /// one.
     pub rules: Vec<Rule>,
-    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the tour
-    /// standing in, else the schedule.
+    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the stand-in,
+    /// else the schedule.
     pub base: Option<Reason>,
     /// Its own say, else the one it inherits, else Night Shift as last reported.
     pub gives: OnOff,
@@ -141,7 +129,7 @@ impl Places {
             live: kept,
             config: Vec::new(),
             indefinite: Vec::new(),
-            tour: None,
+            trial: None,
             released: None,
         };
         places.tidy();
@@ -149,31 +137,27 @@ impl Places {
         places
     }
 
-    /// What `state.json` and `rules.toml` keep: mid-tour, what the tour found.
+    /// What `state.json` and `rules.toml` keep: mid-trial, what the trial found.
     pub(crate) fn kept(&self) -> &Kept {
-        match &self.tour {
-            Some(tour) => &tour.found,
-            None => &self.live,
-        }
+        self.trial.as_ref().map_or(&self.live, Trial::found)
     }
 
-    /// Takes the config's rules, dropping the ad-hoc and tour rules for the places it now has,
-    /// which have graduated (ADR-0007), from what the tour's end puts back too.
+    /// Takes the config's rules, dropping the ad-hoc and trial rules for the places it now has,
+    /// which have graduated (ADR-0007), from what the trial's end puts back too.
     pub(crate) fn set_config(&mut self, rules: Vec<(RuleIdentity, OnOff)>) {
-        let outside = |(identity, _): &(RuleIdentity, OnOff)| {
-            !rules.iter().any(|(config, _)| config == identity)
-        };
-        self.live.ad_hoc.retain(outside);
-        if let Some(tour) = &mut self.tour {
-            tour.found.ad_hoc.retain(outside);
-            tour.rules.retain(outside);
+        for kept in self.kept_mut() {
+            kept.ad_hoc
+                .retain(|(identity, _)| !rules.iter().any(|(config, _)| config == identity));
+        }
+        if let Some(trial) = &mut self.trial {
+            trial.graduate(&rules);
         }
         self.config = rules;
         self.lay_out();
     }
 
     /// The switch (ADR-0018): takes off everywhere's rules that say otherwise, shortest first,
-    /// and if the tour or the schedule still says otherwise, sets an indefinite rule of the
+    /// and if the stand-in or the schedule still says otherwise, sets an indefinite rule of the
     /// user's saying `to`.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
         if self.switched(to, world) {
@@ -312,7 +296,7 @@ impl Places {
     /// Makes the indefinite rule for an app or domain say `says`, and takes off the place's
     /// temporary rules, which ends its snooze (ADR-0018): the user's rule, replacing one of
     /// theirs that said the other, or the one that already says so, the config's too. A config
-    /// rule changes only in the config (ADR-0006). A rule added during the tour is the tour's,
+    /// rule changes only in the config (ADR-0006). A rule added during a trial is the trial's,
     /// which nothing keeps past it, and a change to one of the user's own lasts only while it
     /// runs (ADR-0016).
     pub(crate) fn add_rule(
@@ -346,7 +330,7 @@ impl Places {
         Ok(added)
     }
 
-    /// Makes the user's rule say `says`: the ad-hoc one, else during the tour the tour's.
+    /// Makes the user's rule say `says`: the ad-hoc one, else during a trial the trial's.
     fn make_rule(&mut self, identity: &RuleIdentity, says: OnOff) {
         if let Some((_, kept)) = self
             .live
@@ -356,23 +340,24 @@ impl Places {
         {
             *kept = says;
             tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
-        } else if let Some(tour) = &mut self.tour {
-            tracing::info!("tour rule {}: {says}", loggable(identity));
-            tour.rules.retain(|(rule, _)| rule != identity);
-            tour.rules.push((identity.clone(), says));
+        } else if let Some(trial) = &mut self.trial {
+            tracing::info!("trial rule {}: {says}", loggable(identity));
+            trial.set_rule(identity, says);
         } else {
             self.live.ad_hoc.push((identity.clone(), says));
             tracing::info!("ad-hoc rule {}: {says}", loggable(identity));
         }
     }
 
-    /// Removes the user's rule or the tour's, and the place's temporary rules; a config rule
+    /// Removes the user's rule or a trial's, and the place's temporary rules; a config rule
     /// changes only in the config (ADR-0006).
     pub(crate) fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {
-        if let Some(tour) = &mut self.tour
-            && let Some(index) = tour.rules.iter().position(|(rule, _)| rule == identity)
+        if self
+            .trial
+            .as_mut()
+            .is_some_and(|trial| trial.remove_rule(identity))
         {
-            tour.rules.remove(index);
+            tracing::info!("removed a trial rule: {}", loggable(identity));
         } else if let Some(index) = self
             .live
             .ad_hoc
@@ -395,7 +380,7 @@ impl Places {
         Ok(())
     }
 
-    /// Takes off every rule that ended by `at`, and those the tour's end would put back
+    /// Takes off every rule that ended by `at`, and those a trial's end would put back
     /// likewise.
     pub(crate) fn expire(&mut self, at: Timestamp) {
         let ended = |rule: &Rule| rule.length.end().is_some_and(|end| end <= at);
@@ -408,8 +393,8 @@ impl Places {
         self.tidy();
     }
 
-    /// An edited schedule ends every rule waiting on its next turn (ADR-0018), and those the
-    /// tour's end would put back likewise.
+    /// An edited schedule ends every rule waiting on its next turn (ADR-0018), and those a
+    /// trial's end would put back likewise.
     pub(crate) fn schedule_edited(&mut self) {
         let waiting =
             |rule: &Rule| matches!(rule.length, Length::UntilScheduleTurns { until: Some(_) });
@@ -419,42 +404,47 @@ impl Places {
         self.tidy();
     }
 
-    /// Starts a tour unless one runs, and says whether it did. What it finds waits for its end;
-    /// one that stands in for the schedule sets everywhere's rules aside (ADR-0016).
-    pub(crate) fn start_tour(&mut self, stands_in: bool) -> bool {
-        if self.tour.is_some() {
-            return false;
+    /// Begins a trial unless one runs (ADR-0016), standing in for the schedule with Night Shift
+    /// on if `stands_in`. What it finds waits for its end; the stand-in sets everywhere's rules
+    /// aside.
+    pub(crate) fn begin_trial(&mut self, stands_in: bool) {
+        if self.trial.is_some() {
+            tracing::warn!("a trial began while one runs; keeping the first");
+            return;
         }
-        self.tour = Some(Tour {
-            found: self.live.clone(),
-            rules: Vec::new(),
-            stands_in,
-        });
+        tracing::info!(
+            "trial began{}",
+            if stands_in {
+                ", standing in for the schedule with Night Shift on"
+            } else {
+                ""
+            }
+        );
+        self.trial = Some(Trial::new(self.live.clone(), stands_in));
         if stands_in {
             self.clear(&Place::Everywhere);
         }
         self.lay_out();
-        true
     }
 
-    /// Puts back the ad-hoc rules and every other rule as the tour found them, short of what
-    /// ran out by `now`, and drops the rules added during it.
-    pub(crate) fn end_tour(&mut self, now: Timestamp) {
-        let Some(tour) = self.tour.take() else {
+    /// Ends a trial: puts back the ad-hoc rules and every other rule as it found them, short of
+    /// what ran out by `now`, and drops the rules added during it.
+    pub(crate) fn end_trial(&mut self, now: Timestamp) {
+        let Some(trial) = self.trial.take() else {
             return;
         };
-        tracing::info!("tour ended");
-        self.live = tour.found;
+        tracing::info!("trial ended");
+        self.live = trial.end();
         self.expire(now);
         self.lay_out();
     }
 
-    /// On the way out, ends a tour, then leaves only everywhere's rules to decide, short of one
+    /// On the way out, ends a trial, then leaves only everywhere's rules to decide, short of one
     /// until a time: macOS keeps Night Shift where the user put it until its next transition,
     /// but nothing else of Nightcap's may outlive it (ADR-0008). What's kept stays, for the
     /// next run.
     pub(crate) fn release(&mut self, now: Timestamp) {
-        self.end_tour(now);
+        self.end_trial(now);
         self.released = Some(
             self.rules_at(&Place::Everywhere)
                 .filter(|rule| !matches!(rule.length, Length::Until { .. }))
@@ -525,7 +515,7 @@ impl Places {
                 .map(says)
         });
         let base = match &place {
-            Place::Everywhere if self.stands_in() => Some(Reason::Tour),
+            Place::Everywhere if self.stands_in() => Some(Reason::StandIn),
             Place::Everywhere => inputs.scheduled_state.map(|state| Reason::Schedule {
                 state,
                 until: inputs.next_transition,
@@ -549,14 +539,14 @@ impl Places {
         }
     }
 
-    /// Whether a tour runs (ADR-0016).
-    pub(crate) fn tour_runs(&self) -> bool {
-        self.tour.is_some()
+    /// The trial that runs, if one does (ADR-0016).
+    pub(crate) fn trial(&self) -> Option<&Trial> {
+        self.trial.as_ref()
     }
 
-    /// Whether a tour runs that stands in for the schedule.
+    /// Whether a trial runs that stands in for the schedule.
     fn stands_in(&self) -> bool {
-        self.tour.as_ref().is_some_and(|tour| tour.stands_in)
+        self.trial.as_ref().is_some_and(Trial::stands_in)
     }
 
     /// An app's or site's indefinite rule, if it has one.
@@ -616,8 +606,8 @@ impl Places {
     }
 
     /// What deciding reads. On the way out, only everywhere's rules still apply, short of one
-    /// until a time, with no app or site rules and no tour (ADR-0008), though each place's look
-    /// still shows its own rules.
+    /// until a time, with no app or site rules and no stand-in (ADR-0008), though each place's
+    /// look still shows its own rules.
     fn inputs<'a>(&'a self, world: &'a World<'_>) -> Inputs<'a> {
         let released = self.released.as_ref();
         Inputs {
@@ -628,7 +618,7 @@ impl Places {
                 &self.indefinite
             },
             kept: released.map_or(&self.live.rules, |kept| kept),
-            tour_stands_in: released.is_none() && self.stands_in(),
+            stands_in: released.is_none() && self.stands_in(),
             scheduled_state: world
                 .timeline
                 .scheduled_state(world.applied_until)
@@ -732,9 +722,9 @@ impl Places {
         rules.insert(first.unwrap_or(rules.len()), rule);
     }
 
-    /// What's live and what the tour's end would put back.
+    /// What's live and what a trial's end would put back.
     fn kept_mut(&mut self) -> impl Iterator<Item = &mut Kept> {
-        std::iter::once(&mut self.live).chain(self.tour.iter_mut().map(|tour| &mut tour.found))
+        std::iter::once(&mut self.live).chain(self.trial.iter_mut().map(Trial::found_mut))
     }
 
     /// Drops Adoption's link once either of its rules is gone.
@@ -752,7 +742,7 @@ impl Places {
         }
     }
 
-    /// The config rules, then the ad-hoc rules, then the tour's.
+    /// The config rules, then the ad-hoc rules, then the trial's.
     fn lay_out(&mut self) {
         let rule = |set_by| {
             move |(identity, says): &(RuleIdentity, OnOff)| Rule {
@@ -764,12 +754,12 @@ impl Places {
         };
         let config = self.config.iter().map(rule(SetBy::Config));
         let ad_hoc = self.live.ad_hoc.iter().map(rule(SetBy::You));
-        let tour = self
-            .tour
+        let trial = self
+            .trial
             .iter()
-            .flat_map(|tour| &tour.rules)
-            .map(rule(SetBy::Tour));
-        self.indefinite = config.chain(ad_hoc).chain(tour).collect();
+            .flat_map(Trial::rules)
+            .map(rule(SetBy::Trial));
+        self.indefinite = config.chain(ad_hoc).chain(trial).collect();
     }
 }
 
@@ -791,8 +781,8 @@ pub(crate) fn place_identity(place: &Place) -> Option<RuleIdentity> {
     }
 }
 
-/// Whether a rule is an app's or a site's indefinite one: the config's, the user's or the
-/// tour's, as the app's rule list and `nightcap rules` show them.
+/// Whether a rule is an app's or a site's indefinite one: the config's, the user's or a
+/// trial's, as the app's rule list and `nightcap rules` show them.
 pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
     rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }
@@ -821,8 +811,8 @@ struct Inputs<'a> {
     indefinite: &'a [Rule],
     /// Every other rule.
     kept: &'a [Rule],
-    /// A tour has Night Shift on for itself, in place of the schedule (ADR-0016).
-    tour_stands_in: bool,
+    /// A trial has Night Shift on, in place of the schedule (ADR-0016).
+    stands_in: bool,
     scheduled_state: Option<OnOff>,
     next_transition: Option<Timestamp>,
 }
@@ -876,7 +866,7 @@ fn in_front(inputs: &Inputs<'_>) -> Vec<Place> {
         .collect()
 }
 
-/// What a place rests on, shortest first: its rules, then for everywhere the tour and the
+/// What a place rests on, shortest first: its rules, then for everywhere the stand-in and the
 /// schedule. A place with none of them says nothing.
 fn reasons_at(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
     let mut reasons: Vec<Reason> = inputs
@@ -888,8 +878,8 @@ fn reasons_at(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
         .collect();
     match place {
         Place::Everywhere => {
-            if inputs.tour_stands_in {
-                reasons.push(Reason::Tour);
+            if inputs.stands_in {
+                reasons.push(Reason::StandIn);
             }
             if let Some(state) = inputs.scheduled_state {
                 reasons.push(Reason::Schedule {
@@ -922,7 +912,7 @@ fn is_until(reason: &Reason) -> bool {
 fn says(reason: &Reason) -> OnOff {
     match reason {
         Reason::Rule(rule) => rule.says,
-        Reason::Tour => OnOff::On,
+        Reason::StandIn => OnOff::On,
         Reason::Schedule { state, .. } => *state,
     }
 }
@@ -1358,20 +1348,20 @@ mod tests {
     }
 
     #[test]
-    fn the_tour_stands_in_for_the_schedule_under_everywheres_rules() {
+    fn a_trial_stands_in_for_the_schedule_under_everywheres_rules() {
         let lent = Lent::at(DAY);
         let world = lent.world();
         let mut places = with_config(Vec::new());
 
-        places.start_tour(true);
+        places.begin_trial(true);
 
         let look = places.look(&world);
         assert_eq!(
             look.decision.reasons,
-            vec![Reason::Tour, schedule(OnOff::Off, EVENING)]
+            vec![Reason::StandIn, schedule(OnOff::Off, EVENING)]
         );
         assert_eq!(look.decision.state, Some(OnOff::On));
-        assert_eq!(look.everywhere.base, Some(Reason::Tour));
+        assert_eq!(look.everywhere.base, Some(Reason::StandIn));
         places.switch(OnOff::Off, &world);
         assert_eq!(places.look(&world).decision.state, Some(OnOff::Off));
     }
@@ -1532,7 +1522,7 @@ mod tests {
         let lent = Lent::at(NIGHT);
         let world = lent.world();
         let mail = identity("app:com.apple.mail");
-        let sample = identity("app:io.github.choco.nightcap.tour-sample");
+        let notes = identity("app:com.apple.Notes");
         let mut places = places(
             Vec::new(),
             Kept {
@@ -1541,13 +1531,13 @@ mod tests {
                 ad_hoc: vec![(mail.clone(), OnOff::Off)],
             },
         );
-        places.start_tour(false);
-        places.add_rule(&sample, OnOff::Off).unwrap();
+        places.begin_trial(false);
+        places.add_rule(&notes, OnOff::Off).unwrap();
         places.add_rule(&mail, OnOff::On).unwrap();
 
         places.set_config(vec![
             config("app:com.apple.mail", OnOff::Off),
-            config("app:io.github.choco.nightcap.tour-sample", OnOff::On),
+            config("app:com.apple.Notes", OnOff::On),
         ]);
 
         let rules: Vec<_> = places
@@ -1560,12 +1550,12 @@ mod tests {
             rules,
             vec![
                 config_rule("app:com.apple.mail", OnOff::Off),
-                config_rule("app:io.github.choco.nightcap.tour-sample", OnOff::On),
+                config_rule("app:com.apple.Notes", OnOff::On),
             ]
         );
         assert_eq!(places.kept().ad_hoc, Vec::new());
         assert_sound(&places, &world);
-        places.end_tour(lent.now);
+        places.end_trial(lent.now);
         assert_eq!(places.kept().ad_hoc, Vec::new());
     }
 
@@ -1647,7 +1637,7 @@ mod tests {
     }
 
     #[test]
-    fn mid_tour_only_expiry_the_edited_schedule_and_the_config_reach_what_is_kept() {
+    fn mid_trial_only_expiry_the_edited_schedule_and_the_config_reach_what_is_kept() {
         let lent = Lent::at(NIGHT).app("com.figma.Desktop");
         let world = lent.world();
         let figma = place("app:com.figma.Desktop");
@@ -1670,7 +1660,7 @@ mod tests {
             vec![config("app:com.figma.Desktop", OnOff::Off)],
             found.clone(),
         );
-        places.start_tour(false);
+        places.begin_trial(false);
 
         places.switch(OnOff::Off, &world);
         places.reset(&figma);
@@ -1692,13 +1682,13 @@ mod tests {
 
         assert_eq!(places.kept(), &kept_rules(vec![late]));
         assert_sound(&places, &world);
-        places.end_tour(at("2026-10-17T01:00:00+02:00"));
+        places.end_trial(at("2026-10-17T01:00:00+02:00"));
         assert_eq!(places.kept(), &Kept::default());
         assert_eq!(places.look(&world).rules.len(), 2);
     }
 
     #[test]
-    fn the_tours_end_puts_back_what_it_found_short_of_what_ended() {
+    fn a_trials_end_puts_back_what_it_found_short_of_what_ended() {
         let lent = Lent::at(NIGHT);
         let world = lent.world();
         let indefinitely = yours(Place::Everywhere, OnOff::Off, Length::Indefinite);
@@ -1713,11 +1703,11 @@ mod tests {
                 indefinitely.clone(),
             ]),
         );
-        places.start_tour(true);
+        places.begin_trial(true);
         assert_eq!(places.live.rules, Vec::new());
         places.switch(OnOff::Off, &world);
 
-        places.end_tour(at("2026-10-16T23:45:00+02:00"));
+        places.end_trial(at("2026-10-16T23:45:00+02:00"));
 
         assert_eq!(places.live.rules, vec![indefinitely]);
         let look = places.look(&world);
@@ -1746,7 +1736,7 @@ mod tests {
             vec![config("app:com.figma.Desktop", OnOff::Off)],
             kept.clone(),
         );
-        places.start_tour(true);
+        places.begin_trial(true);
         places.switch(OnOff::On, &world);
 
         places.release(lent.now);
@@ -1806,10 +1796,10 @@ mod tests {
 
         for lent in [Lent::at(NIGHT), Lent::at(DAY), Lent::unscheduled(NIGHT)] {
             let world = lent.world();
-            for (rules, tour) in &cases {
+            for (rules, stand_in) in &cases {
                 let mut places = places(Vec::new(), kept_rules(rules.clone()));
-                if *tour {
-                    places.start_tour(true);
+                if *stand_in {
+                    places.begin_trial(true);
                     places.switch(OnOff::Off, &world);
                 }
                 let look = places.look(&world);
@@ -1832,34 +1822,34 @@ mod tests {
     }
 
     #[test]
-    fn a_look_says_what_the_tour_sets() {
-        let lent = Lent::at(DAY).app("io.github.choco.nightcap.tour-sample");
+    fn a_look_says_what_a_trial_sets() {
+        let lent = Lent::at(DAY).app("com.apple.Notes");
         let world = lent.world();
-        let sample = identity("app:io.github.choco.nightcap.tour-sample");
+        let notes = identity("app:com.apple.Notes");
         let mut places = with_config(Vec::new());
-        places.start_tour(true);
-        places.add_rule(&sample, OnOff::Off).unwrap();
+        places.begin_trial(true);
+        places.add_rule(&notes, OnOff::Off).unwrap();
         places
-            .add_rule(&identity("domain:nightcap.choco.me"), OnOff::Off)
+            .add_rule(&identity("domain:example.com"), OnOff::Off)
             .unwrap();
         places
-            .set(&Place::from(sample.clone()), OnOff::On, minutes(30), &world)
+            .set(&Place::from(notes.clone()), OnOff::On, minutes(30), &world)
             .unwrap();
 
         let look = places.look(&world);
 
-        assert_eq!(look.everywhere.base, Some(Reason::Tour));
-        let tour_rule = |place: &Place| {
+        assert_eq!(look.everywhere.base, Some(Reason::StandIn));
+        let trial_rule = |place: &Place| {
             look.rules
                 .iter()
-                .find(|(rule, _)| rule.place == *place && rule.set_by == SetBy::Tour)
+                .find(|(rule, _)| rule.place == *place && rule.set_by == SetBy::Trial)
         };
-        let snooze = tour_rule(&Place::from(sample.clone())).and_then(|(_, snooze)| *snooze);
+        let snooze = trial_rule(&Place::from(notes.clone())).and_then(|(_, snooze)| *snooze);
         assert_eq!(snooze.map(|snooze| snooze.says), Some(OnOff::On));
         assert!(look.rules.iter().any(|(rule, _)| {
-            rule.set_by == SetBy::Tour && matches!(rule.place, Place::Domain(_))
+            rule.set_by == SetBy::Trial && matches!(rule.place, Place::Domain(_))
         }));
-        places.end_tour(lent.now);
+        places.end_trial(lent.now);
         assert_eq!(places.look(&world).rules, Vec::new());
     }
 }

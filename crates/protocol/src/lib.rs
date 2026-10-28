@@ -15,7 +15,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -218,7 +218,7 @@ pub enum Query {
     Config,
     Preferences,
     Checks,
-    Tour,
+    Trial,
     About,
     /// The ad-hoc rules that aren't in the config yet, ready to paste into it.
     Export(ExportFormat),
@@ -234,8 +234,8 @@ pub enum Answer {
     Config(ConfigState),
     Preferences(Preferences),
     Checks(Checks),
-    /// None while no tour runs.
-    Tour(Option<TourState>),
+    /// None while no trial runs.
+    Trial(Option<TrialState>),
     About(About),
     Export(String),
 }
@@ -325,8 +325,8 @@ pub struct Front {
     /// The site in front while website checking knows the host: the most specific domain with
     /// a rule covering it, else the tab domain (ADR-0017).
     pub site: Option<Domain>,
-    /// What's in effect: the deciding place, what it says, and by which rule, else the tour
-    /// standing in or the schedule.
+    /// What's in effect: the deciding place, what it says, and by which rule, else the stand-in
+    /// or the schedule.
     pub decision: Decision,
     /// The site in front and the front app, where there are, most specific first, each as it
     /// stands.
@@ -334,7 +334,7 @@ pub struct Front {
     /// Everywhere, the last place in front, as it stands under them.
     pub everywhere: PlaceInFront,
     /// Everywhere's rules after the switch the other way from what it gives: the ones that say
-    /// that way, else the indefinite rule it sets where the tour or the schedule still says
+    /// that way, else the indefinite rule it sets where the stand-in or the schedule still says
     /// otherwise (ADR-0018).
     pub after_switch: Vec<Rule>,
 }
@@ -349,8 +349,8 @@ pub struct PlaceInFront {
     /// What a reset takes off, shortest first: its temporary rules, and everywhere's
     /// indefinite one.
     pub rules: Vec<Rule>,
-    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the tour
-    /// standing in, else the schedule.
+    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the stand-in,
+    /// else the schedule.
     pub base: Option<Reason>,
     /// The first less specific place in front that says something, and what it says.
     pub inherits: Option<Inherited>,
@@ -422,10 +422,10 @@ pub struct Checks {
     pub permissions: Permissions,
 }
 
-/// A tour that runs (ADR-0016).
+/// A trial that runs (ADR-0016).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TourState {
-    /// It has Night Shift on, standing in for the schedule: Night Shift was off as it started.
+pub struct TrialState {
+    /// It has Night Shift on, standing in for the schedule, as the app asked when it began it.
     pub stands_in: bool,
 }
 
@@ -452,9 +452,9 @@ pub struct Decision {
 pub enum RuleAdded {
     /// A rule where there was none.
     New,
-    /// The rule there said the other way, and now says this one: the user's own, or the tour's.
+    /// The rule there said the other way, and now says this one: the user's own, or a trial's.
     Changed { set_by: SetBy },
-    /// The rule there already says so: the config's, the user's or the tour's.
+    /// The rule there already says so: the config's, the user's or a trial's.
     AlreadySays { set_by: SetBy },
 }
 
@@ -463,8 +463,8 @@ pub enum RuleAdded {
 #[serde(rename_all = "snake_case")]
 pub enum Reason {
     Rule(Rule),
-    /// Night Shift on for the tour, which stands in for the schedule while it runs (ADR-0016).
-    Tour,
+    /// Night Shift on for a trial, which stands in for the schedule while it runs (ADR-0016).
+    StandIn,
     /// The schedule, until its next transition, if any.
     Schedule {
         state: OnOff,
@@ -515,8 +515,8 @@ pub enum SetBy {
     Config,
     /// The user, from the app or the CLI.
     You,
-    /// The user during the tour, kept only while it runs (ADR-0016).
-    Tour,
+    /// The user during a trial, kept only while it runs (ADR-0016).
+    Trial,
     /// An outside change, which Nightcap adopted.
     OutsideChange,
 }
@@ -1014,7 +1014,7 @@ pub enum Refusal {
     ConfigSays { identity: RuleIdentity, says: OnOff },
     /// The rule is the config's, so only the config removes it.
     ConfigRule { identity: RuleIdentity },
-    /// The app or domain has no rule of the user's or the tour's.
+    /// The app or domain has no rule of the user's or a trial's.
     NoSuchRule { identity: RuleIdentity },
     /// `rules.toml` can't be used, so ad-hoc rules can't change (ADR-0007).
     AdHocRulesOff(FileError),
@@ -1185,10 +1185,10 @@ mod tests {
                 Query::Config,
                 Query::Preferences,
                 Query::Checks,
-                Query::Tour,
+                Query::Trial,
                 Query::About,
             ])),
-            r#"{"queries":["night_shift","front","rules","config","preferences","checks","tour","about"]}"#
+            r#"{"queries":["night_shift","front","rules","config","preferences","checks","trial","about"]}"#
         );
         let figma = || Place::Domain("figma.com".parse().unwrap());
         let figma_rule = || Rule {
@@ -1322,10 +1322,10 @@ mod tests {
                 r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
             ),
             (
-                Answer::Tour(Some(TourState { stands_in: true })),
-                r#"{"tour":{"stands_in":true}}"#,
+                Answer::Trial(Some(TrialState { stands_in: true })),
+                r#"{"trial":{"stands_in":true}}"#,
             ),
-            (Answer::Tour(None), r#"{"tour":null}"#),
+            (Answer::Trial(None), r#"{"trial":null}"#),
             (
                 Answer::About(About {
                     version: "1.2.0".to_owned(),
@@ -1342,11 +1342,11 @@ mod tests {
             assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
         }
         let in_order = Response::Ok(Payload::Answers(vec![
-            Answer::Tour(None),
+            Answer::Trial(None),
             Answer::Export("{ }".to_owned()),
             Answer::Rules(Vec::new()),
         ]));
-        let wire = r#"{"ok":{"answers":[{"tour":null},{"export":"{ }"},{"rules":[]}]}}"#;
+        let wire = r#"{"ok":{"answers":[{"trial":null},{"export":"{ }"},{"rules":[]}]}}"#;
         assert_eq!(json(&in_order), wire);
         assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), in_order);
     }
@@ -1620,6 +1620,20 @@ mod tests {
             })),
             r#"{"decision":{"state":"on","place":{"app":"com.figma.Desktop"},"reasons":[{"rule":{"place":{"app":"com.figma.Desktop"},"says":"on","length":{"until_schedule_turns":{"until":"2026-10-16T05:50:47Z"}},"set_by":"outside_change"}},{"rule":{"place":{"app":"com.figma.Desktop"},"says":"off","length":"indefinite","set_by":"config"}}]}}"#
         );
+        assert_eq!(
+            json(&Payload::Decision(Decision {
+                state: Some(OnOff::On),
+                place: Place::Everywhere,
+                reasons: vec![
+                    Reason::StandIn,
+                    Reason::Schedule {
+                        state: OnOff::Off,
+                        until: Some("2026-10-16T20:00:00Z".parse().unwrap()),
+                    },
+                ],
+            })),
+            r#"{"decision":{"state":"on","place":"everywhere","reasons":["stand_in",{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]}}"#
+        );
     }
 
     #[test]
@@ -1696,10 +1710,10 @@ mod tests {
                     length: Length::Until {
                         until: "2026-10-16T19:30:00Z".parse().unwrap(),
                     },
-                    set_by: SetBy::Tour,
+                    set_by: SetBy::Trial,
                 },
             ]))),
-            r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you"},{"place":"everywhere","says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"tour"}]}}"#
+            r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you"},{"place":"everywhere","says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"trial"}]}}"#
         );
     }
 

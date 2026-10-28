@@ -99,14 +99,14 @@ impl Inner {
 
     fn app_command(&mut self, command: AppCommand) {
         match command {
-            AppCommand::StartTour => self.tour_started(),
-            AppCommand::EndTour => self.tour_ended(self.clock.now()),
+            AppCommand::BeginTrial { stands_in } => self.places.begin_trial(stands_in),
+            AppCommand::EndTrial => self.places.end_trial(self.clock.now()),
             AppCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
         }
     }
 
     /// Nightcap can't tell a restart from being removed, so it never leaves a force behind
-    /// (ADR-0008), nor Night Shift on for a tour (ADR-0016).
+    /// (ADR-0008), nor Night Shift on for a trial's stand-in (ADR-0016).
     fn terminating(&mut self) {
         let now = self.clock.now();
         self.places.release(now);

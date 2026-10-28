@@ -349,7 +349,8 @@ struct MenuTests {
 
     @Test func whileTheTourStandsInEverywheresRowOffersNoWayBackToTheSchedule() throws {
         let core = try offByTheSchedule(
-            tourStarted, reported(true), .command(.set(place: .everywhere, state: .on, length: .untilScheduleTurns)),
+            tourBegunStandingIn, reported(true),
+            .command(.set(place: .everywhere, state: .on, length: .untilScheduleTurns)),
             .command(.set(place: .everywhere, state: .off, length: minutes(30))))
 
         // With nothing else to offer, the row is left out.
@@ -357,7 +358,7 @@ struct MenuTests {
     }
 
     @Test func theMenuOffersToAddTheSamplesRuleAndThenToRemoveIt() throws {
-        let core = try onByTheSchedule(tourStarted, front(tourSample))
+        let core = try onByTheSchedule(tourBegun, front(tourSample))
         let sample = RuleIdentity.app(tourSample)
 
         var row = try #require(core.appRow)

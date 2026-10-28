@@ -34,7 +34,8 @@ pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
             rule.place
         ),
         Reason::Rule(rule) => format!("{}{at}{}", rule.says, until(rule.length.end(), rule.says)),
-        Reason::Tour => "on for the tour".to_owned(),
+        // Only the app's tour begins a trial, which the CLI's user knows by the tour's name.
+        Reason::StandIn => "on for the tour".to_owned(),
         Reason::Schedule { .. } => "following the schedule".to_owned(),
     };
     let snoozed = decision
@@ -96,11 +97,13 @@ pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, added: RuleAdded)
     }
 }
 
+/// Who set a rule, as it reads before "rule". A trial's rule is the tour's, which lasts until the
+/// tour in the app ends: the tour is the only trial.
 fn source(set_by: SetBy) -> &'static str {
     match set_by {
         SetBy::Config => "config",
         SetBy::You => "ad-hoc",
-        SetBy::Tour => "tour",
+        SetBy::Trial => "tour",
         SetBy::OutsideChange => "adopted",
     }
 }
@@ -638,7 +641,7 @@ mod tests {
             "on by the ad-hoc rule for domain:figma.com"
         );
         assert_eq!(
-            described(OnOff::On, Place::Everywhere, vec![Reason::Tour]),
+            described(OnOff::On, Place::Everywhere, vec![Reason::StandIn]),
             "on for the tour"
         );
         assert_eq!(
@@ -680,7 +683,7 @@ mod tests {
         assert_eq!(
             worded(
                 "app:io.github.choco.nightcap.TourSample",
-                SetBy::Tour,
+                SetBy::Trial,
                 OnOff::Off
             ),
             "app:io.github.choco.nightcap.TourSample (tour rule, off)"
@@ -936,7 +939,7 @@ mod tests {
                 &figma,
                 OnOff::Off,
                 RuleAdded::Changed {
-                    set_by: SetBy::Tour
+                    set_by: SetBy::Trial
                 }
             ),
             "Changed the tour rule for app:com.figma.Desktop to turn Night Shift off."

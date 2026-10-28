@@ -11,7 +11,7 @@ use nightcap_protocol::{
     FileError, Front, Inherited, Install, Lasting, Length, LoginItem, NightShift, NightShiftDetail,
     NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
     OnboardingAsks, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Problem,
-    Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
+    Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -331,7 +331,7 @@ pub struct Decision {
 #[uniffi::remote(Enum)]
 pub enum Reason {
     Rule(Rule),
-    Tour,
+    StandIn,
     Schedule {
         state: OnOff,
         until: Option<Timestamp>,
@@ -357,7 +357,7 @@ pub enum Length {
 pub enum SetBy {
     Config,
     You,
-    Tour,
+    Trial,
     OutsideChange,
 }
 
@@ -416,7 +416,7 @@ pub enum LoginItem {
 }
 
 #[uniffi::remote(Record)]
-pub struct TourState {
+pub struct TrialState {
     pub stands_in: bool,
 }
 

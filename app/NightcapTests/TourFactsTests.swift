@@ -22,8 +22,22 @@ struct TourFactsTests {
         #expect(TourFacts(core.snapshot(), sample: tourSample, site: site) == nil)
     }
 
+    @Test func theTourAsksForTheStandInWhereItFindsNightShiftOffAndItsFactsSayItStandsIn() throws {
+        let off = try offByTheSchedule()
+        let on = try onByTheSchedule()
+        #expect(TourFacts.asksForStandIn(off.snapshot()))
+        #expect(!TourFacts.asksForStandIn(on.snapshot()))
+
+        for core in [off, on] {
+            let asked = TourFacts.asksForStandIn(core.snapshot())
+            core.sendApp(command: .beginTrial(standsIn: asked))
+
+            #expect(try facts(core).standsIn == asked)
+        }
+    }
+
     @Test func theSamplesFactsFollowItToTheFrontIntoItsRuleAndAway() throws {
-        let core = try onByTheSchedule(tourStarted)
+        let core = try onByTheSchedule(tourBegun)
         #expect(try facts(core).sample == away)
 
         core.bringToFront(tourSample)
@@ -37,7 +51,7 @@ struct TourFactsTests {
 
     @Test func aSnoozeFromTheSamplesRowAndPuttingTheRuleBackShowInItsFacts() throws {
         let core = try onByTheSchedule(
-            tourStarted, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
+            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
 
         core.send(command: try #require(core.appRow).choice(titled: "For 30 Minutes").command)
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
@@ -48,7 +62,7 @@ struct TourFactsTests {
 
     @Test func theSitesOwnRuleShowsInItsFactsAndATapChangesOnlyTheSwitch() throws {
         let core = try onByTheSchedule(
-            config: "websites = true\n", tourStarted, front("com.apple.Safari", browser: true),
+            config: "websites = true\n", tourBegun, front("com.apple.Safari", browser: true),
             host("www.nightcap.choco.me"))
         let always = try #require(core.siteRow).choice(titled: "Always")
         #expect(always.command == .addRule(identity: .domain(site), says: .off))
@@ -65,6 +79,6 @@ struct TourFactsTests {
     }
 
     @Test func aTourWithoutASiteStepFollowsNoSite() throws {
-        #expect(try facts(try onByTheSchedule(tourStarted), site: nil).site == nil)
+        #expect(try facts(try onByTheSchedule(tourBegun), site: nil).site == nil)
     }
 }

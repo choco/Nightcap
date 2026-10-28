@@ -12,7 +12,7 @@ use nightcap_protocol::{
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
     Length, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks,
     Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay,
-    TourState, WebsiteChecking,
+    TrialState, WebsiteChecking,
 };
 
 use common::{
@@ -36,7 +36,7 @@ fn answers_alike(staged: &Staged) {
                 Query::Config,
                 Query::Preferences,
                 Query::Checks,
-                Query::Tour,
+                Query::Trial,
                 Query::About,
                 Query::Export(ExportFormat::Toml),
             ]
@@ -48,7 +48,7 @@ fn answers_alike(staged: &Staged) {
             Answer::Config(snapshot.config()),
             Answer::Preferences(snapshot.preferences()),
             Answer::Checks(snapshot.checks()),
-            Answer::Tour(snapshot.tour()),
+            Answer::Trial(snapshot.trial()),
             Answer::About(snapshot.about()),
             Answer::Export(snapshot.export(ExportFormat::Toml)),
         ]
@@ -363,16 +363,16 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                 ),
             ]);
         }
-        for (commands, tour) in cases {
+        for (commands, stand_in) in cases {
             let mut scenario = Scenario::at(at(now)).then(reported(night_shift, schedule));
             for command in &commands {
                 scenario = scenario.then(command.clone());
             }
-            // The tour stands in for the schedule when it finds Night Shift off.
-            if tour {
+            // The app asks for the stand-in when it finds Night Shift off.
+            if stand_in {
                 scenario = scenario
                     .then(reported(false, schedule))
-                    .then(AppCommand::StartTour)
+                    .then(AppCommand::BeginTrial { stands_in: true })
                     .then(reported(true, schedule))
                     .then(Command::Off);
             }
@@ -390,11 +390,14 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                 .into_iter()
                 .filter(|rule| rule.place == Place::Everywhere)
                 .collect();
-            assert_eq!(left, front.after_switch, "{commands:?}, tour: {tour}");
+            assert_eq!(
+                left, front.after_switch,
+                "{commands:?}, stand-in: {stand_in}"
+            );
             assert_eq!(
                 staged.core().snapshot().front().everywhere.gives,
                 to,
-                "{commands:?}, tour: {tour}"
+                "{commands:?}, stand-in: {stand_in}"
             );
         }
     }
@@ -591,29 +594,29 @@ fn checks_answer_the_grants_and_the_login_item_once_reported() {
     answers_alike(&staged);
 }
 
-fn start_tour(staged: &Staged) {
-    staged.send_app(AppCommand::StartTour);
+fn begin_trial(staged: &Staged, stands_in: bool) {
+    staged.send_app(AppCommand::BeginTrial { stands_in });
 }
 
 #[test]
-fn tour_answers_whether_one_runs_and_stands_in_for_the_schedule() {
+fn trial_answers_whether_one_runs_and_stands_in_for_the_schedule() {
     let off = off_by_the_schedule().stage().unwrap();
-    assert_eq!(off.core().snapshot().tour(), None);
+    assert_eq!(off.core().snapshot().trial(), None);
 
-    start_tour(&off);
+    begin_trial(&off, true);
 
     assert_eq!(
-        off.core().snapshot().tour(),
-        Some(TourState { stands_in: true })
+        off.core().snapshot().trial(),
+        Some(TrialState { stands_in: true })
     );
     answers_alike(&off);
-    off.send_app(AppCommand::EndTour);
-    assert_eq!(off.core().snapshot().tour(), None);
+    off.send_app(AppCommand::EndTrial);
+    assert_eq!(off.core().snapshot().trial(), None);
     let on = on_by_the_schedule().stage().unwrap();
-    start_tour(&on);
+    begin_trial(&on, false);
     assert_eq!(
-        on.core().snapshot().tour(),
-        Some(TourState { stands_in: false })
+        on.core().snapshot().trial(),
+        Some(TrialState { stands_in: false })
     );
 }
 

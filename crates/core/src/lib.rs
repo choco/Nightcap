@@ -14,7 +14,6 @@ mod scenario;
 mod server;
 mod setup;
 mod storage;
-mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
 pub use server::messages::{AppCommand, Effect, Event, Fact, Listener, Outcome};

@@ -159,8 +159,8 @@ private struct Rows {
         let everywhere = front.everywhere
         let state = everywhere.gives.other
         var items: [Menu.Item] = []
-        // While the tour stands in, what's under everywhere's rules is the tour's on, which the
-        // switch gives back; the schedule isn't there to go back to.
+        // While a trial stands in, what's under everywhere's rules is the stand-in's on, which
+        // the switch gives back; the schedule isn't there to go back to.
         if case .schedule(let scheduled, .some) = everywhere.base, scheduled == state, !everywhere.rules.isEmpty,
             !front.afterSwitch.isEmpty
         {
@@ -272,7 +272,7 @@ private struct Rows {
             words.rule(rule.says, at: place, whose: Self.whose(rule.setBy))
         case (.rule(let rule), let place?): words.change(rule.says, at: place, until: rule.length.end)
         case (.rule(let rule), nil): words.change(rule.says, until: rule.length.end)
-        case (.tour, _): words.onForTheTour
+        case (.standIn, _): words.onForTheTour
         case (.schedule(_, let until?), _): words.followingTheSchedule(until: until)
         case (.schedule(_, nil), _):
             nightShift.schedule == .off ? words.noSchedule : words.followingTheSchedule
@@ -328,7 +328,7 @@ private struct Rows {
         switch setBy {
         case .config: .config
         case .you: .yours
-        case .tour: .tour
+        case .trial: .tour
         case .outsideChange: .outsideChange
         }
     }

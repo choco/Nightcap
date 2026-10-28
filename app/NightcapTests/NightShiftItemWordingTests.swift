@@ -71,7 +71,7 @@ struct NightShiftItemWordingTests {
             config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n", accessibilityGranted,
             front("com.apple.Safari", browser: true), host("www.figma.com"))
         let tours = try onByTheSchedule(
-            tourStarted, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
+            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
 
         #expect(try forced().line == "Off in Figma: your config’s rule")
         #expect(yours.line == "Off in Mail: your rule")
@@ -81,6 +81,6 @@ struct NightShiftItemWordingTests {
     }
 
     @Test func theTourStandingInForTheScheduleSaysSo() throws {
-        #expect(try offByTheSchedule(tourStarted, reported(true)).line == "On for the tour")
+        #expect(try offByTheSchedule(tourBegunStandingIn, reported(true)).line == "On for the tour")
     }
 }
