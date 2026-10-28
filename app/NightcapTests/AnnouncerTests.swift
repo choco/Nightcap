@@ -2,13 +2,6 @@ import Foundation
 import NightcapCore
 import Testing
 
-/// An announcer past its first run, whose record began from a snapshot with no problem.
-private func announcer(_ defaults: UserDefaults) throws -> Announcer {
-    let announcer = Announcer(defaults: defaults, words: .staged)
-    #expect(announcer.heard(.launch, try onByTheSchedule().snapshot()).isEmpty)
-    return announcer
-}
-
 private func titles(_ notices: [Notice]) -> [String] {
     notices.map(\.title)
 }
@@ -28,7 +21,7 @@ private let accessibilityNotAllowed = Fact.permissionsChanged(accessibility: fal
 struct AnnouncerTests {
     @Test func aProblemThatAppearsOnItsOwnIsToldOnce() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try checkingWebsites()
 
             core.report(fact: accessibilityNotAllowed)
@@ -43,7 +36,7 @@ struct AnnouncerTests {
 
     @Test func aProblemThatEndsAndComesBackIsToldAgain() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try checkingWebsites(.fact(accessibilityNotAllowed))
             _ = announcer.heard(.fact, core.snapshot())
 
@@ -61,7 +54,7 @@ struct AnnouncerTests {
     @Test func aProblemToldIsntToldAgainAfterARelaunch() throws {
         try withScratchDefaults { defaults in
             let before = try checkingWebsites(.fact(accessibilityNotAllowed))
-            let told = try announcer(defaults).heard(.fact, before.snapshot())
+            let told = Announcer(defaults: defaults, words: .staged).heard(.fact, before.snapshot())
             let relaunched = Announcer(defaults: defaults, words: .staged)
             let core = try checkingWebsites()
 
@@ -78,7 +71,7 @@ struct AnnouncerTests {
     /// The CLI's commands come as commands too.
     @Test func aProblemTheUserCausesWithACommandIsntToldWhileItLasts() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try atNoon(reported(false), permissions(false, .granted))
             _ = announcer.heard(.fact, core.snapshot())
 
@@ -97,13 +90,13 @@ struct AnnouncerTests {
         try withScratchDefaults { defaults in
             let core = try checkingWebsites(.fact(accessibilityNotAllowed))
 
-            #expect(try announcer(defaults).heard(.quit, core.snapshot()).isEmpty)
+            #expect(Announcer(defaults: defaults, words: .staged).heard(.quit, core.snapshot()).isEmpty)
         }
     }
 
     @Test func aConfigBrokenAtLaunchIsTold() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try atNoon(config: "[rules.off]\ndomian = [\"figma.com\"]\n")
 
             core.report(fact: .launched)
@@ -114,7 +107,7 @@ struct AnnouncerTests {
 
     @Test func openingAtLoginRemovedInSystemSettingsIsTold() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try selfManaged(.enabled, reported(false))
             _ = announcer.heard(.fact, core.snapshot())
 
@@ -128,7 +121,7 @@ struct AnnouncerTests {
     /// waiting for its approval itself.
     @Test func switchedOffNotificationsAndALoginItemAwaitingApprovalAreNeverTold() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let notifications = try atNoon(reported(false), permissions(true, .granted))
             notifications.report(fact: .permissionsChanged(accessibility: true, notifications: .denied))
             let login = try selfManaged(.notRegistered, reported(false), .command(.openAtLogin(.on)))
@@ -145,7 +138,7 @@ struct AnnouncerTests {
     /// do at once.
     @Test func nightShiftUnavailableIsntToldNorKeepsWhatItTurnsIntoUntold() throws {
         try withScratchDefaults { defaults in
-            let announcer = try announcer(defaults)
+            let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try staged("2026-10-16T01:40:00+02:00")
 
             let unavailable = announcer.heard(.fact, core.snapshot())
@@ -157,9 +150,9 @@ struct AnnouncerTests {
         }
     }
 
-    /// A Nightcap whose core announced problems itself may have told one standing as the app
-    /// first hears the core, so it counts as told.
-    @Test func theFirstRunSeedsWhatWasToldSilentlyFromTheFirstSnapshot() throws {
+    /// With nothing kept, a problem standing as the app first hears the core is told as one that
+    /// appears then would be.
+    @Test func theFirstRunTellsAProblemStandingThenOnce() throws {
         try withScratchDefaults { defaults in
             let announcer = Announcer(defaults: defaults, words: .staged)
             let core = try atNoon(config: "websites = true\n", rules: "version = [", reported(false))
@@ -167,13 +160,9 @@ struct AnnouncerTests {
             let first = announcer.heard(.fact, core.snapshot())
             core.report(fact: .launched)
             let launched = announcer.heard(.launch, core.snapshot())
-            core.report(fact: accessibilityNotAllowed)
-            let appeared = announcer.heard(.fact, core.snapshot())
 
-            #expect(core.snapshot().checks().checks.contains { $0.detail.kind == .adHocRules && $0.state.isProblem })
-            #expect(first.isEmpty)
+            #expect(titles(first) == ["Ad-hoc rules are off"])
             #expect(launched.isEmpty)
-            #expect(titles(appeared) == ["Website checking needs Accessibility"])
         }
     }
 }

@@ -14,10 +14,8 @@ import NightcapCore
 ///   back is told again. A check the snapshot doesn't hold yet, such as a grant macOS hasn't
 ///   reported since the launch, keeps what was told.
 ///
-/// What was told is kept in `defaults`, so a relaunch doesn't tell a standing problem again. On
-/// the first run with no record of its own, the first snapshot it hears seeds the record
-/// silently: a problem standing then counts as told, since an install updated from a Nightcap
-/// whose core announced problems itself may have told it already.
+/// What was told is kept in `defaults`, so a relaunch doesn't tell a standing problem again. The
+/// first run, with nothing kept, tells those standing then once, as any that appear.
 struct Announcer {
     let defaults: UserDefaults
     let words: Wording
@@ -29,10 +27,7 @@ struct Announcer {
     func heard(_ cause: Cause, _ snapshot: Snapshot) -> [Notice] {
         let checks = snapshot.checks().checks
         let problems = checks.filter { $0.state.isProblem }
-        guard let record = defaults.stringArray(forKey: Self.told).map(Set.init) else {
-            keep(Set(problems.map(\.detail.kind.key)))
-            return []
-        }
+        let record = Set(defaults.stringArray(forKey: Self.told) ?? [])
         var told = record.subtracting(checks.filter { !$0.state.isProblem }.map(\.detail.kind.key))
         var notices: [Notice] = []
         for problem in problems where !told.contains(problem.detail.kind.key) {
