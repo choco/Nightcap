@@ -1,16 +1,13 @@
 //! `config.toml`: the config rules, declared by the user or their installer (ADR-0007,
 //! ADR-0006). It is strict, so a typo is an error rather than a rule that silently never matches.
 
-use std::io;
-use std::path::PathBuf;
-
 use jiff::SignedDuration;
 use nightcap_protocol::{OnOff, Problem, RuleIdentity, Schedule, TimeOfDay};
 use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
 use crate::rules::schedule;
-use crate::storage::document::{self, Malformed, Table};
+use crate::storage::document::{self, Table, Unusable, Why};
 use crate::storage::file::{self, Files};
 
 /// Night Shift's strength and schedule as the config sets them, each optional. Nightcap
@@ -40,26 +37,13 @@ pub(crate) fn default_lengths() -> Vec<SignedDuration> {
     ]
 }
 
-/// Why the config can't be used, which each client words from the checks. It reads as the log
-/// may say it: never what the file holds, such as a key or a value, which can be a domain
-/// (ADR-0009).
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum ConfigError {
-    #[error("the config can't be read: {error}")]
-    Unreadable { path: PathBuf, error: io::Error },
-    #[error("the config {error}")]
-    Malformed { path: PathBuf, error: Malformed },
-    #[error("the config is invalid at line {line}")]
-    Invalid {
-        path: PathBuf,
-        line: u32,
-        problem: Problem,
-    },
-}
-
 /// The config. A missing file means no rules, as on a fresh brew install.
-pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
-    let path = || files.path(file::File::Config);
+pub(crate) fn load(files: &dyn Files) -> Result<Config, Unusable> {
+    let unusable = |why| Unusable {
+        file: file::File::Config,
+        path: files.path(file::File::Config),
+        why,
+    };
     let text = match files.read(file::File::Config) {
         Ok(Some(text)) => text,
         Ok(None) => {
@@ -71,22 +55,10 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
                 found: false,
             });
         }
-        Err(error) => {
-            return Err(ConfigError::Unreadable {
-                path: path(),
-                error,
-            });
-        }
+        Err(error) => return Err(unusable(Why::Unreadable(error))),
     };
-    let document = document::parse(&text).map_err(|error| ConfigError::Malformed {
-        path: path(),
-        error,
-    })?;
-    read(Table::top(&document)).map_err(|problem| ConfigError::Invalid {
-        path: path(),
-        line: document::position(&text, problem.span().start).line,
-        problem: problem.into_inner(),
-    })
+    let document = document::parse(&text).map_err(|error| unusable(Why::Malformed(error)))?;
+    read(Table::top(&document)).map_err(|problem| unusable(Why::invalid(&text, problem)))
 }
 
 /// What a well-formed config declares, once it's checked, or its first problem and where it is.
@@ -279,7 +251,7 @@ mod tests {
     use crate::storage::file::{Memory, Paths};
 
     /// Why the config can't be used, with `text` in it.
-    fn error(text: &str) -> ConfigError {
+    fn error(text: &str) -> Unusable {
         let files = Memory::new(Paths::in_folder(Path::new("/nightcap")));
         files.put(file::File::Config, Some(text.to_owned()));
         load(&files).err().unwrap()
@@ -316,8 +288,7 @@ mod tests {
 
     #[test]
     fn a_domain_typed_as_a_key_reaches_the_clients_as_the_key_the_table_doesnt_take() {
-        let ConfigError::Invalid { line, problem, .. } =
-            error("[rules.off]\n\"secret.example\" = true\n")
+        let Why::Invalid { line, problem } = error("[rules.off]\n\"secret.example\" = true\n").why
         else {
             panic!("expected the config invalid");
         };

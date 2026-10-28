@@ -11,9 +11,9 @@ use nightcap_protocol::{
 use crate::rules::places::Places;
 use crate::rules::schedule::{CheckedSchedule, OutOfRange};
 use crate::server::state::Inner;
-use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config;
-use crate::storage::config::{ConfigError, NightShiftConfig};
+use crate::storage::config::NightShiftConfig;
+use crate::storage::document::Unusable;
 use crate::storage::file::File;
 use crate::{Cause, Effect, Event, Outcome};
 
@@ -308,7 +308,7 @@ impl Inner {
 /// config was found, and why it or `rules.toml` can't be used; with what of the config's
 /// `[night_shift]` was last applied (ADR-0014).
 pub(crate) struct Loaded {
-    pub(crate) config_error: Option<ConfigError>,
+    pub(crate) config_error: Option<Unusable>,
     /// Whether the config file existed when it was last loaded.
     pub(crate) config_found: bool,
     /// The lengths a change can be picked for, from the config or else 30 minutes, 1 hour and
@@ -317,7 +317,7 @@ pub(crate) struct Loaded {
     pub(crate) config_night_shift: NightShiftConfig,
     pub(crate) applied_from_config: NightShiftConfig,
     /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
-    pub(crate) ad_hoc_error: Option<AdHocError>,
+    pub(crate) ad_hoc_error: Option<Unusable>,
 }
 
 /// A refusal as the log may name it: never the app, domain or path it carries (ADR-0009).

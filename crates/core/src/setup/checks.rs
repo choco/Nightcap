@@ -5,14 +5,12 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, ConfigFileDetail,
-    FileError, Install, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OpenAtLoginDetail, Schedule, SetBy,
+    Install, LoginItem, NightShift, NightShiftDetail, NotificationPermission, NotificationsDetail,
+    OpenAtLoginDetail, Schedule, SetBy,
 };
 
 use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
-use crate::storage::ad_hoc_rules::AdHocError;
-use crate::storage::config::ConfigError;
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
@@ -131,57 +129,5 @@ fn state(detail: &CheckDetail) -> CheckState {
         CheckDetail::NightShift(NightShiftDetail::Unavailable | NightShiftDetail::NoSunTimes)
         | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
         | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => CheckState::Broken,
-    }
-}
-
-impl From<&ConfigError> for FileError {
-    fn from(error: &ConfigError) -> Self {
-        match error {
-            ConfigError::Unreadable { path, error } => Self::Unreadable {
-                path: path.display().to_string(),
-                failure: error.kind().into(),
-            },
-            ConfigError::Malformed { path, error } => Self::Malformed {
-                path: path.display().to_string(),
-                at: error.at,
-            },
-            ConfigError::Invalid {
-                path,
-                line,
-                problem,
-            } => Self::Invalid {
-                path: path.display().to_string(),
-                line: *line,
-                problem: problem.clone(),
-            },
-        }
-    }
-}
-
-impl From<&AdHocError> for FileError {
-    fn from(error: &AdHocError) -> Self {
-        match error {
-            AdHocError::Unreadable { path, error } => Self::Unreadable {
-                path: path.display().to_string(),
-                failure: error.kind().into(),
-            },
-            AdHocError::Malformed { path, error } => Self::Malformed {
-                path: path.display().to_string(),
-                at: error.at,
-            },
-            AdHocError::Newer { path, version } => Self::Newer {
-                path: path.display().to_string(),
-                version: *version,
-            },
-            AdHocError::Invalid {
-                path,
-                line,
-                problem,
-            } => Self::Invalid {
-                path: path.display().to_string(),
-                line: *line,
-                problem: problem.clone(),
-            },
-        }
     }
 }

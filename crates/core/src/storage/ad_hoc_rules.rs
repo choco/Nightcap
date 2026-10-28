@@ -3,7 +3,6 @@
 //! readers tolerate unknown keys, so only a breaking change bumps the version.
 
 use std::io;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use nightcap_protocol::{ExportFormat, OnOff, Problem, RuleIdentity};
@@ -11,7 +10,7 @@ use serde::Serialize;
 use toml::Spanned;
 
 use crate::storage::config::identities;
-use crate::storage::document::{self, Malformed, Table};
+use crate::storage::document::{self, Table, Unusable, Why};
 use crate::storage::file::{self, Files, Owned};
 
 /// Version 2 lists rules by what they say (ADR-0006).
@@ -46,25 +45,6 @@ impl RuleLists {
     }
 }
 
-/// Why `rules.toml` can't be used, which turns ad-hoc rules off, and which each client words
-/// from the checks. It reads as the log may say it: never what the file holds, such as a key or
-/// a value, which can be a domain (ADR-0009).
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum AdHocError {
-    #[error("rules.toml can't be read: {error}")]
-    Unreadable { path: PathBuf, error: io::Error },
-    #[error("rules.toml {error}")]
-    Malformed { path: PathBuf, error: Malformed },
-    #[error("rules.toml is version {version}, from a newer Nightcap than this one")]
-    Newer { path: PathBuf, version: i64 },
-    #[error("rules.toml is invalid at line {line}")]
-    Invalid {
-        path: PathBuf,
-        line: u32,
-        problem: Problem,
-    },
-}
-
 pub(crate) struct Store {
     files: Arc<dyn Files>,
 }
@@ -74,40 +54,29 @@ impl Store {
         Self { files }
     }
 
-    /// The ad-hoc rules and what each says, or why there are none to use: an invalid file, or
-    /// one from a newer Nightcap, which must never be overwritten. A missing file means no
-    /// rules.
-    pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, AdHocError> {
-        let path = || self.files.path(file::File::Rules);
+    /// The ad-hoc rules and what each says, or why there are none to use, which turns ad-hoc
+    /// rules off: an invalid file, or one from a newer Nightcap, which must never be
+    /// overwritten. A missing file means no rules.
+    pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, Unusable> {
+        let unusable = |why| Unusable {
+            file: file::File::Rules,
+            path: self.files.path(file::File::Rules),
+            why,
+        };
         let text = match self.files.read(file::File::Rules) {
             Ok(Some(text)) => text,
             Ok(None) => return Ok(Vec::new()),
-            Err(error) => {
-                return Err(AdHocError::Unreadable {
-                    path: path(),
-                    error,
-                });
-            }
+            Err(error) => return Err(unusable(Why::Unreadable(error))),
         };
-        let document = document::parse(&text).map_err(|error| AdHocError::Malformed {
-            path: path(),
-            error,
-        })?;
-        let invalid = |problem: Spanned<Problem>| AdHocError::Invalid {
-            path: path(),
-            line: document::position(&text, problem.span().start).line,
-            problem: problem.into_inner(),
-        };
+        let document = document::parse(&text).map_err(|error| unusable(Why::Malformed(error)))?;
+        let invalid = |problem: Spanned<Problem>| unusable(Why::invalid(&text, problem));
         let top = Table::top(&document);
         let version = top
             .required("version", top.integer("version").map_err(invalid)?)
             .map_err(invalid)?
             .into_inner();
         if version > i64::from(VERSION) {
-            return Err(AdHocError::Newer {
-                path: path(),
-                version,
-            });
+            return Err(unusable(Why::Newer { version }));
         }
         read(&top).map_err(invalid)
     }
@@ -242,7 +211,10 @@ mod tests {
 
         assert!(matches!(
             Store::new(files).load(),
-            Err(AdHocError::Newer { version: 3, .. })
+            Err(Unusable {
+                why: Why::Newer { version: 3 },
+                ..
+            })
         ));
     }
 

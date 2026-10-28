@@ -1,11 +1,82 @@
-//! A TOML file as the core reads it: toml parses its text, and the core reads each table's keys
-//! and each value's type itself, so a problem names the key, what its value is, and its line.
+//! A TOML file as the core reads it, and why one can't be used: toml parses its text, and the
+//! core reads each table's keys and each value's type itself, so a problem names the key, what
+//! its value is, and its line.
 
+use std::io;
 use std::ops::Range;
+use std::path::PathBuf;
 
-use nightcap_protocol::{Position, Problem, ValueType};
+use nightcap_protocol::{FileError, Position, Problem, ValueType};
 use toml::Spanned;
 use toml::de::{DeInteger, DeTable, DeValue};
+
+use crate::storage::file::File;
+
+/// Why the config or `rules.toml` can't be used, which each client words from the checks. It
+/// reads as the log may say it, from the file's name on: never what the file holds, such as a
+/// key or a value, which can be a domain (ADR-0009).
+#[derive(Debug, thiserror::Error)]
+#[error("{} {why}", named(*.file))]
+pub(crate) struct Unusable {
+    pub(crate) file: File,
+    pub(crate) path: PathBuf,
+    pub(crate) why: Why,
+}
+
+/// What keeps a file from being used, as it reads after the file's name.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum Why {
+    #[error("can't be read: {0}")]
+    Unreadable(io::Error),
+    #[error("{0}")]
+    Malformed(Malformed),
+    /// Only `rules.toml` has a version.
+    #[error("is version {version}, from a newer Nightcap than this one")]
+    Newer { version: i64 },
+    #[error("is invalid at line {line}")]
+    Invalid { line: u32, problem: Problem },
+}
+
+impl Why {
+    /// A problem in a well-formed `text`, at the line it starts on.
+    pub(crate) fn invalid(text: &str, problem: Spanned<Problem>) -> Self {
+        Self::Invalid {
+            line: position(text, problem.span().start).line,
+            problem: problem.into_inner(),
+        }
+    }
+}
+
+/// A file as the log names it.
+fn named(file: File) -> &'static str {
+    match file {
+        File::Config => "the config",
+        File::Rules => "rules.toml",
+        File::State => "state.json",
+    }
+}
+
+impl From<&Unusable> for FileError {
+    fn from(unusable: &Unusable) -> Self {
+        let path = unusable.path.display().to_string();
+        match &unusable.why {
+            Why::Unreadable(error) => Self::Unreadable {
+                path,
+                failure: error.kind().into(),
+            },
+            Why::Malformed(error) => Self::Malformed { path, at: error.at },
+            Why::Newer { version } => Self::Newer {
+                path,
+                version: *version,
+            },
+            Why::Invalid { line, problem } => Self::Invalid {
+                path,
+                line: *line,
+                problem: problem.clone(),
+            },
+        }
+    }
+}
 
 /// Why toml can't parse a file: it isn't valid TOML, where toml says. It reads after the file's
 /// name, as the log may say it: toml's description names what it expected, never the file's text
@@ -38,7 +109,7 @@ pub(crate) fn parse(text: &str) -> Result<Spanned<DeTable<'_>>, Malformed> {
 /// counted from 1, as toml's own descriptions count them. A file past `u32::MAX` lines, or a
 /// line past as many characters, is past any the core reads, so its last ones all count as
 /// that one.
-pub(crate) fn position(text: &str, offset: usize) -> Position {
+fn position(text: &str, offset: usize) -> Position {
     let before = || text.as_bytes().iter().take(offset);
     let breaks = before().filter(|&&byte| byte == b'\n').count();
     // A UTF-8 continuation byte, 0b10xx_xxxx, goes on with the character before it.
