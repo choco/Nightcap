@@ -92,26 +92,17 @@ extension Menu {
     /// The menu for `snapshot` at `now`, in `words`, which call the front app by `appName`'s
     /// name for its bundle ID, else by the bundle ID.
     init(_ snapshot: Snapshot, now: Date, appName: (String) -> String?, words: Wording) {
-        self.init(
-            nightShift: snapshot.nightShift(), front: snapshot.front(), lengths: snapshot.config().lengths,
-            checks: snapshot.checks().checks, now: now, appName: appName, words: words)
-    }
-
-    /// The menu for these answers to the queries: `front` says what's in front and how each place
-    /// there stands, and `lengths` are the config's lengths a change can be picked for.
-    init(
-        nightShift: NightShiftState, front: Front, lengths: [SignedDuration], checks: [Check], now: Date,
-        appName: (String) -> String?, words: Wording
-    ) {
+        let nightShift = snapshot.nightShift()
         guard nightShift.state != .unavailable else {
             self.init(
                 moon: .unavailable, problemLine: nil,
                 nightShift: NightShiftItem(on: false, line: words.unavailable, command: nil), entries: [])
             return
         }
+        let front = snapshot.front()
         let rows = Rows(
-            nightShift: nightShift, front: front, lengths: lengths, checks: checks, now: now,
-            frontName: front.app.flatMap(appName), words: words)
+            nightShift: nightShift, front: front, lengths: snapshot.config().lengths, checks: snapshot.checks().checks,
+            now: now, frontName: front.app.flatMap(appName), words: words)
         let decision = front.decision
         let everywhere = front.everywhere.gives
         var entries: [Entry] = []
