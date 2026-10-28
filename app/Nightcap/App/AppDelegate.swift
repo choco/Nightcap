@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var notifications = Notifications()
     private lazy var nightShift = NightShiftAdapter { [weak self] status in self?.reporter?.reportNightShift(status) }
     private lazy var accessibility = AccessibilityPermission { [weak self] _ in
-        self?.onboarding?.accessibilityChanged()
         Task { await self?.reporter?.reportSystemState() }
     }
     private lazy var updater = Updater(dockIcon: dockIcon, notifications: notifications)
@@ -69,9 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         log.info("Nightcap started")
         let loginItem = LoginItemAdapter()
-        let reporter = Reporter(
-            core: core, nightShift: nightShift, accessibility: accessibility, loginItem: loginItem,
-            notificationsChanged: { [weak self] in self?.onboarding?.notificationsChanged() })
+        let reporter = Reporter(core: core, nightShift: nightShift, accessibility: accessibility, loginItem: loginItem)
         let executor = Executor(
             core: core, inbox: inbox, nightShift: nightShift, loginItem: loginItem, updater: updater,
             wakeups: WakeupTimer { reporter.wakeupCameDue() },
@@ -164,7 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshot = core.snapshot()
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
-            browser: tourBrowser(snapshot.preferences()),
+            browser: tourBrowser(snapshot),
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
             begin: { core.sendApp(command: $0) },
@@ -178,9 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onShown()
     }
 
-    /// The default browser, for the tour's site step, while website checking can watch it.
-    private func tourBrowser(_ preferences: Preferences) -> Tour.Browser? {
-        guard preferences.websiteChecking.state == .on, accessibility.granted,
+    /// The default browser, for the tour's site step, while website checking can watch it, as
+    /// `snapshot` has it.
+    private func tourBrowser(_ snapshot: Snapshot) -> Tour.Browser? {
+        guard snapshot.preferences().websiteChecking.state == .on, snapshot.checks().permissions.accessibility,
             let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
             let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
@@ -189,7 +187,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         guard let core, let reporter, let executor else { return }
-        let accessibility = accessibility
         let onboarding = Onboarding(
             core.snapshot(),
             icons: siteIcons,
@@ -199,10 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             now: { Date() },
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
-            accessibilityGranted: { accessibility.granted },
             askForAccessibility: { executor.perform(.askForAccessibility) },
             choose: { command in core.send(command: command) },
-            notifications: { reporter.notificationPermission },
             askForNotifications: { reporter.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }

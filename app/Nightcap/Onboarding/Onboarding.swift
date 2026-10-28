@@ -72,21 +72,18 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
 
     /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
-    /// and has the rules as they stand; `now` is the time the stage's timeline marks; `shortcut`
-    /// is the one Ready's menu shows; `choose` sends a command to the core, as the menu does;
-    /// `notifications` says whether notifications are allowed, denied or not asked for yet, as
-    /// last read; `onFinish` runs once onboarding ends, by Done or the close button, with whether
-    /// the user chose website checking, or nil where the config sets it.
+    /// and has the rules and the grants as they stand; `now` is the time the stage's timeline
+    /// marks; `shortcut` is the one Ready's menu shows; `choose` sends a command to the core, as
+    /// the menu does; `onFinish` runs once onboarding ends, by Done or the close button, with
+    /// whether the user chose website checking, or nil where the config sets it.
     init(
         _ snapshot: Snapshot,
         icons: SiteIcons,
         sun: Sun?,
         now: @escaping () -> Date,
         shortcut: KeyboardShortcuts.Shortcut?,
-        accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
-        notifications: @escaping () -> NotificationPermission,
         askForNotifications: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool?) -> Void
     ) {
@@ -97,8 +94,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
         appItems = Dictionary(uniqueKeysWithValues: apps.map { (RuleIdentity.app($0.id), $0) })
         flow = OnboardingFlow(
             snapshot, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), words: words,
-            accessibilityGranted: accessibilityGranted, askForAccessibility: askForAccessibility, choose: choose,
-            notifications: notifications, askForNotifications: askForNotifications, onFinish: onFinish)
+            askForAccessibility: askForAccessibility, choose: choose, askForNotifications: askForNotifications,
+            onFinish: onFinish)
         self.icons = icons
         self.sun = sun
         self.now = now
@@ -119,24 +116,34 @@ final class Onboarding: NSObject, NSWindowDelegate {
         window.center()
     }
 
-    /// Only the last steps' rows depend on notifications; redrawing elsewhere could end a drag.
-    func notificationsChanged() {
-        if flow.step == .lastThings || flow.step == .ready { draw() }
-    }
-
-    /// Takes the rules as `snapshot` has them, and redraws a page that shows them once they came
-    /// or went, as from the CLI or as the core takes the ones onboarding gave: a grid's
-    /// suggestions each say where their rule comes from, and the last steps name what onboarding
-    /// gave a rule. Steps that show no rules stay as they are, so a drag isn't ended.
+    /// Takes the rules and the grants as `snapshot` has them, and redraws a page that shows what
+    /// changed. A page that shows the rules redraws once they came or went, as from the CLI or as
+    /// the core takes the ones onboarding gave: a grid's suggestions each say where their rule
+    /// comes from, and the last steps name what onboarding gave a rule. The last steps redraw as
+    /// notifications change, and the Accessibility page moves on once the grant arrives, a moment
+    /// after showing it. Other steps stay as they are, so a drag isn't ended.
     func refresh(_ snapshot: Snapshot) {
+        let granted = flow.accessibilityGranted
+        let notifications = flow.notifications
         flow.refresh(snapshot)
+        if flow.accessibilityGranted != granted, flow.grantArrived() {
+            draw()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self, flow.moveOnToSites() else { return }
+                draw()
+            }
+            return
+        }
         let showsRules =
             switch flow.step {
             case .apps, .lastThings, .ready: true
             case .websites: flow.page == .sites
             case .alreadySetUp, .strength, .schedule: false
             }
-        if showsRules, shownRules != drawnRules { draw() }
+        let showsNotifications = flow.step == .lastThings || flow.step == .ready
+        if (showsRules && shownRules != drawnRules) || (showsNotifications && flow.notifications != notifications) {
+            draw()
+        }
     }
 
     /// What the page draws of the rules, as `drawnRules` keeps it.
@@ -151,16 +158,6 @@ final class Onboarding: NSObject, NSWindowDelegate {
     func present() {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
-    }
-
-    /// The Accessibility page moves on once the grant arrives, a moment after showing it.
-    func accessibilityChanged() {
-        guard flow.grantArrived() else { return }
-        draw()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self, flow.moveOnToSites() else { return }
-            draw()
-        }
     }
 
     /// Asked only when the user closes the window, never when Nightcap quits.

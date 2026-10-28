@@ -14,7 +14,6 @@ final class Reporter {
     private let nightShift: NightShiftAdapter?
     private let accessibility: AccessibilityPermission
     private let loginItem: LoginItemAdapter
-    private let notificationsChanged: () -> Void
     /// Re-reads the permissions every second while onboarding or Settings is open, and every 30
     /// seconds otherwise: macOS posts nothing when notifications are switched in System Settings.
     private var permissionsPoll: Timer?
@@ -24,20 +23,14 @@ final class Reporter {
     private var reportedStrength: UInt8?
     private var observers: [NSObjectProtocol] = []
 
-    /// `nightShift` is nil while Night Shift is unavailable. `notificationsChanged` runs as a read
-    /// finds notifications changed.
+    /// `nightShift` is nil while Night Shift is unavailable.
     init(
-        core: Core,
-        nightShift: NightShiftAdapter?,
-        accessibility: AccessibilityPermission,
-        loginItem: LoginItemAdapter,
-        notificationsChanged: @escaping () -> Void
+        core: Core, nightShift: NightShiftAdapter?, accessibility: AccessibilityPermission, loginItem: LoginItemAdapter
     ) {
         self.core = core
         self.nightShift = nightShift
         self.accessibility = accessibility
         self.loginItem = loginItem
-        self.notificationsChanged = notificationsChanged
     }
 
     /// Notifications as the core last heard of them; not asked for until the first read, as the
@@ -91,7 +84,7 @@ final class Reporter {
 
     /// The login item, the strength and the permissions, each reported only when it changed:
     /// macOS posts nothing when the user switches the login item or notifications in System
-    /// Settings. Notifications are read here alone, for the core and onboarding both.
+    /// Settings. Notifications are read here alone.
     func reportSystemState() async {
         reportLoginItem()
         reportStrength()
@@ -104,12 +97,10 @@ final class Reporter {
             }
         let permissions = (accessibility: accessibility.granted, notifications: read)
         if let reportedPermissions, reportedPermissions == permissions { return }
-        let notificationsDiffer = read != notificationPermission
         reportedPermissions = permissions
         core.report(
             fact: .permissionsChanged(
                 accessibility: permissions.accessibility, notifications: permissions.notifications))
-        if notificationsDiffer { notificationsChanged() }
     }
 
     /// Night Shift as CoreBrightness announces it.

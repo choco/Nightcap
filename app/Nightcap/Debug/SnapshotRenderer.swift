@@ -76,8 +76,7 @@ enum SnapshotRenderer {
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
                 now: { evening },
                 shortcut: shortcut,
-                accessibilityGranted: { false }, askForAccessibility: {}, choose: { _ in },
-                notifications: { .notRequested }, askForNotifications: {}, onFinish: { _ in })
+                askForAccessibility: {}, choose: { _ in }, askForNotifications: {}, onFinish: { _ in })
         }
         let newUser = steps(.off)
         let nightShiftUser = steps(.sunsetToSunrise)

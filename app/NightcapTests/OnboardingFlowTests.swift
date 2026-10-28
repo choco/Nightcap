@@ -13,11 +13,13 @@ private final class Sent {
 }
 
 /// A self-managed release, or a managed install, or the dev build as `bundleId`, that has read the
-/// Mac's Night Shift at a strength of 60 and found Nightcap not opening at login, with `config` as
-/// its config and `rules` as its ad-hoc rules file.
+/// Mac's Night Shift at a strength of 60, found Nightcap not opening at login, and heard of
+/// Accessibility as `accessibility` and of notifications as `notifications`, with `config` as its
+/// config and `rules` as its ad-hoc rules file.
 private func core(
     schedule: Schedule = .off, bundleId: String = "io.github.choco.nightcap", bundleWritable: Bool = true,
-    config: String? = nil, rules: String? = nil
+    config: String? = nil, rules: String? = nil, accessibility: Bool = true,
+    notifications: NotificationPermission = .notRequested
 ) throws -> Core {
     try Core.staged(
         scenario: Scenario(
@@ -26,6 +28,7 @@ private func core(
                 .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
                 .fact(.strengthChanged(value: 60)),
                 .fact(.loginItemChanged(item: .notRegistered)),
+                permissions(accessibility, notifications),
             ]))
 }
 
@@ -38,20 +41,17 @@ private func setup(_ core: Core) -> OnboardingFlow.Setup {
 /// chooses reaches the core, as the menu's commands do, and `sent` too; the core's snapshot after
 /// each reaches the flow, as the app's redraw hands it on.
 private func onboarding(
-    _ core: Core, sent: Sent = Sent(),
-    notifications: @escaping () -> NotificationPermission = { .notRequested },
-    onFinish: @escaping (Bool?) -> Void = { _ in }
+    _ core: Core, sent: Sent = Sent(), onFinish: @escaping (Bool?) -> Void = { _ in }
 ) -> OnboardingFlow {
     weak var made: OnboardingFlow?
     let flow = OnboardingFlow(
-        core.snapshot(), apps: [imovie, photos], sites: ["figma.com"], words: .staged,
-        accessibilityGranted: { true }, askForAccessibility: {},
+        core.snapshot(), apps: [imovie, photos], sites: ["figma.com"], words: .staged, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
             core.send(command: command)
             made?.refresh(core.snapshot())
         },
-        notifications: notifications, askForNotifications: {}, onFinish: onFinish)
+        askForNotifications: {}, onFinish: onFinish)
     made = flow
     return flow
 }
@@ -134,7 +134,7 @@ struct OnboardingFlowTests {
     }
 
     @Test func aManagedInstallWithNotificationsAllowedHasNoLastThings() throws {
-        let flow = onboarding(try core(bundleWritable: false), notifications: { .granted })
+        let flow = onboarding(try core(bundleWritable: false, notifications: .granted))
 
         #expect(flow.steps == [.strength, .schedule, .apps, .websites, .ready])
     }
@@ -288,17 +288,56 @@ struct OnboardingFlowTests {
         #expect(finished == [false])
     }
 
+    /// The flow reads notifications from the snapshot the redraw hands it.
     @Test func allowingNotificationsWhereThereIsNoLoginItemMovesOnToReady() throws {
-        var permission = NotificationPermission.notRequested
-        let flow = onboarding(try core(bundleWritable: false), notifications: { permission })
+        let staged = try core(bundleWritable: false)
+        let flow = onboarding(staged)
         flow.go(to: try #require(flow.steps.firstIndex(of: .lastThings)))
         #expect(flow.step == .lastThings)
 
-        permission = .granted
+        staged.report(fact: .permissionsChanged(accessibility: true, notifications: .granted))
+        #expect(flow.step == .lastThings)
+        flow.refresh(staged.snapshot())
 
+        #expect(flow.notifications == .granted)
         #expect(!flow.steps.contains(.lastThings))
         #expect(flow.index == flow.steps.count - 1)
         #expect(flow.step == .ready)
+    }
+
+    @Test func theAccessibilityPageShowsTheGrantOnceTheSnapshotHasIt() throws {
+        let staged = try core(accessibility: false)
+        let flow = onboarding(staged)
+        flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
+        flow.perform(.turnOnWebsites)
+        #expect(flow.page == .accessibility)
+        #expect(flow.footer == OnboardingFlow.Footer(secondary: .notNow, primary: .allowAccessibility))
+        flow.perform(.allowAccessibility)
+        #expect(!flow.grantArrived())
+
+        staged.report(fact: .permissionsChanged(accessibility: true, notifications: .notRequested))
+        flow.refresh(staged.snapshot())
+
+        #expect(flow.accessibilityGranted)
+        #expect(flow.grantArrived())
+        #expect(flow.page == .accessibility)
+        #expect(flow.moveOnToSites())
+        #expect(flow.page == .sites)
+    }
+
+    /// The config's website checking opens the step on Accessibility while the grant is missing,
+    /// as the snapshot onboarding opens on has it before macOS reports the grant.
+    @Test func aGrantArrivingBeforeTheWebsitesStepOpensItOnTheSites() throws {
+        let staged = try core(config: "websites = true\n", accessibility: false)
+        let flow = onboarding(staged)
+        #expect(flow.page == .accessibility)
+
+        staged.report(fact: .permissionsChanged(accessibility: true, notifications: .notRequested))
+        flow.refresh(staged.snapshot())
+        flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
+
+        #expect(flow.page == .sites)
+        #expect(flow.footer == OnboardingFlow.Footer(secondary: .notNow, primary: .addRules(count: 0)))
     }
 
     @Test func theDotsFollowTheStepsInTheirTwoGroups() throws {

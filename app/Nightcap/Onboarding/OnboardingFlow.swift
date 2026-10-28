@@ -129,19 +129,18 @@ final class OnboardingFlow {
 
     /// The core's rules, as the snapshot onboarding last took has them.
     private var rules: [ListedRule]
+    /// The grants, as the snapshot onboarding last took has them.
+    private var permissions: Permissions
     private let words: Wording
-    private let granted: () -> Bool
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
-    private let readNotifications: () -> NotificationPermission
     private let askForNotifications: () -> Void
     private let onFinish: (_ websites: Bool?) -> Void
 
     /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
-    /// and has the rules as they stand. `apps` are the bundle IDs of the suggested apps the grid
-    /// shows, and `sites` the suggested sites' domains; `words` say where a rule comes from;
-    /// `choose` sends a command to the core, as the menu does; `notifications` says whether
-    /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
+    /// and has the rules and the grants as they stand. `apps` are the bundle IDs of the suggested
+    /// apps the grid shows, and `sites` the suggested sites' domains; `words` say where a rule
+    /// comes from; `choose` sends a command to the core, as the menu does; `onFinish` runs once
     /// onboarding finishes, with whether the user chose website checking, or nil where the config
     /// sets it.
     init(
@@ -149,20 +148,17 @@ final class OnboardingFlow {
         apps: [String],
         sites: [String],
         words: Wording,
-        accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
-        notifications: @escaping () -> NotificationPermission,
         askForNotifications: @escaping () -> Void,
         onFinish: @escaping (_ websites: Bool?) -> Void
     ) {
         setup = Setup(snapshot)
         rules = snapshot.rules()
+        permissions = snapshot.checks().permissions
         self.words = words
-        granted = accessibilityGranted
         self.askForAccessibility = askForAccessibility
         self.choose = choose
-        readNotifications = notifications
         self.askForNotifications = askForNotifications
         self.onFinish = onFinish
         appIds = apps
@@ -179,18 +175,26 @@ final class OnboardingFlow {
         // The config answers website checking for good; it can still need Accessibility.
         if setup.websitesFromConfig == true {
             websites = true
-            page = accessibilityGranted() ? .sites : .accessibility
+            page = accessibilityGranted ? .sites : .accessibility
         }
     }
 
-    /// Takes the rules as `snapshot` has them, the one each redraw after an outcome hands on.
-    /// What onboarding asks stays as it opened.
+    /// Takes the rules and the grants as `snapshot` has them, the one each redraw after an
+    /// outcome hands on. What onboarding asks stays as it opened. The Accessibility page gives
+    /// way to the sites as the grant arrives while it doesn't show; while it shows, it shows the
+    /// grant first (`grantArrived`).
     func refresh(_ snapshot: Snapshot) {
         rules = snapshot.rules()
+        permissions = snapshot.checks().permissions
+        if step != .websites, page == .accessibility, accessibilityGranted {
+            waitingForAccessibility = false
+            page = .sites
+        }
     }
 
-    var accessibilityGranted: Bool { granted() }
-    var notifications: NotificationPermission { readNotifications() }
+    var accessibilityGranted: Bool { permissions.accessibility }
+    /// Whether notifications are allowed, denied or not asked for yet.
+    var notifications: NotificationPermission { permissions.notifications }
 
     // MARK: Where onboarding is
 
