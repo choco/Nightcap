@@ -10,8 +10,6 @@ use nightcap_protocol::{
     Schedule,
 };
 
-use crate::Fix;
-
 /// Something macOS observed, which the shell reports.
 #[derive(Debug, uniffi::Enum)]
 pub enum Fact {
@@ -71,7 +69,7 @@ pub enum Fact {
 }
 
 /// A command only the app sends, which never goes on the wire: the CLI has no tour
-/// (ADR-0016), no onboarding and no fixes.
+/// (ADR-0016) and no onboarding.
 #[derive(Debug, uniffi::Enum)]
 pub enum AppCommand {
     /// Starts the tour (ADR-0016).
@@ -81,8 +79,6 @@ pub enum AppCommand {
     /// Finishes onboarding, with whether the user chose to check websites, or None where the
     /// config sets it and onboarding never asked.
     FinishOnboarding { websites: Option<bool> },
-    /// Carries out one of the core's fixes, which the user chose in the app.
-    Fix(Fix),
 }
 
 #[derive(Debug, PartialEq, Eq, uniffi::Enum)]
@@ -147,8 +143,8 @@ pub enum Event {
     /// where that leaves it. Night Shift being unavailable, notifications switched off and a
     /// login item waiting for approval never are.
     ProblemAppeared { check: Check },
-    /// The core refused a command from the app, sent on its own or run by a fix; the CLI hears
-    /// its refusal as the reply.
+    /// The core refused a command from the app, other than a reload, whose refusal the config
+    /// file's check shows; the CLI hears its refusal as the reply.
     Refused { command: Command, why: Refusal },
 }
 

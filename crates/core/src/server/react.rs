@@ -33,11 +33,7 @@ pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
                 .0
         }
         Input::Command(command) => inner.choose(command).0,
-        Input::AppCommand(command) => {
-            inner
-                .turn(false, |inner, outcome| inner.app_command(command, outcome))
-                .0
-        }
+        Input::AppCommand(command) => inner.turn(false, |inner, _| inner.app_command(command)).0,
         Input::Terminating => inner.turn(false, |inner, _| inner.terminating()).0,
     }
 }
@@ -101,12 +97,11 @@ impl Inner {
         }
     }
 
-    fn app_command(&mut self, command: AppCommand, outcome: &mut Outcome) {
+    fn app_command(&mut self, command: AppCommand) {
         match command {
             AppCommand::StartTour => self.tour_started(),
             AppCommand::EndTour => self.tour_ended(self.clock.now()),
             AppCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
-            AppCommand::Fix(fix) => self.run_fix(fix, outcome),
         }
     }
 

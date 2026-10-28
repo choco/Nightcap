@@ -32,7 +32,14 @@ struct Settings: Equatable {
         let command: Command
     }
 
-    /// A button that carries out `fix`, the shell's own or the core's.
+    /// What a fix's button does: sends the command that restores, accepts or reloads, or carries
+    /// out one of the app's own fixes.
+    enum Fix: Equatable {
+        case command(Command)
+        case app(AppFix)
+    }
+
+    /// A button that carries out `fix`.
     struct FixButton: Equatable {
         let title: String
         let fix: Fix
@@ -107,11 +114,10 @@ struct Settings: Equatable {
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))
             } : nil
         self.checks = checks.filter(Self.shows).map { check in
-            let fixes = Self.fixes(for: check.detail, websitesFromConfig: websites.fromConfig)
-            let button = { (fix: Fix?) in fix.map { FixButton(title: words.title(of: $0), fix: $0) } }
+            let fixes = Self.fixes(for: check.detail, websitesFromConfig: websites.fromConfig, words: words)
             return CheckStatus(
                 kind: check.detail.kind, state: check.state, text: words.check(check.detail),
-                restore: button(fixes.restore), accept: button(fixes.accept))
+                restore: fixes.restore, accept: fixes.accept)
         }
         configPath = core.config().path
         self.rules = Self.rows(of: rules, words: words)
@@ -163,18 +169,26 @@ struct Settings: Equatable {
     }
 
     /// What Settings offers for what a check found: putting back what the user set up, and
-    /// accepting the change as their choice.
-    private static func fixes(for detail: CheckDetail, websitesFromConfig: Bool) -> (restore: Fix?, accept: Fix?) {
-        switch detail {
+    /// accepting the change as their choice, each the app's own fix or a command.
+    private static func fixes(for detail: CheckDetail, websitesFromConfig: Bool, words: Wording) -> (
+        restore: FixButton?, accept: FixButton?
+    ) {
+        let app = { (fix: AppFix) in FixButton(title: words.title(of: fix), fix: .app(fix)) }
+        let send = { (title: String, command: Command) in FixButton(title: title, fix: .command(command)) }
+        return switch detail {
         // Only the config can turn off what the config turned on.
-        case .accessibility(.notAllowed): (.askForAccessibility, websitesFromConfig ? nil : .stopCheckingWebsites)
-        case .notifications(.switchedOff): (.allowNotifications, .keepNotificationsOff)
-        case .notifications(.off): (.allowNotifications, nil)
-        case .nightShift(.setAside): (.openLocationServices, .keepScheduleOff)
+        case .accessibility(.notAllowed):
+            (app(.askForAccessibility), websitesFromConfig ? nil : send(words.stopCheckingWebsites, .websites(.off)))
+        case .notifications(.switchedOff):
+            (app(.allowNotifications), send(words.keepNotificationsOff, .keepNotificationsOff))
+        case .notifications(.off): (app(.allowNotifications), nil)
+        case .nightShift(.setAside): (app(.openLocationServices), send(words.keepScheduleOff, .keepScheduleOff))
         // Registering again doesn't help an item that's waiting for approval.
-        case .openAtLogin(.awaitingApproval): (.openLoginItems, .dontOpenAtLogin)
-        case .openAtLogin(.removed): (.openAtLogin, .dontOpenAtLogin)
-        case .configFile(.error): (.reload, nil)
+        case .openAtLogin(.awaitingApproval):
+            (app(.openLoginItems), send(words.dontOpenAtLogin, .openAtLogin(.off)))
+        case .openAtLogin(.removed):
+            (send(words.openAtLoginAgain, .openAtLogin(.on)), send(words.dontOpenAtLogin, .openAtLogin(.off)))
+        case .configFile(.error): (send(words.reload, .reload), nil)
         case .nightShift(.available), .nightShift(.unavailable), .nightShift(.noSunTimes), .accessibility(.allowed),
             .accessibility(.notNeeded), .notifications(.allowed), .openAtLogin(.opens), .openAtLogin(.off),
             .configFile(.valid), .configFile(.missing), .adHocRules:
@@ -227,4 +241,19 @@ struct Settings: Equatable {
     private static func isAppOrSiteRule(_ rule: Rule) -> Bool {
         rule.place != .everywhere && rule.length == .indefinite
     }
+}
+
+/// A fix the app carries out itself, never the core, as it happens in macOS: a prompt for a
+/// grant, or the pane of System Settings where the user puts back what they set up. Every other
+/// fix is a command.
+enum AppFix: Equatable {
+    /// The macOS prompt while Nightcap has no entry in the list, else the pane.
+    case askForAccessibility
+    /// The macOS prompt while notifications were never asked for, else Nightcap's page in
+    /// Notification settings.
+    case allowNotifications
+    /// Login Items in System Settings, where macOS asks for its approval.
+    case openLoginItems
+    /// Location Services in System Settings.
+    case openLocationServices
 }

@@ -142,6 +142,12 @@ pub enum Command {
     Websites(OnOff),
     /// Opens Nightcap at login or stops it, in self-managed installs (ADR-0011).
     OpenAtLogin(OnOff),
+    /// Accepts notifications switched off in System Settings as the user's choice, until they're
+    /// allowed again.
+    KeepNotificationsOff,
+    /// Accepts the schedule off while macOS has sunset to sunrise set aside, until Location
+    /// Services is back on.
+    KeepScheduleOff,
     /// Sets Night Shift's strength, 0 to 100, and saves it (ADR-0014).
     Strength(u8),
     /// Shows a strength, 0 to 100, without saving it, while a slider moves; `Strength` ends it.
@@ -1507,6 +1513,14 @@ mod tests {
         assert_eq!(
             json(&Request::Command(Command::CheckForUpdates)),
             r#"{"command":"check_for_updates"}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::KeepNotificationsOff)),
+            r#"{"command":"keep_notifications_off"}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::KeepScheduleOff)),
+            r#"{"command":"keep_schedule_off"}"#
         );
         assert_eq!(
             json(&Response::Ok(Payload::UpdateCheckStarted)),

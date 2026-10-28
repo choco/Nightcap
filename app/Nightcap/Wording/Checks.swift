@@ -102,21 +102,23 @@ extension Wording {
         }
     }
 
-    /// A fix's button.
-    func title(of fix: Fix) -> String {
+    /// The button of one of the app's own fixes.
+    func title(of fix: AppFix) -> String {
         switch fix {
         case .askForAccessibility: text("Allow…")
         case .allowNotifications: text("Allow Notifications…")
         case .openLoginItems: text("Open Login Items…")
         case .openLocationServices: text("Open Location Services…")
-        case .stopCheckingWebsites: text("Stop Checking Websites")
-        case .keepNotificationsOff: text("Keep Notifications Off")
-        case .keepScheduleOff: text("Keep the Schedule Off")
-        case .openAtLogin: text("Open at Login")
-        case .dontOpenAtLogin: text("Don’t Open at Login")
-        case .reload: text("Reload")
         }
     }
+
+    // The buttons of the fixes that are commands.
+    var stopCheckingWebsites: String { text("Stop Checking Websites") }
+    var keepNotificationsOff: String { text("Keep Notifications Off") }
+    var keepScheduleOff: String { text("Keep the Schedule Off") }
+    var openAtLoginAgain: String { text("Open at Login") }
+    var dontOpenAtLogin: String { text("Don’t Open at Login") }
+    var reload: String { text("Reload") }
 
     /// Where a check stands, as its mark tells VoiceOver.
     func mark(_ state: CheckState) -> String {

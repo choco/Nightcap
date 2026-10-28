@@ -48,13 +48,13 @@ A problem where something the user set up stopped working, such as notifications
 A problem the user can't accept, only fix: an invalid config or ad-hoc rules file, Night Shift unavailable, or sunset to sunrise without sun times for ten minutes.
 
 **Fix**:
-An action offered with a problem: a restore, an accept, or reloading a broken file.
+An action offered with a problem: a restore, an accept, or reloading a broken file. The app picks which a check offers. Most are commands; the rest happen in macOS itself, asking for a grant or opening the pane of System Settings where the user puts something back, and the app carries them out alone.
 
 **Restore**:
-A fix that puts back what the user set up, such as registering the login item again.
+A fix that puts back what the user set up, such as registering the login item again, or opening Login Items for macOS's approval.
 
 **Accept**:
-A fix that takes the change as the user's new choice, such as keeping notifications off.
+A fix that takes the change as the user's new choice, such as keeping notifications off. Each is a command, which records the choice.
 _Avoid_: dismiss, ignore
 
 **Announce**:

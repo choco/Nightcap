@@ -1,47 +1,24 @@
 //! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
-//! the checks query answers, which each client words itself; what each fix does; and the event
-//! that announces a problem when it appears.
+//! the checks query answers, from which each client words them and the app picks their fixes;
+//! and the event that announces a problem when it appears.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
+    AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState,
     ConfigFileDetail, FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy,
+    NotificationsDetail, OpenAtLoginDetail, Schedule, SetBy,
 };
 
+use crate::Event;
 use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
-use crate::{Effect, Event, Outcome};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
 /// back on (macOS 27).
 const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
-
-/// An action the app offers with a problem: a restore, an accept, or reloading a broken file.
-/// Which one a check offers, and in what words, is the shell's; what it does is the core's,
-/// short of the four the shell carries out itself.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum Fix {
-    /// The shell's: the macOS prompt while Nightcap has no entry in the list, else the pane.
-    AskForAccessibility,
-    /// The shell's: the macOS prompt while notifications were never asked for, else Nightcap's
-    /// page in Notification settings.
-    AllowNotifications,
-    /// The shell's: Login Items in System Settings, where macOS asks for its approval.
-    OpenLoginItems,
-    /// The shell's: Location Services in System Settings.
-    OpenLocationServices,
-    /// The core's, like the rest: sent back as `AppCommand::Fix`.
-    StopCheckingWebsites,
-    KeepNotificationsOff,
-    KeepScheduleOff,
-    OpenAtLogin,
-    DontOpenAtLogin,
-    Reload,
-}
 
 /// Whether a turn tells the problems that appear in it.
 pub(crate) enum Telling {
@@ -103,28 +80,6 @@ impl Inner {
             .into_iter()
             .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
             .collect()
-    }
-
-    /// Carries out a fix the user chose in the app; the shell carries out its own. A fix that
-    /// runs a command tells of its refusal as the command would.
-    pub(crate) fn run_fix(&mut self, fix: Fix, outcome: &mut Outcome) {
-        match fix {
-            Fix::StopCheckingWebsites => {
-                _ = self.run_chosen(Command::Websites(OnOff::Off), outcome);
-            }
-            Fix::DontOpenAtLogin => _ = self.run_chosen(Command::OpenAtLogin(OnOff::Off), outcome),
-            Fix::KeepNotificationsOff => self.grants.notifications_wanted = false,
-            Fix::KeepScheduleOff => self.grants.schedule_off_accepted = true,
-            Fix::OpenAtLogin => outcome.effects.push(Effect::RegisterLoginItem),
-            // An invalid config shows in its check again.
-            Fix::Reload => _ = self.reload(&mut outcome.effects),
-            Fix::AskForAccessibility
-            | Fix::AllowNotifications
-            | Fix::OpenLoginItems
-            | Fix::OpenLocationServices => {
-                tracing::debug!("{fix:?} is the shell's to carry out");
-            }
-        }
     }
 }
 

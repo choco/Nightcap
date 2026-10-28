@@ -37,8 +37,9 @@ enum Snapshot {
                     .command(.set(place: .domain("figma.com"), state: .on, length: .until(sunrise))),
                     .command(.set(place: .app("com.apple.mail"), state: .off, length: .until(today(22, 0)))),
                     .config(rules + "\ndomian = [\"figma.com\"]"),
-                    .appCommand(.fix(.reload)),
                 ]))
+        // A refused command fails a scenario's step, so the reload comes after.
+        settingsCore.send(command: .reload)
         // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
         let icons = SiteIcons(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)

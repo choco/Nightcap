@@ -12,7 +12,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private let words = Wording.system
     private let icons: SiteIcons
     private let choose: (Command) -> Void
-    private let perform: (Fix) -> Void
+    private let perform: (AppFix) -> Void
     private let checkForUpdates: (() -> Void)?
     private let export: (ExportFormat) -> String
     private let takeTour: () -> Void
@@ -37,7 +37,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         current: @escaping () -> Settings,
         icons: SiteIcons,
         choose: @escaping (Command) -> Void,
-        perform: @escaping (Fix) -> Void,
+        perform: @escaping (AppFix) -> Void,
         checkForUpdates: (() -> Void)?,
         export: @escaping (ExportFormat) -> String,
         takeTour: @escaping () -> Void,
@@ -559,8 +559,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// One fix sits at the end of the line; two get a line of their own, so the text can stay
     /// on one.
     private func status(_ check: Settings.CheckStatus) -> NSView {
-        let fixes = [check.restore, check.accept].compactMap { $0 }.map { fix in
-            Look.button(fix.title, .small) { [perform] in perform(fix.fix) }
+        let fixes = [check.restore, check.accept].compactMap { $0 }.map { button in
+            Look.button(button.title, .small) { [choose, perform] in
+                switch button.fix {
+                case .command(let command): choose(command)
+                case .app(let fix): perform(fix)
+                }
+            }
         }
         let inline = fixes.count < 2 ? fixes : []
         let inlineWidth = inline.reduce(0) { $0 + $1.fittingSize.width + 8 }

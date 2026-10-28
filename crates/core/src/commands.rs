@@ -19,28 +19,22 @@ use crate::{Effect, Event, Outcome};
 
 impl Inner {
     /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
-    /// as an event. A problem it causes isn't announced: the user is looking at what
-    /// they chose.
+    /// as an event, short of a reload's: the config file's check says why already. A problem it
+    /// causes isn't announced: the user is looking at what they chose.
     pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.turn(false, |inner, outcome| inner.run_chosen(command, outcome))
-    }
-
-    /// Runs a command the user chose in the app, on its own or as a fix, telling of its refusal
-    /// as an event.
-    pub(crate) fn run_chosen(
-        &mut self,
-        command: Command,
-        outcome: &mut Outcome,
-    ) -> Result<Payload, Refusal> {
-        let answer = self.run_command(&command, &mut outcome.effects);
-        if let Err(why) = &answer {
-            tracing::warn!("a command from the app was refused: {}", kind(why));
-            outcome.events.push(Event::Refused {
-                command,
-                why: why.clone(),
-            });
-        }
-        answer
+        self.turn(false, |inner, outcome| {
+            let answer = inner.run_command(&command, &mut outcome.effects);
+            if let Err(why) = &answer
+                && command != Command::Reload
+            {
+                tracing::warn!("a command from the app was refused: {}", kind(why));
+                outcome.events.push(Event::Refused {
+                    command,
+                    why: why.clone(),
+                });
+            }
+            answer
+        })
     }
 
     /// Runs a command from the CLI or the app, answering with the resulting decision, and for
@@ -111,6 +105,16 @@ impl Inner {
                 } else {
                     Err(Refusal::NoLoginItem(self.not_self_managed()))
                 }
+            }
+            Command::KeepNotificationsOff => {
+                tracing::info!("notifications kept off");
+                self.grants.notifications_wanted = false;
+                Ok(())
+            }
+            Command::KeepScheduleOff => {
+                tracing::info!("the schedule kept off while sunset to sunrise is set aside");
+                self.grants.schedule_off_accepted = true;
+                Ok(())
             }
             Command::Strength(value) | Command::PreviewStrength(value) => {
                 if self.strength.is_none() {

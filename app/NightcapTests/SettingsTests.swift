@@ -7,7 +7,7 @@ private func settings(_ core: Core) -> Settings {
     Settings(core, words: .staged)
 }
 
-private func fix(_ title: String, _ fix: Fix) -> Settings.FixButton {
+private func fix(_ title: String, _ fix: Settings.Fix) -> Settings.FixButton {
     Settings.FixButton(title: title, fix: fix)
 }
 
@@ -41,9 +41,9 @@ struct SettingsTests {
                 == Settings.CheckStatus(
                     kind: .accessibility, state: .drifted,
                     text: "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                    restore: fix("Allow…", .askForAccessibility),
-                    accept: fix("Stop Checking Websites", .stopCheckingWebsites)))
-        core.sendApp(command: .fix(.stopCheckingWebsites))
+                    restore: fix("Allow…", .app(.askForAccessibility)),
+                    accept: fix("Stop Checking Websites", .command(.websites(.off)))))
+        core.send(command: .websites(.off))
         #expect(!settings(core).websiteChecking.on)
         #expect(settings(core).check(.accessibility) == nil)
     }
@@ -52,7 +52,7 @@ struct SettingsTests {
         let core = try atNoon(config: "websites = true\n", permissions(false, .granted))
 
         let accessibility = try #require(settings(core).check(.accessibility))
-        #expect(accessibility.restore == fix("Allow…", .askForAccessibility))
+        #expect(accessibility.restore == fix("Allow…", .app(.askForAccessibility)))
         #expect(accessibility.accept == nil)
     }
 
@@ -64,14 +64,14 @@ struct SettingsTests {
                 == Settings.CheckStatus(
                     kind: .notifications, state: .drifted,
                     text: "Notifications were allowed, but they’re switched off in System Settings.",
-                    restore: fix("Allow Notifications…", .allowNotifications),
-                    accept: fix("Keep Notifications Off", .keepNotificationsOff)))
-        core.sendApp(command: .fix(.keepNotificationsOff))
+                    restore: fix("Allow Notifications…", .app(.allowNotifications)),
+                    accept: fix("Keep Notifications Off", .command(.keepNotificationsOff))))
+        core.send(command: .keepNotificationsOff)
         #expect(
             settings(core).check(.notifications)
                 == Settings.CheckStatus(
                     kind: .notifications, state: .off, text: "Notifications are off.",
-                    restore: fix("Allow Notifications…", .allowNotifications), accept: nil))
+                    restore: fix("Allow Notifications…", .app(.allowNotifications)), accept: nil))
     }
 
     @Test func sunsetToSunriseSetAsideOffersLocationServicesOrKeepingTheScheduleOff() throws {
@@ -90,8 +90,8 @@ struct SettingsTests {
                     kind: .nightShift, state: .drifted,
                     text:
                         "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
-                    restore: fix("Open Location Services…", .openLocationServices),
-                    accept: fix("Keep the Schedule Off", .keepScheduleOff)))
+                    restore: fix("Open Location Services…", .app(.openLocationServices)),
+                    accept: fix("Keep the Schedule Off", .command(.keepScheduleOff))))
 
         core.report(fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false))
         #expect(settings(core).check(.nightShift) == following)
@@ -103,15 +103,15 @@ struct SettingsTests {
 
         let nightShift = try #require(settings(core).check(.nightShift))
         #expect(nightShift.state == .drifted)
-        #expect(nightShift.restore == fix("Open Location Services…", .openLocationServices))
-        #expect(nightShift.accept == fix("Keep the Schedule Off", .keepScheduleOff))
+        #expect(nightShift.restore == fix("Open Location Services…", .app(.openLocationServices)))
+        #expect(nightShift.accept == fix("Keep the Schedule Off", .command(.keepScheduleOff)))
     }
 
     @Test func theScheduleKeptOffIsNoSchedule() throws {
         let core = try Core.staged(
             scenario: Scenario(
                 now: at("2026-10-16T01:40:00+02:00"),
-                steps: [reportedSetAside(false, .off), .appCommand(.fix(.keepScheduleOff))]))
+                steps: [reportedSetAside(false, .off), .command(.keepScheduleOff)]))
 
         #expect(
             settings(core).check(.nightShift)
@@ -137,11 +137,11 @@ struct SettingsTests {
         let core = try atNoon(config: broken)
         let check = try #require(settings(core).check(.configFile))
         #expect(check.state == .broken)
-        #expect(check.restore == fix("Reload", .reload))
+        #expect(check.restore == fix("Reload", .command(.reload)))
         #expect(check.accept == nil)
 
         let reloaded = try atNoon(
-            config: broken, .config("[rules.off]\ndomain = [\"figma.com\"]\n"), .appCommand(.fix(.reload)))
+            config: broken, .config("[rules.off]\ndomain = [\"figma.com\"]\n"), .command(.reload))
         #expect(
             settings(reloaded).check(.configFile)
                 == Settings.CheckStatus(
@@ -217,7 +217,8 @@ struct SettingsTests {
                 == Settings.CheckStatus(
                     kind: .openAtLogin, state: .drifted,
                     text: "Nightcap no longer opens at login: it was removed in System Settings.",
-                    restore: fix("Open at Login", .openAtLogin), accept: fix("Don’t Open at Login", .dontOpenAtLogin)))
+                    restore: fix("Open at Login", .command(.openAtLogin(.on))),
+                    accept: fix("Don’t Open at Login", .command(.openAtLogin(.off)))))
     }
 
     @Test func openingAtLoginWaitingForApprovalOffersLoginItems() throws {
@@ -228,8 +229,8 @@ struct SettingsTests {
             settings(core).check(.openAtLogin)
                 == Settings.CheckStatus(
                     kind: .openAtLogin, state: .drifted, text: "macOS is waiting for your approval in Login Items.",
-                    restore: fix("Open Login Items…", .openLoginItems),
-                    accept: fix("Don’t Open at Login", .dontOpenAtLogin)))
+                    restore: fix("Open Login Items…", .app(.openLoginItems)),
+                    accept: fix("Don’t Open at Login", .command(.openAtLogin(.off)))))
     }
 
     @Test func theRulesTabListsEveryRuleWithWhatCanBeDoneAboutIt() throws {

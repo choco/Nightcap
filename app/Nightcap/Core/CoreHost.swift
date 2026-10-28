@@ -125,9 +125,9 @@ final class CoreHost: NSObject {
         core.sendApp(command: command)
     }
 
-    /// The shell carries out its own fixes and hands the core's to it, each named, so a new fix
-    /// has to be given to one or the other.
-    func perform(_ fix: Fix) {
+    /// One of the app's own fixes, which never reaches the core; the rest are commands, sent as
+    /// any other.
+    func perform(_ fix: AppFix) {
         switch fix {
         case .askForAccessibility:
             accessibility?.ask()
@@ -138,8 +138,6 @@ final class CoreHost: NSObject {
         case .openLocationServices:
             let pane = "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices"
             NSWorkspace.shared.open(URL(string: pane)!)
-        case .stopCheckingWebsites, .keepNotificationsOff, .keepScheduleOff, .openAtLogin, .dontOpenAtLogin, .reload:
-            send(.fix(fix))
         }
     }
 

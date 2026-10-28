@@ -237,6 +237,8 @@ pub enum Command {
     RemoveRule(RuleIdentity),
     Websites(OnOff),
     OpenAtLogin(OnOff),
+    KeepNotificationsOff,
+    KeepScheduleOff,
     Strength(u8),
     PreviewStrength(u8),
     SetSchedule(Schedule),
