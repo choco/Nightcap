@@ -23,7 +23,7 @@ impl Inner {
                 Err(refusal) => Response::Refused(refusal),
             },
             // The socket's thread answers queries from the snapshot, which says the same.
-            Request::Query(query) => Snapshot::of(self).answer(query),
+            Request::Queries(queries) => Snapshot::of(self).answer(queries),
         }
     }
 }

@@ -110,7 +110,8 @@ pub enum HelloReply {
 #[serde(rename_all = "snake_case")]
 pub enum Request {
     Command(Command),
-    Query(Query),
+    /// Answered in the order asked, all from one snapshot.
+    Queries(Vec<Query>),
 }
 
 /// What the CLI and the app ask Nightcap to do. Each answers with the resulting decision, short of
@@ -223,6 +224,22 @@ pub enum Query {
     Export(ExportFormat),
 }
 
+/// What a query answers, named as the query is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Answer {
+    NightShift(NightShiftState),
+    Front(Box<Front>),
+    Rules(Vec<Rule>),
+    Config(ConfigState),
+    Preferences(Preferences),
+    Checks(Checks),
+    /// None while no tour runs.
+    Tour(Option<TourState>),
+    About(About),
+    Export(String),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExportFormat {
@@ -244,25 +261,16 @@ pub enum Response {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
-    NightShift(NightShiftState),
-    Front(Box<Front>),
+    /// The queries' answers, in the order asked.
+    Answers(Vec<Answer>),
+    /// Every rule, after a reload.
     Rules(Vec<Rule>),
-    Config(ConfigState),
-    Preferences(Preferences),
-    Checks(Checks),
-    /// None while no tour runs.
-    Tour(Option<TourState>),
-    About(About),
     /// What a command leads to.
     Decision(Decision),
     /// What adding a rule did, and the decision it leads to.
-    RuleAdded {
-        rule: RuleAdded,
-        decision: Decision,
-    },
+    RuleAdded { rule: RuleAdded, decision: Decision },
     /// Sparkle is checking; it shows what it finds in its own window.
     UpdateCheckStarted,
-    Export(String),
 }
 
 /// Night Shift as the shell last reported it, and its schedule (ADR-0014).
@@ -1159,18 +1167,19 @@ mod tests {
 
     #[test]
     fn queries_and_their_answers_match_the_documented_wire_format() {
-        for (query, wire) in [
-            (Query::NightShift, r#"{"query":"night_shift"}"#),
-            (Query::Front, r#"{"query":"front"}"#),
-            (Query::Rules, r#"{"query":"rules"}"#),
-            (Query::Config, r#"{"query":"config"}"#),
-            (Query::Preferences, r#"{"query":"preferences"}"#),
-            (Query::Checks, r#"{"query":"checks"}"#),
-            (Query::Tour, r#"{"query":"tour"}"#),
-            (Query::About, r#"{"query":"about"}"#),
-        ] {
-            assert_eq!(json(&Request::Query(query)), wire);
-        }
+        assert_eq!(
+            json(&Request::Queries(vec![
+                Query::NightShift,
+                Query::Front,
+                Query::Rules,
+                Query::Config,
+                Query::Preferences,
+                Query::Checks,
+                Query::Tour,
+                Query::About,
+            ])),
+            r#"{"queries":["night_shift","front","rules","config","preferences","checks","tour","about"]}"#
+        );
         let figma = || Place::Domain("figma.com".parse().unwrap());
         let figma_rule = || Rule {
             place: figma(),
@@ -1180,7 +1189,7 @@ mod tests {
         };
         let answers = [
             (
-                Payload::NightShift(NightShiftState {
+                Answer::NightShift(NightShiftState {
                     state: NightShift::On,
                     strength: Some(60),
                     schedule: Some(Schedule::Custom {
@@ -1198,7 +1207,7 @@ mod tests {
                 r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"}}"#,
             ),
             (
-                Payload::Front(Box::new(Front {
+                Answer::Front(Box::new(Front {
                     app: Some("com.apple.Safari".parse().unwrap()),
                     watching: true,
                     host: Some("www.figma.com".to_owned()),
@@ -1256,7 +1265,7 @@ mod tests {
                 r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"},"after_until":"off","after_reset":"off"},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"},"after_until":"on","after_reset":"on"}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null,"after_until":"on","after_reset":"on"},"after_switch":[{"place":"everywhere","says":"off","length":"indefinite","set_by":"you"}]}}"#,
             ),
             (
-                Payload::Config(ConfigState {
+                Answer::Config(ConfigState {
                     path: "/Users/me/.config/nightcap/config.toml".to_owned(),
                     found: true,
                     error: None,
@@ -1272,7 +1281,7 @@ mod tests {
                 r#"{"config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}}"#,
             ),
             (
-                Payload::Preferences(Preferences {
+                Answer::Preferences(Preferences {
                     website_checking: WebsiteChecking {
                         state: OnOff::On,
                         from_config: true,
@@ -1289,7 +1298,7 @@ mod tests {
                 r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true,"onboarding_asks":{"strength":false,"schedule":true}}}"#,
             ),
             (
-                Payload::Checks(Checks {
+                Answer::Checks(Checks {
                     checks: vec![Check {
                         detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
                         state: CheckState::Drifted,
@@ -1303,12 +1312,12 @@ mod tests {
                 r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
             ),
             (
-                Payload::Tour(Some(TourState { stands_in: true })),
+                Answer::Tour(Some(TourState { stands_in: true })),
                 r#"{"tour":{"stands_in":true}}"#,
             ),
-            (Payload::Tour(None), r#"{"tour":null}"#),
+            (Answer::Tour(None), r#"{"tour":null}"#),
             (
-                Payload::About(About {
+                Answer::About(About {
                     version: "1.2.0".to_owned(),
                     install: Install::SelfManaged,
                 }),
@@ -1316,12 +1325,20 @@ mod tests {
             ),
         ];
 
-        for (payload, wire) in answers {
-            let response = Response::Ok(payload);
-            let wire = format!(r#"{{"ok":{wire}}}"#);
+        for (answer, wire) in answers {
+            let response = Response::Ok(Payload::Answers(vec![answer]));
+            let wire = format!(r#"{{"ok":{{"answers":[{wire}]}}}}"#);
             assert_eq!(json(&response), wire);
             assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
         }
+        let in_order = Response::Ok(Payload::Answers(vec![
+            Answer::Tour(None),
+            Answer::Export("{ }".to_owned()),
+            Answer::Rules(Vec::new()),
+        ]));
+        let wire = r#"{"ok":{"answers":[{"tour":null},{"export":"{ }"},{"rules":[]}]}}"#;
+        assert_eq!(json(&in_order), wire);
+        assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), in_order);
     }
 
     #[test]
@@ -1637,14 +1654,17 @@ mod tests {
             assert_eq!(json(&response), wire);
             assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
         }
-        assert_eq!(json(&Request::Query(Query::Rules)), r#"{"query":"rules"}"#);
+        assert_eq!(
+            json(&Request::Queries(vec![Query::Rules])),
+            r#"{"queries":["rules"]}"#
+        );
         assert_eq!(
             json(&Request::Command(Command::Websites(OnOff::On))),
             r#"{"command":{"websites":"on"}}"#
         );
         assert_eq!(
-            json(&Request::Query(Query::Export(ExportFormat::Nix))),
-            r#"{"query":{"export":"nix"}}"#
+            json(&Request::Queries(vec![Query::Export(ExportFormat::Nix)])),
+            r#"{"queries":[{"export":"nix"}]}"#
         );
         assert_eq!(
             json(&Response::Ok(Payload::Rules(vec![
@@ -1670,10 +1690,6 @@ mod tests {
                 },
             ]))),
             r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you"},{"place":"everywhere","says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"tour"}]}}"#
-        );
-        assert_eq!(
-            json(&Response::Ok(Payload::Export("{ }".to_owned()))),
-            r#"{"ok":{"export":"{ }"}}"#
         );
     }
 

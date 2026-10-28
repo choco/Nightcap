@@ -303,13 +303,13 @@ impl Staged {
     }
 
     /// Sends a request as the CLI does, and returns its outcome and the response, which
-    /// crosses the wire format both ways, as over the socket. A query is answered from the
-    /// snapshot, as the socket's thread answers it, and leads to nothing.
+    /// crosses the wire format both ways, as over the socket. Queries are answered from the
+    /// snapshot, as the socket's thread answers them, and lead to nothing.
     pub fn request(&self, request: Request) -> (Outcome, Response) {
         let (outcome, response) = match over_the_wire(&request) {
-            Request::Query(query) => (
+            Request::Queries(queries) => (
                 Outcome::default(),
-                self.inline.published.latest().answer(&query),
+                self.inline.published.latest().answer(&queries),
             ),
             request => self.inline.decide(|inner| inner.answer(&request)),
         };

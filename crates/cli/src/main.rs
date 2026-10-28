@@ -9,12 +9,12 @@ use clap::Parser;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, Decision, Hello, Instance, Lasting, OnOff, Payload, Place, Query, Refusal,
-    Request,
+    self as protocol, Answer, Decision, Hello, Instance, Lasting, OnOff, Payload, Place, Query,
+    Refusal, Request,
 };
 
 use args::{Change, Cli, Command, Format, RulesAction, Switch};
-use client::request;
+use client::{ask, request};
 
 /// The command `on` or `off` sends, with the time read now in `zone`.
 fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Command, String> {
@@ -123,7 +123,7 @@ fn refused(why: &str) -> ExitCode {
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     let command = match command {
         Command::Status { json } => {
-            let report = client::report(instance)?;
+            let report = client::report(|status| request(instance, status, None))?;
             if json {
                 println!(
                     "{}",
@@ -149,9 +149,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
         }
         Command::Rules { action } => return run_rules(instance, action),
         Command::Strength { value: None } => {
-            let Payload::NightShift(night_shift) =
-                request(instance, &Request::Query(Query::NightShift), None)?
-            else {
+            let Answer::NightShift(night_shift) = ask(instance, Query::NightShift)? else {
                 return Err(unexpected_reply());
             };
             let Some(strength) = night_shift.strength else {
@@ -233,8 +231,7 @@ fn set_elsewhere(
 fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
     let (done, decision) = match action {
         RulesAction::List { json } => {
-            let Payload::Rules(rules) = request(instance, &Request::Query(Query::Rules), None)?
-            else {
+            let Answer::Rules(rules) = ask(instance, Query::Rules)? else {
                 return Err(unexpected_reply());
             };
             let rules = wording::app_and_site_rules(&rules);
@@ -257,9 +254,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
                 Format::Nix => protocol::ExportFormat::Nix,
                 Format::Toml => protocol::ExportFormat::Toml,
             };
-            let Payload::Export(text) =
-                request(instance, &Request::Query(Query::Export(format)), None)?
-            else {
+            let Answer::Export(text) = ask(instance, Query::Export(format))? else {
                 return Err(unexpected_reply());
             };
             print!("{text}");

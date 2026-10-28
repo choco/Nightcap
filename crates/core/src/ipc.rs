@@ -1,7 +1,7 @@
 //! The CLI's connection (ADR-0010): the socket's thread, and the core's answers to the requests
-//! it passes on. The thread never touches the core's state: a query is answered from the snapshot
-//! the core last published, and anything else goes into the core's mailbox, its answer back over
-//! the socket once the core's thread has decided it.
+//! it passes on. The thread never touches the core's state: a request's queries are all answered
+//! from the one snapshot the core last published, and anything else goes into the core's
+//! mailbox, its answer back over the socket once the core's thread has decided it.
 
 mod requests;
 
@@ -108,7 +108,7 @@ fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io:
         }
     };
     let response = match request {
-        Request::Query(query) => published.latest().answer(&query),
+        Request::Queries(queries) => published.latest().answer(&queries),
         request => {
             let (reply, response) = mpsc::channel();
             mailbox
@@ -162,8 +162,9 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Command, Decision, Front, Hello, HelloMessage, HelloReply, Length, NightShift, OnOff,
-        PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule, SetBy,
+        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, Length, NightShift,
+        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule,
+        RuleIdentity, SetBy,
     };
 
     use super::{bind, serve};
@@ -299,7 +300,7 @@ mod tests {
 
         let mut client = Client::connect(&socket);
         client.hello(PROTOCOL_VERSION);
-        client.send(r#"{"query":"weather"}"#);
+        client.send(r#"{"queries":["weather"]}"#);
         let response: Response = client.receive();
 
         assert!(
@@ -368,17 +369,25 @@ mod tests {
     }
 
     #[test]
-    fn a_query_is_answered_from_the_snapshot_without_the_mailbox() {
+    fn queries_are_answered_in_the_order_asked_from_the_snapshot_without_the_mailbox() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
         let (core, outcomes) = served_core(&socket);
 
-        let front = ask(&socket, Request::Query(Query::Front));
-        let night_shift = ask(&socket, Request::Query(Query::NightShift));
+        let response = ask(
+            &socket,
+            Request::Queries(vec![Query::Front, Query::NightShift]),
+        );
 
+        let Response::Ok(Payload::Answers(answers)) = response.join().unwrap() else {
+            panic!("expected answers");
+        };
+        let [Answer::Front(front), Answer::NightShift(night_shift)] = answers.as_slice() else {
+            panic!("expected what's in front, then Night Shift, got {answers:?}");
+        };
         assert_eq!(
-            front.join().unwrap(),
-            Response::Ok(Payload::Front(Box::new(Front {
+            **front,
+            Front {
                 app: None,
                 watching: false,
                 host: None,
@@ -404,17 +413,44 @@ mod tests {
                     length: Length::Indefinite,
                     set_by: SetBy::You,
                 }],
-            })))
+            }
         );
-        let Response::Ok(Payload::NightShift(night_shift)) = night_shift.join().unwrap() else {
-            panic!("expected Night Shift");
-        };
         assert_eq!(night_shift.state, NightShift::Unavailable);
-        assert_eq!(night_shift, core.snapshot().night_shift());
+        assert_eq!(*night_shift, core.snapshot().night_shift());
         assert!(
             outcomes.try_recv().is_err(),
             "a query reaches neither the mailbox nor the shell"
         );
+    }
+
+    #[test]
+    fn a_snapshot_and_a_request_from_before_an_input_answer_as_it_was_and_after_it_the_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = socket_in(&dir);
+        let (core, outcomes) = served_core(&socket);
+        let queries = || Request::Queries(vec![Query::Rules, Query::Checks]);
+        let before = core.snapshot();
+        let asked_before = ask(&socket, queries()).join().unwrap();
+
+        core.send(Command::AddRule {
+            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
+            says: OnOff::Off,
+        });
+        outcomes.recv_timeout(Duration::from_secs(5)).unwrap();
+        let after = core.snapshot();
+        let asked_after = ask(&socket, queries()).join().unwrap();
+
+        assert_eq!(before.rules(), Vec::new());
+        assert_eq!(after.rules().len(), 1);
+        assert_ne!(before.checks(), after.checks());
+        let answers = |snapshot: &Snapshot| {
+            Response::Ok(Payload::Answers(vec![
+                Answer::Rules(snapshot.rules()),
+                Answer::Checks(snapshot.checks()),
+            ]))
+        };
+        assert_eq!(asked_before, answers(&before));
+        assert_eq!(asked_after, answers(&after));
     }
 
     #[test]

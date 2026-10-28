@@ -4,8 +4,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use nightcap_protocol::{
-    About, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload, Preferences,
-    Query, Response, Rule, RuleIdentity, TourState,
+    About, Answer, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload,
+    Preferences, Query, Response, Rule, RuleIdentity, TourState,
 };
 
 use crate::queries::Answers;
@@ -79,19 +79,25 @@ impl Snapshot {
         }
     }
 
-    /// The CLI's query, answered as of this snapshot (ADR-0010).
-    pub(crate) fn answer(&self, query: &Query) -> Response {
-        Response::Ok(match query {
-            Query::NightShift => Payload::NightShift(self.night_shift()),
-            Query::Front => Payload::Front(Box::new(self.front())),
-            Query::Rules => Payload::Rules(self.rules()),
-            Query::Config => Payload::Config(self.config()),
-            Query::Preferences => Payload::Preferences(self.preferences()),
-            Query::Checks => Payload::Checks(self.checks()),
-            Query::Tour => Payload::Tour(self.tour()),
-            Query::About => Payload::About(self.about()),
-            Query::Export(format) => Payload::Export(self.export(*format)),
-        })
+    /// The CLI's queries, answered in the order asked, all as of this snapshot (ADR-0010).
+    pub(crate) fn answer(&self, queries: &[Query]) -> Response {
+        Response::Ok(Payload::Answers(
+            queries.iter().map(|query| self.answer_to(query)).collect(),
+        ))
+    }
+
+    fn answer_to(&self, query: &Query) -> Answer {
+        match query {
+            Query::NightShift => Answer::NightShift(self.night_shift()),
+            Query::Front => Answer::Front(Box::new(self.front())),
+            Query::Rules => Answer::Rules(self.rules()),
+            Query::Config => Answer::Config(self.config()),
+            Query::Preferences => Answer::Preferences(self.preferences()),
+            Query::Checks => Answer::Checks(self.checks()),
+            Query::Tour => Answer::Tour(self.tour()),
+            Query::About => Answer::About(self.about()),
+            Query::Export(format) => Answer::Export(self.export(*format)),
+        }
     }
 }
 
