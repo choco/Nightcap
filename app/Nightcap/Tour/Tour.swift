@@ -622,18 +622,6 @@ private final class KeyCaps: NSView {
     }
 }
 
-#if DEBUG
-/// The menu's colour behind a snapshot of the panel, which the panel's glass would show.
-final class SnapshotBackdrop: NSView {
-    override func draw(_ dirtyRect: NSRect) {
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            NSColor.appearance(light: 0xf0f0f2, dark: 0x2a2a2d).setFill()
-            bounds.fill()
-        }
-    }
-}
-#endif
-
 extension TourApp {
     /// The app in `bundle`, by the name the menu calls it once it's in front: the front app's
     /// `NSRunningApplication.localizedName`, which is the bundle's localized display name, else its

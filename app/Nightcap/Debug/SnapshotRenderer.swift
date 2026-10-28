@@ -208,4 +208,14 @@ extension NSView {
         return bitmap.representation(using: .png, properties: [:])
     }
 }
+
+/// The menu's colour, opaque, behind a snapshot of a panel, which the panel's glass would show.
+final class SnapshotBackdrop: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            Paint.menu.withAlphaComponent(1).setFill()
+            bounds.fill()
+        }
+    }
+}
 #endif

@@ -59,9 +59,13 @@ final class Stage: NSView {
         self.art = art
     }
 
+    /// A soft fall from top to bottom behind the illustrations.
+    private static var top: NSColor { .appearance(light: 0xe9edf4, dark: 0x272d3b) }
+    private static var bottom: NSColor { .appearance(light: 0xd6dde9, dark: 0x1b202b) }
+
     /// Drawn rather than a gradient layer, which snapshots wouldn't show.
     override func draw(_ dirtyRect: NSRect) {
-        NSGradient(starting: .nightcapStageTop, ending: .nightcapStageBottom)?.draw(in: bounds, angle: -90)
+        NSGradient(starting: Self.top, ending: Self.bottom)?.draw(in: bounds, angle: -90)
     }
 
     /// The app icon beside "Nightcap" in Caprasimo at 26 points, one of the brand's two moments

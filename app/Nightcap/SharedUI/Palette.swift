@@ -35,7 +35,4 @@ extension NSColor {
     static var nightcapOrange: NSColor { appearance(light: 0xf08a00, dark: 0xff9f0a) }
     static var nightcapRed: NSColor { appearance(light: 0xe5372c, dark: 0xff453a) }
     static var nightcapGrey: NSColor { appearance(light: 0xa1a1a6, dark: 0x6e6e73) }
-    /// Onboarding's stage, a soft fall from top to bottom behind its illustrations.
-    static var nightcapStageTop: NSColor { appearance(light: 0xe9edf4, dark: 0x272d3b) }
-    static var nightcapStageBottom: NSColor { appearance(light: 0xd6dde9, dark: 0x1b202b) }
 }
