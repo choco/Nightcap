@@ -9,10 +9,10 @@ use jiff::SignedDuration;
 use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
-    ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length,
-    ListedRule, LoginItem, NightShift, NightShiftState, NotSelfManaged, NotificationPermission,
-    OnOff, Permissions, Place, PlaceInFront, Preferences, Problem, Query, Reason, Schedule,
-    TrialState, WebsiteChecking,
+    ConfigState, Decision, ExportFormat, Front, Inherited, Install, Lasting, Length, ListedRule,
+    LoginItem, NightShift, NightShiftState, NotSelfManaged, NotificationPermission, OnOff,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
+    WebsiteChecking,
 };
 
 use common::{
@@ -365,13 +365,10 @@ fn config_answers_what_it_sets_and_where_it_is() {
         config,
         ConfigState {
             path: staged.core().snapshot().config().path,
-            found: true,
-            error: None,
             strength: Some(40),
             schedule: Some(custom_hours()),
             websites: Some(OnOff::On),
             lengths: vec![SignedDuration::from_mins(15), SignedDuration::from_mins(90)],
-            ad_hoc_error: None,
         }
     );
     answers_alike(&staged);
@@ -381,36 +378,11 @@ fn config_answers_what_it_sets_and_where_it_is() {
 fn config_answers_the_default_lengths_without_a_file() {
     let config = noon().stage().unwrap().core().snapshot().config();
 
-    assert!(!config.found);
     assert_eq!(
         config.lengths,
         [30, 60, 120].map(SignedDuration::from_mins).to_vec()
     );
     assert_eq!((config.strength, config.schedule), (None, None));
-}
-
-#[test]
-fn config_answers_why_it_or_rules_toml_cant_be_used() {
-    let staged = noon()
-        .config("[rules.off]\napps = [\"com.figma.Desktop\"]\n")
-        .rules("version = 3\n")
-        .stage()
-        .unwrap();
-
-    let config = staged.core().snapshot().config();
-
-    assert!(matches!(
-        config.error,
-        Some(FileError::Invalid {
-            line: 2,
-            problem: Problem::UnknownKey { .. },
-            ..
-        })
-    ));
-    assert!(matches!(
-        config.ad_hoc_error,
-        Some(FileError::Newer { version: 3, .. })
-    ));
 }
 
 #[test]

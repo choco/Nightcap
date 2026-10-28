@@ -4,8 +4,8 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    About, Checks, ConfigState, FileError, Front, Inherited, ListedRule, NightShiftState, OnOff,
-    Permissions, Place, PlaceInFront, Preferences, Schedule, TrialState, WebsiteChecking,
+    About, Checks, ConfigState, Front, Inherited, ListedRule, NightShiftState, OnOff, Permissions,
+    Place, PlaceInFront, Preferences, Schedule, TrialState, WebsiteChecking,
 };
 
 use crate::rules::places::look::PlaceLook;
@@ -63,13 +63,10 @@ impl Answers {
             rules: inner.every_rule(now),
             config: ConfigState {
                 path: inner.files.path(File::Config).display().to_string(),
-                found: inner.loaded.config_found,
-                error: inner.loaded.config_error.as_ref().map(FileError::from),
                 strength: inner.loaded.config_night_shift.strength,
                 schedule: inner.loaded.config_night_shift.schedule,
                 websites: facts.config_websites.map(OnOff::from),
                 lengths: inner.loaded.lengths.clone(),
-                ad_hoc_error: inner.loaded.ad_hoc_error.as_ref().map(FileError::from),
             },
             preferences: Preferences {
                 website_checking: WebsiteChecking {

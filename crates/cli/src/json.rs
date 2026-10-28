@@ -50,7 +50,7 @@ impl From<&Report> for Status {
             website_checking: report.preferences.website_checking,
             config: Config {
                 path: report.config.path.clone(),
-                error: wording::config_error(&report.config),
+                error: wording::config_error(&report.checks),
             },
             needs_attention: report
                 .checks

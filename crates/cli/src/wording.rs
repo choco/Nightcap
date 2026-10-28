@@ -4,10 +4,10 @@
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, Checks, ConfigFileDetail, ConfigState,
-    Decision, FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length, ListedRule,
-    NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail,
-    OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, Checks, ConfigFileDetail, Decision,
+    FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length, ListedRule, NightShift,
+    NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
+    OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
     RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, ValueType,
 };
 
@@ -480,9 +480,12 @@ pub(crate) fn website_checking_set(state: OnOff) -> String {
     format!("Website checking is {state}.")
 }
 
-/// Why the config can't be used, starting from its path, while it can't.
-pub(crate) fn config_error(config: &ConfigState) -> Option<String> {
-    config.error.as_ref().map(file_error)
+/// Why the config can't be used, starting from its path, while its check says it can't.
+pub(crate) fn config_error(checks: &Checks) -> Option<String> {
+    checks.checks.iter().find_map(|check| match &check.detail {
+        CheckDetail::ConfigFile(ConfigFileDetail::Error(error)) => Some(file_error(error)),
+        _ => None,
+    })
 }
 
 /// What `nightcap status` shows, a line at a time, with times in `zone`.

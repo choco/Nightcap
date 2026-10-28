@@ -3,11 +3,11 @@
 
 mod common;
 
-use nightcap_core::{Effect, Fact, File};
+use nightcap_core::{Effect, Fact, File, Staged};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail, Decision, ExportFormat,
-    FileError, Lasting, Length, OnOff, Payload, Place, Problem, Reason, Refusal, Request, Response,
-    Rule, RuleAdded, RuleIdentity, SetBy, ValueType,
+    AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
+    Decision, ExportFormat, FileError, Lasting, Length, OnOff, Payload, Place, Problem, Reason,
+    Refusal, Request, Response, Rule, RuleAdded, RuleIdentity, SetBy, ValueType,
 };
 
 use common::{
@@ -65,22 +65,18 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
     launch(&staged);
 
     let snapshot = staged.core().snapshot();
-    let error = snapshot.config().error.unwrap();
-    assert_eq!(
-        error,
-        FileError::Invalid {
-            path: snapshot.config().path,
-            line: 2,
-            problem: Problem::UnknownKey {
-                table: vec!["rules".to_owned(), "off".to_owned()],
-                key: "apps".to_owned(),
-                expected: vec!["app".to_owned(), "domain".to_owned()],
-            },
-        }
-    );
+    let error = FileError::Invalid {
+        path: snapshot.config().path,
+        line: 2,
+        problem: Problem::UnknownKey {
+            table: vec!["rules".to_owned(), "off".to_owned()],
+            key: "apps".to_owned(),
+            expected: vec!["app".to_owned(), "domain".to_owned()],
+        },
+    };
     assert_eq!(rules(&staged), Vec::new());
     assert!(snapshot.checks().checks.contains(&Check {
-        detail: CheckDetail::ConfigFile(ConfigFileDetail::Error(error.clone())),
+        detail: CheckDetail::ConfigFile(ConfigFileDetail::Error(error)),
         state: CheckState::Broken,
     }));
 }
@@ -123,7 +119,10 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
     };
     assert_eq!(refusal(response), Refusal::InvalidConfig(invalid.clone()));
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
-    assert_eq!(staged.core().snapshot().config().error, Some(invalid));
+    assert_eq!(
+        check(&staged, CheckKind::ConfigFile).map(|check| check.detail),
+        Some(CheckDetail::ConfigFile(ConfigFileDetail::Error(invalid)))
+    );
 }
 
 #[test]
@@ -377,12 +376,7 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
     );
     assert_eq!(
         Some(why),
-        staged
-            .core()
-            .snapshot()
-            .config()
-            .ad_hoc_error
-            .map(Refusal::AdHocRulesOff)
+        ad_hoc_rules_off(&staged).map(Refusal::AdHocRulesOff)
     );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(newer));
@@ -395,7 +389,7 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone_and_name_its_line(
 
     assert!(
         matches!(
-            &staged.core().snapshot().config().ad_hoc_error,
+            &ad_hoc_rules_off(&staged),
             Some(FileError::Invalid {
                 line: 5,
                 problem: Problem::NotABundleId { entry },
@@ -403,10 +397,18 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone_and_name_its_line(
             }) if entry == "com.figma.Desktop "
         ),
         "{:?}",
-        staged.core().snapshot().config().ad_hoc_error
+        ad_hoc_rules_off(&staged)
     );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(invalid));
+}
+
+/// Why `rules.toml` can't be used, as its check says, while it can't.
+fn ad_hoc_rules_off(staged: &Staged) -> Option<FileError> {
+    match check(staged, CheckKind::AdHocRules)?.detail {
+        CheckDetail::AdHocRules(AdHocRulesDetail::Off(error)) => Some(error),
+        _ => None,
+    }
 }
 
 #[test]

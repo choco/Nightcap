@@ -392,15 +392,11 @@ pub struct Inherited {
     pub says: OnOff,
 }
 
-/// The config as Nightcap last read it, and why it or `rules.toml` can't be used (ADR-0007).
+/// The config as Nightcap last read it (ADR-0007). Whether it can be used is its check's.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ConfigState {
     /// Where it's read from, whether or not it exists.
     pub path: String,
-    /// Whether it existed when last read: a missing one is an empty config.
-    pub found: bool,
-    /// Why it can't be used; its rules are then the ones read before, or none.
-    pub error: Option<FileError>,
     /// The strength it sets, if it sets one (ADR-0014).
     pub strength: Option<u8>,
     /// The schedule it sets, if it sets one (ADR-0014).
@@ -410,8 +406,6 @@ pub struct ConfigState {
     pub websites: Option<OnOff>,
     /// The lengths a change can be picked for: its own, else 30 minutes, 1 hour and 2 hours.
     pub lengths: Vec<SignedDuration>,
-    /// Why `rules.toml` can't be used; ad-hoc rules are then off.
-    pub ad_hoc_error: Option<FileError>,
 }
 
 /// The user's choices about how Nightcap runs.
@@ -1441,16 +1435,10 @@ mod tests {
             }]),
             Answer::Config(Box::new(ConfigState {
                 path: "/Users/me/.config/nightcap/config.toml".to_owned(),
-                found: true,
-                error: None,
                 strength: Some(40),
                 schedule: None,
                 websites: Some(OnOff::On),
                 lengths: vec![SignedDuration::from_mins(30), SignedDuration::from_mins(90)],
-                ad_hoc_error: Some(FileError::Newer {
-                    path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
-                    version: 3,
-                }),
             })),
             Answer::Preferences(Preferences {
                 website_checking: WebsiteChecking {
