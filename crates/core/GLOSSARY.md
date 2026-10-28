@@ -37,7 +37,7 @@ _Avoid_: layer
 Where a rule applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule that covers the tab, else the tab's own domain.
 
 **Place in front**:
-A place that applies now: the site in front, the front app and everywhere, most specific first. Each gives its own say, else the one it inherits from the first place after it that says something, else Night Shift as last reported. What's in front answers how each stands: what it gives, what it inherits and from where, and what it would give once reset or without its rule until a time.
+A place that applies now: the site in front, the front app and everywhere, most specific first. Each gives its own say, else the one it inherits from the first place after it that says something, else Night Shift as last reported. What's in front answers how each stands: what it gives, its rules and what they sit on, and what it inherits and from where.
 
 **Deciding place**:
 The most specific place in front that says something: the site, then the app, then everywhere, which always does once the schedule is known. What it says is what Night Shift does.
@@ -54,7 +54,7 @@ _Avoid_: timer, hold, timed disable, manual state
 Who set a rule: the config, the user, the user during a trial, or an outside change Nightcap adopted.
 
 **Snooze**:
-A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends.
+A temporary rule over a longer one at its place that says the other way. The longer one waits underneath and comes back when it ends. The rules query lists each rule with its snooze: its place's shortest rule, where that is one.
 _Avoid_: pause, override
 
 **Switch**:
@@ -161,4 +161,4 @@ Why Nightcap refused a command, which then changes nothing: what the client need
 Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.
 
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, every rule with its snooze, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.

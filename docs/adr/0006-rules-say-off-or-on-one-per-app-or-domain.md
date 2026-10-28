@@ -15,7 +15,7 @@ Nightcap's rules say what Night Shift does while a given app is in front, or whi
 ## Consequences
 
 - The rule engine decides on or off, from the place that decides. On a clean exit, Nightcap releases a rule's on as it releases an off (ADR-0008).
-- Settings' rule list and `nightcap rules list` show what each indefinite rule says.
+- Settings' rule list and `nightcap rules list` show what each indefinite rule says, and its snooze.
 - A config rule can only be changed for good in the config, and snoozed meanwhile (ADR-0018).
 
 ## Rejected alternatives
