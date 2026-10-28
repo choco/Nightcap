@@ -9,9 +9,10 @@ use jiff::SignedDuration;
 use nightcap_core::{Fact, Scenario, Staged, UiCommand};
 use nightcap_protocol::{
     About, AccessibilityDetail, Check, CheckDetail, CheckState, Checks, Command, ConfigState,
-    Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, NightShift,
-    NightShiftState, NotificationPermission, OnOff, Payload, Permissions, Place, PlaceInFront,
-    Preferences, Query, Reason, Rule, Schedule, TimeOfDay, TourState, WebsiteChecking,
+    Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, LoginItem,
+    NightShift, NightShiftState, NotificationPermission, OnOff, Payload, Permissions, Place,
+    PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay, TourState,
+    WebsiteChecking,
 };
 
 use common::{
@@ -532,31 +533,38 @@ fn checks_answer_each_check_and_the_grants_behind_them() {
         Permissions {
             accessibility: false,
             notifications: NotificationPermission::Denied,
+            login_item: None,
         }
     );
     answers_alike(&staged);
 }
 
 #[test]
-fn checks_answer_the_grants_once_reported() {
+fn checks_answer_the_grants_and_the_login_item_once_reported() {
     let staged = noon().stage().unwrap();
     assert_eq!(
         staged.core().checks().permissions,
         Permissions {
             accessibility: false,
             notifications: NotificationPermission::NotRequested,
+            login_item: None,
         }
     );
 
     staged.report(accessibility_granted());
+    staged.report(Fact::LoginItemChanged {
+        item: LoginItem::RequiresApproval,
+    });
 
     assert_eq!(
         staged.core().checks().permissions,
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Granted,
+            login_item: Some(LoginItem::RequiresApproval),
         }
     );
+    answers_alike(&staged);
 }
 
 fn start_tour(staged: &Staged) {

@@ -6,7 +6,8 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    Check, Command, ErrorReply, NotificationPermission, OnOff, Place, RuleIdentity, Schedule,
+    Check, Command, ErrorReply, LoginItem, NotificationPermission, OnOff, Place, RuleIdentity,
+    Schedule,
 };
 
 use crate::Fix;
@@ -81,15 +82,6 @@ pub enum UiCommand {
     FinishOnboarding { websites: bool },
     /// Carries out one of the core's fixes, which the user chose in Settings.
     Fix(Fix),
-}
-
-/// Nightcap's login item, as macOS reports it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
-pub enum LoginItem {
-    Enabled,
-    /// Registered, but waiting for the user's approval in System Settings.
-    RequiresApproval,
-    NotRegistered,
 }
 
 #[derive(Debug, PartialEq, Eq, uniffi::Enum)]

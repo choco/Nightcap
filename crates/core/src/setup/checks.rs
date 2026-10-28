@@ -5,7 +5,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, Command,
-    ConfigFileDetail, FileError, NightShift, NightShiftDetail, NotificationPermission,
+    ConfigFileDetail, FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
     NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy,
 };
 
@@ -13,7 +13,7 @@ use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
-use crate::{Effect, Event, LoginItem};
+use crate::{Effect, Event};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came

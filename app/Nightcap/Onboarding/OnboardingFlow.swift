@@ -430,15 +430,15 @@ final class OnboardingFlow {
 }
 
 extension OnboardingFlow.Setup {
-    /// What onboarding asks, as `core` answers its queries now, with the login item as the shell
-    /// last read it.
-    init(_ core: Core, loginItem: LoginItem?) {
+    /// What onboarding asks, as `core` answers its queries now.
+    init(_ core: Core) {
         let nightShift = core.nightShift()
         let config = core.config()
+        let checks = core.checks()
         let askStrength = nightShift.strength != nil && config.strength == nil
         let askSchedule = nightShift.state != .unavailable && config.schedule == nil
         // Only an install that opens itself at login has the check.
-        let opensItself = core.checks().checks.contains { check in
+        let opensItself = checks.checks.contains { check in
             if case .openAtLogin = check.detail { true } else { false }
         }
         self.init(
@@ -448,6 +448,6 @@ extension OnboardingFlow.Setup {
             strength: nightShift.strength,
             schedule: nightShift.schedule,
             websitesFromConfig: config.websites.map { $0 == .on },
-            opensAtLogin: opensItself ? loginItem.map { $0 != .notRegistered } : nil)
+            opensAtLogin: opensItself ? checks.permissions.loginItem.map { $0 != .notRegistered } : nil)
     }
 }

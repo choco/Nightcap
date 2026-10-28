@@ -28,9 +28,9 @@ private func core(
             ]))
 }
 
-/// What onboarding asks on `core`, whose login item isn't registered.
+/// What onboarding asks on `core`.
 private func setup(_ core: Core) -> OnboardingFlow.Setup {
-    OnboardingFlow.Setup(core, loginItem: .notRegistered)
+    OnboardingFlow.Setup(core)
 }
 
 /// The flow over `core`, with iMovie and Photos to suggest and figma.com among the sites. What it
@@ -89,6 +89,13 @@ struct OnboardingFlowTests {
     @Test func onlyAnInstallThatOpensItselfAtLoginAsksToOpenAtLogin() throws {
         #expect(setup(try core()).opensAtLogin == false)
         #expect(setup(try core(bundleWritable: false)).opensAtLogin == nil)
+    }
+
+    @Test func aLoginItemRegisteredButWaitingForApprovalStartsOpeningAtLoginTicked() throws {
+        let flow = onboarding(try selfManaged(.requiresApproval))
+
+        #expect(flow.setup.opensAtLogin == true)
+        #expect(flow.opensAtLogin == true)
     }
 
     @Test func aNewUserIsAskedAboutNightShiftThenNightcap() throws {

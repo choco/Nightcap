@@ -361,7 +361,7 @@ pub struct Preferences {
     pub onboarding_finished: bool,
 }
 
-/// The checks, and the grants behind them as macOS last reported them.
+/// The checks, and what macOS last reported behind them: the grants and the login item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checks {
     pub checks: Vec<Check>,
@@ -870,6 +870,19 @@ pub enum Install {
 pub struct Permissions {
     pub accessibility: bool,
     pub notifications: NotificationPermission,
+    /// Nightcap's login item, which opening at login's check compares with the user's choice
+    /// (ADR-0011); None until the shell first reads it.
+    pub login_item: Option<LoginItem>,
+}
+
+/// Nightcap's login item, as macOS reports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoginItem {
+    Enabled,
+    /// Registered, but waiting for the user's approval in System Settings.
+    RequiresApproval,
+    NotRegistered,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1080,9 +1093,10 @@ mod tests {
                     permissions: Permissions {
                         accessibility: false,
                         notifications: NotificationPermission::Granted,
+                        login_item: Some(LoginItem::RequiresApproval),
                     },
                 }),
-                r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted"}}}"#,
+                r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
             ),
             (
                 Payload::Tour(Some(TourState { stands_in: true })),

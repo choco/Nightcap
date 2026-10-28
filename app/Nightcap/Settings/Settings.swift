@@ -89,10 +89,11 @@ struct Settings: Equatable {
     /// The version of the Nightcap that answers.
     let version: String
 
-    /// Settings as `core` answers its queries now, with `loginItem` as the shell last read it.
-    init(_ core: Core, loginItem: LoginItem?, words: Wording) {
+    /// Settings as `core` answers its queries now.
+    init(_ core: Core, words: Wording) {
         let preferences = core.preferences()
-        let checks = core.checks().checks
+        let answered = core.checks()
+        let checks = answered.checks
         let rules = core.rules()
         let websites = preferences.websiteChecking
         let on = websites.state == .on
@@ -101,7 +102,7 @@ struct Settings: Equatable {
         // approval counts as on; its check explains the rest.
         openAtLogin =
             checks.contains(where: { Self.kind(of: $0.detail) == .openAtLogin })
-            ? loginItem.map { item in
+            ? answered.permissions.loginItem.map { item in
                 let on = item != .notRegistered
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))
             } : nil

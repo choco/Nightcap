@@ -4,7 +4,7 @@
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ErrorReply, NightShift, OnOff, RuleIdentity,
+    Command, Decision, ErrorCode, ErrorReply, LoginItem, NightShift, OnOff, RuleIdentity,
 };
 
 use crate::rules::places::{Places, Refusal};
@@ -13,7 +13,7 @@ use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config;
 use crate::storage::config::{ConfigError, NightShiftConfig};
-use crate::{Effect, Event, LoginItem, Outcome};
+use crate::{Effect, Event, Outcome};
 
 impl Inner {
     /// Runs a command the menu-bar UI sent, which answers as the CLI's would, and tells of its

@@ -3,10 +3,10 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, Fix, LoginItem, Outcome, Staged, UiCommand};
+use nightcap_core::{Effect, Event, Fact, Fix, Outcome, Staged, UiCommand};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, CheckState, Command, ErrorCode, Install, Instance, OnOff,
-    OpenAtLoginDetail, Payload, Request, Response,
+    Check, CheckDetail, CheckKind, CheckState, Command, ErrorCode, Install, Instance, LoginItem,
+    OnOff, OpenAtLoginDetail, Payload, Request, Response,
 };
 
 use common::{check, launch, noon, refusal, send};

@@ -152,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host, let accessibility = host.accessibility else { return }
         let core = host.core
         let onboarding = Onboarding(
-            setup: OnboardingFlow.Setup(core, loginItem: host.loginItem),
+            setup: OnboardingFlow.Setup(core),
             rules: { core.rules() },
             icons: siteIcons,
             sun: host.nightShift?.sunTimes.flatMap { times in
@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeSettingsWindow(_ host: CoreHost) -> SettingsWindow {
         let core = host.core
         return SettingsWindow(
-            current: { Settings(core, loginItem: host.loginItem, words: .system) },
+            current: { Settings(core, words: .system) },
             icons: siteIcons,
             choose: { command in host.send(command) },
             perform: { fix in host.perform(fix) },
@@ -232,7 +232,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let core = host.core
         guard core.preferences().websiteChecking.state == .on else { return }
         let front = core.front().site.map { [$0] } ?? []
-        let ruled = Settings(core, loginItem: host.loginItem, words: .system).rules.compactMap { rule -> String? in
+        let ruled = Settings(core, words: .system).rules.compactMap { rule -> String? in
             if case .domain(let domain) = rule.identity { domain } else { nil }
         }
         siteIcons.ask(front + ruled)

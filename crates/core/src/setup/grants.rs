@@ -1,9 +1,7 @@
 //! The grants and the login item as macOS reports them, beside the choices their checks compare
 //! them with.
 
-use nightcap_protocol::{CheckKind, NotificationPermission};
-
-use crate::LoginItem;
+use nightcap_protocol::{CheckKind, LoginItem, NotificationPermission};
 
 /// The grants and the login item as macOS last reported them, and sunset to sunrise set aside,
 /// each with the choice its check compares it with; and the problems already announced.

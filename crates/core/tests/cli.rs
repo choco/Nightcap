@@ -102,6 +102,7 @@ fn the_checks_answer_the_last_permission_change() {
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Denied,
+            login_item: None,
         }
     );
 }

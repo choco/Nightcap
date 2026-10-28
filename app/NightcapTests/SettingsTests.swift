@@ -2,10 +2,9 @@ import Foundation
 import NightcapCore
 import Testing
 
-/// Settings as `core` answers its queries, in English with a 24-hour clock, with the login item
-/// as the shell last read it.
-private func settings(_ core: Core, loginItem: LoginItem? = nil) -> Settings {
-    Settings(core, loginItem: loginItem, words: .staged)
+/// Settings as `core` answers its queries, in English with a 24-hour clock.
+private func settings(_ core: Core) -> Settings {
+    Settings(core, words: .staged)
 }
 
 private func fix(_ title: String, _ fix: Fix) -> Settings.FixButton {
@@ -161,43 +160,60 @@ struct SettingsTests {
     @Test func settingsSwitchOpeningAtLoginInASelfManagedInstall() throws {
         let core = try selfManaged(.notRegistered)
         #expect(
-            settings(core, loginItem: .notRegistered).openAtLogin
+            settings(core).openAtLogin
                 == Settings.Switch(on: false, locked: false, command: .openAtLogin(.on)))
 
         core.send(command: .openAtLogin(.on))
         core.report(fact: .loginItemChanged(item: .enabled))
         #expect(
-            settings(core, loginItem: .enabled).openAtLogin
+            settings(core).openAtLogin
                 == Settings.Switch(on: true, locked: false, command: .openAtLogin(.off)))
 
         core.report(fact: .loginItemChanged(item: .requiresApproval))
         #expect(
-            settings(core, loginItem: .requiresApproval).openAtLogin
+            settings(core).openAtLogin
                 == Settings.Switch(on: true, locked: false, command: .openAtLogin(.off)))
+    }
+
+    @Test func aLoginItemRegisteredButWaitingForApprovalCountsAsOn() throws {
+        // Registered without the user choosing it, so its check finds opening at login off.
+        let core = try selfManaged(.requiresApproval)
+
+        #expect(core.found(.openAtLogin)?.state == .off)
+        #expect(
+            settings(core).openAtLogin == Settings.Switch(on: true, locked: false, command: .openAtLogin(.off)))
+    }
+
+    @Test func aLoginItemThatIsntRegisteredIsOff() throws {
+        let core = try selfManaged(.notRegistered, .command(.openAtLogin(.on)))
+
+        #expect(core.found(.openAtLogin)?.state == .drifted)
+        #expect(
+            settings(core).openAtLogin == Settings.Switch(on: false, locked: false, command: .openAtLogin(.on)))
     }
 
     @Test func managedInstallsAndDevBuildsHaveNoOpenAtLoginSwitch() throws {
         let managed = try atNoon(.fact(.loginItemChanged(item: .notRegistered)))
-        #expect(settings(managed, loginItem: .notRegistered).openAtLogin == nil)
+        #expect(settings(managed).openAtLogin == nil)
 
         let dev = try Core.staged(
             scenario: Scenario(
                 now: at("2026-10-16T12:00:00+02:00"), bundleId: "io.github.choco.nightcap.dev", bundleWritable: true,
                 steps: [.fact(.loginItemChanged(item: .notRegistered))]))
-        #expect(settings(dev, loginItem: .notRegistered).openAtLogin == nil)
+        #expect(settings(dev).openAtLogin == nil)
     }
 
     @Test func openingAtLoginShowsItsCheckOnlyAsAProblem() throws {
         let core = try selfManaged(.notRegistered)
-        #expect(settings(core, loginItem: .notRegistered).check(.openAtLogin) == nil)
+        #expect(settings(core).check(.openAtLogin) == nil)
 
         core.send(command: .openAtLogin(.on))
         core.report(fact: .loginItemChanged(item: .enabled))
-        #expect(settings(core, loginItem: .enabled).check(.openAtLogin) == nil)
+        #expect(settings(core).check(.openAtLogin) == nil)
 
         core.report(fact: .loginItemChanged(item: .notRegistered))
         #expect(
-            settings(core, loginItem: .notRegistered).check(.openAtLogin)
+            settings(core).check(.openAtLogin)
                 == Settings.CheckStatus(
                     kind: .openAtLogin, state: .drifted,
                     text: "Nightcap no longer opens at login: it was removed in System Settings.",
@@ -209,7 +225,7 @@ struct SettingsTests {
             .notRegistered, .command(.openAtLogin(.on)), .fact(.loginItemChanged(item: .requiresApproval)))
 
         #expect(
-            settings(core, loginItem: .requiresApproval).check(.openAtLogin)
+            settings(core).check(.openAtLogin)
                 == Settings.CheckStatus(
                     kind: .openAtLogin, state: .drifted, text: "macOS is waiting for your approval in Login Items.",
                     restore: fix("Open Login Items…", .openLoginItems),

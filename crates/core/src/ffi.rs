@@ -8,10 +8,10 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ErrorCode,
-    ErrorReply, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length, NightShift,
-    NightShiftDetail, NightShiftState, NotificationPermission, NotificationsDetail, OnOff,
-    OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Rule, RuleIdentity,
-    Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
+    ErrorReply, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length, LoginItem,
+    NightShift, NightShiftDetail, NightShiftState, NotificationPermission, NotificationsDetail,
+    OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Rule,
+    RuleIdentity, Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -384,6 +384,14 @@ pub struct Checks {
 pub struct Permissions {
     pub accessibility: bool,
     pub notifications: NotificationPermission,
+    pub login_item: Option<LoginItem>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum LoginItem {
+    Enabled,
+    RequiresApproval,
+    NotRegistered,
 }
 
 #[uniffi::remote(Record)]

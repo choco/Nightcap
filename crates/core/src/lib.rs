@@ -16,7 +16,7 @@ mod storage;
 mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
+pub use server::messages::{Effect, Event, Fact, Listener, Outcome, UiCommand};
 pub use setup::checks::Fix;
 
 #[cfg(any(test, debug_assertions))]

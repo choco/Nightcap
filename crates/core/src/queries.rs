@@ -87,6 +87,7 @@ impl Answers {
                 permissions: Permissions {
                     accessibility: inner.grants.accessibility == Some(true),
                     notifications: inner.grants.notifications,
+                    login_item: inner.grants.login_item,
                 },
             },
             tour: inner.places.tour_runs().then(|| TourState {

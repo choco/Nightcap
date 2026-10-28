@@ -43,7 +43,7 @@ enum Snapshot {
         let icons = SiteIcons(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
-            current: { Settings(settingsCore, loginItem: .enabled, words: .system) }, icons: icons, choose: { _ in },
+            current: { Settings(settingsCore, words: .system) }, icons: icons, choose: { _ in },
             perform: { _ in },
             checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
@@ -70,7 +70,7 @@ enum Snapshot {
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))
             return Onboarding(
-                setup: OnboardingFlow.Setup(core, loginItem: .notRegistered),
+                setup: OnboardingFlow.Setup(core),
                 rules: { core.rules() },
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
