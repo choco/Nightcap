@@ -227,6 +227,8 @@ protocol NotificationsAsking {
 
 /// A pane of System Settings Nightcap opens, where the user puts back what they set up.
 enum SystemSettingsPane {
+    /// Accessibility in Privacy & Security, once Nightcap has an entry in its list.
+    case accessibility
     /// Login Items, where macOS asks for its approval.
     case loginItems
     case locationServices

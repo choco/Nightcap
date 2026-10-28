@@ -5,6 +5,9 @@ import ServiceManagement
 struct SystemSettings: SystemSettingsOpening {
     func open(_ pane: SystemSettingsPane) {
         switch pane {
+        case .accessibility:
+            let url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+            NSWorkspace.shared.open(URL(string: url)!)
         case .loginItems:
             SMAppService.openSystemSettingsLoginItems()
         case .locationServices:

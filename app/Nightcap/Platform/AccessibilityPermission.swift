@@ -29,8 +29,7 @@ final class AccessibilityPermission: AccessibilityAsking {
         if Self.hasNoEntry() == true {
             _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
         } else {
-            let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            NSWorkspace.shared.open(URL(string: pane)!)
+            SystemSettings().open(.accessibility)
         }
     }
 
