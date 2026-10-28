@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cx } from "../lib/cx";
 import styles from "./Footer.module.css";
+import { MOON } from "./outlines";
 
 type Theme = "system" | "light" | "dark";
 
@@ -57,7 +58,7 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 				strokeWidth="1.7"
 				strokeLinejoin="round"
 			>
-				<path d="M20 14.6A8.6 8.6 0 1 1 9.4 4.1a6.7 6.7 0 0 0 10.6 10.5z" />
+				<path d={MOON} />
 			</svg>
 		),
 	},

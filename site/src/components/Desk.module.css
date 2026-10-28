@@ -21,6 +21,8 @@
 		0 10px 24px rgba(0, 0, 0, 0.3),
 		0 0 0 1px var(--line);
 	color: var(--starlight);
+	--tint-in: 900ms;
+	--tint-out: 450ms;
 }
 .menubar {
 	position: absolute;
@@ -220,32 +222,9 @@
 .dockApp[aria-pressed="true"]::after {
 	opacity: 1;
 }
-.tint {
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	opacity: 0;
-	transition: opacity 450ms ease-in-out;
-}
-.tint.on {
-	opacity: 1;
-	transition-duration: 900ms;
-}
-.tint span {
-	position: absolute;
-	inset: 0;
-}
-.tint span:first-child {
-	background: rgba(255, 138, 46, 0.22);
-	mix-blend-mode: multiply;
-}
-.tint span:last-child {
-	background: rgba(255, 154, 77, 0.1);
-}
 
 @media (prefers-reduced-motion: reduce) {
-	.dockApp,
-	.tint {
+	.dockApp {
 		transition: none;
 	}
 }

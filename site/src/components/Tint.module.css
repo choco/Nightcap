@@ -1,0 +1,29 @@
+/* Night Shift's warmth over a drawn screen, fading in over --tint-in and out over --tint-out,
+   which the screen sets. */
+.tint {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity var(--tint-out) ease-in-out;
+}
+.tint.on {
+	opacity: 1;
+	transition-duration: var(--tint-in);
+}
+.tint span {
+	position: absolute;
+	inset: 0;
+}
+.tint span:first-child {
+	background: rgba(255, 138, 46, 0.22);
+	mix-blend-mode: multiply;
+}
+.tint span:last-child {
+	background: rgba(255, 154, 77, 0.1);
+}
+@media (prefers-reduced-motion: reduce) {
+	.tint {
+		transition: none;
+	}
+}

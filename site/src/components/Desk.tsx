@@ -7,6 +7,7 @@ import styles from "./Desk.module.css";
 import { MoonIcon } from "./icons";
 import { Menu } from "./Menu";
 import { Poster } from "./Poster";
+import { Tint } from "./Tint";
 
 // Until the reader picks an app, the desk shows each in turn, while it can be seen.
 const CYCLE: AppName[] = ["figma", "mail", "safari", "mail"];
@@ -121,13 +122,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					))}
 				</div>
 
-				<div
-					className={cx(styles.tint, warm && shiftOn && styles.on)}
-					aria-hidden="true"
-				>
-					<span />
-					<span />
-				</div>
+				<Tint on={warm && shiftOn} />
 			</div>
 			<div className={styles.menusBelow} aria-hidden="true">
 				{(Object.keys(APPS) as AppName[]).map((app) => (

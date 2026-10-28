@@ -7,11 +7,12 @@ import {
 	type DoodleMotion,
 	placeDoodles,
 } from "../lib/doodles";
+import { MOON, SPARKLE, STAR } from "./outlines";
 
 const PATHS: Record<DoodleKind, ReactNode> = {
 	star: (
 		<path
-			d="M12 3.3l2.6 5.5 6 .8-4.4 4.1 1.1 6-5.3-2.9-5.3 2.9 1.1-6-4.4-4.1 6-.8z"
+			d={STAR}
 			fill="none"
 			stroke="currentColor"
 			strokeWidth="1.5"
@@ -20,7 +21,7 @@ const PATHS: Record<DoodleKind, ReactNode> = {
 	),
 	sparkle: (
 		<path
-			d="M12 3c.9 4.7 2 6.2 8.6 9-6.6 2.8-7.7 4.3-8.6 9-.9-4.7-2-6.2-8.6-9 6.6-2.8 7.7-4.3 8.6-9z"
+			d={SPARKLE}
 			fill="none"
 			stroke="currentColor"
 			strokeWidth="1.5"
@@ -30,7 +31,7 @@ const PATHS: Record<DoodleKind, ReactNode> = {
 	dot: <circle cx="12" cy="12" r="9" fill="currentColor" />,
 	moon: (
 		<path
-			d="M20 14.6A8.6 8.6 0 1 1 9.4 4.1a6.7 6.7 0 0 0 10.6 10.5z"
+			d={MOON}
 			fill="none"
 			stroke="currentColor"
 			strokeWidth="1.5"

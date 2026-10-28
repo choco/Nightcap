@@ -7,6 +7,8 @@
 	background: var(--scene-wall);
 	box-shadow: 0 0 0 1px var(--line);
 	color: var(--scene-ink);
+	--tint-in: 200ms;
+	--tint-out: 200ms;
 }
 .bar {
 	position: absolute;
@@ -48,30 +50,4 @@
 	box-shadow:
 		0 0 0 0.5px var(--scene-edge),
 		0 6px 18px rgba(0, 0, 0, 0.18);
-}
-.tint {
-	position: absolute;
-	inset: 0;
-	pointer-events: none;
-	opacity: 0;
-	transition: opacity 200ms ease-in-out;
-}
-.tint.on {
-	opacity: 1;
-}
-.tint span {
-	position: absolute;
-	inset: 0;
-}
-.tint span:first-child {
-	background: rgba(255, 138, 46, 0.22);
-	mix-blend-mode: multiply;
-}
-.tint span:last-child {
-	background: rgba(255, 154, 77, 0.1);
-}
-@media (prefers-reduced-motion: reduce) {
-	.tint {
-		transition: none;
-	}
 }

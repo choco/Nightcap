@@ -1,9 +1,9 @@
 import type { Moon } from "../data/menus";
-import { cx } from "../lib/cx";
 import { Clock } from "./Clock";
 import { MoonIcon } from "./icons";
 import styles from "./Mini.module.css";
 import { Poster } from "./Poster";
+import { Tint } from "./Tint";
 
 export function Mini({ warm, moon }: { warm: boolean; moon: Moon }) {
 	return (
@@ -19,10 +19,7 @@ export function Mini({ warm, moon }: { warm: boolean; moon: Moon }) {
 			<div className={styles.win}>
 				<Poster />
 			</div>
-			<div className={cx(styles.tint, warm && styles.on)}>
-				<span />
-				<span />
-			</div>
+			<Tint on={warm} />
 		</div>
 	);
 }
