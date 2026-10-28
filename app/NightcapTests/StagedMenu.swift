@@ -141,6 +141,15 @@ func minutes(_ count: Int64) -> Lasting {
     }
 }
 
+extension Menu {
+    /// The menu's place rows, top down.
+    var rows: [PlaceRow] {
+        entries.compactMap { entry in
+            if case .row(let row) = entry { row } else { nil }
+        }
+    }
+}
+
 extension Menu.PlaceRow {
     /// The row's item that sends `command`, if it offers one.
     func choice(sending command: Command) -> Menu.Choice? {

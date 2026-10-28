@@ -123,13 +123,6 @@ extension Menu {
                 on: everywhere == .on, line: rows.line(), command: everywhere == .on ? .off : .on),
             entries: entries)
     }
-
-    /// The menu's place rows, top down.
-    var rows: [PlaceRow] {
-        entries.compactMap { entry in
-            if case .row(let row) = entry { row } else { nil }
-        }
-    }
 }
 
 /// What the rows read, and how they word it.
