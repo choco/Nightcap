@@ -173,7 +173,7 @@ impl Scenario {
             (File::State, self.state),
         ] {
             if let Some(text) = text {
-                files.put(file, Some(text.into_bytes()));
+                files.put(file, Some(text));
             }
         }
         let staged = Staged::start(
@@ -317,21 +317,14 @@ impl Staged {
     }
 
     /// What `file` holds, or None where there's no such file.
-    #[expect(
-        clippy::expect_used,
-        reason = "the scenario's files, the config's changes and the core's writes are all text"
-    )]
     pub fn file(&self, file: File) -> Option<String> {
-        self.files
-            .get(file)
-            .map(|contents| String::from_utf8(contents).expect("the files are UTF-8"))
+        self.files.get(file)
     }
 
     /// Changes the config to `text`, or takes it away, as the user or their installer would.
     /// The core reads it on its next reload.
     pub fn write_config(&self, text: Option<&str>) {
-        self.files
-            .put(File::Config, text.map(|text| text.as_bytes().to_owned()));
+        self.files.put(File::Config, text.map(str::to_owned));
     }
 
     /// Moves the core's clock to `now`.

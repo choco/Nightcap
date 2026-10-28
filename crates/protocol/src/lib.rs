@@ -7,6 +7,7 @@
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -809,8 +810,8 @@ pub enum AdHocRulesDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileError {
-    /// It can't be read, for the reason macOS gives.
-    Unreadable { path: String, message: String },
+    /// It can't be read: why, by kind.
+    Unreadable { path: String, failure: IoFailure },
     /// It isn't TOML in the shape Nightcap reads: toml's message, and its line where toml knows
     /// it.
     Malformed {
@@ -826,6 +827,40 @@ pub enum FileError {
     },
     /// It's from a newer Nightcap, which wrote this version of it.
     Newer { path: String, version: u32 },
+}
+
+/// Why macOS couldn't read or write a file or a folder, by kind, which each client words itself;
+/// the log has macOS's own reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IoFailure {
+    /// Nothing is there, or at a folder on its path.
+    NotFound,
+    /// macOS doesn't let Nightcap read or write it.
+    PermissionDenied,
+    /// A folder is where the file should be.
+    IsAFolder,
+    /// A file is where a folder on its path should be.
+    NotAFolder,
+    /// What it holds isn't UTF-8 text.
+    NotUtf8,
+    /// Any other reason.
+    Other,
+}
+
+impl From<io::ErrorKind> for IoFailure {
+    /// `InvalidData` is how reading text fails on what isn't UTF-8, as `fs::read_to_string`
+    /// does.
+    fn from(kind: io::ErrorKind) -> Self {
+        match kind {
+            io::ErrorKind::NotFound => Self::NotFound,
+            io::ErrorKind::PermissionDenied => Self::PermissionDenied,
+            io::ErrorKind::IsADirectory => Self::IsAFolder,
+            io::ErrorKind::NotADirectory => Self::NotAFolder,
+            io::ErrorKind::InvalidData => Self::NotUtf8,
+            _ => Self::Other,
+        }
+    }
 }
 
 /// What makes a well-formed config or `rules.toml` invalid, with the entry or value as the file
@@ -1021,8 +1056,8 @@ pub enum Refusal {
     NoSuchRule { identity: RuleIdentity },
     /// `rules.toml` can't be used, so ad-hoc rules can't change (ADR-0007).
     AdHocRulesOff(FileError),
-    /// `rules.toml` couldn't be written, for the reason macOS gives; the rules stay as they were.
-    AdHocRulesNotSaved { path: String, message: String },
+    /// `rules.toml` couldn't be written: why, by kind. The rules stay as they were.
+    AdHocRulesNotSaved { path: String, failure: IoFailure },
     /// The config can't be used, so a reload keeps the rules loaded before.
     InvalidConfig(FileError),
     /// `websites` in the config sets website checking (ADR-0012).
@@ -1146,9 +1181,9 @@ mod tests {
             (
                 Refusal::AdHocRulesNotSaved {
                     path: rules(),
-                    message: "Permission denied (os error 13)".to_owned(),
+                    failure: IoFailure::PermissionDenied,
                 },
-                r#"{"ad_hoc_rules_not_saved":{"path":"/Users/me/.local/share/nightcap/rules.toml","message":"Permission denied (os error 13)"}}"#,
+                r#"{"ad_hoc_rules_not_saved":{"path":"/Users/me/.local/share/nightcap/rules.toml","failure":"permission_denied"}}"#,
             ),
             (
                 Refusal::InvalidConfig(FileError::Malformed {
@@ -1347,6 +1382,35 @@ mod tests {
     }
 
     #[test]
+    fn io_failures_match_the_documented_wire_format_and_read_back() {
+        for (failure, wire) in [
+            (IoFailure::NotFound, r#""not_found""#),
+            (IoFailure::PermissionDenied, r#""permission_denied""#),
+            (IoFailure::IsAFolder, r#""is_a_folder""#),
+            (IoFailure::NotAFolder, r#""not_a_folder""#),
+            (IoFailure::NotUtf8, r#""not_utf8""#),
+            (IoFailure::Other, r#""other""#),
+        ] {
+            assert_eq!(json(&failure), wire);
+            assert_eq!(serde_json::from_str::<IoFailure>(wire).unwrap(), failure);
+        }
+    }
+
+    #[test]
+    fn an_io_error_crosses_as_its_kind() {
+        for (kind, failure) in [
+            (io::ErrorKind::NotFound, IoFailure::NotFound),
+            (io::ErrorKind::PermissionDenied, IoFailure::PermissionDenied),
+            (io::ErrorKind::IsADirectory, IoFailure::IsAFolder),
+            (io::ErrorKind::NotADirectory, IoFailure::NotAFolder),
+            (io::ErrorKind::InvalidData, IoFailure::NotUtf8),
+            (io::ErrorKind::StorageFull, IoFailure::Other),
+        ] {
+            assert_eq!(IoFailure::from(kind), failure, "{kind:?}");
+        }
+    }
+
+    #[test]
     fn drift_and_broken_checks_are_problems() {
         assert!(!CheckState::Ok.is_problem());
         assert!(!CheckState::Off.is_problem());
@@ -1425,10 +1489,18 @@ mod tests {
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Unreadable {
                     path: config.clone(),
-                    message: "Permission denied (os error 13)".to_owned(),
+                    failure: IoFailure::PermissionDenied,
                 })),
                 CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"unreadable":{"path":"/Users/me/.config/nightcap/config.toml","message":"Permission denied (os error 13)"}}},"state":"broken"}"#,
+                r#"{"kind":"config_file","detail":{"error":{"unreadable":{"path":"/Users/me/.config/nightcap/config.toml","failure":"permission_denied"}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Unreadable {
+                    path: rules.clone(),
+                    failure: IoFailure::IsAFolder,
+                })),
+                CheckState::Broken,
+                r#"{"kind":"ad_hoc_rules","detail":{"off":{"unreadable":{"path":"/Users/me/.local/share/nightcap/rules.toml","failure":"is_a_folder"}}},"state":"broken"}"#,
             ),
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {

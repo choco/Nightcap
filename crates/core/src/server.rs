@@ -33,8 +33,11 @@ pub(crate) fn spawn(
     thread::Builder::new()
         .name("nightcap-core".to_owned())
         .spawn(move || serve(inner, &inbox, &published, listener.as_ref()))
-        .map_err(|error| CoreError::Io {
-            message: format!("couldn't start the core's thread: {error}"),
+        .map_err(|error| {
+            tracing::error!("couldn't start the core's thread: {error}");
+            CoreError::Thread {
+                failure: error.kind().into(),
+            }
         })?;
     Ok(mailbox)
 }

@@ -86,31 +86,20 @@ pub(crate) fn default_lengths() -> Vec<SignedDuration> {
     ]
 }
 
-/// Why the config can't be used, which each client words from the checks. What it says can
-/// quote the file, and so a domain, so the log gets only its `kind` (ADR-0009).
+/// Why the config can't be used, which each client words from the checks. It reads as the log
+/// may say it: never what the file holds, which can quote a domain (ADR-0009).
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigError {
-    #[error("couldn't read {}: {error}", .path.display())]
+    #[error("the config can't be read: {error}")]
     Unreadable { path: PathBuf, error: io::Error },
-    #[error("{}: {error}", .path.display())]
+    #[error("the config is malformed")]
     Malformed { path: PathBuf, error: Malformed },
-    #[error("{}: line {line} is invalid", .path.display())]
+    #[error("the config is invalid at line {line}")]
     Invalid {
         path: PathBuf,
         line: u32,
         problem: Problem,
     },
-}
-
-impl ConfigError {
-    /// What went wrong, as the log may say it: never what the file holds.
-    pub(crate) fn kind(&self) -> &'static str {
-        match self {
-            Self::Unreadable { .. } => "can't be read",
-            Self::Malformed { .. } => "is malformed",
-            Self::Invalid { .. } => "is invalid",
-        }
-    }
 }
 
 /// Why toml can't read a file as what it holds, in one line: the line, where toml knows it,
@@ -155,8 +144,8 @@ pub(crate) fn line_at(contents: &[u8], offset: usize) -> u32 {
 /// The config. A missing file means no rules, as on a fresh brew install.
 pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
     let path = || files.path(file::File::Config);
-    let contents = match files.read(file::File::Config) {
-        Ok(Some(contents)) => contents,
+    let text = match files.read(file::File::Config) {
+        Ok(Some(text)) => text,
         Ok(None) => {
             return Ok(Config {
                 rules: Vec::new(),
@@ -173,13 +162,13 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
             });
         }
     };
-    let file = toml::from_slice(&contents).map_err(|error| ConfigError::Malformed {
+    let file = toml::from_str(&text).map_err(|error| ConfigError::Malformed {
         path: path(),
-        error: Malformed::new(&error, &contents),
+        error: Malformed::new(&error, text.as_bytes()),
     })?;
     checked(file).map_err(|problem| ConfigError::Invalid {
         path: path(),
-        line: line_at(&contents, problem.span().start),
+        line: line_at(text.as_bytes(), problem.span().start),
         problem: problem.into_inner(),
     })
 }

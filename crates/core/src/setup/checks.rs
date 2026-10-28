@@ -138,7 +138,7 @@ impl From<&ConfigError> for FileError {
         match error {
             ConfigError::Unreadable { path, error } => Self::Unreadable {
                 path: path.display().to_string(),
-                message: error.to_string(),
+                failure: error.kind().into(),
             },
             ConfigError::Malformed { path, error } => Self::Malformed {
                 path: path.display().to_string(),
@@ -163,7 +163,7 @@ impl From<&AdHocError> for FileError {
         match error {
             AdHocError::Unreadable { path, error } => Self::Unreadable {
                 path: path.display().to_string(),
-                message: error.to_string(),
+                failure: error.kind().into(),
             },
             AdHocError::Malformed { path, error } => Self::Malformed {
                 path: path.display().to_string(),

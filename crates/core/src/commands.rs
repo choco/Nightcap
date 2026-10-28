@@ -210,9 +210,12 @@ impl Inner {
             self.check_ad_hoc_rules_on()?;
             self.ad_hoc_store
                 .save(&next.kept().ad_hoc)
-                .map_err(|error| Refusal::AdHocRulesNotSaved {
-                    path: self.files.path(File::Rules).display().to_string(),
-                    message: error.to_string(),
+                .map_err(|error| {
+                    tracing::warn!("couldn't save rules.toml: {error}");
+                    Refusal::AdHocRulesNotSaved {
+                        path: self.files.path(File::Rules).display().to_string(),
+                        failure: error.kind().into(),
+                    }
                 })?;
         }
         self.places = next;
@@ -250,10 +253,7 @@ impl Inner {
                 Ok(())
             }
             Err(error) => {
-                tracing::warn!(
-                    "keeping the rules loaded before: the config {}",
-                    error.kind()
-                );
+                tracing::warn!("keeping the rules loaded before: {error}");
                 let refusal = Refusal::InvalidConfig(FileError::from(&error));
                 self.loaded.config_error = Some(error);
                 Err(refusal)

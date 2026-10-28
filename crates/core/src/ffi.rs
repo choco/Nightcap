@@ -8,10 +8,11 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
-    FileError, Front, Inherited, Install, Lasting, Length, ListedRule, LoginItem, NightShift,
-    NightShiftDetail, NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail,
-    OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Problem, Reason,
-    Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, WebsiteChecking,
+    FileError, Front, Inherited, Install, IoFailure, Lasting, Length, ListedRule, LoginItem,
+    NightShift, NightShiftDetail, NightShiftState, NotSelfManaged, NotificationPermission,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences,
+    Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
+    WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -129,7 +130,7 @@ pub enum AdHocRulesDetail {
 pub enum FileError {
     Unreadable {
         path: String,
-        message: String,
+        failure: IoFailure,
     },
     Malformed {
         path: String,
@@ -145,6 +146,16 @@ pub enum FileError {
         path: String,
         version: u32,
     },
+}
+
+#[uniffi::remote(Enum)]
+pub enum IoFailure {
+    NotFound,
+    PermissionDenied,
+    IsAFolder,
+    NotAFolder,
+    NotUtf8,
+    Other,
 }
 
 #[uniffi::remote(Enum)]
@@ -261,7 +272,7 @@ pub enum Refusal {
     ConfigRule { identity: RuleIdentity },
     NoSuchRule { identity: RuleIdentity },
     AdHocRulesOff(FileError),
-    AdHocRulesNotSaved { path: String, message: String },
+    AdHocRulesNotSaved { path: String, failure: IoFailure },
     InvalidConfig(FileError),
     WebsiteCheckingInConfig,
     NoUpdater(NotSelfManaged),

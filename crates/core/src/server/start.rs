@@ -40,10 +40,7 @@ impl Inner {
         let (config, config_error) = match config::load(setup.files.as_ref()) {
             Ok(config) => (config, None),
             Err(error) => {
-                tracing::warn!(
-                    "running without config rules: the config {}; see status",
-                    error.kind()
-                );
+                tracing::warn!("running without config rules: {error}; see status");
                 let config = config::Config {
                     rules: Vec::new(),
                     websites: None,
@@ -58,10 +55,7 @@ impl Inner {
         let (ad_hoc, ad_hoc_error) = match ad_hoc_store.load() {
             Ok(rules) => (rules, None),
             Err(error) => {
-                tracing::warn!(
-                    "ad-hoc rules are off: rules.toml {}; see status",
-                    error.kind()
-                );
+                tracing::warn!("ad-hoc rules are off: {error}; see status");
                 (Vec::new(), Some(error))
             }
         };
@@ -149,9 +143,8 @@ pub(crate) fn install_of(bundle_writable: bool) -> Install {
 pub(crate) fn zone_of(iana_id: &str) -> Result<TimeZone, CoreError> {
     TimeZone::get(iana_id).map_err(|error| {
         if jiff::tz::db().is_definitively_empty() {
-            CoreError::Io {
-                message: format!("can't read the time zone database: {error}"),
-            }
+            tracing::error!("can't read the time zone database: {error}");
+            CoreError::NoTimeZoneDatabase
         } else {
             CoreError::UnknownTimeZone {
                 iana_id: iana_id.to_owned(),

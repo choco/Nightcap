@@ -5,10 +5,10 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, Checks, ConfigFileDetail,
-    ConfigState, Decision, FileError, Hello, IdentityError, Install, Lasting, Length, ListedRule,
-    NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail,
-    OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
-    RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
+    ConfigState, Decision, FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length,
+    ListedRule, NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason,
+    Refusal, Rule, RuleAdded, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
 };
 
 use crate::client::Report;
@@ -206,7 +206,10 @@ fn night_shift(found: &NightShiftDetail) -> String {
 /// What's wrong with a file, starting from its path: "/…/config.toml: line 4: unknown field".
 fn file_error(error: &FileError) -> String {
     match error {
-        FileError::Unreadable { path, message } => format!("couldn't read {path}: {message}"),
+        FileError::Unreadable { path, failure } => match io_failure(*failure) {
+            Some(why) => format!("couldn't read {path}: {why}"),
+            None => format!("couldn't read {path}"),
+        },
         FileError::Malformed {
             path,
             line: Some(line),
@@ -225,6 +228,19 @@ fn file_error(error: &FileError) -> String {
         FileError::Newer { path, version } => {
             format!("{path} is version {version}, from a newer Nightcap than this one")
         }
+    }
+}
+
+/// Why macOS couldn't read or write a file, as it reads after the file's path and a colon, or
+/// None for a reason only the log gives.
+fn io_failure(failure: IoFailure) -> Option<&'static str> {
+    match failure {
+        IoFailure::NotFound => Some("it, or a folder on its path, isn't there"),
+        IoFailure::PermissionDenied => Some("permission denied"),
+        IoFailure::IsAFolder => Some("it's a folder"),
+        IoFailure::NotAFolder => Some("one of the folders on its path is a file"),
+        IoFailure::NotUtf8 => Some("it isn't UTF-8 text"),
+        IoFailure::Other => None,
     }
 }
 
@@ -285,9 +301,10 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         }
         Refusal::NoSuchRule { identity } => format!("{identity} isn't a rule"),
         Refusal::AdHocRulesOff(error) => format!("ad-hoc rules are off: {}", file_error(error)),
-        Refusal::AdHocRulesNotSaved { path, message } => {
-            format!("couldn't save {path}: {message}")
-        }
+        Refusal::AdHocRulesNotSaved { path, failure } => match io_failure(*failure) {
+            Some(why) => format!("couldn't save {path}: {why}"),
+            None => format!("couldn't save {path}"),
+        },
         Refusal::InvalidConfig(error) => file_error(error),
         Refusal::WebsiteCheckingInConfig => {
             "website checking is set by `websites` in the config".to_owned()
@@ -991,13 +1008,41 @@ mod tests {
             "The config file is valid, with 3 rules."
         );
         assert_eq!(config(ConfigFileDetail::Missing), "There’s no config file.");
-        assert_eq!(
-            invalid(FileError::Unreadable {
-                path: path(),
-                message: "Permission denied (os error 13)".to_owned(),
-            }),
-            "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: Permission denied (os error 13)"
-        );
+        for (failure, said) in [
+            (
+                IoFailure::NotFound,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it, or a folder on its path, isn't there",
+            ),
+            (
+                IoFailure::PermissionDenied,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: permission denied",
+            ),
+            (
+                IoFailure::IsAFolder,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it's a folder",
+            ),
+            (
+                IoFailure::NotAFolder,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: one of the folders on its path is a file",
+            ),
+            (
+                IoFailure::NotUtf8,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml: it isn't UTF-8 text",
+            ),
+            (
+                IoFailure::Other,
+                "The config file is invalid: couldn't read /Users/me/.config/nightcap/config.toml",
+            ),
+        ] {
+            assert_eq!(
+                invalid(FileError::Unreadable {
+                    path: path(),
+                    failure
+                }),
+                said,
+                "{failure:?}"
+            );
+        }
         assert_eq!(
             invalid(FileError::Malformed {
                 path: path(),
@@ -1217,9 +1262,23 @@ mod tests {
             (
                 Refusal::AdHocRulesNotSaved {
                     path: rules(),
-                    message: "Is a directory (os error 21)".to_owned(),
+                    failure: IoFailure::IsAFolder,
                 },
-                "couldn't save /Users/me/.local/share/nightcap/rules.toml: Is a directory (os error 21)",
+                "couldn't save /Users/me/.local/share/nightcap/rules.toml: it's a folder",
+            ),
+            (
+                Refusal::AdHocRulesNotSaved {
+                    path: rules(),
+                    failure: IoFailure::PermissionDenied,
+                },
+                "couldn't save /Users/me/.local/share/nightcap/rules.toml: permission denied",
+            ),
+            (
+                Refusal::AdHocRulesNotSaved {
+                    path: rules(),
+                    failure: IoFailure::Other,
+                },
+                "couldn't save /Users/me/.local/share/nightcap/rules.toml",
             ),
             (
                 Refusal::InvalidConfig(FileError::Malformed {

@@ -52,7 +52,7 @@ extension Wording {
     /// message with no line gains a capital.
     private func inTheFile(_ error: FileError) -> String {
         switch error {
-        case .unreadable(_, let message): text("Couldn't read it: \(message).")
+        case .unreadable(_, let failure): unreadable(failure)
         case .malformed(_, let line?, let message): text("Line \(Int(line)): \(message).")
         case .malformed(_, nil, let message): text("\(message.prefix(1).uppercased() + message.dropFirst()).")
         case .invalid(_, let line, let problem): text("Line \(Int(line)): \(self.problem(problem)).")
@@ -60,11 +60,22 @@ extension Wording {
         }
     }
 
+    /// Why macOS couldn't read a file, in a sentence about it: "It’s a folder, not a file."
+    private func unreadable(_ failure: IoFailure) -> String {
+        switch failure {
+        case .notFound: text("It, or a folder on its path, isn’t there.")
+        case .permissionDenied: text("Nightcap isn’t allowed to read it.")
+        case .isAFolder: text("It’s a folder, not a file.")
+        case .notAFolder: text("One of the folders on its path is a file.")
+        case .notUtf8: text("It isn’t UTF-8 text.")
+        case .other: text("Nightcap couldn’t read it.")
+        }
+    }
+
     /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
     func located(_ error: FileError) -> String {
         switch error {
-        case .unreadable(let path, let message):
-            text("couldn't read \(path): \(message)")
+        case .unreadable(let path, let failure): unreadable(path, failure)
         case .malformed(let path, let line?, let message):
             text("\(path): line \(Int(line)): \(message)")
         case .malformed(let path, nil, let message):
@@ -73,6 +84,19 @@ extension Wording {
             text("\(path): line \(Int(line)): \(self.problem(problem))")
         case .newer(let path, let version):
             text("\(path) is version \(Int(version)), from a newer Nightcap than this one")
+        }
+    }
+
+    /// Why macOS couldn't read the file at `path`, starting from it: "/…/config.toml is a folder,
+    /// not a file".
+    private func unreadable(_ path: String, _ failure: IoFailure) -> String {
+        switch failure {
+        case .notFound: text("\(path), or a folder on its path, isn’t there")
+        case .permissionDenied: text("\(path): Nightcap isn’t allowed to read it")
+        case .isAFolder: text("\(path) is a folder, not a file")
+        case .notAFolder: text("\(path): one of the folders on its path is a file")
+        case .notUtf8: text("\(path) isn’t UTF-8 text")
+        case .other: text("\(path) couldn’t be read")
         }
     }
 

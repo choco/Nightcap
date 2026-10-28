@@ -155,15 +155,15 @@ impl Store {
     /// that is cheap to lose.
     pub(crate) fn load(&self) -> Persisted {
         let path = self.files.path(file::File::State);
-        let bytes = match self.files.read(file::File::State) {
-            Ok(Some(bytes)) => bytes,
+        let text = match self.files.read(file::File::State) {
+            Ok(Some(text)) => text,
             Ok(None) => return Persisted::default(),
             Err(error) => {
                 tracing::warn!("couldn't read {}: {error}", path.display());
                 return Persisted::default();
             }
         };
-        match serde_json::from_slice::<File>(&bytes) {
+        match serde_json::from_str::<File>(&text) {
             Ok(file) if file.version == 1 => {
                 let (rules, linked) = translated(file.layers);
                 Persisted {
@@ -195,7 +195,7 @@ impl Store {
             layers: Vec::new(),
         };
         self.files
-            .write(Owned::State, &serde_json::to_vec_pretty(&file)?)
+            .write(Owned::State, &serde_json::to_string_pretty(&file)?)
     }
 }
 
@@ -211,7 +211,7 @@ mod tests {
     /// Files in memory, with `state.json` holding `text`.
     fn holding(text: Option<&str>) -> Arc<Memory> {
         let files = Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap"))));
-        files.put(file::File::State, text.map(Vec::from));
+        files.put(file::File::State, text.map(str::to_owned));
         files
     }
 
@@ -362,7 +362,7 @@ mod tests {
         store.save(&state).unwrap();
 
         assert_eq!(state.onboarding, 1);
-        let saved = String::from_utf8(files.get(file::File::State).unwrap()).unwrap();
+        let saved = files.get(file::File::State).unwrap();
         assert!(!saved.contains("onboarding"), "{saved}");
         assert_eq!(store.load().onboarding, 0);
         assert!(store.load().websites);

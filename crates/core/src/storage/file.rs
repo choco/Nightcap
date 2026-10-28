@@ -49,12 +49,13 @@ impl From<Owned> for File {
     }
 }
 
-/// Where the core's files are kept.
+/// Where the core's files are kept, each of them text.
 pub(crate) trait Files: Send + Sync {
-    /// The file's contents, or None where there's no such file.
-    fn read(&self, file: File) -> io::Result<Option<Vec<u8>>>;
+    /// The file's text, or None where there's no such file. What isn't UTF-8 fails as
+    /// `InvalidData`, as `fs::read_to_string` does.
+    fn read(&self, file: File) -> io::Result<Option<String>>;
     /// Replaces the file whole, or leaves it as it was.
-    fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()>;
+    fn write(&self, file: Owned, text: &str) -> io::Result<()>;
     /// Where the file is, for the queries and messages.
     fn path(&self, file: File) -> PathBuf;
 }
@@ -69,12 +70,8 @@ pub(crate) struct Paths {
 
 impl Paths {
     pub(crate) fn xdg(instance: Instance) -> Result<Self, CoreError> {
-        let xdg = etcetera::base_strategy::Xdg::new().map_err(|error| CoreError::Io {
-            message: format!("can't find the XDG base directories: {error}"),
-        })?;
-        let state = xdg.state_dir().ok_or_else(|| CoreError::Io {
-            message: "can't find the XDG state directory".to_owned(),
-        })?;
+        let xdg = etcetera::base_strategy::Xdg::new().map_err(|_| CoreError::NoHome)?;
+        let state = xdg.state_dir().ok_or(CoreError::NoHome)?;
         let folder = instance.xdg_folder_name();
         Ok(Self {
             config: xdg.config_dir().join(folder).join("config.toml"),
@@ -107,9 +104,9 @@ impl Paths {
 pub(crate) struct Disk(pub(crate) Paths);
 
 impl Files for Disk {
-    fn read(&self, file: File) -> io::Result<Option<Vec<u8>>> {
-        match fs::read(self.0.of(file)) {
-            Ok(contents) => Ok(Some(contents)),
+    fn read(&self, file: File) -> io::Result<Option<String>> {
+        match fs::read_to_string(self.0.of(file)) {
+            Ok(text) => Ok(Some(text)),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
             Err(error) => Err(error),
         }
@@ -119,14 +116,14 @@ impl Files for Disk {
     /// before the rename, so a power cut leaves the old rules or the new; macOS's full sync costs
     /// several milliseconds a write. `state.json` isn't: a power cut can leave its name on
     /// contents that never reached the disk, which only costs intent that is cheap to lose.
-    fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()> {
+    fn write(&self, file: Owned, text: &str) -> io::Result<()> {
         let path = self.0.of(file.into());
         let folder = path
             .parent()
             .ok_or_else(|| io::Error::other(format!("{} has no folder", path.display())))?;
         fs::create_dir_all(folder)?;
         let mut temporary = NamedTempFile::new_in(folder)?;
-        temporary.write_all(contents)?;
+        temporary.write_all(text.as_bytes())?;
         if file == Owned::Rules {
             temporary.as_file().sync_all()?;
         }
@@ -144,7 +141,7 @@ impl Files for Disk {
 #[derive(Debug)]
 pub(crate) struct Memory {
     paths: Paths,
-    contents: Mutex<HashMap<File, Vec<u8>>>,
+    texts: Mutex<HashMap<File, String>>,
 }
 
 #[cfg(any(test, debug_assertions))]
@@ -153,21 +150,21 @@ impl Memory {
     pub(crate) fn new(paths: Paths) -> Self {
         Self {
             paths,
-            contents: Mutex::default(),
+            texts: Mutex::default(),
         }
     }
 
     /// What `file` holds, or None where there's no such file.
-    pub(crate) fn get(&self, file: File) -> Option<Vec<u8>> {
-        self.contents().get(&file).cloned()
+    pub(crate) fn get(&self, file: File) -> Option<String> {
+        self.texts().get(&file).cloned()
     }
 
     /// Changes `file` from outside the core, as the user or their installer would, or takes it
     /// away.
-    pub(crate) fn put(&self, file: File, contents: Option<Vec<u8>>) {
-        let mut files = self.contents();
-        match contents {
-            Some(contents) => files.insert(file, contents),
+    pub(crate) fn put(&self, file: File, text: Option<String>) {
+        let mut files = self.texts();
+        match text {
+            Some(text) => files.insert(file, text),
             None => files.remove(&file),
         };
     }
@@ -176,21 +173,19 @@ impl Memory {
         clippy::expect_used,
         reason = "panics abort (ADR-0002), so none can poison the lock"
     )]
-    fn contents(&self) -> MutexGuard<'_, HashMap<File, Vec<u8>>> {
-        self.contents
-            .lock()
-            .expect("no panic happens while it's held")
+    fn texts(&self) -> MutexGuard<'_, HashMap<File, String>> {
+        self.texts.lock().expect("no panic happens while it's held")
     }
 }
 
 #[cfg(any(test, debug_assertions))]
 impl Files for Memory {
-    fn read(&self, file: File) -> io::Result<Option<Vec<u8>>> {
+    fn read(&self, file: File) -> io::Result<Option<String>> {
         Ok(self.get(file))
     }
 
-    fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()> {
-        self.put(file.into(), Some(contents.to_owned()));
+    fn write(&self, file: Owned, text: &str) -> io::Result<()> {
+        self.put(file.into(), Some(text.to_owned()));
         Ok(())
     }
 
@@ -201,12 +196,15 @@ impl Files for Memory {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{self, Permissions};
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::sync::Arc;
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, Install, Instance, Lasting, Length, ListedRule, OnOff, Place, Refusal, Rule,
+        AdHocRulesDetail, CheckDetail, CheckKind, Command, ConfigFileDetail, FileError, Install,
+        Instance, IoFailure, Lasting, Length, ListedRule, OnOff, Place, Refusal, Rule,
         RuleIdentity, Schedule, SetBy, TimeOfDay,
     };
 
@@ -221,21 +219,45 @@ mod tests {
         Disk(Paths::in_folder(folder))
     }
 
+    /// A core started at 23:00 in Zurich on the files in `folder`.
+    fn started(folder: &Path) -> Inner {
+        Inner::start(Setup {
+            instance: Instance::Release,
+            install: Install::Managed,
+            socket: None,
+            files: Arc::new(disk(folder)),
+            clock: Arc::new(ManualClock::new(
+                "2026-10-16T23:00:00+02:00".parse().unwrap(),
+            )),
+            zone: TimeZone::get("Europe/Zurich").unwrap(),
+        })
+    }
+
+    /// What the check of `kind` found.
+    fn found(inner: &Inner, kind: CheckKind) -> CheckDetail {
+        inner
+            .checks(inner.clock.now())
+            .into_iter()
+            .find(|check| check.detail.kind() == kind)
+            .unwrap()
+            .detail
+    }
+
     #[test]
     fn what_the_disk_keeps_reads_back() {
         let dir = tempfile::tempdir().unwrap();
         let disk = disk(dir.path());
 
-        disk.write(Owned::Rules, b"version = 2\n").unwrap();
-        disk.write(Owned::State, b"{\"version\":1}").unwrap();
+        disk.write(Owned::Rules, "version = 2\n").unwrap();
+        disk.write(Owned::State, "{\"version\":1}").unwrap();
 
         assert_eq!(
             disk.read(File::Rules).unwrap().as_deref(),
-            Some(&b"version = 2\n"[..])
+            Some("version = 2\n")
         );
         assert_eq!(
             disk.read(File::State).unwrap().as_deref(),
-            Some(&b"{\"version\":1}"[..])
+            Some("{\"version\":1}")
         );
     }
 
@@ -252,14 +274,11 @@ mod tests {
         let folder = dir.path().join("nightcap");
         let disk = disk(&folder);
 
-        disk.write(Owned::State, b"a longer first version").unwrap();
-        disk.write(Owned::State, b"second").unwrap();
+        disk.write(Owned::State, "a longer first version").unwrap();
+        disk.write(Owned::State, "second").unwrap();
 
-        assert_eq!(
-            disk.read(File::State).unwrap().as_deref(),
-            Some(&b"second"[..])
-        );
-        let names: Vec<_> = std::fs::read_dir(&folder)
+        assert_eq!(disk.read(File::State).unwrap().as_deref(), Some("second"));
+        let names: Vec<_> = fs::read_dir(&folder)
             .unwrap()
             .map(|entry| entry.unwrap().file_name())
             .collect();
@@ -267,19 +286,59 @@ mod tests {
     }
 
     #[test]
+    fn a_config_macos_wont_read_is_unreadable_by_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = |name| {
+            let folder = dir.path().join(name);
+            fs::create_dir(&folder).unwrap();
+            folder
+        };
+        let locked = folder("locked");
+        fs::write(locked.join("config.toml"), "websites = true\n").unwrap();
+        fs::set_permissions(locked.join("config.toml"), Permissions::from_mode(0o000)).unwrap();
+        let a_folder = folder("a folder");
+        fs::create_dir(a_folder.join("config.toml")).unwrap();
+        let binary = folder("binary");
+        fs::write(binary.join("config.toml"), [b'#', 0xff, b'\n']).unwrap();
+        let a_file = dir.path().join("a file");
+        fs::write(&a_file, "").unwrap();
+
+        for (folder, failure) in [
+            (locked, IoFailure::PermissionDenied),
+            (a_folder, IoFailure::IsAFolder),
+            (binary, IoFailure::NotUtf8),
+            (a_file, IoFailure::NotAFolder),
+        ] {
+            assert_eq!(
+                found(&started(&folder), CheckKind::ConfigFile),
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Unreadable {
+                    path: folder.join("config.toml").display().to_string(),
+                    failure,
+                })),
+                "{failure:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_where_rules_toml_should_be_turns_ad_hoc_rules_off() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("rules.toml")).unwrap();
+
+        assert_eq!(
+            found(&started(dir.path()), CheckKind::AdHocRules),
+            CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Unreadable {
+                path: dir.path().join("rules.toml").display().to_string(),
+                failure: IoFailure::IsAFolder,
+            }))
+        );
+    }
+
+    #[test]
     fn a_rule_rules_toml_cant_keep_is_refused_and_changes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         // Night Shift on at 23:00 by the custom hours until 07:00, with Mail snoozed.
-        let mut inner = Inner::start(Setup {
-            instance: Instance::Release,
-            install: Install::Managed,
-            socket: None,
-            files: Arc::new(disk(dir.path())),
-            clock: Arc::new(ManualClock::new(
-                "2026-10-16T23:00:00+02:00".parse().unwrap(),
-            )),
-            zone: TimeZone::get("Europe/Zurich").unwrap(),
-        });
+        let mut inner = started(dir.path());
         let hours = Schedule::Custom {
             from: TimeOfDay {
                 hour: 22,
@@ -302,17 +361,19 @@ mod tests {
             length: Lasting::For(jiff::SignedDuration::from_mins(30)),
         };
         inner.choose(snooze).1.unwrap();
-        std::fs::create_dir(dir.path().join("rules.toml")).unwrap();
+        fs::create_dir(dir.path().join("rules.toml")).unwrap();
 
         let (_, answer) = inner.choose(Command::AddRule {
             identity: mail.clone(),
             says: OnOff::Off,
         });
 
-        let rules = dir.path().join("rules.toml").display().to_string();
-        assert!(
-            matches!(&answer, Err(Refusal::AdHocRulesNotSaved { path, .. }) if *path == rules),
-            "{answer:?}"
+        assert_eq!(
+            answer,
+            Err(Refusal::AdHocRulesNotSaved {
+                path: dir.path().join("rules.toml").display().to_string(),
+                failure: IoFailure::IsAFolder,
+            })
         );
         assert_eq!(
             inner.every_rule(inner.clock.now()),

@@ -12,7 +12,9 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use nightcap_protocol::{Hello, HelloMessage, HelloReply, PROTOCOL_VERSION, Request, Response};
+use nightcap_protocol::{
+    Hello, HelloMessage, HelloReply, IoFailure, PROTOCOL_VERSION, Request, Response,
+};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::CoreError;
@@ -24,27 +26,28 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Takes the socket at `path`, failing if another instance holds it.
 pub(crate) fn bind(path: &Path) -> Result<UnixListener, CoreError> {
-    let folder = path.parent().ok_or_else(|| CoreError::Io {
-        message: format!("{} has no folder", path.display()),
-    })?;
+    let Some(folder) = path.parent() else {
+        tracing::error!("{} has no folder", path.display());
+        return Err(CoreError::Io {
+            failure: IoFailure::Other,
+            path: path.display().to_string(),
+        });
+    };
     DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(folder)
         .and_then(|()| fs::set_permissions(folder, Permissions::from_mode(0o700)))
-        .map_err(|error| io_error(&format!("couldn't prepare {}", folder.display()), &error))?;
+        .map_err(|error| io_error("couldn't prepare", folder, &error))?;
     if fs::symlink_metadata(path).is_ok() {
         if UnixStream::connect(path).is_ok() {
             return Err(CoreError::AlreadyRunning {
                 path: path.display().to_string(),
             });
         }
-        fs::remove_file(path).map_err(|error| {
-            io_error(&format!("couldn't remove stale {}", path.display()), &error)
-        })?;
+        fs::remove_file(path).map_err(|error| io_error("couldn't remove stale", path, &error))?;
     }
-    UnixListener::bind(path)
-        .map_err(|error| io_error(&format!("couldn't listen at {}", path.display()), &error))
+    UnixListener::bind(path).map_err(|error| io_error("couldn't listen at", path, &error))
 }
 
 /// Serves `listener` on a thread of its own.
@@ -56,7 +59,12 @@ pub(crate) fn serve(
     thread::Builder::new()
         .name("nightcap-ipc".to_owned())
         .spawn(move || accept(&listener, &mailbox, &published))
-        .map_err(|error| io_error("couldn't start the IPC thread", &error))?;
+        .map_err(|error| {
+            tracing::error!("couldn't start the IPC thread: {error}");
+            CoreError::Thread {
+                failure: error.kind().into(),
+            }
+        })?;
     Ok(())
 }
 
@@ -143,9 +151,13 @@ fn write_line(writer: &mut impl Write, message: &impl Serialize) -> io::Result<(
     writer.flush()
 }
 
-fn io_error(context: &str, error: &io::Error) -> CoreError {
+/// `error` at `path` as the shell gets it: its kind. The log gets macOS's own reason, after what
+/// start-up was `doing` there.
+fn io_error(doing: &str, path: &Path, error: &io::Error) -> CoreError {
+    tracing::error!("{doing} {}: {error}", path.display());
     CoreError::Io {
-        message: format!("{context}: {error}"),
+        failure: error.kind().into(),
+        path: path.display().to_string(),
     }
 }
 
@@ -160,8 +172,9 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, NightShift, OnOff,
-        PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, RuleIdentity,
+        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, IoFailure, NightShift,
+        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response,
+        RuleIdentity,
     };
 
     use super::{bind, serve};
@@ -335,6 +348,24 @@ mod tests {
         let second = bind(&socket);
 
         assert!(matches!(second, Err(CoreError::AlreadyRunning { .. })));
+    }
+
+    #[test]
+    fn a_socket_whose_folder_cant_be_made_fails_by_kind_with_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a file"), "").unwrap();
+        let folder = dir.path().join("a file/Nightcap");
+
+        let bound = bind(&folder.join("nightcap.sock"));
+
+        assert!(
+            matches!(
+                &bound,
+                Err(CoreError::Io { failure: IoFailure::NotAFolder, path })
+                    if *path == folder.display().to_string()
+            ),
+            "{bound:?}"
+        );
     }
 
     #[test]

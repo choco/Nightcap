@@ -85,6 +85,27 @@ struct CheckWordingTests {
                 == (.broken, "Line 2: night_shift.strength is 0 to 100, not 101."))
     }
 
+    /// A staged core's files are in memory, which macOS never refuses: these checks are worded
+    /// from what the core reports for a file on the disk it can't read.
+    @Test func anUnreadableConfigSaysWhyMacOSCouldntReadIt() {
+        let unreadable: [(IoFailure, String)] = [
+            (.notFound, "It, or a folder on its path, isn’t there."),
+            (.permissionDenied, "Nightcap isn’t allowed to read it."),
+            (.isAFolder, "It’s a folder, not a file."),
+            (.notAFolder, "One of the folders on its path is a file."),
+            (.notUtf8, "It isn’t UTF-8 text."),
+            (.other, "Nightcap couldn’t read it."),
+        ]
+        for (failure, said) in unreadable {
+            #expect(
+                Wording.staged.check(.configFile(.error(.unreadable(path: "/n/config.toml", failure: failure))))
+                    == said)
+        }
+        #expect(
+            Wording.staged.check(.adHocRules(.off(.unreadable(path: "/n/rules.toml", failure: .isAFolder))))
+                == "Ad-hoc rules are off: /n/rules.toml is a folder, not a file.")
+    }
+
     @Test func anInvalidConfigNamesTheEntryOrValueOnItsLine() throws {
         let invalid = { (config: String) in try check(atNoon(config: config), .configFile)! }
 

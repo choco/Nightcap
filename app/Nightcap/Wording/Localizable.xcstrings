@@ -11,7 +11,13 @@
         }
       }
     },
+    "%@ couldn’t be read" : {
+
+    },
     "%@ has Nightcap’s site open." : {
+
+    },
+    "%@ is a folder, not a file" : {
 
     },
     "%@ is in both rules.off and rules.on: a domain has one rule" : {
@@ -29,6 +35,9 @@
           }
         }
       }
+    },
+    "%@ isn’t UTF-8 text" : {
+
     },
     "%@ to %@" : {
       "localizations" : {
@@ -56,6 +65,9 @@
     "%@, needs attention" : {
 
     },
+    "%@, or a folder on its path, isn’t there" : {
+
+    },
     "%@, then %@" : {
       "localizations" : {
         "en" : {
@@ -79,6 +91,9 @@
         }
       }
     },
+    "%@: Nightcap isn’t allowed to read it" : {
+
+    },
     "%@: line %lld: %@" : {
       "localizations" : {
         "en" : {
@@ -88,6 +103,9 @@
           }
         }
       }
+    },
+    "%@: one of the folders on its path is a file" : {
+
     },
     "%lld Things Need Attention…" : {
       "localizations" : {
@@ -467,18 +485,20 @@
     "Copy for config as" : {
 
     },
-    "Couldn't read it: %@." : {
+    "Couldn’t save %@." : {
 
     },
-    "Couldn’t save %@: %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "Couldn’t save %1$@: %2$@."
-          }
-        }
-      }
+    "Couldn’t save %@: a folder is in its place." : {
+
+    },
+    "Couldn’t save %@: a folder on its path isn’t there." : {
+
+    },
+    "Couldn’t save %@: it isn’t UTF-8 text." : {
+
+    },
+    "Couldn’t save %@: one of the folders on its path is a file." : {
+
     },
     "Current step" : {
 
@@ -728,6 +748,9 @@
     "Inbox" : {
 
     },
+    "It isn’t UTF-8 text." : {
+
+    },
     "It lives in the menu bar, under the moon." : {
 
     },
@@ -740,10 +763,16 @@
     "It warms the colours." : {
 
     },
+    "It, or a folder on its path, isn’t there." : {
+
+    },
     "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon." : {
 
     },
     "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose." : {
+
+    },
+    "It’s a folder, not a file." : {
 
     },
     "It’s free and open source." : {
@@ -943,6 +972,9 @@
     "Nightcap couldn’t make that change" : {
 
     },
+    "Nightcap couldn’t read it." : {
+
+    },
     "Nightcap doesn’t open at login." : {
 
     },
@@ -956,6 +988,12 @@
 
     },
     "Nightcap is up here" : {
+
+    },
+    "Nightcap isn’t allowed to read it." : {
+
+    },
+    "Nightcap isn’t allowed to save %@." : {
 
     },
     "Nightcap lives in the menu bar, with no Dock icon." : {
@@ -1193,6 +1231,9 @@
 
     },
     "On until you turn it off" : {
+
+    },
+    "One of the folders on its path is a file." : {
 
     },
     "Only everywhere is set for good: an app or a site gets a rule instead." : {
@@ -1674,16 +1715,6 @@
     },
     "ad-hoc rules" : {
 
-    },
-    "couldn't read %@: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "couldn't read %1$@: %2$@"
-          }
-        }
-      }
     },
     "figma.com" : {
 

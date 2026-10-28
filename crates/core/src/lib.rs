@@ -28,7 +28,7 @@ use std::fmt;
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, mpsc};
 
-use nightcap_protocol::Command;
+use nightcap_protocol::{Command, IoFailure, PathError};
 
 use clock::SystemClock;
 use server::mailbox::{Mail, Mailbox};
@@ -81,9 +81,7 @@ impl Core {
     ) -> Result<Arc<Self>, CoreError> {
         let instance = instance_of(&bundle_id)?;
         logging::init(&bundle_id);
-        let path = instance.socket_path().map_err(|error| CoreError::Io {
-            message: error.to_string(),
-        })?;
+        let path = instance.socket_path()?;
         let files = Disk(Paths::xdg(instance)?);
         let zone = zone_of(&time_zone)?;
         let install = install_of(bundle_writable);
@@ -183,6 +181,8 @@ impl Core {
     }
 }
 
+/// Why the core couldn't start. An I/O failure carries its kind, and the core logs macOS's own
+/// reason as it finds it.
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum CoreError {
     #[error("{bundle_id} isn't a Nightcap bundle ID")]
@@ -191,6 +191,28 @@ pub enum CoreError {
     AlreadyRunning { path: String },
     #[error("{iana_id} isn't a time zone this Mac knows")]
     UnknownTimeZone { iana_id: String },
-    #[error("{message}")]
-    Io { message: String },
+    #[error("can't read the time zone database")]
+    NoTimeZoneDatabase,
+    /// There's no home folder, or no XDG state directory, for the socket and the files.
+    #[error("can't find the home folder")]
+    NoHome,
+    #[error("the socket path {path} is longer than macOS allows")]
+    SocketPathTooLong { path: String },
+    /// macOS refused the socket, or its folder, at `path`.
+    #[error("couldn't take {path}: {failure:?}")]
+    Io { failure: IoFailure, path: String },
+    /// One of the core's threads couldn't start.
+    #[error("couldn't start a thread: {failure:?}")]
+    Thread { failure: IoFailure },
+}
+
+impl From<PathError> for CoreError {
+    fn from(error: PathError) -> Self {
+        match error {
+            PathError::NoHome => Self::NoHome,
+            PathError::SocketPathTooLong(path) => Self::SocketPathTooLong {
+                path: path.display().to_string(),
+            },
+        }
+    }
 }

@@ -77,34 +77,22 @@ impl<Entry> Default for RuleLists<Entry> {
 }
 
 /// Why `rules.toml` can't be used, which turns ad-hoc rules off, and which each client words
-/// from the checks. What it says can quote the file, and so a domain, so the log gets only its
-/// `kind` (ADR-0009).
+/// from the checks. It reads as the log may say it: never what the file holds, which can quote a
+/// domain (ADR-0009).
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AdHocError {
-    #[error("couldn't read {}: {error}", .path.display())]
+    #[error("rules.toml can't be read: {error}")]
     Unreadable { path: PathBuf, error: io::Error },
-    #[error("{}: {error}", .path.display())]
+    #[error("rules.toml is malformed")]
     Malformed { path: PathBuf, error: Malformed },
-    #[error("{} is version {version}, from a newer Nightcap than this one", .path.display())]
+    #[error("rules.toml is version {version}, from a newer Nightcap than this one")]
     Newer { path: PathBuf, version: u32 },
-    #[error("{}: line {line} is invalid", .path.display())]
+    #[error("rules.toml is invalid at line {line}")]
     Invalid {
         path: PathBuf,
         line: u32,
         problem: Problem,
     },
-}
-
-impl AdHocError {
-    /// What went wrong, as the log may say it: never what the file holds.
-    pub(crate) fn kind(&self) -> &'static str {
-        match self {
-            Self::Unreadable { .. } => "can't be read",
-            Self::Malformed { .. } => "is malformed",
-            Self::Newer { .. } => "is from a newer Nightcap",
-            Self::Invalid { .. } => "is invalid",
-        }
-    }
 }
 
 pub(crate) struct Store {
@@ -121,8 +109,8 @@ impl Store {
     /// rules.
     pub(crate) fn load(&self) -> Result<Vec<(RuleIdentity, OnOff)>, AdHocError> {
         let path = || self.files.path(file::File::Rules);
-        let contents = match self.files.read(file::File::Rules) {
-            Ok(Some(contents)) => contents,
+        let text = match self.files.read(file::File::Rules) {
+            Ok(Some(text)) => text,
             Ok(None) => return Ok(Vec::new()),
             Err(error) => {
                 return Err(AdHocError::Unreadable {
@@ -132,9 +120,9 @@ impl Store {
             }
         };
         let file: File<Spanned<String>> =
-            toml::from_slice(&contents).map_err(|error| AdHocError::Malformed {
+            toml::from_str(&text).map_err(|error| AdHocError::Malformed {
                 path: path(),
-                error: Malformed::new(&error, &contents),
+                error: Malformed::new(&error, text.as_bytes()),
             })?;
         if file.version > VERSION {
             return Err(AdHocError::Newer {
@@ -162,7 +150,7 @@ impl Store {
             for (entry, identity) in apps.chain(domains) {
                 let identity = identity.map_err(|problem| AdHocError::Invalid {
                     path: path(),
-                    line: line_at(&contents, entry.span().start),
+                    line: line_at(text.as_bytes(), entry.span().start),
                     problem,
                 })?;
                 rules.push((identity, says));
@@ -179,7 +167,7 @@ impl Store {
         let text = toml::to_string(&file).map_err(io::Error::other)?;
         self.files.write(
             Owned::Rules,
-            format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}").as_bytes(),
+            &format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}"),
         )
     }
 }
@@ -248,7 +236,7 @@ mod tests {
     /// Files in memory, with `rules.toml` holding `text`.
     fn holding(text: Option<&str>) -> Arc<Memory> {
         let files = Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap"))));
-        files.put(file::File::Rules, text.map(Vec::from));
+        files.put(file::File::Rules, text.map(str::to_owned));
         files
     }
 

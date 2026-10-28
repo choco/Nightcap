@@ -108,9 +108,17 @@ struct NoticeTests {
         #expect(
             config(.invalid(path: "/n/config.toml", line: 3, problem: .strengthOutOfRange(strength: 101)))?
                 .body == "/n/config.toml: line 3: night_shift.strength is 0 to 100, not 101")
-        #expect(
-            config(.unreadable(path: "/n/config.toml", message: "Permission denied (os error 13)"))?.body
-                == "couldn't read /n/config.toml: Permission denied (os error 13)")
+        let unreadable: [(IoFailure, String)] = [
+            (.notFound, "/n/config.toml, or a folder on its path, isn’t there"),
+            (.permissionDenied, "/n/config.toml: Nightcap isn’t allowed to read it"),
+            (.isAFolder, "/n/config.toml is a folder, not a file"),
+            (.notAFolder, "/n/config.toml: one of the folders on its path is a file"),
+            (.notUtf8, "/n/config.toml isn’t UTF-8 text"),
+            (.other, "/n/config.toml couldn’t be read"),
+        ]
+        for (failure, body) in unreadable {
+            #expect(config(.unreadable(path: "/n/config.toml", failure: failure))?.body == body)
+        }
 
         let rules = { (error: FileError) in problem(.adHocRules(.off(error))) }
         let newer = rules(.newer(path: "/n/rules.toml", version: 3))
@@ -173,9 +181,17 @@ struct NoticeTests {
         #expect(
             refused(.adHocRulesOff(.newer(path: "/n/rules.toml", version: 3)))
                 == "Ad-hoc rules are off: /n/rules.toml is version 3, from a newer Nightcap than this one.")
-        #expect(
-            refused(.adHocRulesNotSaved(path: "/n/rules.toml", message: "Is a directory (os error 21)"))
-                == "Couldn’t save /n/rules.toml: Is a directory (os error 21).")
+        let notSaved: [(IoFailure, String)] = [
+            (.notFound, "Couldn’t save /n/rules.toml: a folder on its path isn’t there."),
+            (.permissionDenied, "Nightcap isn’t allowed to save /n/rules.toml."),
+            (.isAFolder, "Couldn’t save /n/rules.toml: a folder is in its place."),
+            (.notAFolder, "Couldn’t save /n/rules.toml: one of the folders on its path is a file."),
+            (.notUtf8, "Couldn’t save /n/rules.toml: it isn’t UTF-8 text."),
+            (.other, "Couldn’t save /n/rules.toml."),
+        ]
+        for (failure, body) in notSaved {
+            #expect(refused(.adHocRulesNotSaved(path: "/n/rules.toml", failure: failure)) == body)
+        }
         #expect(
             refused(.invalidConfig(.malformed(path: "/n/config.toml", line: 2, message: "expected a sequence")))
                 == "Your config is invalid: /n/config.toml: line 2: expected a sequence.")
