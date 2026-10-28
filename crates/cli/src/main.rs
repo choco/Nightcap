@@ -29,11 +29,7 @@ fn change(state: OnOff, change: &Change, now: &Zoned) -> Result<protocol::Comman
                 OnOff::Off => protocol::Command::Off,
             });
         }
-        (None, None, false) => {
-            return Err(format!(
-                "an app or a site needs a length: --for, --until or --until-schedule; for good, add a rule with `nightcap rules add {place}`"
-            ));
-        }
+        (None, None, false) => return Err(wording::needs_a_length(&place)),
     };
     Ok(protocol::Command::Set {
         place,
@@ -141,10 +137,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Payload::Rules(rules) = request(instance, &reload, wait)? else {
                 return Err(unexpected_reply());
             };
-            println!(
-                "Reloaded the config. Rules: {}",
-                wording::rules(&wording::app_and_site_rules(&rules), &TimeZone::system())
-            );
+            println!("{}", wording::reloaded(&rules, &TimeZone::system()));
             return Ok(());
         }
         Command::Rules { action } => return run_rules(instance, action),
@@ -155,7 +148,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Some(strength) = night_shift.strength else {
                 return Err(Failure::Refused(Refusal::StrengthUnavailable));
             };
-            println!("Strength: {strength}");
+            println!("{}", wording::strength(strength));
             return Ok(());
         }
         Command::Strength { value: Some(value) } => {
@@ -163,7 +156,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
                 return Err(unexpected_reply());
             };
-            println!("Strength set to {value}.");
+            println!("{}", wording::strength_set(value));
             return Ok(());
         }
         Command::Update => {
@@ -171,7 +164,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Payload::UpdateCheckStarted = request(instance, &check, None)? else {
                 return Err(unexpected_reply());
             };
-            println!("Checking for updates; Nightcap shows what it finds.");
+            println!("{}", wording::checking_for_updates());
             return Ok(());
         }
         Command::On(details) => {
@@ -191,7 +184,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             let Payload::Decision(_) = request(instance, &Request::Command(command), None)? else {
                 return Err(unexpected_reply());
             };
-            println!("Website checking is {state}.");
+            println!("{}", wording::website_checking_set(state));
             return Ok(());
         }
     };
@@ -205,7 +198,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     }
     // The reply comes before the shell applies the change, so it names what the core decided
     // rather than Night Shift as last observed.
-    println!("Night Shift {}", wording::decision(&decision, &zone));
+    println!("{}", wording::decided(&decision, &zone));
     Ok(())
 }
 
@@ -220,10 +213,7 @@ fn set_elsewhere(
             place,
             state,
             length,
-        } if *place != decision.place => Some(format!(
-            "Set {place} {state} {}.",
-            wording::length_text(length, zone)
-        )),
+        } if *place != decision.place => Some(wording::set(place, *state, length, zone)),
         _ => None,
     }
 }
@@ -241,7 +231,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
                     serde_json::to_string(&rules).context("couldn't encode the rules")?
                 );
             } else if rules.is_empty() {
-                println!("No rules.");
+                println!("{}", wording::no_rules());
             } else {
                 let zone = TimeZone::system();
                 for rule in &rules {
@@ -275,7 +265,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
             (wording::rule_added(&identity, says, rule), decision)
         }
         RulesAction::Remove { identity } => {
-            let done = format!("Removed {identity}.");
+            let done = wording::rule_removed(&identity);
             let command = protocol::Command::RemoveRule(identity);
             let Payload::Decision(decision) = request(instance, &Request::Command(command), None)?
             else {
@@ -285,8 +275,8 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
         }
     };
     println!(
-        "{done} Night Shift {}.",
-        wording::decision(&decision, &TimeZone::system())
+        "{}",
+        wording::rules_changed(&done, &decision, &TimeZone::system())
     );
     Ok(())
 }

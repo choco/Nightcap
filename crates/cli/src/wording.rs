@@ -5,16 +5,16 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, Checks, ConfigFileDetail,
-    Decision, FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
-    NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
-    PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded, RuleIdentity, Schedule,
-    SetBy, TimeOfDay,
+    Decision, FileError, Hello, IdentityError, Install, Lasting, Length, ListedRule, NightShift,
+    NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
+    OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
+    RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
 
 use crate::client::Report;
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
-pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
+fn decision(decision: &Decision, zone: &TimeZone) -> String {
     let until = |end: Option<Timestamp>, state: OnOff| match end {
         Some(end) => format!(" until {}", moment(end, zone)),
         None => format!(" until you turn it {}", state.other()),
@@ -233,12 +233,8 @@ fn problem(problem: &Problem) -> String {
         Problem::UnsaidRules => {
             "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned()
         }
-        Problem::NotABundleId { entry } => format!(
-            "{entry:?} isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods"
-        ),
-        Problem::NotADomain { entry } => {
-            format!("{entry:?} isn't a domain like figma.com: no scheme, path, port or wildcard")
-        }
+        Problem::NotABundleId { entry } => not_a_bundle_id(entry),
+        Problem::NotADomain { entry } => not_a_domain(entry),
         Problem::BothWays { identity } => {
             format!("{identity} is in both rules.off and rules.on: an app or domain has one rule")
         }
@@ -366,13 +362,111 @@ fn from_config<T: PartialEq + Copy>(
 }
 
 /// How long a change lasts, as `on` and `off` were told.
-pub(crate) fn length_text(length: &Lasting, zone: &TimeZone) -> String {
+fn length_text(length: &Lasting, zone: &TimeZone) -> String {
     match length {
         Lasting::For(duration) => format!("for {duration:#}"),
         Lasting::Until(end) => format!("until {}", moment(*end, zone)),
         Lasting::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
         Lasting::Indefinite => "until you turn it back".to_owned(),
     }
+}
+
+/// Why text the CLI was given names no app, site or rule, as it reads after clap's "invalid
+/// value".
+pub(crate) fn identity_error(error: &IdentityError) -> String {
+    match error {
+        IdentityError::BundleId(text) => not_a_bundle_id(text),
+        IdentityError::Domain(text) => not_a_domain(text),
+        IdentityError::RuleIdentity(text) => format!(
+            "{text:?} names no app or site: write it like app:com.figma.Desktop or domain:figma.com"
+        ),
+    }
+}
+
+fn not_a_bundle_id(text: &str) -> String {
+    format!(
+        "{text:?} isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods"
+    )
+}
+
+fn not_a_domain(text: &str) -> String {
+    format!("{text:?} isn't a domain like figma.com: no scheme, path, port or wildcard")
+}
+
+/// Why what `--for` was given isn't a length.
+pub(crate) fn not_a_length(text: &str) -> String {
+    format!("{text:?} isn't a length like 30m, 1h or 1h30m")
+}
+
+pub(crate) fn not_longer_than_zero() -> String {
+    "a length is longer than zero".to_owned()
+}
+
+/// Why what `--until` was given isn't a time of day.
+pub(crate) fn not_a_time_of_day(text: &str) -> String {
+    format!("{text:?} isn't a time of day like 23:30")
+}
+
+/// Why what `--wait` was given isn't a wait.
+pub(crate) fn not_a_wait(text: &str) -> String {
+    format!("{text:?} isn't a wait like 5s or 1m")
+}
+
+/// Why an `on` or `off` at an app or a site needs a length: only a rule is there for good.
+pub(crate) fn needs_a_length(place: &Place) -> String {
+    format!(
+        "an app or a site needs a length: --for, --until or --until-schedule; for good, add a rule with `nightcap rules add {place}`"
+    )
+}
+
+/// What a change to a place that doesn't decide set: "Set app:com.figma.Desktop on for 1h.",
+/// with times in `zone`.
+pub(crate) fn set(place: &Place, state: OnOff, length: &Lasting, zone: &TimeZone) -> String {
+    format!("Set {place} {state} {}.", length_text(length, zone))
+}
+
+/// What Night Shift does after a command, as the core decided it, with times in `zone`.
+pub(crate) fn decided(decision: &Decision, zone: &TimeZone) -> String {
+    format!("Night Shift {}", self::decision(decision, zone))
+}
+
+/// What a change to the rules did, as `done` says it, then what Night Shift does after it, with
+/// times in `zone`.
+pub(crate) fn rules_changed(done: &str, decision: &Decision, zone: &TimeZone) -> String {
+    format!("{done} {}.", decided(decision, zone))
+}
+
+pub(crate) fn rule_removed(identity: &RuleIdentity) -> String {
+    format!("Removed {identity}.")
+}
+
+/// `nightcap rules list` with no rule to list.
+pub(crate) fn no_rules() -> String {
+    "No rules.".to_owned()
+}
+
+/// What a reload did, with the rules it leads to and times in `zone`.
+pub(crate) fn reloaded(rules: &[ListedRule], zone: &TimeZone) -> String {
+    format!(
+        "Reloaded the config. Rules: {}",
+        self::rules(&app_and_site_rules(rules), zone)
+    )
+}
+
+pub(crate) fn strength(strength: u8) -> String {
+    format!("Strength: {strength}")
+}
+
+pub(crate) fn strength_set(strength: u8) -> String {
+    format!("Strength set to {strength}.")
+}
+
+pub(crate) fn checking_for_updates() -> String {
+    "Checking for updates; Nightcap shows what it finds.".to_owned()
+}
+
+pub(crate) fn website_checking_set(state: OnOff) -> String {
+    format!("Website checking is {state}.")
 }
 
 /// What `nightcap status` shows, a line at a time, with times in `zone`.
@@ -500,7 +594,7 @@ fn needs_attention(checks: &Checks) -> Vec<String> {
 }
 
 /// Rules as `rule` words them, with times in `zone`, or "none".
-pub(crate) fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
+fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
     if rules.is_empty() {
         return "none".to_owned();
     }

@@ -1,10 +1,13 @@
 //! The command line: its commands and their arguments, as clap parses them.
 
+use std::str::FromStr;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use jiff::SignedDuration;
-use nightcap_protocol::{BundleId, Domain, Place, RuleIdentity};
+use nightcap_protocol::{BundleId, Domain, IdentityError, Place, RuleIdentity};
+
+use crate::wording;
 
 #[derive(Parser)]
 #[command(
@@ -89,10 +92,10 @@ pub(crate) struct Change {
 #[derive(clap::Args)]
 pub(crate) struct Where {
     /// An app, by its bundle ID, e.g. com.figma.Desktop.
-    #[arg(long, group = "where")]
+    #[arg(long, group = "where", value_parser = identified::<BundleId>)]
     app: Option<BundleId>,
     /// A site and its subdomains, e.g. figma.com.
-    #[arg(long, group = "where")]
+    #[arg(long, group = "where", value_parser = identified::<Domain>)]
     domain: Option<Domain>,
 }
 
@@ -117,13 +120,17 @@ pub(crate) enum RulesAction {
     /// Add an ad-hoc rule, e.g. app:com.figma.Desktop or domain:figma.com, that turns Night Shift
     /// off there, or on with --on. It replaces your own rule for the same app or site.
     Add {
+        #[arg(value_parser = identified::<RuleIdentity>)]
         identity: RuleIdentity,
         /// Keep Night Shift on there, even by day.
         #[arg(long)]
         on: bool,
     },
     /// Remove an ad-hoc rule; a config rule changes only in the config.
-    Remove { identity: RuleIdentity },
+    Remove {
+        #[arg(value_parser = identified::<RuleIdentity>)]
+        identity: RuleIdentity,
+    },
     /// Print the ad-hoc rules, ready to paste into the config.
     Export {
         #[arg(long, value_enum)]
@@ -143,36 +150,93 @@ pub(crate) enum Format {
     Toml,
 }
 
+/// An app, a site or a rule's identity, or why the text names none, in the CLI's words.
+fn identified<T: FromStr<Err = IdentityError>>(text: &str) -> Result<T, String> {
+    text.parse()
+        .map_err(|error| wording::identity_error(&error))
+}
+
 /// A length such as 30m, 1h or 1h30m, longer than zero.
 fn parse_length(text: &str) -> Result<SignedDuration, String> {
-    let length: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
+    let length: SignedDuration = text.parse().map_err(|_| wording::not_a_length(text))?;
     if length <= SignedDuration::ZERO {
-        return Err("the length must be longer than zero".to_owned());
+        return Err(wording::not_longer_than_zero());
     }
     Ok(length)
 }
 
 /// A time of day such as 23:30.
 fn parse_time_of_day(text: &str) -> Result<jiff::civil::Time, String> {
-    jiff::civil::Time::strptime("%H:%M", text)
-        .map_err(|_| format!("{text:?} isn't a time of day like 23:30"))
+    jiff::civil::Time::strptime("%H:%M", text).map_err(|_| wording::not_a_time_of_day(text))
 }
 
+/// A wait such as 5s, zero or longer.
 fn parse_duration(text: &str) -> Result<Duration, String> {
-    let duration: SignedDuration = text.parse().map_err(|error| format!("{error}"))?;
-    Duration::try_from(duration).map_err(|error| format!("{error}"))
+    text.parse::<SignedDuration>()
+        .ok()
+        .and_then(|duration| Duration::try_from(duration).ok())
+        .ok_or_else(|| wording::not_a_wait(text))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// What clap says of a line of arguments it refuses.
+    fn refused(args: &[&str]) -> String {
+        match Cli::try_parse_from(["nightcap"].iter().chain(args)) {
+            Ok(_) => panic!("{args:?} parsed"),
+            Err(error) => error.to_string(),
+        }
+    }
+
     #[test]
     fn lengths_read_as_30m_1h_or_1h30m() {
         assert_eq!(parse_length("30m"), Ok(SignedDuration::from_mins(30)));
         assert_eq!(parse_length("1h"), Ok(SignedDuration::from_hours(1)));
         assert_eq!(parse_length("1h30m"), Ok(SignedDuration::from_mins(90)));
-        assert!(parse_length("0m").is_err());
-        assert!(parse_length("soon").is_err());
+        assert_eq!(
+            parse_length("0m"),
+            Err("a length is longer than zero".to_owned())
+        );
+        assert_eq!(
+            parse_length("soon"),
+            Err("\"soon\" isn't a length like 30m, 1h or 1h30m".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_wait_is_zero_or_longer() {
+        assert_eq!(parse_duration("5s"), Ok(Duration::from_secs(5)));
+        assert_eq!(parse_duration("0s"), Ok(Duration::ZERO));
+        assert_eq!(
+            parse_duration("-5s"),
+            Err("\"-5s\" isn't a wait like 5s or 1m".to_owned())
+        );
+    }
+
+    #[test]
+    fn an_app_a_site_or_a_rule_that_cant_be_one_is_said_in_the_clis_words() {
+        for (args, said) in [
+            (
+                &["rules", "add", "figma"][..],
+                "\"figma\" names no app or site: write it like app:com.figma.Desktop or domain:figma.com",
+            ),
+            (
+                &["rules", "remove", "app:com.figma.Desktop/"],
+                "\"com.figma.Desktop/\" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods",
+            ),
+            (
+                &["on", "--app", "com.figma.Desktop ", "--for", "1h"],
+                "\"com.figma.Desktop \" isn't a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods",
+            ),
+            (
+                &["off", "--domain", "figma.com/file", "--for", "1h"],
+                "\"figma.com/file\" isn't a domain like figma.com: no scheme, path, port or wildcard",
+            ),
+        ] {
+            let error = refused(args);
+            assert!(error.contains(said), "{args:?}: {error}");
+        }
     }
 }
