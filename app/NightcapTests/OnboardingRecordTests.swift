@@ -2,13 +2,23 @@ import Foundation
 import NightcapCore
 import Testing
 
-/// A config that answers website checking and both of Night Shift's steps.
-private let answersAll = """
+/// A config that answers website checking and both of Night Shift's steps, but not the apps.
+private let answersAllButTheApps = """
     websites = false
     [night_shift]
     strength = 40
     schedule = "off"
     """
+
+/// A config rule, which answers the apps.
+private let aRule = """
+
+    [rules.off]
+    app = ["com.figma.Desktop"]
+    """
+
+/// A config that answers website checking, both of Night Shift's steps and, with a rule, the apps.
+private let answersAll = answersAllButTheApps + aRule
 
 /// The snapshot a managed release's launch leaves at noon, or a self-managed release's where
 /// `selfManaged`, with `config` as its config, after macOS reported Night Shift off with no
@@ -45,7 +55,7 @@ struct OnboardingRecordTests {
     }
 
     /// Going through it then counts as having done so.
-    @Test func aConfigThatSetsWebsiteCheckingAndNightShiftLeavesOnboardingNothingToAsk() throws {
+    @Test func aConfigThatSetsWebsiteCheckingAndNightShiftWithARuleLeavesOnboardingNothingToAsk() throws {
         let snapshot = try launch(config: answersAll)
         withScratchDefaults { defaults in
             let record = OnboardingRecord(defaults: defaults)
@@ -55,8 +65,27 @@ struct OnboardingRecordTests {
         }
     }
 
+    /// The user would otherwise start with no rule and no suggestion.
+    @Test func aConfigThatSetsWebsiteCheckingAndNightShiftWithNoRuleStillLeavesTheAppsToAsk() throws {
+        let snapshot = try launch(config: answersAllButTheApps)
+        withScratchDefaults { defaults in
+            let record = OnboardingRecord(defaults: defaults)
+
+            #expect(record.launched(snapshot))
+            #expect(!record.finished)
+        }
+    }
+
+    /// Any rule of the config's answers the apps, a site's among them.
+    @Test func aConfigRuleForASiteAnswersTheAppsToo() throws {
+        let snapshot = try launch(config: answersAllButTheApps + "\n[rules.on]\ndomain = [\"youtube.com\"]\n")
+        withScratchDefaults { defaults in
+            #expect(!OnboardingRecord(defaults: defaults).launched(snapshot))
+        }
+    }
+
     @Test func aConfigThatSetsOnlyWebsiteCheckingStillLeavesNightShiftToAsk() throws {
-        let snapshot = try launch(config: "websites = false\n")
+        let snapshot = try launch(config: "websites = false\n" + aRule)
         withScratchDefaults { defaults in
             let record = OnboardingRecord(defaults: defaults)
 
@@ -67,8 +96,8 @@ struct OnboardingRecordTests {
 
     /// Without Night Shift's status the schedule can't be set, and without its strength the
     /// strength can't.
-    @Test func aConfigThatSetsWebsiteCheckingLeavesOnboardingNothingToAskWithoutNightShift() throws {
-        let snapshot = try launch(config: "websites = false\n", reported: false)
+    @Test func aConfigThatSetsWebsiteCheckingWithARuleLeavesOnboardingNothingToAskWithoutNightShift() throws {
+        let snapshot = try launch(config: "websites = false\n" + aRule, reported: false)
         withScratchDefaults { defaults in
             #expect(!OnboardingRecord(defaults: defaults).launched(snapshot))
         }

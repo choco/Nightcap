@@ -24,15 +24,18 @@ struct OnboardingRecord {
     /// answered all it would ask.
     var finished: Bool { completed >= Self.current }
 
-    /// Whether onboarding opens, as the launch's outcome leaves `snapshot`: unless the user went
-    /// through the current one, or the config and the install answer all it would ask, which it
-    /// records as gone through. The config can answer website checking and Night Shift's steps;
-    /// opening at login, which a self-managed release asks, it can't.
+    /// Whether onboarding opens, as the launch's outcome leaves `snapshot`: while something is left
+    /// to ask, unless the user went through the current one. The config can answer website
+    /// checking, Night Shift's steps and, with a rule of its own, the apps; opening at login,
+    /// which a self-managed release asks, it can't. With nothing left, it records onboarding as
+    /// gone through. Once it opens, it asks about the apps whatever the config has, ticking the
+    /// config's rules.
     func launched(_ snapshot: Snapshot) -> Bool {
         guard !finished else { return false }
         let setup = OnboardingFlow.Setup(snapshot)
         let answered =
             setup.websitesFromConfig != nil && !setup.askStrength && !setup.askSchedule
+            && snapshot.rules().contains { $0.rule.setBy == .config }
             && !snapshot.about().managesItself
         if answered { finish() }
         return !answered
