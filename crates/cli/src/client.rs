@@ -69,8 +69,8 @@ pub(crate) fn ask(instance: Instance, query: Query) -> Result<Answer, Failure> {
 }
 
 /// What `nightcap status` shows, from the queries it asks in one request, so every answer is
-/// as of the same input; `--json` prints it as it is, each answer under its query's name.
-#[derive(Serialize)]
+/// as of the same input (ADR-0010).
+#[derive(Debug)]
 pub(crate) struct Report {
     pub(crate) about: About,
     pub(crate) night_shift: NightShiftState,
@@ -172,8 +172,8 @@ mod tests {
 
     use super::*;
 
-    /// What `nightcap status --json` prints: each answer under its query's name.
-    const STATUS: &str = concat!(
+    /// The answers to what `nightcap status` asks, each under its query's name.
+    const ANSWERS: &str = concat!(
         r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true,"legacy_onboarding":1},"#,
         r#""night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"},"#,
         r#""front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":null,"inherits":null}},"#,
@@ -185,15 +185,15 @@ mod tests {
     );
 
     #[test]
-    fn status_asks_every_query_in_one_request_and_prints_each_answer_under_its_name() {
-        let printed: Value = serde_json::from_str(STATUS).unwrap();
-        // The server's answer to a query: what the status prints under the query's name.
+    fn status_asks_every_query_in_one_request_and_keeps_each_answer() {
+        let answers: Value = serde_json::from_str(ANSWERS).unwrap();
+        // The server's answer to a query, as `ANSWERS` has it under the query's name.
         let answer = |query: &Query| {
             let Value::String(name) = serde_json::to_value(query).unwrap() else {
                 panic!("status asks no query with an argument, but asked {query:?}");
             };
-            let printed = printed[name.as_str()].clone();
-            serde_json::from_value::<Answer>(Value::Object(Map::from_iter([(name, printed)])))
+            let answered = answers[name.as_str()].clone();
+            serde_json::from_value::<Answer>(Value::Object(Map::from_iter([(name, answered)])))
                 .unwrap()
         };
         let mut asked = Vec::new();
@@ -221,6 +221,27 @@ mod tests {
                 Query::Trial,
             ])]
         );
-        assert_eq!(serde_json::to_string(&report).unwrap(), STATUS);
+        let Report {
+            about,
+            night_shift,
+            front,
+            rules,
+            config,
+            preferences,
+            checks,
+            trial,
+        } = report;
+        for (name, kept) in [
+            ("about", serde_json::to_value(about)),
+            ("night_shift", serde_json::to_value(night_shift)),
+            ("front", serde_json::to_value(front)),
+            ("rules", serde_json::to_value(rules)),
+            ("config", serde_json::to_value(config)),
+            ("preferences", serde_json::to_value(preferences)),
+            ("checks", serde_json::to_value(checks)),
+            ("trial", serde_json::to_value(trial)),
+        ] {
+            assert_eq!(kept.unwrap(), answers[name], "{name}");
+        }
     }
 }

@@ -46,7 +46,7 @@ nightcap strength 40                     # how warm Night Shift gets, 0 to 100
 nightcap status --json | jq -r .front.decision.state
 ```
 
-`nightcap --help` lists the rest.
+`nightcap --help` lists the rest. `--json` prints a schema of the CLI's own, which [`docs/installing.md`](docs/installing.md#scripting-against-the-cli) describes, for scripts to rely on.
 
 ## The config
 

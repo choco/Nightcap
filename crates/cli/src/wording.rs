@@ -5,9 +5,9 @@ use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, Checks, ConfigFileDetail,
-    Decision, FileError, Hello, IdentityError, Install, Lasting, Length, ListedRule, NightShift,
-    NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
-    OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
+    ConfigState, Decision, FileError, Hello, IdentityError, Install, Lasting, Length, ListedRule,
+    NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail,
+    OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
     RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
 };
 
@@ -82,7 +82,7 @@ pub(crate) fn app_and_site_rules(rules: &[ListedRule]) -> Vec<ListedRule> {
         .collect()
 }
 
-fn is_app_or_site_rule(rule: &Rule) -> bool {
+pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
     rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }
 
@@ -471,6 +471,11 @@ pub(crate) fn website_checking_set(state: OnOff) -> String {
     format!("Website checking is {state}.")
 }
 
+/// Why the config can't be used, starting from its path, while it can't.
+pub(crate) fn config_error(config: &ConfigState) -> Option<String> {
+    config.error.as_ref().map(file_error)
+}
+
 /// What `nightcap status` shows, a line at a time, with times in `zone`.
 pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
     let Report {
@@ -688,8 +693,8 @@ fn time_of_day(time: TimeOfDay) -> String {
 #[cfg(test)]
 mod tests {
     use nightcap_protocol::{
-        About, Check, CheckState, ConfigState, Front, NightShiftState, Permissions, PlaceInFront,
-        Preferences, WebsiteChecking,
+        About, Check, CheckState, Front, NightShiftState, Permissions, PlaceInFront, Preferences,
+        WebsiteChecking,
     };
 
     use super::*;

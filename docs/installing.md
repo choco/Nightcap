@@ -72,6 +72,110 @@ nightcap reload --wait 5s
 - Exit 2: the config is invalid. Nightcap keeps the rules it had and prints the parse error. Fail the installation.
 - Exit 1: Nightcap didn't come up within the wait. Warn, but don't fail: it reads the config when it starts.
 
+## Scripting against the CLI
+
+`nightcap status --json` and `nightcap rules list --json` print one JSON object, on one line, for scripts such as `nightcap status --json | jq -r .front.decision.state`. This JSON is the CLI's public interface; what the CLI and the app say to each other over the socket isn't, and changes in any release. The JSON changes only on purpose: `schema` says which version of it a document is, and goes up with every change, a field added among them. `message` and `config.error` are sentences for people, whose words can change in any release: match on `check` and `state` instead.
+
+`nightcap status --json`, with a config rule keeping Figma off and Night Shift turned on in Figma until the schedule turns it off at 07:00:
+
+```json
+{
+  "schema": 1,
+  "nightcap": { "version": "1.2.0", "install": "self_managed" },
+  "night_shift": {
+    "state": "on",
+    "strength": 60,
+    "schedule": "22:00-07:00",
+    "scheduled": "on",
+    "next_on": "2026-10-17T20:00:00Z",
+    "next_off": "2026-10-17T05:00:00Z"
+  },
+  "front": {
+    "app": "com.figma.Desktop",
+    "site": null,
+    "decision": {
+      "state": "on",
+      "place": "app:com.figma.Desktop",
+      "reason": {
+        "kind": "rule",
+        "place": "app:com.figma.Desktop",
+        "says": "on",
+        "set_by": "you",
+        "length": "until_schedule",
+        "until": "2026-10-17T05:00:00Z"
+      }
+    }
+  },
+  "tour": null,
+  "rules": [
+    {
+      "place": "app:com.figma.Desktop",
+      "says": "off",
+      "set_by": "config",
+      "length": "indefinite",
+      "until": null,
+      "snooze": {
+        "place": "app:com.figma.Desktop",
+        "says": "on",
+        "set_by": "you",
+        "length": "until_schedule",
+        "until": "2026-10-17T05:00:00Z"
+      }
+    }
+  ],
+  "changes": [
+    {
+      "place": "app:com.figma.Desktop",
+      "says": "on",
+      "set_by": "you",
+      "length": "until_schedule",
+      "until": "2026-10-17T05:00:00Z"
+    }
+  ],
+  "website_checking": { "state": "off", "from_config": false },
+  "config": { "path": "/Users/me/.config/nightcap/config.toml", "error": null },
+  "needs_attention": []
+}
+```
+
+Times are RFC 3339, in UTC. A place is written as the CLI's arguments take one: `everywhere`, `app:<bundle ID>` or `domain:<domain>`.
+
+| Field | What it says |
+|---|---|
+| `schema` | The version of this JSON: 1. |
+| `nightcap.version` | The running Nightcap's version. |
+| `nightcap.install` | `self_managed`: it updates itself, and opens at login if the user chose it. `managed`: its installer updates and starts it. `dev_build`: a dev build, which does neither. |
+| `night_shift.state` | Night Shift as macOS last reported it: `on`, `off`, or `unavailable` on a Mac without it. |
+| `night_shift.strength` | How warm Night Shift tints the display, 0 to 100; null until Nightcap has read it. |
+| `night_shift.schedule` | As the config writes it: `off`, `sunset-to-sunrise`, or custom hours such as `22:00-07:00`; null until macOS has reported it. |
+| `night_shift.scheduled` | What the schedule says now, `on` or `off`; null while the schedule, or the sunrise and sunset it follows, aren't known. |
+| `night_shift.next_on`, `night_shift.next_off` | When the schedule next turns Night Shift on, and off; null while no such turn is coming, or its sunrise and sunset aren't known. |
+| `front.app` | The frontmost app's bundle ID; null when it has none. |
+| `front.site` | The site in front while website checking reads the front tab: the domain of the most specific rule that covers it, else the tab's own domain short of `www.`; else null. |
+| `front.decision.state` | What Night Shift should be now, `on` or `off`, which the app makes it within a moment; null while nothing decides it yet. |
+| `front.decision.place` | Where it's decided: the site in front, the front app, or `everywhere`. |
+| `front.decision.reason` | What the decision rests on first. `"kind": "rule"`: that place's shortest rule, with its fields beside `kind`. `"kind": "schedule"`: the schedule, `until` its next turn. `"kind": "tour"`: the tour, holding Night Shift on. Null while nothing decides. |
+| `tour` | Null unless the app's tour runs. Then `stands_in` says whether it holds Night Shift on in place of the schedule. Rules and changes made during the tour last until it ends. |
+| `rules` | The apps' and sites' rules, as `nightcap rules list` lists them: each a rule, with its `snooze`, the change over it that says the other way until it ends, or null. |
+| `changes` | Every other rule: what the menu, `on`, `off` and `toggle` set at a place, and the changes in Control Center or System Settings that Nightcap adopted, shortest first at each place. `nightcap reset` takes them off. |
+| `website_checking.state` | Whether Nightcap reads the front browser's tab, `on` or `off`. |
+| `website_checking.from_config` | Whether the config's `websites` sets it. |
+| `config.path` | Where Nightcap reads the config, whether or not it's there. |
+| `config.error` | Why the config can't be used, starting from its path; null while it can. |
+| `needs_attention` | Each check that needs the user: `check`, one of `night_shift`, `accessibility`, `notifications`, `open_at_login`, `config_file` and `ad_hoc_rules`; `state`, `drifted` where something the user set up stopped working, which restoring it or accepting the change settles, or `broken` where it can only be fixed; and `message`, the CLI's sentence for it. |
+
+A rule has:
+
+| Field | What it says |
+|---|---|
+| `place` | Where it applies. |
+| `says` | `on` or `off`. |
+| `set_by` | `config`; `you`, from the menu, Settings or the CLI; `tour`, the user during the tour; or `outside_change`, a change in Control Center or System Settings that Nightcap adopted. |
+| `length` | `indefinite`; `until_schedule`, until the schedule next turns Night Shift the other way; or `until_time`. |
+| `until` | When it ends; null for an indefinite rule, or one until the schedule turns while no turn is coming. |
+
+`nightcap rules list --json` prints `schema` and `rules` alone.
+
 ## Uninstalling
 
 Quit Nightcap (`launchctl bootout` the LaunchAgent, or quit it from Activity Monitor), then remove the app and the CLI link. Remove the three XDG folders above, `~/Library/Application Support/Nightcap` and `~/Library/Caches/io.github.choco.nightcap`, where the sites' icons are kept, to forget everything.

@@ -15,6 +15,7 @@ etcetera = "0.11"
 idna = "1.1.0"
 jiff = "0.2.38"
 libc = "0.2.190"
+nightcap-core = { path = "crates/core" }
 nightcap-protocol = { path = "crates/protocol" }
 serde = "1.0.229"
 serde_json = "1.0.154"

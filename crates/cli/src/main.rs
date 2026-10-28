@@ -1,5 +1,6 @@
 mod args;
 mod client;
+mod json;
 mod wording;
 
 use std::process::ExitCode;
@@ -118,12 +119,13 @@ fn refused(why: &str) -> ExitCode {
 
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     let command = match command {
-        Command::Status { json } => {
+        Command::Status { json: as_json } => {
             let report = client::report(|status| request(instance, status, None))?;
-            if json {
+            if as_json {
                 println!(
                     "{}",
-                    serde_json::to_string(&report).context("couldn't encode the status")?
+                    serde_json::to_string(&json::Status::from(&report))
+                        .context("couldn't encode the status")?
                 );
             } else {
                 for line in wording::status(&report, &TimeZone::system()) {
@@ -220,17 +222,20 @@ fn set_elsewhere(
 
 fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
     let (done, decision) = match action {
-        RulesAction::List { json } => {
+        RulesAction::List { json: as_json } => {
             let Answer::Rules(rules) = ask(instance, Query::Rules)? else {
                 return Err(unexpected_reply());
             };
-            let rules = wording::app_and_site_rules(&rules);
-            if json {
+            if as_json {
                 println!(
                     "{}",
-                    serde_json::to_string(&rules).context("couldn't encode the rules")?
+                    serde_json::to_string(&json::Rules::from(&rules[..]))
+                        .context("couldn't encode the rules")?
                 );
-            } else if rules.is_empty() {
+                return Ok(());
+            }
+            let rules = wording::app_and_site_rules(&rules);
+            if rules.is_empty() {
                 println!("{}", wording::no_rules());
             } else {
                 let zone = TimeZone::system();
