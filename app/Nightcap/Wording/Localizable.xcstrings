@@ -788,6 +788,18 @@
     "Like the Rest of %@" : {
 
     },
+    "Like the Rest of %@, a domain" : {
+      "comment" : "A site’s place row in the menu: ends its change, back to the say of a domain that covers it, such as figma.com for docs.figma.com.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Like the Rest of %@"
+          }
+        }
+      }
+    },
     "Like youtube.com; the rest of the address is dropped, and the icon comes from the site." : {
 
     },

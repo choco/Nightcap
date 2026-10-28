@@ -257,9 +257,9 @@ struct MenuTests {
     }
 
     /// Each item that resets a place, in the situations the menu's tests stage, does what its
-    /// title says: Put the Rule Back leaves the place giving its rule's say, Like Everywhere Else
-    /// or Like the Rest of Safari what it inherits, and Back to the Schedule the schedule deciding
-    /// everywhere, each the way its row turns the place.
+    /// title says: Put the Rule Back leaves the place giving its rule's say, Like Everywhere Else,
+    /// Like the Rest of Safari or Like the Rest of figma.com what it inherits, and Back to the
+    /// Schedule the schedule deciding everywhere, each the way its row turns the place.
     @Test func theItemsThatUndoDoWhatTheirTitlesSay() throws {
         let safariAndYouTube =
             "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n"
@@ -271,6 +271,11 @@ struct MenuTests {
             { try forced(front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(30)))) },
             { try onFigma() },
             { try onFigma(.command(.set(place: .domain("figma.com"), state: .on, length: .untilScheduleTurns))) },
+            {
+                try onFigma(
+                    host("docs.figma.com"),
+                    .command(.set(place: .domain("docs.figma.com"), state: .on, length: minutes(30))))
+            },
             {
                 try onByTheSchedule(
                     config: safariAndYouTube, front("com.apple.Safari", browser: true), host("example.com"),
@@ -306,21 +311,22 @@ struct MenuTests {
                 for case .choice(let choice) in row.items {
                     guard case .reset(let place) = choice.command else { continue }
                     let core = try situation()
-                    let standing = { () throws -> PlaceInFront in
+                    let standing = { (place: Place) -> PlaceInFront? in
                         let front = core.snapshot().front()
-                        return try #require((front.places + [front.everywhere]).first { $0.place == place })
+                        return (front.places + [front.everywhere]).first { $0.place == place }
                     }
-                    let before = try standing()
+                    let before = try #require(standing(place))
                     let state = before.gives.other
                     core.send(command: choice.command)
-                    let after = try standing()
+                    // A site left with no rules of its own gives way to the domain that covers it.
+                    let after = try #require(standing(place) ?? before.inherits.flatMap { standing($0.from) })
                     #expect(after.gives == state, "\(choice.title) at \(place)")
                     #expect(after.rules.isEmpty, "\(choice.title) at \(place)")
                     switch choice.title {
                     case "Put the Rule Back":
                         let rule: Rule? = if case .rule(let rule) = before.base { rule } else { nil }
                         #expect(rule?.says == state)
-                    case "Like Everywhere Else", "Like the Rest of Safari":
+                    case "Like Everywhere Else", "Like the Rest of Safari", "Like the Rest of figma.com":
                         #expect(before.inherits?.says == state)
                     case "Back to the Schedule":
                         guard case .schedule(let scheduled, _) = after.base else {
@@ -336,7 +342,10 @@ struct MenuTests {
             }
         }
         #expect(
-            offered == ["Put the Rule Back", "Like Everywhere Else", "Like the Rest of Safari", "Back to the Schedule"])
+            offered == [
+                "Put the Rule Back", "Like Everywhere Else", "Like the Rest of Safari", "Like the Rest of figma.com",
+                "Back to the Schedule",
+            ])
     }
 
     @Test func aConfigRulesAlwaysIsGreyed() throws {
@@ -386,6 +395,19 @@ struct MenuTests {
             .command(.set(place: example, state: .on, length: minutes(30))))
 
         #expect(try #require(core.siteRow).choice(titled: "Like the Rest of Safari").command == .reset(example))
+    }
+
+    @Test func aSiteGoesBackToTheSayOfADomainThatCoversItByThatDomain() throws {
+        let docs = Place.domain("docs.figma.com")
+        let core = try onFigma(host("docs.figma.com"), .command(.set(place: docs, state: .on, length: minutes(30))))
+
+        let row = try #require(core.siteRow)
+
+        #expect(siteTitle(row) == ("Turn Off at This Site", "docs.figma.com"))
+        let undo = try row.choice(titled: "Like the Rest of figma.com").command
+        #expect(undo == .reset(docs))
+        core.send(command: undo)
+        #expect(siteTitle(core.siteRow) == ("Turn On at This Site", "figma.com"))
     }
 
     @Test func aSiteThatSaysNothingTurnsTheOtherWayFromItsBrowser() throws {

@@ -70,10 +70,22 @@ extension Wording {
     /// Ends the change at a place with no rule, back to everywhere's say.
     var likeEverywhereElse: String { text("Like Everywhere Else") }
 
-    /// Ends the change at a site with no rule, back to its browser's own say: "Like the Rest of
-    /// Safari".
-    func likeTheRest(of browser: String) -> String {
-        text("Like the Rest of \(browser)")
+    /// Ends the change at a site with no rule, back to the say of its browser or of a domain that
+    /// covers it: "Like the Rest of Safari", "Like the Rest of figma.com".
+    func likeTheRest(of place: Place) -> String {
+        switch place {
+        case .app(let browser): text("Like the Rest of \(browser)")
+        // A key of its own: a domain shares the English with an app, but not every language says
+        // both alike.
+        case .site(let domain):
+            String(
+                localized: "Like the Rest of %@, a domain", defaultValue: "Like the Rest of \(domain)",
+                bundle: #bundle, locale: locale,
+                comment: """
+                    A site’s place row in the menu: ends its change, back to the say of a domain that covers it, \
+                    such as figma.com for docs.figma.com.
+                    """)
+        }
     }
 
     var removeYourRule: String { text("Remove Your Rule") }

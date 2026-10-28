@@ -215,10 +215,11 @@ private struct Rows {
             case _ where at.rules.isEmpty: nil
             case (let rule?, _) where rule.says == state: words.putTheRuleBack
             case (nil, let inherits?) where inherits.says == state:
-                // A site follows its browser where the browser has its own say.
+                // A site follows a domain that covers it, or its browser, where that has its own say.
                 switch inherits.from {
-                case .app(let browser): words.likeTheRest(of: name(of: browser))
-                case .everywhere, .domain: words.likeEverywhereElse
+                case .domain(let domain): words.likeTheRest(of: .site(domain: domain))
+                case .app(let browser): words.likeTheRest(of: .app(name: name(of: browser)))
+                case .everywhere: words.likeEverywhereElse
                 }
             default: nil
             }
