@@ -127,7 +127,7 @@ struct CheckWordingTests {
 
         #expect(
             try invalid("websites = true\n[rules]\napp = [\"com.figma.Desktop\"]\n")
-                == (.broken, "Line 3: rules are listed by what they say, under [rules.off] and [rules.on]."))
+                == (.broken, "Line 3: `app` isn’t a key here; use `off` or `on`."))
         #expect(
             try invalid("[rules.off]\napp = [\n  \"com.figma.Desktop\",\n  \"com.figma.Desktop \",\n]\n")
                 == (
@@ -163,7 +163,10 @@ struct CheckWordingTests {
                 ))
         #expect(
             try invalid("websites = true\n\n[menu]\nlengths = [\"45m\"]\n")
-                == (.broken, "Line 3: lengths is a key of its own, before any table, not one under [menu]."))
+                == (
+                    .broken,
+                    "Line 3: `menu` isn’t a key here; use `websites`, `lengths`, `night_shift`, or `rules`."
+                ))
     }
 
     @Test func theAdHocRulesCheckCountsThemOrSaysWhyTheyAreOff() throws {

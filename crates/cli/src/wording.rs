@@ -268,9 +268,6 @@ fn problem(problem: &Problem) -> String {
             value_type(*found)
         ),
         Problem::MissingKey { table, key } => format!("`{}` is missing", dotted(table, key)),
-        Problem::UnsaidRules => {
-            "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned()
-        }
         Problem::NotABundleId { entry } => not_a_bundle_id(entry),
         Problem::NotADomain { entry } => not_a_domain(entry),
         Problem::BothWays { identity } => {
@@ -285,9 +282,6 @@ fn problem(problem: &Problem) -> String {
         Problem::NotLengths { lengths } => format!(
             "lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not {lengths:?}"
         ),
-        Problem::LengthsUnderMenu => {
-            "lengths is a key of its own, before any table, not one under [menu]".to_owned()
-        }
     }
 }
 
@@ -1267,8 +1261,12 @@ mod tests {
                 "`version` is missing",
             ),
             (
-                Problem::UnsaidRules,
-                "rules are listed by what they say, under [rules.off] and [rules.on]",
+                Problem::UnknownKey {
+                    table: keys(&["rules"]),
+                    key: "app".to_owned(),
+                    expected: keys(&["off", "on"]),
+                },
+                "`rules.app` isn't a key here; use `off` or `on`",
             ),
             (
                 Problem::NotABundleId {
@@ -1305,8 +1303,12 @@ mod tests {
                 "lengths are like \"30m\", \"1h\" or \"1h30m\", from a minute to a day, not [\"45m\", \"forever\"]",
             ),
             (
-                Problem::LengthsUnderMenu,
-                "lengths is a key of its own, before any table, not one under [menu]",
+                Problem::UnknownKey {
+                    table: Vec::new(),
+                    key: "menu".to_owned(),
+                    expected: keys(&["websites", "lengths", "night_shift", "rules"]),
+                },
+                "`menu` isn't a key here; use `websites`, `lengths`, `night_shift` or `rules`",
             ),
         ] {
             assert_eq!(problem(&found), said, "{found:?}");

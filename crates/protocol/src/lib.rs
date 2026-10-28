@@ -900,9 +900,6 @@ pub enum Problem {
     },
     /// A key its table must have, which it lacks: the keys that lead to the table, and the key.
     MissingKey { table: Vec<String>, key: String },
-    /// Rules straight under `[rules]`, which names no say: they're listed under `[rules.off]`
-    /// and `[rules.on]` (ADR-0006).
-    UnsaidRules,
     /// An app's entry that isn't a bundle ID: letters, digits, hyphens and periods.
     NotABundleId { entry: String },
     /// A site's entry that isn't a bare domain: no scheme, path, port or wildcard.
@@ -917,8 +914,6 @@ pub enum Problem {
     /// `lengths` that aren't each from a minute to a day in whole minutes, or that are none
     /// (ADR-0018).
     NotLengths { lengths: Vec<String> },
-    /// `lengths` under a `[menu]` table, where it's a key of its own, before any table.
-    LengthsUnderMenu,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1613,15 +1608,6 @@ mod tests {
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
                     path: config.clone(),
-                    line: 2,
-                    problem: Problem::UnsaidRules,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"problem":"unsaid_rules"}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
                     line: 7,
                     problem: Problem::BothWays {
                         identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
@@ -1643,7 +1629,7 @@ mod tests {
             ),
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
+                    path: config,
                     line: 1,
                     problem: Problem::NotLengths {
                         lengths: vec!["45m".to_owned(), "forever".to_owned()],
@@ -1651,15 +1637,6 @@ mod tests {
                 })),
                 CheckState::Broken,
                 r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":1,"problem":{"not_lengths":{"lengths":["45m","forever"]}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config,
-                    line: 3,
-                    problem: Problem::LengthsUnderMenu,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":"lengths_under_menu"}}},"state":"broken"}"#,
             ),
             (
                 CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {

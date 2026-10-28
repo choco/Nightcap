@@ -108,7 +108,6 @@ extension Wording {
         case .wrongType(let table, let key, let found, let expected):
             text("`\(dotted(table, key))` is \(valueType(expected)), not \(valueType(found))")
         case .missingKey(let table, let key): text("`\(dotted(table, key))` is missing")
-        case .unsaidRules: text("rules are listed by what they say, under [rules.off] and [rules.on]")
         case .notABundleId(let entry):
             text("“\(entry)” isn’t a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods")
         case .notADomain(let entry):
@@ -126,7 +125,6 @@ extension Wording {
                 """)
         case .notLengths:
             text("lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at least one")
-        case .lengthsUnderMenu: text("lengths is a key of its own, before any table, not one under [menu]")
         }
     }
 

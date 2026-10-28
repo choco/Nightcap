@@ -637,6 +637,7 @@ fn a_config_that_cant_be_is_refused() {
     let lengths = |lengths: &[&str]| Problem::NotLengths {
         lengths: lengths.iter().map(|length| (*length).to_owned()).collect(),
     };
+    let strings = |items: &[&str]| items.iter().map(|item| (*item).to_owned()).collect();
     for (config, why) in [
         (
             "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.figma.desktop\"]\n",
@@ -644,7 +645,11 @@ fn a_config_that_cant_be_is_refused() {
         ),
         (
             "[rules]\napp = [\"com.figma.Desktop\"]\n",
-            Problem::UnsaidRules,
+            Problem::UnknownKey {
+                table: strings(&["rules"]),
+                key: "app".to_owned(),
+                expected: strings(&["off", "on"]),
+            },
         ),
         (
             "lengths = [\"45m\", \"forever\"]\n",
@@ -652,7 +657,14 @@ fn a_config_that_cant_be_is_refused() {
         ),
         ("lengths = [\"30s\"]\n", lengths(&["30s"])),
         ("lengths = []\n", lengths(&[])),
-        ("[menu]\nlengths = [\"45m\"]\n", Problem::LengthsUnderMenu),
+        (
+            "[menu]\nlengths = [\"45m\"]\n",
+            Problem::UnknownKey {
+                table: Vec::new(),
+                key: "menu".to_owned(),
+                expected: strings(&["websites", "lengths", "night_shift", "rules"]),
+            },
+        ),
         (
             "[rules.off]\napp = [\"com.figma.Desktop \"]\n",
             Problem::NotABundleId {

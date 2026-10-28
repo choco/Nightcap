@@ -1782,9 +1782,6 @@
     "lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at least one" : {
 
     },
-    "lengths is a key of its own, before any table, not one under [menu]" : {
-
-    },
     "macOS asks you to allow it, once." : {
 
     },
@@ -1822,9 +1819,6 @@
 
     },
     "opening at login" : {
-
-    },
-    "rules are listed by what they say, under [rules.off] and [rules.on]" : {
 
     },
     "the config file" : {

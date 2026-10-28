@@ -101,11 +101,6 @@ impl<'a, 'i> Table<'a, 'i> {
         }
     }
 
-    /// Where `key`'s value is, whatever it is.
-    pub(crate) fn span(&self, key: &str) -> Option<Range<usize>> {
-        self.entries.get(key).map(Spanned::span)
-    }
-
     pub(crate) fn boolean(&self, key: &str) -> Read<bool> {
         self.read(key, ValueType::Boolean, DeValue::as_bool)
     }

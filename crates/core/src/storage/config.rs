@@ -91,9 +91,6 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, ConfigError> {
 
 /// What a well-formed config declares, once it's checked, or its first problem and where it is.
 fn read(top: Table<'_, '_>) -> Result<Config, Spanned<Problem>> {
-    if let Some(menu) = top.span("menu") {
-        return Err(Spanned::new(menu, Problem::LengthsUnderMenu));
-    }
     let top = top.taking(&["websites", "lengths", "night_shift", "rules"])?;
     let websites = top.boolean("websites")?.map(Spanned::into_inner);
     let rules = rules(top.table("rules")?)?;
@@ -136,9 +133,6 @@ fn rules(table: Option<Table<'_, '_>>) -> Result<Vec<(RuleIdentity, OnOff)>, Spa
     let Some(table) = table else {
         return Ok(Vec::new());
     };
-    if let Some(unsaid) = table.span("app").or_else(|| table.span("domain")) {
-        return Err(Spanned::new(unsaid, Problem::UnsaidRules));
-    }
     let table = table.taking(&["off", "on"])?;
     let mut rules: Vec<(RuleIdentity, OnOff)> = Vec::new();
     for (says, key) in [(OnOff::Off, "off"), (OnOff::On, "on")] {

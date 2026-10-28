@@ -192,7 +192,6 @@ pub enum Problem {
         table: Vec<String>,
         key: String,
     },
-    UnsaidRules,
     NotABundleId {
         entry: String,
     },
@@ -211,7 +210,6 @@ pub enum Problem {
     NotLengths {
         lengths: Vec<String>,
     },
-    LengthsUnderMenu,
 }
 
 #[uniffi::remote(Enum)]

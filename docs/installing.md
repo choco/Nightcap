@@ -58,7 +58,7 @@ schedule = "sunset-to-sunrise"
 
 A rule under `[rules.off]` keeps Night Shift off while its app is in front, or its site in a browser Nightcap watches; one under `[rules.on]` keeps it on, even by day. An app or domain can be in one list only. A domain rule covers the domain and any subdomain: `figma.com` covers `www.figma.com`, but not `notfigma.com`. Where two cover a site, the longer one decides, and a site's rule decides over its browser's. Write domains bare, with no scheme, path, port or wildcard. Domain rules apply while website checking is on, which the user chooses in onboarding or Settings unless the config sets `websites`. Website checking needs the Accessibility permission, which Nightcap asks for when it's turned on.
 
-`[rules]` with `app` and `domain` directly under it, as earlier versions read, is an error: list those rules under `[rules.off]`. `lengths`, before any table, sets the lengths a change can be picked for in the menu, written as `30m`, `1h` or `1h30m`, from a minute to a day; without it they're 30 minutes, 1 hour and 2 hours. `lengths` under `[menu]`, as earlier versions read it, is an error.
+`lengths`, before any table, sets the lengths a change can be picked for in the menu, written as `30m`, `1h` or `1h30m`, from a minute to a day; without it they're 30 minutes, 1 hour and 2 hours.
 
 Rules added while Nightcap runs, with `nightcap rules add`, from the menu or in Settings, live in `rules.toml`. `nightcap rules export --format nix` (or `toml`), or Settings' "Copy", gives them ready to paste into the config; once the config has a rule, Nightcap drops its own copy.
 
