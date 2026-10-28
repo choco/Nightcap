@@ -95,9 +95,6 @@ pub enum Effect {
     ShowOnboarding {
         completed: u32,
     },
-    /// Asks for Accessibility, which website checking needs: the macOS prompt, or the pane in
-    /// System Settings once Nightcap has an entry there (ADR-0012).
-    AskForAccessibility,
     /// Watches this browser's host, replacing any earlier watch; reports carry `generation`.
     WatchBrowser {
         bundle_id: String,

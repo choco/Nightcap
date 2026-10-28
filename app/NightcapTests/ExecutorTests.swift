@@ -118,8 +118,7 @@ struct ExecutorTests {
                 .watchBrowser(bundleId: "com.apple.Safari", generation: 1), .setNightShift(enabled: false),
                 .setSchedule(schedule: customHours), .setStrength(value: 40, commit: false),
                 .scheduleWakeup(at: sunrise), .cancelWakeup, .stopWatching, .registerLoginItem,
-                .unregisterLoginItem, .startUpdater, .checkForUpdates, .askForAccessibility,
-                .showOnboarding(completed: 0)))
+                .unregisterLoginItem, .startUpdater, .checkForUpdates, .showOnboarding(completed: 0)))
         await mainQueueTurns()
 
         #expect(
@@ -127,7 +126,7 @@ struct ExecutorTests {
                 .watch("com.apple.Safari", generation: 1), .setNightShift(false), .setSchedule(customHours),
                 .setStrength(40, commit: false), .scheduleWakeup(sunrise), .cancelWakeup, .stopWatching,
                 .registerLoginItem, .rereadLoginItem, .unregisterLoginItem, .rereadLoginItem, .startUpdater,
-                .checkForUpdates, .askForAccessibility, .showOnboarding, .redraw,
+                .checkForUpdates, .showOnboarding, .redraw,
             ])
     }
 

@@ -4,7 +4,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{Effect, Event, Fact, Outcome, Scenario, Staged};
+use nightcap_core::{Event, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{
     AccessibilityDetail, Check, CheckDetail, CheckState, Command, ConfigFileDetail, FileError,
     NightShiftDetail, NotificationPermission, OnOff, Request, Schedule,
@@ -54,7 +54,6 @@ fn a_problem_the_user_causes_in_nightcap_is_not_announced() {
     staged.report(permissions(false, NotificationPermission::Granted));
 
     let (outcome, _) = staged.send(Command::Websites(OnOff::On));
-    assert!(outcome.effects.contains(&Effect::AskForAccessibility));
     assert!(!tells(&outcome));
     assert!(!tells(
         &staged.report(permissions(false, NotificationPermission::Granted))

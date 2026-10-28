@@ -10,8 +10,7 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, Lasting, NotificationPermission, OnOff, Place, Reason, Refusal, RuleIdentity,
-    WebsiteChecking,
+    Command, Lasting, OnOff, Place, Reason, Refusal, RuleIdentity, WebsiteChecking,
 };
 
 use common::{
@@ -219,19 +218,6 @@ fn the_config_decides_website_checking_when_it_sets_it() {
             from_config: true,
         }
     );
-}
-
-#[test]
-fn turning_website_checking_on_without_accessibility_asks_for_it() {
-    let staged = noon().stage().unwrap();
-    staged.report(Fact::PermissionsChanged {
-        accessibility: false,
-        notifications: NotificationPermission::Granted,
-    });
-
-    let (effects, _) = send(&staged, Command::Websites(OnOff::On));
-
-    assert_eq!(effects, vec![Effect::AskForAccessibility]);
 }
 
 fn safari() -> RuleIdentity {

@@ -153,8 +153,6 @@ final class Executor {
         // Version 1 is the only onboarding so far, so `completed` is always 0.
         case .showOnboarding:
             showOnboarding()
-        case .askForAccessibility:
-            accessibility.ask()
         case .watchBrowser(let bundleId, let generation):
             browser.watch(bundleId: bundleId, generation: generation)
         case .stopWatching:

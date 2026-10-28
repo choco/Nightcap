@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var core: Core?
     private var reporter: Reporter?
     private var executor: Executor?
+    private var accessibilityAsk: AccessibilityAsk?
     private lazy var notifications = Notifications()
     private lazy var nightShift = NightShiftAdapter { [weak self] status in self?.reporter?.reportNightShift(status) }
     private lazy var accessibility = AccessibilityPermission { [weak self] _ in
@@ -80,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.core = core
         self.reporter = reporter
         self.executor = executor
+        accessibilityAsk = AccessibilityAsk(core.snapshot())
         executor.onEvent { [notifications] event in notifications.tell(event) }
         executor.onChange { [weak self] in self?.refresh() }
         reporter.launch()
@@ -276,11 +278,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// After each outcome, whichever fact or command it answers, the CLI's included, from one
     /// snapshot, so the menu, Settings, onboarding and the tour all show the same input's
-    /// answers. The menu-bar item appears once onboarding is finished; onboarding asks for
-    /// notifications itself, and without it they're asked for as the item first appears.
+    /// answers. Accessibility is asked for as website checking turns on without it. The menu-bar
+    /// item appears once onboarding is finished; onboarding asks for notifications itself, and
+    /// without it they're asked for as the item first appears.
     private func refresh() {
-        guard let core, let reporter else { return }
+        guard let core, let reporter, let executor else { return }
         let snapshot = core.snapshot()
+        if accessibilityAsk?.isDue(after: snapshot) == true { executor.perform(.askForAccessibility) }
         if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
             showStatusMenu(snapshot)
             reporter.askForNotifications()

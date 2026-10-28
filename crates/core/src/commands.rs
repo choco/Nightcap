@@ -154,15 +154,7 @@ impl Inner {
                     Ok(())
                 }
             },
-            Command::Websites(chosen) => {
-                let on = *chosen == OnOff::On;
-                let turned_on = on && !self.facts.website_checking();
-                self.set_websites(on).map(|()| {
-                    if turned_on && self.grants.accessibility != Some(true) {
-                        effects.push(Effect::AskForAccessibility);
-                    }
-                })
-            }
+            Command::Websites(chosen) => self.set_websites(*chosen == OnOff::On),
             Command::Reload => {
                 return self
                     .reload(effects)

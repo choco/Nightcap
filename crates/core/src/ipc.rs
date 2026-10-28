@@ -168,7 +168,7 @@ mod tests {
     use crate::server::mailbox::{Mail, Mailbox};
     use crate::server::snapshot::{Published, Snapshot};
     use crate::server::tests::{ChannelListener, noon};
-    use crate::{Core, CoreError, Effect, Outcome};
+    use crate::{Core, CoreError, Outcome};
 
     /// The socket, in a folder that serving creates.
     fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
@@ -454,10 +454,7 @@ mod tests {
         ));
         assert_eq!(
             outcomes.recv_timeout(Duration::from_secs(5)).unwrap(),
-            Outcome {
-                effects: vec![Effect::AskForAccessibility],
-                events: Vec::new(),
-            }
+            Outcome::default()
         );
         assert_eq!(
             core.snapshot().preferences().website_checking.state,
