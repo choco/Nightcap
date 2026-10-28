@@ -428,6 +428,7 @@ pub struct TrialState {
 pub struct About {
     pub version: String,
     pub install: Install,
+    pub manages_itself: bool,
 }
 
 #[uniffi::remote(Enum)]

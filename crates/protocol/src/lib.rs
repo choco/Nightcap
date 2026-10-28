@@ -427,6 +427,10 @@ pub struct TrialState {
 pub struct About {
     pub version: String,
     pub install: Install,
+    /// A self-managed release, which updates itself and opens itself at login if the user
+    /// wants: an installer owns a managed install, and a dev build would shadow the installed
+    /// app (ADR-0011).
+    pub manages_itself: bool,
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
@@ -1321,8 +1325,9 @@ mod tests {
                 Answer::About(About {
                     version: "1.2.0".to_owned(),
                     install: Install::SelfManaged,
+                    manages_itself: true,
                 }),
-                r#"{"about":{"version":"1.2.0","install":"self_managed"}}"#,
+                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true}}"#,
             ),
         ];
 

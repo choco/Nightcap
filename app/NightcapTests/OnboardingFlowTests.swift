@@ -12,15 +12,16 @@ private final class Sent {
     var commands: [Command] = []
 }
 
-/// A self-managed release, or a managed install, that has read the Mac's Night Shift at a strength
-/// of 60 and found Nightcap not opening at login, with `config` as its config and `rules` as its
-/// ad-hoc rules file.
+/// A self-managed release, or a managed install, or the dev build as `bundleId`, that has read the
+/// Mac's Night Shift at a strength of 60 and found Nightcap not opening at login, with `config` as
+/// its config and `rules` as its ad-hoc rules file.
 private func core(
-    schedule: Schedule = .off, bundleWritable: Bool = true, config: String? = nil, rules: String? = nil
+    schedule: Schedule = .off, bundleId: String = "io.github.choco.nightcap", bundleWritable: Bool = true,
+    config: String? = nil, rules: String? = nil
 ) throws -> Core {
     try Core.staged(
         scenario: Scenario(
-            now: Date(), bundleWritable: bundleWritable, config: config, rules: rules,
+            now: Date(), bundleId: bundleId, bundleWritable: bundleWritable, config: config, rules: rules,
             steps: [
                 .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
                 .fact(.strengthChanged(value: 60)),
@@ -94,6 +95,7 @@ struct OnboardingFlowTests {
     @Test func onlyAnInstallThatOpensItselfAtLoginAsksToOpenAtLogin() throws {
         #expect(setup(try core()).opensAtLogin == false)
         #expect(setup(try core(bundleWritable: false)).opensAtLogin == nil)
+        #expect(setup(try core(bundleId: "io.github.choco.nightcap.dev")).opensAtLogin == nil)
     }
 
     @Test func aLoginItemRegisteredButWaitingForApprovalStartsOpeningAtLoginTicked() throws {

@@ -105,10 +105,9 @@ struct Settings: Equatable {
         let websites = preferences.websiteChecking
         let on = websites.state == .on
         websiteChecking = Switch(on: on, locked: websites.fromConfig, command: .websites(on ? .off : .on))
-        // Only an install that opens itself at login has the check. Registered but waiting for
-        // approval counts as on; its check explains the rest.
+        // Registered but waiting for approval counts as on; its check explains the rest.
         openAtLogin =
-            checks.contains(where: { $0.detail.kind == .openAtLogin })
+            snapshot.about().managesItself
             ? answered.permissions.loginItem.map { item in
                 let on = item != .notRegistered
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))

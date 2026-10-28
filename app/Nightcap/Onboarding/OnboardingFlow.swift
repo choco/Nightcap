@@ -448,8 +448,7 @@ extension OnboardingFlow.Setup {
         let asks = snapshot.preferences().onboardingAsks
         let askStrength = asks.strength
         let askSchedule = asks.schedule
-        // Only an install that opens itself at login has the check.
-        let opensItself = checks.checks.contains { $0.detail.kind == .openAtLogin }
+        let opensItself = snapshot.about().managesItself
         self.init(
             askStrength: askStrength,
             askSchedule: askSchedule,

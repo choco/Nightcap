@@ -552,6 +552,7 @@ fn about_answers_the_version_and_the_install() {
         About {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
+            manages_itself: false,
         }
     );
     assert_eq!(

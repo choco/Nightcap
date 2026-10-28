@@ -1169,6 +1169,7 @@ mod tests {
             about: About {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
+                manages_itself: true,
             },
             night_shift: NightShiftState {
                 state: NightShift::On,

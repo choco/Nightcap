@@ -123,6 +123,11 @@ fn only_an_install_that_updates_itself_opens_itself_at_login() {
         let (_, login) = send(&staged, Command::OpenAtLogin(OnOff::On));
 
         let case = format!("{instance:?}, {install:?}");
+        assert_eq!(
+            staged.core().snapshot().about().manages_itself,
+            manages_itself,
+            "{case}"
+        );
         assert_eq!(matches!(update, Response::Ok(_)), manages_itself, "{case}");
         assert_eq!(matches!(login, Response::Ok(_)), manages_itself, "{case}");
         assert_eq!(
