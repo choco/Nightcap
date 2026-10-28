@@ -127,7 +127,7 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
 
     assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        staged.core().night_shift().next_turn.map(|turn| turn.at),
+        staged.core().night_shift().next_transition(),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }

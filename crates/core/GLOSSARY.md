@@ -36,6 +36,9 @@ _Avoid_: layer
 **Place**:
 Where a rule applies: everywhere, the app in front, or the site in front. A site is a domain, covering its subdomains: the most specific one with a rule that covers the tab, else the tab's own domain.
 
+**Place in front**:
+A place that applies now: the site in front, the front app and everywhere, most specific first. Each gives its own say, else the one it inherits from the first place after it that says something, else Night Shift as last reported. What's in front answers how each stands: what it gives, what it inherits and from where, and what it would give once reset or without its rule until a time.
+
 **Deciding place**:
 The most specific place in front that says something: the site, then the app, then everywhere, which always does once the schedule is known. What it says is what Night Shift does.
 
@@ -148,4 +151,4 @@ _Avoid_: server, service
 A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
 
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift, what's in front and what decides there, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.

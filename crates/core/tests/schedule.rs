@@ -32,10 +32,7 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
 
     assert_eq!(staged.core().night_shift().state, NightShift::On);
     assert_eq!(staged.core().night_shift().schedule, None);
-    assert_eq!(
-        staged.core().night_shift().next_turn.map(|turn| turn.at),
-        None
-    );
+    assert_eq!(staged.core().night_shift().next_transition(), None);
     assert_eq!(staged.core().menu().night_shift.reason, None);
 }
 
@@ -46,7 +43,7 @@ fn night_shift_is_answered_with_the_schedule_what_it_says_and_its_next_turn() {
     assert_eq!(staged.core().night_shift().schedule, Some(custom_hours()));
     assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        staged.core().night_shift().next_turn.map(|turn| turn.at),
+        staged.core().night_shift().next_transition(),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }
@@ -135,10 +132,7 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
     });
 
     assert_eq!(staged.core().night_shift().scheduled, None);
-    assert_eq!(
-        staged.core().night_shift().next_turn.map(|turn| turn.at),
-        None
-    );
+    assert_eq!(staged.core().night_shift().next_transition(), None);
 }
 
 #[test]
@@ -186,8 +180,5 @@ fn turning_the_schedule_off_cancels_the_wakeup() {
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
     assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
-    assert_eq!(
-        staged.core().night_shift().next_turn.map(|turn| turn.at),
-        None
-    );
+    assert_eq!(staged.core().night_shift().next_transition(), None);
 }

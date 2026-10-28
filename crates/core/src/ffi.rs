@@ -8,10 +8,10 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ErrorCode,
-    ErrorReply, ExportFormat, FileError, Front, Install, Lasting, Length, NightShift,
+    ErrorReply, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length, NightShift,
     NightShiftDetail, NightShiftState, NotificationPermission, NotificationsDetail, OnOff,
-    OpenAtLoginDetail, Permissions, Place, Preferences, Reason, Rule, RuleIdentity, Schedule,
-    SetBy, TimeOfDay, TourState, Turn, WebsiteChecking,
+    OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Rule, RuleIdentity,
+    Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -273,13 +273,8 @@ pub struct NightShiftState {
     pub schedule: Option<Schedule>,
     pub set_aside: bool,
     pub scheduled: Option<OnOff>,
-    pub next_turn: Option<Turn>,
-}
-
-#[uniffi::remote(Record)]
-pub struct Turn {
-    pub at: Timestamp,
-    pub to: OnOff,
+    pub next_on: Option<Timestamp>,
+    pub next_off: Option<Timestamp>,
 }
 
 #[uniffi::remote(Record)]
@@ -289,6 +284,25 @@ pub struct Front {
     pub host: Option<String>,
     pub site: Option<Domain>,
     pub decision: Decision,
+    pub places: Vec<PlaceInFront>,
+    pub after_switch: Vec<Rule>,
+}
+
+#[uniffi::remote(Record)]
+pub struct PlaceInFront {
+    pub place: Place,
+    pub gives: OnOff,
+    pub rules: Vec<Rule>,
+    pub base: Option<Reason>,
+    pub inherits: Option<Inherited>,
+    pub after_until: Option<OnOff>,
+    pub after_reset: Option<OnOff>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Inherited {
+    pub from: Place,
+    pub says: OnOff,
 }
 
 #[uniffi::remote(Record)]

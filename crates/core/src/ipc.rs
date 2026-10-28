@@ -177,8 +177,9 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Command, Decision, ErrorCode, Front, Hello, HelloMessage, HelloReply, NightShift, OnOff,
-        PROTOCOL_VERSION, Payload, Place, Query, Request, Response,
+        Command, Decision, ErrorCode, Front, Hello, HelloMessage, HelloReply, Length, NightShift,
+        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule,
+        SetBy,
     };
 
     use super::{bind, serve};
@@ -405,6 +406,21 @@ mod tests {
                     place: Place::Everywhere,
                     reasons: Vec::new(),
                 },
+                places: vec![PlaceInFront {
+                    place: Place::Everywhere,
+                    gives: OnOff::Off,
+                    rules: Vec::new(),
+                    base: None,
+                    inherits: None,
+                    after_until: None,
+                    after_reset: None,
+                }],
+                after_switch: vec![Rule {
+                    place: Place::Everywhere,
+                    says: OnOff::On,
+                    length: Length::Indefinite,
+                    set_by: SetBy::You,
+                }],
             }))
         );
         let Response::Ok(Payload::NightShift(night_shift)) = night_shift.join().unwrap() else {

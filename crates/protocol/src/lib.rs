@@ -14,7 +14,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -254,17 +254,20 @@ pub struct NightShiftState {
     /// What the schedule says now; None while the schedule, or the sun times it needs, aren't
     /// known.
     pub scheduled: Option<OnOff>,
-    /// The schedule's next transition; None while none is coming, or while the sun times it
-    /// needs aren't known.
-    pub next_turn: Option<Turn>,
+    /// When the schedule next turns Night Shift on, at sunset or as custom hours start, which
+    /// ends a rule until the schedule turns that says off (ADR-0018). None while no such turn is
+    /// coming, or while the sun times it needs aren't known.
+    pub next_on: Option<Timestamp>,
+    /// When the schedule next turns Night Shift off, at sunrise or as custom hours end, which
+    /// ends a rule until the schedule turns that says on.
+    pub next_off: Option<Timestamp>,
 }
 
-/// A schedule transition: when, and which way it turns Night Shift. Sunset to sunrise turning
-/// it off is sunrise.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Turn {
-    pub at: Timestamp,
-    pub to: OnOff,
+impl NightShiftState {
+    /// The schedule's next transition, whichever way it turns Night Shift.
+    pub fn next_transition(&self) -> Option<Timestamp> {
+        self.next_on.into_iter().chain(self.next_off).min()
+    }
 }
 
 /// What's in front, and what decides Night Shift there (ADR-0018).
@@ -282,6 +285,41 @@ pub struct Front {
     /// What's in effect: the deciding place, what it says, and by which rule, else the tour
     /// standing in or the schedule.
     pub decision: Decision,
+    /// The places in front, most specific first, each as it stands: the site in front and the
+    /// front app where there are, then everywhere, which always is.
+    pub places: Vec<PlaceInFront>,
+    /// Everywhere's rules after the switch the other way from what it gives: the ones that say
+    /// that way, else the indefinite rule it sets where the tour or the schedule still says
+    /// otherwise (ADR-0018).
+    pub after_switch: Vec<Rule>,
+}
+
+/// A place in front as it stands (ADR-0018): what it gives, what a reset takes off there and
+/// leaves, and what it inherits from the places in front after it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlaceInFront {
+    pub place: Place,
+    /// Its own say, else the one it inherits, else Night Shift as last reported.
+    pub gives: OnOff,
+    /// What a reset takes off, shortest first: its temporary rules, and everywhere's
+    /// indefinite one.
+    pub rules: Vec<Rule>,
+    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the tour
+    /// standing in, else the schedule.
+    pub base: Option<Reason>,
+    /// The first less specific place in front that says something, and what it says.
+    pub inherits: Option<Inherited>,
+    /// What it gives under its rule until a time, if anything says something there or after it.
+    pub after_until: Option<OnOff>,
+    /// What it gives once reset: its base's say, else the one it inherits.
+    pub after_reset: Option<OnOff>,
+}
+
+/// What a place in front inherits: a less specific place's say.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Inherited {
+    pub from: Place,
+    pub says: OnOff,
 }
 
 /// The config as Nightcap last read it, and why it or `rules.toml` can't be used (ADR-0007).
@@ -919,6 +957,12 @@ mod tests {
             assert_eq!(json(&Request::Query(query)), wire);
         }
         let figma = || Place::Domain("figma.com".parse().unwrap());
+        let figma_rule = || Rule {
+            place: figma(),
+            says: OnOff::Off,
+            length: Length::Indefinite,
+            set_by: SetBy::Config,
+        };
         let answers = [
             (
                 Payload::NightShift(NightShiftState {
@@ -933,12 +977,10 @@ mod tests {
                     }),
                     set_aside: false,
                     scheduled: Some(OnOff::Off),
-                    next_turn: Some(Turn {
-                        at: "2026-10-16T20:00:00Z".parse().unwrap(),
-                        to: OnOff::On,
-                    }),
+                    next_on: Some("2026-10-16T20:00:00Z".parse().unwrap()),
+                    next_off: Some("2026-10-17T05:00:00Z".parse().unwrap()),
                 }),
-                r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_turn":{"at":"2026-10-16T20:00:00Z","to":"on"}}}"#,
+                r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"}}"#,
             ),
             (
                 Payload::Front(Front {
@@ -949,15 +991,54 @@ mod tests {
                     decision: Decision {
                         state: Some(OnOff::Off),
                         place: figma(),
-                        reasons: vec![Reason::Rule(Rule {
-                            place: figma(),
-                            says: OnOff::Off,
-                            length: Length::Indefinite,
-                            set_by: SetBy::Config,
-                        })],
+                        reasons: vec![Reason::Rule(figma_rule())],
                     },
+                    places: vec![
+                        PlaceInFront {
+                            place: figma(),
+                            gives: OnOff::Off,
+                            rules: Vec::new(),
+                            base: Some(Reason::Rule(figma_rule())),
+                            inherits: Some(Inherited {
+                                from: Place::Everywhere,
+                                says: OnOff::On,
+                            }),
+                            after_until: Some(OnOff::Off),
+                            after_reset: Some(OnOff::Off),
+                        },
+                        PlaceInFront {
+                            place: Place::App("com.apple.Safari".parse().unwrap()),
+                            gives: OnOff::On,
+                            rules: Vec::new(),
+                            base: None,
+                            inherits: Some(Inherited {
+                                from: Place::Everywhere,
+                                says: OnOff::On,
+                            }),
+                            after_until: Some(OnOff::On),
+                            after_reset: Some(OnOff::On),
+                        },
+                        PlaceInFront {
+                            place: Place::Everywhere,
+                            gives: OnOff::On,
+                            rules: Vec::new(),
+                            base: Some(Reason::Schedule {
+                                state: OnOff::On,
+                                until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
+                            }),
+                            inherits: None,
+                            after_until: Some(OnOff::On),
+                            after_reset: Some(OnOff::On),
+                        },
+                    ],
+                    after_switch: vec![Rule {
+                        place: Place::Everywhere,
+                        says: OnOff::Off,
+                        length: Length::Indefinite,
+                        set_by: SetBy::You,
+                    }],
                 }),
-                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]}}}"#,
+                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"},"after_until":"off","after_reset":"off"},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"},"after_until":"on","after_reset":"on"},{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null,"after_until":"on","after_reset":"on"}],"after_switch":[{"place":"everywhere","says":"off","length":"indefinite","set_by":"you"}]}}"#,
             ),
             (
                 Payload::Config(ConfigState {

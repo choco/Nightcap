@@ -277,11 +277,7 @@ pub(crate) fn print_status(report: &Report) {
         (Some(Schedule::Off), _) | (None, _) => String::new(),
         (Some(_), None) => ", waiting for sun times".to_owned(),
         (Some(_), Some(scheduled)) => {
-            format!(
-                ", {}{}",
-                scheduled,
-                until(night_shift.next_turn.map(|turn| turn.at))
-            )
+            format!(", {}{}", scheduled, until(night_shift.next_transition()))
         }
     };
     let accessibility = if checks.permissions.accessibility {

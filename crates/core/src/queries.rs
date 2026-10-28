@@ -4,10 +4,11 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    About, Checks, ConfigState, FileError, Front, NightShiftState, OnOff, Permissions, Place,
-    Preferences, Reason, Rule, Schedule, TourState, Turn, WebsiteChecking,
+    About, Checks, ConfigState, FileError, Front, Inherited, NightShiftState, OnOff, Permissions,
+    Place, PlaceInFront, Preferences, Reason, Rule, Schedule, TourState, WebsiteChecking,
 };
 
+use crate::rules::places::PlaceLook;
 use crate::server::state::Inner;
 use crate::storage::file::File;
 
@@ -39,14 +40,9 @@ impl Answers {
                 scheduled: timeline
                     .scheduled_state(facts.applied_until)
                     .map(OnOff::from),
-                next_turn: timeline
-                    .next_transition(facts.applied_until)
-                    .and_then(|at| {
-                        timeline.scheduled_state(at).map(|on| Turn {
-                            at,
-                            to: OnOff::from(on),
-                        })
-                    }),
+                // A turn on is what ends an off, and a turn off what ends an on.
+                next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
+                next_off: timeline.next_turn(facts.applied_until, OnOff::On),
             },
             front: Front {
                 app: facts.context.app.clone(),
@@ -61,6 +57,14 @@ impl Answers {
                     Place::Everywhere | Place::App(_) => None,
                 }),
                 decision: look.decision.clone(),
+                places: look
+                    .site
+                    .iter()
+                    .chain(&look.app)
+                    .chain([&look.everywhere])
+                    .map(in_front)
+                    .collect(),
+                after_switch: look.after_switch.clone(),
             },
             rules: inner.every_rule(now),
             config: ConfigState {
@@ -98,6 +102,22 @@ impl Answers {
                 install: inner.install,
             },
         }
+    }
+}
+
+/// A place in front as `front()` answers it.
+fn in_front(at: &PlaceLook) -> PlaceInFront {
+    PlaceInFront {
+        place: at.place.clone(),
+        gives: at.gives,
+        rules: at.rules.clone(),
+        base: at.base.clone(),
+        inherits: at
+            .inherits
+            .clone()
+            .map(|(from, says)| Inherited { from, says }),
+        after_until: at.after_until,
+        after_reset: at.after_reset,
     }
 }
 
