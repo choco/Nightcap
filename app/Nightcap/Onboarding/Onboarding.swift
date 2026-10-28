@@ -372,7 +372,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                         ? option(
                             title, words.whatNotificationsTell(switchedOff: true),
                             button: Look.button(words.openNotificationSettings, .regular) {
-                                NSWorkspace.shared.open(CoreHost.notificationSettings)
+                                SystemSettings().open(.notifications)
                             })
                         : option(
                             title, words.whatNotificationsTell(switchedOff: false), ticked: flow.wantsNotifications,

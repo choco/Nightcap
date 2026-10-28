@@ -9,7 +9,7 @@ import notify
 /// the result from `tccd`, already correct when the notification arrives. `AXIsProcessTrusted()`
 /// answers from an in-process cache refreshed by `com.apple.accessibility.api`, which System
 /// Settings posts before `tccd` writes, so it can keep the old answer; it's only the fallback.
-final class AccessibilityPermission {
+final class AccessibilityPermission: AccessibilityAsking {
     private(set) var granted: Bool
     private let onChange: (Bool) -> Void
     private var token = NOTIFY_TOKEN_INVALID

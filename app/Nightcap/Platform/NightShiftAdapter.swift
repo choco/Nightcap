@@ -6,7 +6,7 @@ import os
 /// Drives Night Shift through the private CoreBrightness framework. Everything is looked up at
 /// runtime and checked against the method signatures seen on macOS 15 and 27, so an OS update
 /// that changes them leaves Night Shift unavailable instead of crashing (ADR-0004).
-final class NightShiftAdapter {
+final class NightShiftAdapter: NightShiftWriting {
     struct Status {
         var enabled: Bool
         var schedule: Schedule
