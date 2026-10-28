@@ -15,7 +15,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -391,21 +391,6 @@ pub struct Preferences {
     pub notifications_wanted: bool,
     /// Whether the user wants Nightcap to open at login (ADR-0011).
     pub open_at_login: bool,
-    /// The last onboarding version the user went through, 0 for none.
-    pub onboarding_completed: u32,
-    /// Whether that's the current one, or the config answered all it asks.
-    pub onboarding_finished: bool,
-    /// What onboarding's Night Shift steps ask (ADR-0014).
-    pub onboarding_asks: OnboardingAsks,
-}
-
-/// What onboarding's Night Shift steps ask, which the config can answer (ADR-0014).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OnboardingAsks {
-    /// How warm, unless the config sets it or the strength can't be read.
-    pub strength: bool,
-    /// When it comes on, unless the config sets it or Night Shift is unavailable.
-    pub schedule: bool,
 }
 
 /// The checks, and what macOS last reported behind them: the grants and the login item.
@@ -431,6 +416,10 @@ pub struct About {
     /// wants: an installer owns a managed install, and a dev build would shadow the installed
     /// app (ADR-0011).
     pub manages_itself: bool,
+    /// The last onboarding version the user went through as `state.json` kept it up to 1.2, 0
+    /// for none, which the app takes over the first time it has no record of its own. It goes in
+    /// the release after next, once every install has run one that answers it.
+    pub legacy_onboarding: u32,
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
@@ -1308,14 +1297,8 @@ mod tests {
                     },
                     notifications_wanted: true,
                     open_at_login: false,
-                    onboarding_completed: 1,
-                    onboarding_finished: true,
-                    onboarding_asks: OnboardingAsks {
-                        strength: false,
-                        schedule: true,
-                    },
                 }),
-                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true,"onboarding_asks":{"strength":false,"schedule":true}}}"#,
+                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false}}"#,
             ),
             (
                 Answer::Checks(Checks {
@@ -1341,8 +1324,9 @@ mod tests {
                     version: "1.2.0".to_owned(),
                     install: Install::SelfManaged,
                     manages_itself: true,
+                    legacy_onboarding: 1,
                 }),
-                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true}}"#,
+                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true,"legacy_onboarding":1}}"#,
             ),
         ];
 

@@ -170,12 +170,12 @@ mod tests {
 
     /// What `nightcap status --json` prints: each answer under its query's name.
     const STATUS: &str = concat!(
-        r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true},"#,
+        r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true,"legacy_onboarding":1},"#,
         r#""night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"},"#,
         r#""front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":null,"inherits":null}},"#,
         r#""rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config","snooze":null}],"#,
         r#""config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":null},"#,
-        r#""preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true,"onboarding_asks":{"strength":false,"schedule":true}},"#,
+        r#""preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false},"#,
         r#""checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
     );
 

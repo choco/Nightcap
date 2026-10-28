@@ -6,32 +6,35 @@ import NightcapCore
 /// for, nor the website checking onboarding turns on as it finishes, whose own page offers the
 /// grant.
 struct AccessibilityAsk {
-    /// What decides whether to ask, as one snapshot shows it.
-    private struct Seen {
-        /// Website checking as the user chose it, or nil while the config sets it.
-        let chosen: OnOff?
-        let onboardingFinished: Bool
-
-        init(_ snapshot: Snapshot) {
-            let preferences = snapshot.preferences()
-            let websites = preferences.websiteChecking
-            chosen = websites.fromConfig ? nil : websites.state
-            onboardingFinished = preferences.onboardingFinished
-        }
-    }
-
-    private var seen: Seen
+    /// Website checking as the user chose it, as the latest snapshot shows it, or nil while the
+    /// config sets it.
+    private var chosen: OnOff?
+    /// Onboarding sent website checking on as it finished, while the latest snapshot had it off:
+    /// the first snapshot to show it changed is onboarding's doing.
+    private var awaitingOnboarding = false
 
     /// From `snapshot`, the core as the app starts it, which asks for nothing itself.
     init(_ snapshot: Snapshot) {
-        seen = Seen(snapshot)
+        chosen = Self.chosen(in: snapshot)
+    }
+
+    /// Onboarding finished and sent website checking on.
+    mutating func onboardingTurnedOn() {
+        awaitingOnboarding = chosen == .off
     }
 
     /// Whether to ask now that `snapshot` is the latest, which this then compares the next with.
     mutating func isDue(after snapshot: Snapshot) -> Bool {
-        let before = seen
-        seen = Seen(snapshot)
-        return before.chosen == .off && seen.chosen == .on && before.onboardingFinished == seen.onboardingFinished
-            && !snapshot.checks().permissions.accessibility
+        let before = chosen
+        chosen = Self.chosen(in: snapshot)
+        guard before == .off, chosen != .off else { return false }
+        let onboardings = awaitingOnboarding
+        awaitingOnboarding = false
+        return chosen == .on && !onboardings && !snapshot.checks().permissions.accessibility
+    }
+
+    private static func chosen(in snapshot: Snapshot) -> OnOff? {
+        let websites = snapshot.preferences().websiteChecking
+        return websites.fromConfig ? nil : websites.state
     }
 }

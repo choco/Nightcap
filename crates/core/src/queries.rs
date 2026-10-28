@@ -78,9 +78,6 @@ impl Answers {
                 },
                 notifications_wanted: inner.grants.notifications_wanted,
                 open_at_login: inner.grants.open_at_login,
-                onboarding_completed: inner.onboarding,
-                onboarding_finished: inner.onboarding_done(),
-                onboarding_asks: inner.onboarding_asks(),
             },
             checks: Checks {
                 checks: inner.checks(now),
@@ -97,6 +94,7 @@ impl Answers {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 install: inner.install,
                 manages_itself: inner.manages_itself,
+                legacy_onboarding: inner.legacy_onboarding,
             },
         }
     }

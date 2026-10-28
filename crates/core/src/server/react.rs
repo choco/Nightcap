@@ -108,7 +108,6 @@ impl Inner {
         match command {
             AppCommand::BeginTrial { stands_in } => self.places.begin_trial(stands_in),
             AppCommand::EndTrial => self.places.end_trial(self.clock.now()),
-            AppCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
         }
     }
 

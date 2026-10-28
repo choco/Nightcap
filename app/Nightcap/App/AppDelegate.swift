@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var reporter: Reporter?
     private var executor: Executor?
     private var accessibilityAsk: AccessibilityAsk?
+    private let onboardingRecord = OnboardingRecord(defaults: .standard)
     private lazy var notifications = Notifications()
     private lazy var nightShift = NightShiftAdapter { [weak self] status in self?.reporter?.reportNightShift(status) }
     private lazy var accessibility = AccessibilityPermission { [weak self] _ in
@@ -74,24 +75,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wakeups: WakeupTimer { reporter.wakeupCameDue() },
             browser: BrowserWatch { generation, host in reporter.reportHost(generation: generation, host: host) },
             accessibility: accessibility, notifications: reporter, systemSettings: SystemSettings(),
-            rereading: reporter, showOnboarding: { [weak self] in self?.showOnboarding() })
+            rereading: reporter)
         self.core = core
         self.reporter = reporter
         self.executor = executor
         accessibilityAsk = AccessibilityAsk(core.snapshot())
+        let onboardingRecord = onboardingRecord
+        onboardingRecord.takeOver(core.snapshot().about())
         let whatsNew = WhatsNew(defaults: .standard, words: .system)
         let announcer = Announcer(defaults: .standard, words: .system)
         executor.onEvent { [notifications] event in notifications.tell(event) }
+        // Ahead of the launch's onboarding below, which can record it as gone through, so what's
+        // new reads whether the user went through onboarding before this launch.
         executor.onChange { [notifications] cause, snapshot in
             if cause == .launch,
-                let notice = whatsNew.launched(
-                    snapshot.about(), onboarded: snapshot.preferences().onboardingFinished)
+                let notice = whatsNew.launched(snapshot.about(), onboarded: onboardingRecord.finished)
             {
                 notifications.post(notice)
             }
             announcer.heard(cause, snapshot).forEach { notifications.post($0) }
         }
-        executor.onChange { [weak self] _, snapshot in self?.refresh(snapshot) }
+        executor.onChange { [weak self] cause, snapshot in
+            if cause == .launch, onboardingRecord.launched(snapshot) { self?.showOnboarding(snapshot) }
+            self?.refresh(snapshot)
+        }
         reporter.launch()
         listenForShortcut()
     }
@@ -185,10 +192,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return Tour.Browser(bundleId: bundleId, name: Apps.name(at: url))
     }
 
-    private func showOnboarding() {
+    /// Onboarding, drawn first from `snapshot`, the launch's.
+    private func showOnboarding(_ snapshot: Snapshot) {
         guard let core, let reporter, let executor else { return }
         let onboarding = Onboarding(
-            core.snapshot(),
+            snapshot,
             icons: siteIcons,
             sun: nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
@@ -201,7 +209,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             askForNotifications: { reporter.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }
-                core.sendApp(command: .finishOnboarding(websites: websites))
+                log.info("onboarding finished")
+                if websites == .on { accessibilityAsk?.onboardingTurnedOn() }
+                onboardingRecord.finish()
                 self.onboarding = nil
                 reporter.watchPermissions(closely: false)
                 showStatusMenu(core.snapshot())
@@ -292,7 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refresh(_ snapshot: Snapshot) {
         guard let reporter, let executor else { return }
         if accessibilityAsk?.isDue(after: snapshot) == true { executor.perform(.askForAccessibility) }
-        if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
+        if statusMenu == nil, onboarding == nil, onboardingRecord.finished {
             showStatusMenu(snapshot)
             reporter.askForNotifications()
         }

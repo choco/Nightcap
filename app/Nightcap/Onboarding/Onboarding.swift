@@ -74,8 +74,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
     /// and has the rules and the grants as they stand; `now` is the time the stage's timeline
     /// marks; `shortcut` is the one Ready's menu shows; `choose` sends a command to the core, as
-    /// the menu does; `onFinish` runs once onboarding ends, by Done or the close button, with
-    /// whether the user chose website checking, or nil where the config sets it.
+    /// the menu does; `onFinish` runs once onboarding ends, by Done or the close button, with the
+    /// website checking it sent, if any.
     init(
         _ snapshot: Snapshot,
         icons: SiteIcons,
@@ -85,7 +85,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
         askForNotifications: @escaping () -> Void,
-        onFinish: @escaping (_ websites: Bool?) -> Void
+        onFinish: @escaping (_ websites: OnOff?) -> Void
     ) {
         // One place is kept for an app the user chooses.
         let words = self.words

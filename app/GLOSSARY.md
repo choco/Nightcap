@@ -18,7 +18,7 @@ The choice that macOS starts Nightcap at login, which a self-managed install car
 _Avoid_: launch at login
 
 **Onboarding**:
-The window that sets up Night Shift with the user, then takes them through each choice, grant and suggestion, once per onboarding version.
+The window that sets up Night Shift with the user, then takes them through each choice, grant and suggestion, once per onboarding version. The app keeps the version the user went through, and opens it at launch unless the config and the install answer all it would ask.
 _Avoid_: setup wizard, first run
 
 **Tour**:

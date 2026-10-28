@@ -10,9 +10,8 @@ use nightcap_protocol::{
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
     FileError, Front, Inherited, Install, Lasting, Length, ListedRule, LoginItem, NightShift,
     NightShiftDetail, NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail,
-    OnOff, OnboardingAsks, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences,
-    Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
-    WebsiteChecking,
+    OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Problem, Reason,
+    Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -383,15 +382,6 @@ pub struct Preferences {
     pub website_checking: WebsiteChecking,
     pub notifications_wanted: bool,
     pub open_at_login: bool,
-    pub onboarding_completed: u32,
-    pub onboarding_finished: bool,
-    pub onboarding_asks: OnboardingAsks,
-}
-
-#[uniffi::remote(Record)]
-pub struct OnboardingAsks {
-    pub strength: bool,
-    pub schedule: bool,
 }
 
 #[uniffi::remote(Record)]
@@ -430,6 +420,7 @@ pub struct About {
     pub version: String,
     pub install: Install,
     pub manages_itself: bool,
+    pub legacy_onboarding: u32,
 }
 
 #[uniffi::remote(Enum)]

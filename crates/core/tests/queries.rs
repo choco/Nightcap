@@ -11,8 +11,8 @@ use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
     Length, ListedRule, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff,
-    OnboardingAsks, Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule,
-    TrialState, WebsiteChecking,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
+    WebsiteChecking,
 };
 
 use common::{
@@ -409,9 +409,7 @@ fn config_answers_why_it_or_rules_toml_cant_be_used() {
 fn preferences_answer_the_users_choices() {
     let staged = noon()
         .then(permissions(true, NotificationPermission::Granted))
-        .then(AppCommand::FinishOnboarding {
-            websites: Some(true),
-        })
+        .then(Command::Websites(OnOff::On))
         .stage()
         .unwrap();
 
@@ -424,12 +422,6 @@ fn preferences_answer_the_users_choices() {
             },
             notifications_wanted: true,
             open_at_login: false,
-            onboarding_completed: 1,
-            onboarding_finished: true,
-            onboarding_asks: OnboardingAsks {
-                strength: false,
-                schedule: false,
-            },
         }
     );
     answers_alike(&staged);
@@ -439,21 +431,12 @@ fn preferences_answer_the_users_choices() {
 fn preferences_answer_website_checking_as_the_config_sets_it() {
     let staged = noon().config("websites = false\n").stage().unwrap();
 
-    let preferences = staged.core().snapshot().preferences();
-
     assert_eq!(
-        preferences.website_checking,
+        staged.core().snapshot().preferences().website_checking,
         WebsiteChecking {
             state: OnOff::Off,
             from_config: true,
         }
-    );
-    assert_eq!(
-        (
-            preferences.onboarding_completed,
-            preferences.onboarding_finished
-        ),
-        (0, false)
     );
 }
 
@@ -553,6 +536,7 @@ fn about_answers_the_version_and_the_install() {
             version: env!("CARGO_PKG_VERSION").to_owned(),
             install: Install::Managed,
             manages_itself: false,
+            legacy_onboarding: 0,
         }
     );
     assert_eq!(

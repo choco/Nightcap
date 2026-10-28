@@ -131,18 +131,19 @@ final class OnboardingFlow {
     private var rules: [ListedRule]
     /// The grants, as the snapshot onboarding last took has them.
     private var permissions: Permissions
+    /// Whether the config sets website checking, as the snapshot onboarding last took has it.
+    private var configSetsWebsites: Bool
     private let words: Wording
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
     private let askForNotifications: () -> Void
-    private let onFinish: (_ websites: Bool?) -> Void
+    private let onFinish: (_ websites: OnOff?) -> Void
 
     /// `snapshot` is the core as onboarding opens, which decides what onboarding asks this user
     /// and has the rules and the grants as they stand. `apps` are the bundle IDs of the suggested
     /// apps the grid shows, and `sites` the suggested sites' domains; `words` say where a rule
     /// comes from; `choose` sends a command to the core, as the menu does; `onFinish` runs once
-    /// onboarding finishes, with whether the user chose website checking, or nil where the config
-    /// sets it.
+    /// onboarding finishes, with the website checking it sent, if any.
     init(
         _ snapshot: Snapshot,
         apps: [String],
@@ -151,11 +152,12 @@ final class OnboardingFlow {
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
         askForNotifications: @escaping () -> Void,
-        onFinish: @escaping (_ websites: Bool?) -> Void
+        onFinish: @escaping (_ websites: OnOff?) -> Void
     ) {
         setup = Setup(snapshot)
         rules = snapshot.rules()
         permissions = snapshot.checks().permissions
+        configSetsWebsites = setup.websitesFromConfig != nil
         self.words = words
         self.askForAccessibility = askForAccessibility
         self.choose = choose
@@ -186,6 +188,7 @@ final class OnboardingFlow {
     func refresh(_ snapshot: Snapshot) {
         rules = snapshot.rules()
         permissions = snapshot.checks().permissions
+        configSetsWebsites = snapshot.config().websites != nil
         if step != .websites, page == .accessibility, accessibilityGranted {
             waitingForAccessibility = false
             page = .sites
@@ -337,10 +340,15 @@ final class OnboardingFlow {
         }
     }
 
-    /// Onboarding ends, by Done or the close button, with what was chosen so far: website
-    /// checking only where onboarding asks it, which is where the config doesn't set it.
+    /// Onboarding ends, by Done or the close button, with what was chosen so far. Website checking
+    /// goes as a command, on only where the user turned it on, wherever onboarding asks it: where
+    /// the config set it neither as onboarding opened nor in the last snapshot, so the core has no
+    /// reason to refuse it (ADR-0012).
     func finish() {
-        onFinish(setup.websitesFromConfig == nil ? websites == true : nil)
+        let asked = setup.websitesFromConfig == nil && !configSetsWebsites
+        let sent: OnOff? = asked ? (websites == true ? .on : .off) : nil
+        if let sent { choose(.websites(sent)) }
+        onFinish(sent)
     }
 
     // MARK: The steps' choices
@@ -443,15 +451,15 @@ final class OnboardingFlow {
 }
 
 extension OnboardingFlow.Setup {
-    /// What onboarding asks, as `snapshot` answers its queries: the core decides what its Night
-    /// Shift steps ask, as it does whether it opens.
+    /// What onboarding asks, as `snapshot` answers its queries: the strength unless the config sets
+    /// it or it can't be read, and the schedule unless the config sets it or Night Shift is
+    /// unavailable (ADR-0014).
     init(_ snapshot: Snapshot) {
         let nightShift = snapshot.nightShift()
         let config = snapshot.config()
         let checks = snapshot.checks()
-        let asks = snapshot.preferences().onboardingAsks
-        let askStrength = asks.strength
-        let askSchedule = asks.schedule
+        let askStrength = nightShift.strength != nil && config.strength == nil
+        let askSchedule = nightShift.state != .unavailable && config.schedule == nil
         let opensItself = snapshot.about().managesItself
         self.init(
             askStrength: askStrength,

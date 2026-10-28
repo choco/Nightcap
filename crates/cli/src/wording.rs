@@ -573,8 +573,8 @@ fn time_of_day(time: TimeOfDay) -> String {
 #[cfg(test)]
 mod tests {
     use nightcap_protocol::{
-        About, Check, CheckState, ConfigState, Front, NightShiftState, OnboardingAsks, Permissions,
-        PlaceInFront, Preferences, WebsiteChecking,
+        About, Check, CheckState, ConfigState, Front, NightShiftState, Permissions, PlaceInFront,
+        Preferences, WebsiteChecking,
     };
 
     use super::*;
@@ -1199,6 +1199,7 @@ mod tests {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
                 manages_itself: true,
+                legacy_onboarding: 1,
             },
             night_shift: NightShiftState {
                 state: NightShift::On,
@@ -1252,12 +1253,6 @@ mod tests {
                 },
                 notifications_wanted: true,
                 open_at_login: false,
-                onboarding_completed: 1,
-                onboarding_finished: true,
-                onboarding_asks: OnboardingAsks {
-                    strength: true,
-                    schedule: true,
-                },
             },
             checks: Checks {
                 checks: vec![Check {

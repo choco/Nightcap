@@ -21,7 +21,6 @@ final class Executor {
     private let notifications: NotificationsAsking
     private let systemSettings: SystemSettingsOpening
     private let rereading: Rereading
-    private let showOnboarding: () -> Void
     private var eventHandlers: [(Event) -> Void] = []
     private var changeHandlers: [(Cause, Snapshot) -> Void] = []
     /// Run once, after the next outcome is carried out.
@@ -42,8 +41,7 @@ final class Executor {
         accessibility: AccessibilityAsking,
         notifications: NotificationsAsking,
         systemSettings: SystemSettingsOpening,
-        rereading: Rereading,
-        showOnboarding: @escaping () -> Void
+        rereading: Rereading
     ) {
         self.core = core
         self.inbox = inbox
@@ -56,7 +54,6 @@ final class Executor {
         self.notifications = notifications
         self.systemSettings = systemSettings
         self.rereading = rereading
-        self.showOnboarding = showOnboarding
         inbox.receive = { [weak self] outcome, snapshot in self?.carryOut(outcome, snapshot) }
     }
 
@@ -153,9 +150,6 @@ final class Executor {
             wakeups.schedule(at: at)
         case .cancelWakeup:
             wakeups.cancel()
-        // Version 1 is the only onboarding so far, so `completed` is always 0.
-        case .showOnboarding:
-            showOnboarding()
         case .watchBrowser(let bundleId, let generation):
             browser.watch(bundleId: bundleId, generation: generation)
         case .stopWatching:

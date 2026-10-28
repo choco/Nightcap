@@ -43,9 +43,10 @@ export function Privacy() {
 				</li>
 				<li>
 					<code>~/Library/Preferences/io.github.choco.nightcap.plist</code>, its
-					preferences: your shortcut, the version that last ran, so it can tell
-					you what's new after an update, the problems it has told you about, so
-					it doesn't tell you again, and when it last checked for an update.
+					preferences: your shortcut, whether you went through onboarding, so it
+					doesn't open again, the version that last ran, so it can tell you
+					what's new after an update, the problems it has told you about, so it
+					doesn't tell you again, and when it last checked for an update.
 				</li>
 			</ul>
 			<p>None of it leaves your Mac.</p>

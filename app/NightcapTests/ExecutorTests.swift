@@ -20,7 +20,6 @@ private enum Call: Equatable {
     case askForAccessibility
     case allowNotifications
     case open(SystemSettingsPane)
-    case showOnboarding
     case told(Event, subscriber: Int)
     case redraw
     case nextRedraw
@@ -89,8 +88,7 @@ private struct FakeShell {
         self.inbox = inbox
         executor = Executor(
             core: core, inbox: inbox, nightShift: nightShift ? mac : nil, loginItem: mac, updater: mac, wakeups: mac,
-            browser: mac, accessibility: mac, notifications: mac, systemSettings: mac, rereading: mac,
-            showOnboarding: { mac.record(.showOnboarding) })
+            browser: mac, accessibility: mac, notifications: mac, systemSettings: mac, rereading: mac)
         executor.onChange { _, _ in mac.record(.redraw) }
     }
 
@@ -125,7 +123,7 @@ struct ExecutorTests {
                 .watchBrowser(bundleId: "com.apple.Safari", generation: 1), .setNightShift(enabled: false),
                 .setSchedule(schedule: customHours), .setStrength(value: 40, commit: false),
                 .scheduleWakeup(at: sunrise), .cancelWakeup, .stopWatching, .registerLoginItem,
-                .unregisterLoginItem, .startUpdater, .checkForUpdates, .showOnboarding(completed: 0)))
+                .unregisterLoginItem, .startUpdater, .checkForUpdates))
         await mainQueueTurns()
 
         #expect(
@@ -133,7 +131,7 @@ struct ExecutorTests {
                 .watch("com.apple.Safari", generation: 1), .setNightShift(false), .setSchedule(customHours),
                 .setStrength(40, commit: false), .scheduleWakeup(sunrise), .cancelWakeup, .stopWatching,
                 .registerLoginItem, .rereadLoginItem, .unregisterLoginItem, .rereadLoginItem, .startUpdater,
-                .checkForUpdates, .showOnboarding, .redraw,
+                .checkForUpdates, .redraw,
             ])
     }
 
@@ -218,10 +216,7 @@ struct ExecutorTests {
     /// The redraw asks as AppDelegate's does, from each change's snapshot: the latest alone, with
     /// website checking off again, would hide the turn on.
     @Test func aTurnOnAndATurnOffQueuedTogetherStillAskForAccessibilityOnceForTheOn() async throws {
-        let core = try Core.staged(
-            scenario: Scenario(
-                now: at("2026-10-16T12:00:00+02:00"),
-                steps: [.appCommand(.finishOnboarding(websites: false)), permissions(false, .granted)]))
+        let core = try atNoon(permissions(false, .granted))
         let shell = FakeShell(core)
         let executor = shell.executor
         var ask = AccessibilityAsk(core.snapshot())

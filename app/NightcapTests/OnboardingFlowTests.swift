@@ -15,11 +15,11 @@ private final class Sent {
 /// A self-managed release, or a managed install, or the dev build as `bundleId`, that has read the
 /// Mac's Night Shift at a strength of 60, found Nightcap not opening at login, and heard of
 /// Accessibility as `accessibility` and of notifications as `notifications`, with `config` as its
-/// config and `rules` as its ad-hoc rules file.
+/// config and `rules` as its ad-hoc rules file, then `after`.
 private func core(
     schedule: Schedule = .off, bundleId: String = "io.github.choco.nightcap", bundleWritable: Bool = true,
     config: String? = nil, rules: String? = nil, accessibility: Bool = true,
-    notifications: NotificationPermission = .notRequested
+    notifications: NotificationPermission = .notRequested, after: [Step] = []
 ) throws -> Core {
     try Core.staged(
         scenario: Scenario(
@@ -29,7 +29,7 @@ private func core(
                 .fact(.strengthChanged(value: 60)),
                 .fact(.loginItemChanged(item: .notRegistered)),
                 permissions(accessibility, notifications),
-            ]))
+            ] + after))
 }
 
 /// What onboarding asks on `core`.
@@ -41,7 +41,7 @@ private func setup(_ core: Core) -> OnboardingFlow.Setup {
 /// chooses reaches the core, as the menu's commands do, and `sent` too; the core's snapshot after
 /// each reaches the flow, as the app's redraw hands it on.
 private func onboarding(
-    _ core: Core, sent: Sent = Sent(), onFinish: @escaping (Bool?) -> Void = { _ in }
+    _ core: Core, sent: Sent = Sent(), onFinish: @escaping (OnOff?) -> Void = { _ in }
 ) -> OnboardingFlow {
     weak var made: OnboardingFlow?
     let flow = OnboardingFlow(
@@ -75,6 +75,25 @@ struct OnboardingFlowTests {
         let flow = onboarding(core)
         #expect(flow.strength == 60)
         #expect(flow.schedule == .sunsetToSunrise)
+    }
+
+    @Test func onboardingAsksAboutNightShiftWhatTheConfigLeavesAndTheMacCanDo() throws {
+        let asks = { (config: String?, reported: [Step]) in
+            let setup = OnboardingFlow.Setup(
+                try Core.staged(
+                    scenario: Scenario(now: at("2026-10-16T12:00:00+02:00"), config: config, steps: reported)
+                )
+                .snapshot())
+            return [setup.askStrength, setup.askSchedule]
+        }
+        let status = Step.fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false))
+        let reported = [status, .fact(.strengthChanged(value: 60))]
+
+        #expect(try asks(nil, []) == [false, false])
+        #expect(try asks(nil, reported) == [true, true])
+        #expect(try asks("[night_shift]\nstrength = 40\n", reported) == [false, true])
+        #expect(try asks("[night_shift]\nschedule = \"off\"\n", reported) == [true, false])
+        #expect(try asks(nil, [status]) == [false, true])
     }
 
     @Test func onboardingOffersToSkipNightShiftOnceItsOnASchedule() throws {
@@ -253,39 +272,72 @@ struct OnboardingFlowTests {
 
     @Test func websiteCheckingIsSentOnlyAtTheFinish() throws {
         let sent = Sent()
-        var finished: [Bool?] = []
-        let flow = onboarding(try core(), sent: sent, onFinish: { finished.append($0) })
+        var finished: [OnOff?] = []
+        let staged = try core()
+        let flow = onboarding(staged, sent: sent, onFinish: { finished.append($0) })
         flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
 
         flow.perform(.turnOnWebsites)
         #expect(flow.page == .sites)
+        #expect(sent.commands == [])
         #expect(finished == [])
 
         flow.finish()
-        #expect(finished == [true])
-        #expect(sent.commands == [])
+        #expect(sent.commands == [.websites(.on)])
+        #expect(finished == [.on])
+        #expect(staged.snapshot().preferences().websiteChecking.state == .on)
     }
 
+    /// Onboarding never asks it there, and the core would refuse it.
     @Test func websiteCheckingTheConfigSetsIsntSentAtTheFinish() throws {
         for config in ["websites = true\n", "websites = false\n"] {
-            var finished: [Bool?] = []
-            let flow = onboarding(try core(config: config), onFinish: { finished.append($0) })
+            let sent = Sent()
+            var finished: [OnOff?] = []
+            let staged = try core(config: config)
+            let flow = onboarding(staged, sent: sent, onFinish: { finished.append($0) })
 
             flow.finish()
 
+            #expect(sent.commands == [], "\(config)")
             #expect(finished == [nil], "\(config)")
+            #expect(staged.snapshot().preferences().websiteChecking.fromConfig, "\(config)")
         }
     }
 
-    @Test func notNowLeavesWebsiteCheckingOff() throws {
-        var finished: [Bool?] = []
-        let flow = onboarding(try core(), onFinish: { finished.append($0) })
+    /// The same core before a reload and after it, as the steps that lead to each stage it. The
+    /// core would refuse the user's choice, which the config overrules.
+    @Test func websiteCheckingAConfigComesToSetWhileOnboardingIsOpenIsntSentAtTheFinish() throws {
+        let sent = Sent()
+        var finished: [OnOff?] = []
+        let flow = onboarding(try core(config: ""), sent: sent, onFinish: { finished.append($0) })
         flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
+        flow.perform(.turnOnWebsites)
+        let reloaded = try core(config: "", after: [.config("websites = false\n"), .command(.reload)])
+
+        flow.refresh(reloaded.snapshot())
+        flow.finish()
+
+        #expect(sent.commands == [])
+        #expect(finished == [nil])
+    }
+
+    /// The user turns website checking on only on its step, so leaving onboarding before it leaves
+    /// it off too.
+    @Test func notNowLeavesWebsiteCheckingOff() throws {
+        let sent = Sent()
+        var finished: [OnOff?] = []
+        let flow = onboarding(try core(), sent: sent, onFinish: { finished.append($0) })
+        flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
+        let leftEarly = Sent()
+        let early = onboarding(try core(), sent: leftEarly)
 
         flow.perform(.notNow)
         flow.finish()
+        early.finish()
 
-        #expect(finished == [false])
+        #expect(sent.commands == [.websites(.off)])
+        #expect(finished == [.off])
+        #expect(leftEarly.commands == [.websites(.off)])
     }
 
     /// The flow reads notifications from the snapshot the redraw hands it.

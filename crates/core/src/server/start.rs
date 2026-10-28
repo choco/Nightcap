@@ -112,17 +112,16 @@ impl Inner {
                 applied_from_config: persisted.applied_from_config,
                 ad_hoc_error,
             },
-            onboarding: persisted.onboarding,
+            legacy_onboarding: persisted.onboarding,
             saved: persisted,
         };
         inner.graduate(config.rules);
         inner
     }
 
-    /// The shell's launch: offers onboarding, starts the updater where this install updates
-    /// itself, and applies the config's `[night_shift]`.
+    /// The shell's launch: starts the updater where this install updates itself, and applies the
+    /// config's `[night_shift]`.
     pub(crate) fn launched(&mut self, effects: &mut Vec<Effect>) {
-        self.offer_onboarding(effects);
         if self.manages_itself {
             effects.push(Effect::StartUpdater);
         }

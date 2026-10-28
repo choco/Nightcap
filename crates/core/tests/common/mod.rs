@@ -210,13 +210,9 @@ pub(crate) fn report_zurich_sun(staged: &Staged) {
     });
 }
 
-/// The launch's outcome, leaving out onboarding, which only its own tests look at.
+/// The shell's launch, and its outcome.
 pub(crate) fn launch(staged: &Staged) -> Outcome {
-    let mut outcome = staged.report(Fact::Launched);
-    outcome
-        .effects
-        .retain(|effect| !matches!(effect, Effect::ShowOnboarding { .. }));
-    outcome
+    staged.report(Fact::Launched)
 }
 
 pub(crate) fn activate(staged: &Staged, bundle_id: &str) -> Vec<Effect> {

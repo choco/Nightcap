@@ -31,7 +31,7 @@ enum SnapshotRenderer {
                     .fact(.permissionsChanged(accessibility: false, notifications: .granted)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .denied)),
                     .fact(.loginItemChanged(item: .enabled)),
-                    .appCommand(.finishOnboarding(websites: true)),
+                    .command(.websites(.on)),
                     .command(.addRule(identity: .app("com.apple.Photos"), says: .off)),
                     .command(.addRule(identity: .app("com.apple.iBooksX"), says: .on)),
                     .command(.set(place: .domain("figma.com"), state: .on, length: .until(sunrise))),

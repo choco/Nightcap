@@ -152,7 +152,7 @@ Nightcap's core as it runs, with the app and the CLI as its clients: the only wr
 _Avoid_: daemon, service
 
 **Command**:
-A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload, an update check or keeping notifications off, which Nightcap may refuse. The app and the CLI send the same commands, a fix's among them where the app doesn't carry it out in macOS itself; beginning and ending a trial and finishing onboarding are the app's alone.
+A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload, an update check or keeping notifications off, which Nightcap may refuse. The app and the CLI send the same commands, a fix's among them where the app doesn't carry it out in macOS itself; beginning and ending a trial are the app's alone.
 
 **Refusal**:
 Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too, short of a reload's, which the config file's check shows already.
