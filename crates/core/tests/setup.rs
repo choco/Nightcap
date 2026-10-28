@@ -5,7 +5,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{Event, Fact, Scenario, Staged, normalize_domain};
+use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
@@ -470,6 +470,41 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
     report_zurich_sun(&staged);
     staged.report(Fact::TimerFired);
     assert_eq!(found(&staged, CheckKind::NightShift), following);
+}
+
+#[test]
+fn nightcap_wakes_as_the_patience_for_sun_times_ends() {
+    let staged = Scenario::at(at("2026-10-16T01:40:30+02:00"))
+        .stage()
+        .unwrap();
+    let wakeup = |instant| Effect::ScheduleWakeup {
+        at: at(instant).into(),
+    };
+    staged.report(reported(true, Schedule::SunsetToSunrise));
+
+    staged.set_now(at("2026-10-16T01:50:00+02:00"));
+    assert_eq!(
+        staged.report(Fact::TimerFired).effects,
+        vec![wakeup("2026-10-16T01:50:30+02:00")]
+    );
+    assert_eq!(
+        found(&staged, CheckKind::NightShift),
+        available(Schedule::SunsetToSunrise)
+    );
+
+    staged.set_now(at("2026-10-16T01:50:30+02:00"));
+    let outcome = staged.report(Fact::TimerFired);
+    assert_eq!(outcome.cause, Cause::Fact);
+    assert_eq!(outcome.effects, vec![wakeup("2026-10-16T01:51:00+02:00")]);
+    assert_eq!(
+        found(&staged, CheckKind::NightShift),
+        Some((
+            CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                waited: SignedDuration::from_mins(10),
+            }),
+            CheckState::Broken
+        ))
+    );
 }
 
 #[test]

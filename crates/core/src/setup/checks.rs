@@ -18,7 +18,7 @@ use crate::{Cause, Event};
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
 /// back on (macOS 27).
-const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
+pub(crate) const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
 
 /// Whether a turn tells the problems that appear in it.
 pub(crate) enum Telling {

@@ -12,7 +12,7 @@ The core is the only part that decides what Night Shift should be doing. It comp
 
 The core never has to recognise the echo of its own writes.
 
-To compute schedule transitions, the core does the schedule math itself from two inputs the shell provides: the custom hours from the status struct, and sunrise and sunset from `BrightnessSystemClient`'s `BlueLightSunSchedule`. It keeps one timer for the next schedule transition, and recomputes on wake and on clock or time-zone changes. Until CoreBrightness has the sun times, as for a minute or two after login, the timer comes each minute instead, and the shell reads them again each time; meanwhile the core leaves Night Shift's schedule to macOS.
+To compute schedule transitions, the core does the schedule math itself from two inputs the shell provides: the custom hours from the status struct, and sunrise and sunset from `BrightnessSystemClient`'s `BlueLightSunSchedule`. It keeps one timer for the next schedule transition, and recomputes on wake and on clock or time-zone changes. Until CoreBrightness has the sun times, as for a minute or two after login, the timer comes each minute instead, and as going without them becomes a problem, and the shell reads them again each time; meanwhile the core leaves Night Shift's schedule to macOS.
 
 The shell's Night Shift adapter looks up `CBBlueLightClient` and `BrightnessSystemClient` at runtime (`NSClassFromString`). Those two classes are the whole private API surface. An OS update that removes one makes the adapter report "unavailable" instead of crashing at launch.
 

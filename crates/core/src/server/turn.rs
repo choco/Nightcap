@@ -8,6 +8,7 @@ use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
 
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
+use crate::setup::checks::SUN_TIMES_PATIENCE;
 use crate::{Cause, Effect, Event, Outcome};
 
 /// How far from a computed schedule transition a status callback can arrive and still be macOS
@@ -180,6 +181,8 @@ impl Inner {
     /// whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
     /// times, which CoreBrightness can take a minute or two after login to work out, so the
     /// wakeup comes at the next whole minute instead: the shell reads them again before each.
+    /// It comes too as the patience for them ends, when going without them becomes a problem
+    /// with no input to show it, so that the problem appears in a fact's turn.
     fn reschedule(&mut self, effects: &mut Vec<Effect>) {
         let now = self.clock.now();
         let transition = self
@@ -203,9 +206,19 @@ impl Inner {
             .expect("a minute rounds any time")
                 + SignedDuration::from_mins(1)
         });
+        let patience_ends = self
+            .reconciling
+            .sun_times_awaited_since
+            .map(|since| since + SUN_TIMES_PATIENCE)
+            .filter(|ends| *ends > now);
         let look = self.places.look(&self.facts.world(now));
         let ends = look.rules.iter().filter_map(|(rule, _)| rule.length.end());
-        let next = transition.or(retry).into_iter().chain(ends).min();
+        let next = transition
+            .or(retry)
+            .into_iter()
+            .chain(patience_ends)
+            .chain(ends)
+            .min();
         if next != self.reconciling.wakeup {
             self.reconciling.wakeup = next;
             effects.push(match next {
