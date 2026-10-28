@@ -1197,294 +1197,474 @@ mod tests {
         );
     }
 
-    #[test]
-    fn refusals_match_the_documented_wire_format_and_read_back() {
-        let figma = || RuleIdentity::App("com.figma.Desktop".parse().unwrap());
-        let rules = || "/Users/me/.local/share/nightcap/rules.toml".to_owned();
-        let refusals = [
-            (
-                Refusal::NightShiftUnavailable,
-                r#""night_shift_unavailable""#,
-            ),
-            (Refusal::StrengthUnavailable, r#""strength_unavailable""#),
-            (
-                Refusal::StrengthOutOfRange { strength: 101 },
-                r#"{"strength_out_of_range":{"strength":101}}"#,
-            ),
-            (
-                Refusal::NotATimeOfDay(TimeOfDay {
-                    hour: 24,
-                    minute: 0,
-                }),
-                r#"{"not_a_time_of_day":{"hour":24,"minute":0}}"#,
-            ),
-            (Refusal::TooShort, r#""too_short""#),
-            (
-                Refusal::TooLong {
-                    length: SignedDuration::from_hours(200_000),
+    /// Writes `value` as the wire does and reads it back.
+    fn round_trip<T>(value: T)
+    where
+        T: Serialize + de::DeserializeOwned + PartialEq + fmt::Debug,
+    {
+        let line = json(&value);
+        assert_eq!(serde_json::from_str::<T>(&line).unwrap(), value, "{line}");
+    }
+
+    fn figma_app() -> Place {
+        Place::App("com.figma.Desktop".parse().unwrap())
+    }
+
+    fn figma_site() -> Place {
+        Place::Domain("figma.com".parse().unwrap())
+    }
+
+    fn at(time: &str) -> Timestamp {
+        time.parse().unwrap()
+    }
+
+    /// A file error of every kind, with every problem, value type and I/O failure in them.
+    fn file_errors() -> Vec<FileError> {
+        let path = || "/Users/me/.config/nightcap/config.toml".to_owned();
+        let table = || vec!["rules".to_owned(), "off".to_owned()];
+        let value_types = [
+            ValueType::String,
+            ValueType::Strings,
+            ValueType::List,
+            ValueType::Integer,
+            ValueType::Float,
+            ValueType::Boolean,
+            ValueType::Datetime,
+            ValueType::Table,
+        ];
+        let problems = value_types
+            .map(|found| Problem::WrongType {
+                table: table(),
+                key: "app".to_owned(),
+                found,
+                expected: ValueType::Strings,
+            })
+            .into_iter()
+            .chain([
+                Problem::UnknownKey {
+                    table: table(),
+                    key: "domian".to_owned(),
+                    expected: vec!["app".to_owned(), "domain".to_owned()],
                 },
-                r#"{"too_long":{"length":"PT200000H"}}"#,
-            ),
-            (Refusal::Passed, r#""passed""#),
-            (Refusal::NoSchedule, r#""no_schedule""#),
-            (Refusal::IndefiniteIsAdded, r#""indefinite_is_added""#),
-            (
-                Refusal::ConfigSays {
-                    identity: figma(),
-                    says: OnOff::Off,
+                Problem::MissingKey {
+                    table: Vec::new(),
+                    key: "version".to_owned(),
                 },
-                r#"{"config_says":{"identity":"app:com.figma.Desktop","says":"off"}}"#,
-            ),
-            (
-                Refusal::ConfigRule { identity: figma() },
-                r#"{"config_rule":{"identity":"app:com.figma.Desktop"}}"#,
-            ),
-            (
-                Refusal::NoSuchRule {
-                    identity: RuleIdentity::Domain("figma.com".parse().unwrap()),
+                Problem::NotABundleId {
+                    entry: "com.figma.Desktop ".to_owned(),
                 },
-                r#"{"no_such_rule":{"identity":"domain:figma.com"}}"#,
-            ),
-            (
-                Refusal::AdHocRulesOff(FileError::Newer {
-                    path: rules(),
-                    version: 3,
-                }),
-                r#"{"ad_hoc_rules_off":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}"#,
-            ),
-            (
-                Refusal::AdHocRulesNotSaved {
-                    path: rules(),
-                    failure: IoFailure::PermissionDenied,
+                Problem::NotADomain {
+                    entry: "https://figma.com".to_owned(),
                 },
-                r#"{"ad_hoc_rules_not_saved":{"path":"/Users/me/.local/share/nightcap/rules.toml","failure":"permission_denied"}}"#,
-            ),
-            (
-                Refusal::InvalidConfig(FileError::Malformed {
-                    path: "/Users/me/.config/nightcap/config.toml".to_owned(),
+                Problem::BothWays {
+                    identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
+                },
+                Problem::StrengthOutOfRange { strength: 101 },
+                Problem::NotASchedule {
+                    schedule: "dusk".to_owned(),
+                },
+                Problem::NotLengths {
+                    lengths: vec!["45m".to_owned(), "forever".to_owned()],
+                },
+            ]);
+        let failures = [
+            IoFailure::NotFound,
+            IoFailure::PermissionDenied,
+            IoFailure::IsAFolder,
+            IoFailure::NotAFolder,
+            IoFailure::NotUtf8,
+            IoFailure::Other,
+        ];
+        failures
+            .map(|failure| FileError::Unreadable {
+                path: path(),
+                failure,
+            })
+            .into_iter()
+            .chain(problems.map(|problem| FileError::Invalid {
+                path: path(),
+                line: 4,
+                problem,
+            }))
+            .chain([
+                FileError::Malformed {
+                    path: path(),
                     at: Some(Position {
                         line: 2,
                         column: 12,
                     }),
-                }),
-                r#"{"invalid_config":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":{"line":2,"column":12}}}}"#,
-            ),
-            (
-                Refusal::WebsiteCheckingInConfig,
-                r#""website_checking_in_config""#,
-            ),
-            (
-                Refusal::NoUpdater(NotSelfManaged::DevBuild),
-                r#"{"no_updater":"dev_build"}"#,
-            ),
-            (
-                Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
-                r#"{"no_login_item":"managed_install"}"#,
-            ),
-            (
-                Refusal::NothingToAccept {
-                    check: CheckKind::Notifications,
                 },
-                r#"{"nothing_to_accept":{"check":"notifications"}}"#,
-            ),
-        ];
-
-        for (refusal, wire) in refusals {
-            let response = Response::Refused(refusal);
-            let wire = format!(r#"{{"refused":{wire}}}"#);
-            assert_eq!(json(&response), wire);
-            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
-        }
+                FileError::Malformed {
+                    path: path(),
+                    at: None,
+                },
+                FileError::Newer {
+                    path: path(),
+                    version: 3,
+                },
+            ])
+            .collect()
     }
 
     #[test]
-    fn queries_and_their_answers_match_the_documented_wire_format() {
-        assert_eq!(
-            json(&Request::Queries(vec![
-                Query::NightShift,
-                Query::Front,
-                Query::Rules,
-                Query::Config,
-                Query::Preferences,
-                Query::Checks,
-                Query::Trial,
-                Query::About,
-            ])),
-            r#"{"queries":["night_shift","front","rules","config","preferences","checks","trial","about"]}"#
-        );
-        let figma = || Place::Domain("figma.com".parse().unwrap());
+    fn handshakes_read_back_as_written() {
+        round_trip(HelloMessage {
+            hello: Hello::current(),
+        });
+        round_trip(HelloReply::Hello(Hello::current()));
+        round_trip(HelloReply::Mismatch(Hello::current()));
+        round_trip(HelloReply::Malformed {
+            message: "x".to_owned(),
+        });
+    }
+
+    #[test]
+    fn requests_read_back_as_written() {
+        let figma = RuleIdentity::Domain("figma.com".parse().unwrap());
+        let custom = Schedule::Custom {
+            from: TimeOfDay {
+                hour: 22,
+                minute: 0,
+            },
+            to: TimeOfDay { hour: 7, minute: 0 },
+        };
+        let lastings = [
+            Lasting::For(SignedDuration::from_mins(90)),
+            Lasting::Until(at("2026-10-16T20:00:00Z")),
+            Lasting::UntilScheduleTurns,
+            Lasting::Indefinite,
+        ];
+        let commands = lastings
+            .map(|length| Command::Set {
+                place: figma_site(),
+                state: OnOff::Off,
+                length,
+            })
+            .into_iter()
+            .chain([
+                Command::On,
+                Command::Off,
+                Command::Toggle,
+                Command::Reset(figma_app()),
+                Command::Reset(Place::Everywhere),
+                Command::AddRule {
+                    identity: figma.clone(),
+                    says: OnOff::On,
+                },
+                Command::RemoveRule(figma),
+                Command::Websites(OnOff::On),
+                Command::OpenAtLogin(OnOff::Off),
+                Command::KeepNotificationsOff,
+                Command::KeepScheduleOff,
+                Command::Strength(60),
+                Command::PreviewStrength(60),
+                Command::SetSchedule(Schedule::Off),
+                Command::SetSchedule(Schedule::SunsetToSunrise),
+                Command::SetSchedule(custom),
+                Command::Reload,
+                Command::CheckForUpdates,
+            ]);
+        for command in commands {
+            round_trip(Request::Command(command));
+        }
+        round_trip(Request::Queries(vec![
+            Query::NightShift,
+            Query::Front,
+            Query::Rules,
+            Query::Config,
+            Query::Preferences,
+            Query::Checks,
+            Query::Trial,
+            Query::About,
+            Query::Export(ExportFormat::Nix),
+            Query::Export(ExportFormat::Toml),
+        ]));
+    }
+
+    #[test]
+    fn answers_read_back_as_written() {
         let figma_rule = || Rule {
-            place: figma(),
+            place: figma_site(),
             says: OnOff::Off,
             length: Length::Indefinite,
             set_by: SetBy::Config,
         };
-        let answers = [
-            (
-                Answer::NightShift(NightShiftState {
-                    state: NightShift::On,
-                    strength: Some(60),
-                    schedule: Some(Schedule::Custom {
-                        from: TimeOfDay {
-                            hour: 22,
-                            minute: 0,
-                        },
-                        to: TimeOfDay { hour: 7, minute: 0 },
-                    }),
-                    set_aside: false,
-                    scheduled: Some(OnOff::Off),
-                    next_on: Some("2026-10-16T20:00:00Z".parse().unwrap()),
-                    next_off: Some("2026-10-17T05:00:00Z".parse().unwrap()),
-                }),
-                r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_on":"2026-10-16T20:00:00Z","next_off":"2026-10-17T05:00:00Z"}}"#,
-            ),
-            (
-                Answer::Front(Box::new(Front {
-                    app: Some("com.apple.Safari".parse().unwrap()),
-                    watching: true,
-                    host: Some("www.figma.com".to_owned()),
-                    site: Some("figma.com".parse().unwrap()),
-                    decision: Decision {
-                        state: Some(OnOff::Off),
-                        place: figma(),
-                        reasons: vec![Reason::Rule(figma_rule())],
+        let front = Front {
+            app: Some("com.apple.Safari".parse().unwrap()),
+            watching: true,
+            host: Some("www.figma.com".to_owned()),
+            site: Some("figma.com".parse().unwrap()),
+            decision: Decision {
+                state: Some(OnOff::Off),
+                place: figma_site(),
+                reasons: vec![Reason::Rule(figma_rule())],
+            },
+            places: vec![PlaceInFront {
+                place: figma_site(),
+                gives: OnOff::Off,
+                rules: vec![Rule {
+                    length: Length::Until {
+                        until: at("2026-10-16T19:30:00Z"),
                     },
-                    places: vec![
-                        PlaceInFront {
-                            place: figma(),
-                            gives: OnOff::Off,
-                            rules: Vec::new(),
-                            base: Some(Reason::Rule(figma_rule())),
-                            inherits: Some(Inherited {
-                                from: Place::Everywhere,
-                                says: OnOff::On,
-                            }),
-                        },
-                        PlaceInFront {
-                            place: Place::App("com.apple.Safari".parse().unwrap()),
-                            gives: OnOff::On,
-                            rules: Vec::new(),
-                            base: None,
-                            inherits: Some(Inherited {
-                                from: Place::Everywhere,
-                                says: OnOff::On,
-                            }),
-                        },
-                    ],
-                    everywhere: PlaceInFront {
-                        place: Place::Everywhere,
-                        gives: OnOff::On,
-                        rules: Vec::new(),
-                        base: Some(Reason::Schedule {
-                            state: OnOff::On,
-                            until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
-                        }),
-                        inherits: None,
-                    },
-                })),
-                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"}},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"}}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null}}}"#,
-            ),
-            (
-                Answer::Config(Box::new(ConfigState {
-                    path: "/Users/me/.config/nightcap/config.toml".to_owned(),
-                    found: true,
-                    error: None,
-                    strength: Some(40),
-                    schedule: None,
-                    websites: Some(OnOff::On),
-                    lengths: vec![SignedDuration::from_mins(30), SignedDuration::from_mins(90)],
-                    ad_hoc_error: Some(FileError::Newer {
-                        path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
-                        version: 3,
-                    }),
-                })),
-                r#"{"config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}}"#,
-            ),
-            (
-                Answer::Preferences(Preferences {
-                    website_checking: WebsiteChecking {
-                        state: OnOff::On,
-                        from_config: true,
-                    },
-                    notifications_wanted: true,
-                    open_at_login: false,
+                    set_by: SetBy::You,
+                    ..figma_rule()
+                }],
+                base: Some(Reason::Rule(figma_rule())),
+                inherits: Some(Inherited {
+                    from: Place::Everywhere,
+                    says: OnOff::On,
                 }),
-                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false}}"#,
-            ),
-            (
-                Answer::Checks(Checks {
-                    checks: vec![Check {
-                        detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
-                        state: CheckState::Drifted,
-                    }],
-                    permissions: Permissions {
-                        accessibility: false,
-                        notifications: NotificationPermission::Granted,
-                        login_item: Some(LoginItem::RequiresApproval),
-                    },
+            }],
+            everywhere: PlaceInFront {
+                place: Place::Everywhere,
+                gives: OnOff::On,
+                rules: Vec::new(),
+                base: Some(Reason::Schedule {
+                    state: OnOff::On,
+                    until: Some(at("2026-10-17T05:00:00Z")),
                 }),
-                r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
-            ),
-            (
-                Answer::Trial(Some(TrialState { stands_in: true })),
-                r#"{"trial":{"stands_in":true}}"#,
-            ),
-            (Answer::Trial(None), r#"{"trial":null}"#),
-            (
-                Answer::About(About {
-                    version: "1.2.0".to_owned(),
-                    install: Install::SelfManaged,
-                    manages_itself: true,
+                inherits: None,
+            },
+        };
+        round_trip(Response::Ok(Payload::Answers(vec![
+            Answer::NightShift(NightShiftState {
+                state: NightShift::On,
+                strength: Some(60),
+                schedule: Some(Schedule::SunsetToSunrise),
+                set_aside: false,
+                scheduled: Some(OnOff::Off),
+                next_on: Some(at("2026-10-16T20:00:00Z")),
+                next_off: None,
+            }),
+            Answer::Front(Box::new(front)),
+            Answer::Rules(vec![ListedRule {
+                rule: figma_rule(),
+                snooze: None,
+            }]),
+            Answer::Config(Box::new(ConfigState {
+                path: "/Users/me/.config/nightcap/config.toml".to_owned(),
+                found: true,
+                error: None,
+                strength: Some(40),
+                schedule: None,
+                websites: Some(OnOff::On),
+                lengths: vec![SignedDuration::from_mins(30), SignedDuration::from_mins(90)],
+                ad_hoc_error: Some(FileError::Newer {
+                    path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
+                    version: 3,
                 }),
-                r#"{"about":{"version":"1.2.0","install":"self_managed","manages_itself":true}}"#,
-            ),
-        ];
-
-        for (answer, wire) in answers {
-            let response = Response::Ok(Payload::Answers(vec![answer]));
-            let wire = format!(r#"{{"ok":{{"answers":[{wire}]}}}}"#);
-            assert_eq!(json(&response), wire);
-            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
-        }
-        let in_order = Response::Ok(Payload::Answers(vec![
+            })),
+            Answer::Preferences(Preferences {
+                website_checking: WebsiteChecking {
+                    state: OnOff::On,
+                    from_config: true,
+                },
+                notifications_wanted: true,
+                open_at_login: false,
+            }),
+            Answer::Checks(Checks {
+                checks: vec![Check {
+                    detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
+                    state: CheckState::Drifted,
+                }],
+                permissions: Permissions {
+                    accessibility: false,
+                    notifications: NotificationPermission::Granted,
+                    login_item: Some(LoginItem::RequiresApproval),
+                },
+            }),
+            Answer::Trial(Some(TrialState { stands_in: true })),
             Answer::Trial(None),
+            Answer::About(About {
+                version: "1.2.0".to_owned(),
+                install: Install::SelfManaged,
+                manages_itself: true,
+            }),
             Answer::Export("{ }".to_owned()),
-            Answer::Rules(Vec::new()),
-        ]));
-        let wire = r#"{"ok":{"answers":[{"trial":null},{"export":"{ }"},{"rules":[]}]}}"#;
-        assert_eq!(json(&in_order), wire);
-        assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), in_order);
+        ])));
     }
 
     #[test]
-    fn value_types_match_the_documented_wire_format_and_read_back() {
-        for (found, wire) in [
-            (ValueType::String, r#""string""#),
-            (ValueType::Strings, r#""strings""#),
-            (ValueType::List, r#""list""#),
-            (ValueType::Integer, r#""integer""#),
-            (ValueType::Float, r#""float""#),
-            (ValueType::Boolean, r#""boolean""#),
-            (ValueType::Datetime, r#""datetime""#),
-            (ValueType::Table, r#""table""#),
-        ] {
-            assert_eq!(json(&found), wire);
-            assert_eq!(serde_json::from_str::<ValueType>(wire).unwrap(), found);
+    fn command_answers_read_back_as_written() {
+        let figma = || RuleIdentity::App("com.figma.Desktop".parse().unwrap());
+        let decision = || Decision {
+            state: Some(OnOff::On),
+            place: Place::Everywhere,
+            reasons: vec![
+                Reason::StandIn,
+                Reason::Schedule {
+                    state: OnOff::Off,
+                    until: None,
+                },
+            ],
+        };
+        let added = [
+            SetBy::Config,
+            SetBy::You,
+            SetBy::Trial,
+            SetBy::OutsideChange,
+        ]
+        .into_iter()
+        .flat_map(|set_by| {
+            [
+                RuleAdded::New { set_by },
+                RuleAdded::Changed { set_by },
+                RuleAdded::AlreadySays { set_by },
+            ]
+        })
+        .map(|rule| Payload::RuleAdded {
+            rule,
+            decision: decision(),
+        });
+        let payloads = added.chain([
+            Payload::Decision(decision()),
+            Payload::Rules(Vec::new()),
+            Payload::UpdateCheckStarted,
+        ]);
+        for payload in payloads {
+            round_trip(Response::Ok(payload));
+        }
+        let refusals = file_errors()
+            .into_iter()
+            .flat_map(|error| {
+                [
+                    Refusal::AdHocRulesOff(error.clone()),
+                    Refusal::InvalidConfig(error),
+                ]
+            })
+            .chain([
+                Refusal::NightShiftUnavailable,
+                Refusal::StrengthUnavailable,
+                Refusal::StrengthOutOfRange { strength: 101 },
+                Refusal::NotATimeOfDay(TimeOfDay {
+                    hour: 24,
+                    minute: 0,
+                }),
+                Refusal::TooShort,
+                Refusal::TooLong {
+                    length: SignedDuration::from_hours(200_000),
+                },
+                Refusal::Passed,
+                Refusal::NoSchedule,
+                Refusal::IndefiniteIsAdded,
+                Refusal::ConfigSays {
+                    identity: figma(),
+                    says: OnOff::Off,
+                },
+                Refusal::ConfigRule { identity: figma() },
+                Refusal::NoSuchRule {
+                    identity: RuleIdentity::Domain("figma.com".parse().unwrap()),
+                },
+                Refusal::AdHocRulesNotSaved {
+                    path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
+                    failure: IoFailure::PermissionDenied,
+                },
+                Refusal::WebsiteCheckingInConfig,
+                Refusal::NoUpdater(NotSelfManaged::DevBuild),
+                Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
+                Refusal::NothingToAccept {
+                    check: CheckKind::Notifications,
+                },
+            ]);
+        for refusal in refusals {
+            round_trip(Response::Refused(refusal));
+        }
+        round_trip(Response::Malformed {
+            message: "x".to_owned(),
+        });
+    }
+
+    // serde reads a flattened field back through a buffer of its own, where a type can fail to
+    // read what it wrote: a check's detail, adjacently tagged, is one.
+    #[test]
+    fn checks_read_back_with_every_detail() {
+        let details = file_errors()
+            .into_iter()
+            .flat_map(|error| {
+                [
+                    CheckDetail::ConfigFile(ConfigFileDetail::Error(error.clone())),
+                    CheckDetail::AdHocRules(AdHocRulesDetail::Off(error)),
+                ]
+            })
+            .chain([
+                CheckDetail::NightShift(NightShiftDetail::Available {
+                    schedule: Some(Schedule::SunsetToSunrise),
+                }),
+                CheckDetail::NightShift(NightShiftDetail::Available { schedule: None }),
+                CheckDetail::NightShift(NightShiftDetail::Unavailable),
+                CheckDetail::NightShift(NightShiftDetail::SetAside),
+                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                    waited: SignedDuration::from_mins(12),
+                }),
+                CheckDetail::Accessibility(AccessibilityDetail::Allowed),
+                CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
+                CheckDetail::Accessibility(AccessibilityDetail::NotNeeded),
+                CheckDetail::Notifications(NotificationsDetail::Allowed),
+                CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
+                CheckDetail::Notifications(NotificationsDetail::Off),
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens),
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval),
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed),
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::Off),
+                CheckDetail::ConfigFile(ConfigFileDetail::Valid { rules: 2 }),
+                CheckDetail::ConfigFile(ConfigFileDetail::Missing),
+                CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 0 }),
+            ]);
+        for detail in details {
+            for state in [
+                CheckState::Ok,
+                CheckState::Off,
+                CheckState::Drifted,
+                CheckState::Broken,
+            ] {
+                round_trip(Check {
+                    detail: detail.clone(),
+                    state,
+                });
+            }
         }
     }
 
+    // A listed rule's rule is flattened beside its snooze.
     #[test]
-    fn io_failures_match_the_documented_wire_format_and_read_back() {
-        for (failure, wire) in [
-            (IoFailure::NotFound, r#""not_found""#),
-            (IoFailure::PermissionDenied, r#""permission_denied""#),
-            (IoFailure::IsAFolder, r#""is_a_folder""#),
-            (IoFailure::NotAFolder, r#""not_a_folder""#),
-            (IoFailure::NotUtf8, r#""not_utf8""#),
-            (IoFailure::Other, r#""other""#),
-        ] {
-            assert_eq!(json(&failure), wire);
-            assert_eq!(serde_json::from_str::<IoFailure>(wire).unwrap(), failure);
+    fn listed_rules_read_back_with_every_length() {
+        let lengths = [
+            Length::Indefinite,
+            Length::UntilScheduleTurns { until: None },
+            Length::UntilScheduleTurns {
+                until: Some(at("2026-10-16T05:50:47Z")),
+            },
+            Length::Until {
+                until: at("2026-10-16T19:30:00Z"),
+            },
+        ];
+        for place in [Place::Everywhere, figma_app(), figma_site()] {
+            for length in lengths {
+                for set_by in [
+                    SetBy::Config,
+                    SetBy::You,
+                    SetBy::Trial,
+                    SetBy::OutsideChange,
+                ] {
+                    let rule = Rule {
+                        place: place.clone(),
+                        says: OnOff::Off,
+                        length,
+                        set_by,
+                    };
+                    round_trip(ListedRule {
+                        rule: rule.clone(),
+                        snooze: None,
+                    });
+                    round_trip(ListedRule {
+                        snooze: Some(Rule {
+                            says: OnOff::On,
+                            ..rule.clone()
+                        }),
+                        rule,
+                    });
+                }
+            }
         }
     }
 
@@ -1508,425 +1688,6 @@ mod tests {
         assert!(!CheckState::Off.is_problem());
         assert!(CheckState::Drifted.is_problem());
         assert!(CheckState::Broken.is_problem());
-    }
-
-    #[test]
-    fn checks_match_the_documented_wire_format_and_read_back() {
-        let config = "/Users/me/.config/nightcap/config.toml".to_owned();
-        let rules = "/Users/me/.local/share/nightcap/rules.toml".to_owned();
-        let checks = [
-            (
-                CheckDetail::NightShift(NightShiftDetail::Available {
-                    schedule: Some(Schedule::SunsetToSunrise),
-                }),
-                CheckState::Ok,
-                r#"{"kind":"night_shift","detail":{"available":{"schedule":"sunset_to_sunrise"}},"state":"ok"}"#,
-            ),
-            (
-                CheckDetail::NightShift(NightShiftDetail::Available { schedule: None }),
-                CheckState::Ok,
-                r#"{"kind":"night_shift","detail":{"available":{"schedule":null}},"state":"ok"}"#,
-            ),
-            (
-                CheckDetail::NightShift(NightShiftDetail::Unavailable),
-                CheckState::Broken,
-                r#"{"kind":"night_shift","detail":"unavailable","state":"broken"}"#,
-            ),
-            (
-                CheckDetail::NightShift(NightShiftDetail::SetAside),
-                CheckState::Drifted,
-                r#"{"kind":"night_shift","detail":"set_aside","state":"drifted"}"#,
-            ),
-            (
-                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-                    waited: SignedDuration::from_mins(12),
-                }),
-                CheckState::Broken,
-                r#"{"kind":"night_shift","detail":{"no_sun_times":{"waited":"PT12M"}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::Accessibility(AccessibilityDetail::NotNeeded),
-                CheckState::Off,
-                r#"{"kind":"accessibility","detail":"not_needed","state":"off"}"#,
-            ),
-            (
-                CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
-                CheckState::Drifted,
-                r#"{"kind":"notifications","detail":"switched_off","state":"drifted"}"#,
-            ),
-            (
-                CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval),
-                CheckState::Drifted,
-                r#"{"kind":"open_at_login","detail":"awaiting_approval","state":"drifted"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Valid { rules: 2 }),
-                CheckState::Ok,
-                r#"{"kind":"config_file","detail":{"valid":{"rules":2}},"state":"ok"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Missing),
-                CheckState::Off,
-                r#"{"kind":"config_file","detail":"missing","state":"off"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
-                    path: config.clone(),
-                    at: Some(Position {
-                        line: 4,
-                        column: 12,
-                    }),
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":{"line":4,"column":12}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
-                    path: config.clone(),
-                    at: None,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":null}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
-                    line: 4,
-                    problem: Problem::UnknownKey {
-                        table: vec!["rules".to_owned(), "off".to_owned()],
-                        key: "domian".to_owned(),
-                        expected: vec!["app".to_owned(), "domain".to_owned()],
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"problem":{"unknown_key":{"table":["rules","off"],"key":"domian","expected":["app","domain"]}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
-                    line: 3,
-                    problem: Problem::WrongType {
-                        table: vec!["rules".to_owned(), "off".to_owned()],
-                        key: "app".to_owned(),
-                        found: ValueType::String,
-                        expected: ValueType::Strings,
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":{"wrong_type":{"table":["rules","off"],"key":"app","found":"string","expected":"strings"}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
-                    path: rules.clone(),
-                    line: 1,
-                    problem: Problem::MissingKey {
-                        table: Vec::new(),
-                        key: "version".to_owned(),
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":1,"problem":{"missing_key":{"table":[],"key":"version"}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Unreadable {
-                    path: config.clone(),
-                    failure: IoFailure::PermissionDenied,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"unreadable":{"path":"/Users/me/.config/nightcap/config.toml","failure":"permission_denied"}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Unreadable {
-                    path: rules.clone(),
-                    failure: IoFailure::IsAFolder,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"ad_hoc_rules","detail":{"off":{"unreadable":{"path":"/Users/me/.local/share/nightcap/rules.toml","failure":"is_a_folder"}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
-                    line: 3,
-                    problem: Problem::StrengthOutOfRange { strength: 101 },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":{"strength_out_of_range":{"strength":101}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
-                    line: 7,
-                    problem: Problem::BothWays {
-                        identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":7,"problem":{"both_ways":{"identity":"app:com.figma.Desktop"}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config.clone(),
-                    line: 2,
-                    problem: Problem::NotASchedule {
-                        schedule: "dusk".to_owned(),
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"problem":{"not_a_schedule":{"schedule":"dusk"}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
-                    path: config,
-                    line: 1,
-                    problem: Problem::NotLengths {
-                        lengths: vec!["45m".to_owned(), "forever".to_owned()],
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":1,"problem":{"not_lengths":{"lengths":["45m","forever"]}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
-                    path: rules.clone(),
-                    line: 3,
-                    problem: Problem::NotABundleId {
-                        entry: "com.figma.Desktop ".to_owned(),
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":3,"problem":{"not_a_bundle_id":{"entry":"com.figma.Desktop "}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
-                    path: rules.clone(),
-                    line: 4,
-                    problem: Problem::NotADomain {
-                        entry: "https://figma.com".to_owned(),
-                    },
-                })),
-                CheckState::Broken,
-                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":4,"problem":{"not_a_domain":{"entry":"https://figma.com"}}}}},"state":"broken"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 0 }),
-                CheckState::Ok,
-                r#"{"kind":"ad_hoc_rules","detail":{"on":{"rules":0}},"state":"ok"}"#,
-            ),
-            (
-                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Newer {
-                    path: rules,
-                    version: 3,
-                })),
-                CheckState::Broken,
-                r#"{"kind":"ad_hoc_rules","detail":{"off":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}},"state":"broken"}"#,
-            ),
-        ];
-
-        for (detail, state, wire) in checks {
-            let check = Check { detail, state };
-            assert_eq!(json(&check), wire);
-            assert_eq!(serde_json::from_str::<Check>(wire).unwrap(), check);
-        }
-    }
-
-    #[test]
-    fn decisions_match_the_documented_wire_format() {
-        assert_eq!(
-            json(&Request::Command(Command::Reload)),
-            r#"{"command":"reload"}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::CheckForUpdates)),
-            r#"{"command":"check_for_updates"}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::KeepNotificationsOff)),
-            r#"{"command":"keep_notifications_off"}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::KeepScheduleOff)),
-            r#"{"command":"keep_schedule_off"}"#
-        );
-        assert_eq!(
-            json(&Response::Ok(Payload::UpdateCheckStarted)),
-            r#"{"ok":"update_check_started"}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Set {
-                place: Place::Everywhere,
-                state: OnOff::Off,
-                length: Lasting::For(SignedDuration::from_mins(90)),
-            })),
-            r#"{"command":{"set":{"place":"everywhere","state":"off","length":{"for":"PT1H30M"}}}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Set {
-                place: Place::Domain("figma.com".parse().unwrap()),
-                state: OnOff::On,
-                length: Lasting::UntilScheduleTurns,
-            })),
-            r#"{"command":{"set":{"place":{"domain":"figma.com"},"state":"on","length":"until_schedule_turns"}}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Set {
-                place: Place::Everywhere,
-                state: OnOff::Off,
-                length: Lasting::Indefinite,
-            })),
-            r#"{"command":{"set":{"place":"everywhere","state":"off","length":"indefinite"}}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Reset(Place::App(
-                "com.figma.Desktop".parse().unwrap()
-            )))),
-            r#"{"command":{"reset":{"app":"com.figma.Desktop"}}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Strength(60))),
-            r#"{"command":{"strength":60}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::PreviewStrength(60))),
-            r#"{"command":{"preview_strength":60}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::SetSchedule(
-                Schedule::SunsetToSunrise
-            ))),
-            r#"{"command":{"set_schedule":"sunset_to_sunrise"}}"#
-        );
-        assert_eq!(
-            json(&Payload::Decision(Decision {
-                state: Some(OnOff::On),
-                place: Place::App("com.figma.Desktop".parse().unwrap()),
-                reasons: vec![
-                    Reason::Rule(Rule {
-                        place: Place::App("com.figma.Desktop".parse().unwrap()),
-                        says: OnOff::On,
-                        length: Length::UntilScheduleTurns {
-                            until: Some("2026-10-16T05:50:47Z".parse().unwrap()),
-                        },
-                        set_by: SetBy::OutsideChange,
-                    }),
-                    Reason::Rule(Rule {
-                        place: Place::App("com.figma.Desktop".parse().unwrap()),
-                        says: OnOff::Off,
-                        length: Length::Indefinite,
-                        set_by: SetBy::Config,
-                    }),
-                ],
-            })),
-            r#"{"decision":{"state":"on","place":{"app":"com.figma.Desktop"},"reasons":[{"rule":{"place":{"app":"com.figma.Desktop"},"says":"on","length":{"until_schedule_turns":{"until":"2026-10-16T05:50:47Z"}},"set_by":"outside_change"}},{"rule":{"place":{"app":"com.figma.Desktop"},"says":"off","length":"indefinite","set_by":"config"}}]}}"#
-        );
-        assert_eq!(
-            json(&Payload::Decision(Decision {
-                state: Some(OnOff::On),
-                place: Place::Everywhere,
-                reasons: vec![
-                    Reason::StandIn,
-                    Reason::Schedule {
-                        state: OnOff::Off,
-                        until: Some("2026-10-16T20:00:00Z".parse().unwrap()),
-                    },
-                ],
-            })),
-            r#"{"decision":{"state":"on","place":"everywhere","reasons":["stand_in",{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]}}"#
-        );
-    }
-
-    #[test]
-    fn rule_messages_match_the_documented_wire_format() {
-        let figma = RuleIdentity::Domain("figma.com".parse().unwrap());
-        assert_eq!(
-            json(&Request::Command(Command::AddRule {
-                identity: figma.clone(),
-                says: OnOff::On,
-            })),
-            r#"{"command":{"add_rule":{"identity":"domain:figma.com","says":"on"}}}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::RemoveRule(figma.clone()))),
-            r#"{"command":{"remove_rule":"domain:figma.com"}}"#
-        );
-        let decided = || Decision {
-            state: Some(OnOff::On),
-            place: Place::Everywhere,
-            reasons: Vec::new(),
-        };
-        for (rule, wire) in [
-            (
-                RuleAdded::New { set_by: SetBy::You },
-                r#"{"new":{"set_by":"you"}}"#,
-            ),
-            (
-                RuleAdded::New {
-                    set_by: SetBy::Trial,
-                },
-                r#"{"new":{"set_by":"trial"}}"#,
-            ),
-            (
-                RuleAdded::Changed { set_by: SetBy::You },
-                r#"{"changed":{"set_by":"you"}}"#,
-            ),
-            (
-                RuleAdded::AlreadySays {
-                    set_by: SetBy::Config,
-                },
-                r#"{"already_says":{"set_by":"config"}}"#,
-            ),
-        ] {
-            let response = Response::Ok(Payload::RuleAdded {
-                rule,
-                decision: decided(),
-            });
-            let wire = format!(
-                r#"{{"ok":{{"rule_added":{{"rule":{wire},"decision":{{"state":"on","place":"everywhere","reasons":[]}}}}}}}}"#
-            );
-            assert_eq!(json(&response), wire);
-            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
-        }
-        assert_eq!(
-            json(&Request::Queries(vec![Query::Rules])),
-            r#"{"queries":["rules"]}"#
-        );
-        assert_eq!(
-            json(&Request::Command(Command::Websites(OnOff::On))),
-            r#"{"command":{"websites":"on"}}"#
-        );
-        assert_eq!(
-            json(&Request::Queries(vec![Query::Export(ExportFormat::Nix)])),
-            r#"{"queries":[{"export":"nix"}]}"#
-        );
-        let reloaded = Response::Ok(Payload::Rules(vec![
-            ListedRule {
-                rule: Rule {
-                    place: Place::from(figma.clone()),
-                    says: OnOff::Off,
-                    length: Length::Indefinite,
-                    set_by: SetBy::You,
-                },
-                snooze: Some(Rule {
-                    place: Place::from(figma),
-                    says: OnOff::On,
-                    length: Length::UntilScheduleTurns { until: None },
-                    set_by: SetBy::OutsideChange,
-                }),
-            },
-            ListedRule {
-                rule: Rule {
-                    place: Place::Everywhere,
-                    says: OnOff::Off,
-                    length: Length::Until {
-                        until: "2026-10-16T19:30:00Z".parse().unwrap(),
-                    },
-                    set_by: SetBy::Trial,
-                },
-                snooze: None,
-            },
-        ]));
-        let wire = r#"{"ok":{"rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"you","snooze":{"place":{"domain":"figma.com"},"says":"on","length":{"until_schedule_turns":{"until":null}},"set_by":"outside_change"}},{"place":"everywhere","says":"off","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"trial","snooze":null}]}}"#;
-        assert_eq!(json(&reloaded), wire);
-        assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), reloaded);
     }
 
     #[test]
