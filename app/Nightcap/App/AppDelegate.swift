@@ -3,11 +3,24 @@ import KeyboardShortcuts
 import NightcapCore
 import os
 
+/// The composition root: it starts the core, wires the reporter, which tells the core what macOS
+/// observes, and the executor, which carries out what the core decides, to the adapters that
+/// drive macOS, and sends the UI's commands to the core (ADR-0002). No sender looks at an
+/// outcome.
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
-    private var host: CoreHost?
+    /// The core, whose reads answer from the snapshot it published after its last input.
+    private var core: Core?
+    private var reporter: Reporter?
+    private var executor: Executor?
     private lazy var notifications = Notifications()
+    private lazy var nightShift = NightShiftAdapter { [weak self] status in self?.reporter?.reportNightShift(status) }
+    private lazy var accessibility = AccessibilityPermission { [weak self] _ in
+        self?.onboarding?.accessibilityChanged()
+        Task { await self?.reporter?.reportSystemState() }
+    }
+    private lazy var updater = Updater(dockIcon: dockIcon, notifications: notifications)
     private var terminationSignal: DispatchSourceSignal?
     private var statusMenu: StatusMenu?
     private var settingsWindow: SettingsWindow?
@@ -35,14 +48,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.settingsWindow?.iconArrived()
             self?.onboarding?.iconArrived()
         }
-        let host: CoreHost
+        let inbox = Inbox()
+        let core: Core
         do {
-            host = try CoreHost(
-                dockIcon: dockIcon,
-                notifications: notifications,
-                accessibilityChanged: { [weak self] in self?.onboarding?.accessibilityChanged() },
-                notificationsChanged: { [weak self] in self?.onboarding?.notificationsChanged() },
-                showOnboarding: { [weak self] in self?.showOnboarding() })
+            let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
+            core = try Core.start(
+                bundleId: Bundle.main.bundleIdentifier!,
+                bundleWritable: FileManager.default.isWritableFile(atPath: bundleFolder),
+                timeZone: TimeZone.current.identifier,
+                listener: inbox)
         } catch CoreError.AlreadyRunning(let path) {
             log.notice("another Nightcap is already running at \(path, privacy: .public); quitting")
             NSApp.terminate(nil)
@@ -53,10 +67,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
-        self.host = host
-        host.onEvent { [notifications] event in notifications.tell(event) }
-        host.onChange { [weak self] in self?.refresh() }
-        host.launch()
+        let loginItem = LoginItemAdapter()
+        let reporter = Reporter(
+            core: core, nightShift: nightShift, accessibility: accessibility, loginItem: loginItem,
+            notificationsChanged: { [weak self] in self?.onboarding?.notificationsChanged() })
+        let executor = Executor(
+            core: core, inbox: inbox, nightShift: nightShift, loginItem: loginItem, updater: updater,
+            wakeups: WakeupTimer { reporter.wakeupCameDue() },
+            browser: BrowserWatch { generation, host in reporter.reportHost(generation: generation, host: host) },
+            accessibility: accessibility, notifications: reporter, systemSettings: SystemSettings(),
+            rereading: reporter, showOnboarding: { [weak self] in self?.showOnboarding() })
+        self.core = core
+        self.reporter = reporter
+        self.executor = executor
+        executor.onEvent { [notifications] event in notifications.tell(event) }
+        executor.onChange { [weak self] in self?.refresh() }
+        reporter.launch()
         listenForShortcut()
     }
 
@@ -77,9 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        host?.nightShift?.endPeek()
+        guard let executor else { return }
+        nightShift?.endPeek()
         tour?.end()
-        host?.stop()
+        executor.stop()
     }
 
     /// launchd stops the app with SIGTERM, whose default action would skip
@@ -98,17 +125,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func listenForShortcut() {
         shortcut = Shortcut(
             press: { [weak self] in
-                self?.host?.nightShift?.peek()
+                self?.nightShift?.peek()
                 self?.tour?.shortcutPressed()
             },
             tap: { [weak self] in
-                guard let host = self?.host else { return }
-                host.send(.toggle)
-                host.onNextChange { host.nightShift?.endPeek() }
-                self?.tour?.shortcutTapped()
+                guard let self, let core, let executor else { return }
+                core.send(command: .toggle)
+                executor.onNextChange { [weak self] in self?.nightShift?.endPeek() }
+                tour?.shortcutTapped()
             },
             release: { [weak self] in
-                self?.host?.nightShift?.endPeek()
+                self?.nightShift?.endPeek()
                 self?.tour?.shortcutReleased()
             })
     }
@@ -120,18 +147,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tour.reveal()
             return
         }
-        guard let host else { return }
-        let snapshot = host.core.snapshot()
+        guard let core else { return }
+        let snapshot = core.snapshot()
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             browser: tourBrowser(snapshot.preferences()),
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
-            begin: { host.send($0) },
+            begin: { core.sendApp(command: $0) },
             onEnd: { [weak self] begun in
                 guard let self else { return }
                 self.tour = nil
-                if begun { host.send(.endTrial) }
+                if begun { core.sendApp(command: .endTrial) }
             })
         self.tour = tour
         tour.start(snapshot)
@@ -140,7 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The default browser, for the tour's site step, while website checking can watch it.
     private func tourBrowser(_ preferences: Preferences) -> Tour.Browser? {
-        guard preferences.websiteChecking.state == .on, host?.accessibility?.granted == true,
+        guard preferences.websiteChecking.state == .on, accessibility.granted,
             let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
             let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
@@ -148,12 +175,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showOnboarding() {
-        guard let host, let accessibility = host.accessibility else { return }
-        let core = host.core
+        guard let core, let reporter else { return }
+        let accessibility = accessibility
         let onboarding = Onboarding(
             core.snapshot(),
             icons: siteIcons,
-            sun: host.nightShift?.sunTimes.flatMap { times in
+            sun: nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
                 return Sun(sunset: sunset, sunrise: sunrise)
             },
@@ -161,14 +188,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             accessibilityGranted: { accessibility.granted },
             askForAccessibility: { accessibility.ask() },
-            choose: { command in host.send(command) },
-            notifications: { host.notificationPermission },
-            askForNotifications: { host.askForNotifications() },
+            choose: { command in core.send(command: command) },
+            notifications: { reporter.notificationPermission },
+            askForNotifications: { reporter.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }
-                host.send(.finishOnboarding(websites: websites))
+                core.sendApp(command: .finishOnboarding(websites: websites))
                 self.onboarding = nil
-                host.watchPermissions(closely: false)
+                reporter.watchPermissions(closely: false)
                 showStatusMenu(core.snapshot())
                 // The Dock icon goes once the popover is up, while Nightcap stays active with it.
                 statusMenu?.pointOut(
@@ -178,39 +205,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.onboarding = onboarding
         dockIcon.show(for: .onboarding)
         onboarding.present()
-        host.watchPermissions(closely: true)
+        reporter.watchPermissions(closely: true)
     }
 
     /// The menu-bar item, drawn first from `snapshot`.
     private func showStatusMenu(_ snapshot: Snapshot) {
-        guard let host else { return }
-        let core = host.core
+        guard let core, let reporter else { return }
         statusMenu = StatusMenu(
             snapshot,
             current: { core.snapshot() },
             icons: siteIcons,
-            choose: { command in host.send(command) },
+            choose: { command in core.send(command: command) },
             openSettings: { [weak self] onProblem in
                 self?.showSettings(onProblem ? Settings.tab(for: core.snapshot().checks().checks) : nil)
             },
             onOpen: { [weak self] in
                 self?.tour?.menuOpened()
                 self?.askForSiteIcons()
-                Task { await host.reportSystemState() }
+                Task { await reporter.reportSystemState() }
             },
             onClose: { [weak self] in self?.tour?.menuClosed() })
     }
 
     /// Made as Settings first opens, by when the launch's outcome has started Sparkle, if it ever
     /// runs: the item that opens it appears only as the core's first outcomes are carried out.
-    private func makeSettingsWindow(_ host: CoreHost) -> SettingsWindow {
-        let core = host.core
-        return SettingsWindow(
+    private func makeSettingsWindow(core: Core, reporter: Reporter, executor: Executor) -> SettingsWindow {
+        SettingsWindow(
             current: { core.snapshot() },
             icons: siteIcons,
-            choose: { command in host.send(command) },
-            perform: { fix in host.perform(fix) },
-            checkForUpdates: host.updaterRunning ? { host.send(.checkForUpdates) } : nil,
+            choose: { command in core.send(command: command) },
+            perform: { fix in executor.perform(fix) },
+            checkForUpdates: updater.running ? { core.send(command: .checkForUpdates) } : nil,
             export: { core.snapshot().export(format: $0) },
             takeTour: { [weak self] in
                 guard let self else { return }
@@ -221,15 +246,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             },
             onClose: { [weak self] in
                 self?.dockIcon.hide(for: .settings)
-                host.watchPermissions(closely: false)
+                reporter.watchPermissions(closely: false)
             })
     }
 
     /// While website checking is on, the icons of the site in front and every site with a rule,
     /// which the menu and the Rules tab show (ADR-0019).
     private func askForSiteIcons() {
-        guard let host else { return }
-        let snapshot = host.core.snapshot()
+        guard let core else { return }
+        let snapshot = core.snapshot()
         guard snapshot.preferences().websiteChecking.state == .on else { return }
         let front = snapshot.front().site.map { [$0] } ?? []
         let ruled = Settings(snapshot, words: .system).rules.compactMap { rule -> String? in
@@ -240,12 +265,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// On `tab`, or on the tab last shown.
     private func showSettings(_ tab: SettingsWindow.Tab? = nil) {
-        guard let host, statusMenu != nil else { return }
-        let settingsWindow = self.settingsWindow ?? makeSettingsWindow(host)
+        guard let core, let reporter, let executor, statusMenu != nil else { return }
+        let settingsWindow =
+            self.settingsWindow ?? makeSettingsWindow(core: core, reporter: reporter, executor: executor)
         self.settingsWindow = settingsWindow
         dockIcon.show(for: .settings)
         settingsWindow.show(tab)
-        host.watchPermissions(closely: true)
+        reporter.watchPermissions(closely: true)
     }
 
     /// After each outcome, whichever fact or command it answers, the CLI's included, from one
@@ -253,11 +279,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// answers. The menu-bar item appears once onboarding is finished; onboarding asks for
     /// notifications itself, and without it they're asked for as the item first appears.
     private func refresh() {
-        guard let host else { return }
-        let snapshot = host.core.snapshot()
+        guard let core, let reporter else { return }
+        let snapshot = core.snapshot()
         if statusMenu == nil, onboarding == nil, snapshot.preferences().onboardingFinished {
             showStatusMenu(snapshot)
-            host.askForNotifications()
+            reporter.askForNotifications()
         }
         statusMenu?.refresh(snapshot)
         settingsWindow?.refresh(snapshot)

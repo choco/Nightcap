@@ -3,22 +3,18 @@ import NightcapCore
 import UserNotifications
 import os
 
-/// Between macOS and the core (ADR-0002). It starts the core, reports what macOS observes as
-/// facts, and sends the UI's commands. The executor carries out the outcome of every fact and
-/// command, the CLI's too. No sender looks at an outcome.
-final class CoreHost: NSObject {
+/// Reports what macOS observes to the core, as facts (ADR-0002): the front app, Night Shift's
+/// status and strength, the sun times, the login item, the grants, waking, the session and the
+/// time zone, each read again whenever it may have changed and reported only when it did. The
+/// adapters' own news, a host read or a wakeup come due, reaches the core here too. It asks for
+/// notifications as well, since each ask is followed by a read of the answer.
+final class Reporter {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
-    /// The core, whose reads answer from the snapshot it published after its last input.
-    let core: Core
-    private let inbox: Inbox
-    private let accessibilityChanged: () -> Void
+    private let core: Core
+    private let nightShift: NightShiftAdapter?
+    private let accessibility: AccessibilityPermission
+    private let loginItem: LoginItemAdapter
     private let notificationsChanged: () -> Void
-    private let showOnboarding: () -> Void
-    private(set) var nightShift: NightShiftAdapter?
-    private(set) var accessibility: AccessibilityPermission?
-    private let loginItem = LoginItemAdapter()
-    private let updater: Updater
-    private var executor: Executor?
     /// Re-reads the permissions every second while onboarding or Settings is open, and every 30
     /// seconds otherwise: macOS posts nothing when notifications are switched in System Settings.
     private var permissionsPoll: Timer?
@@ -28,88 +24,25 @@ final class CoreHost: NSObject {
     private var reportedStrength: UInt8?
     private var observers: [NSObjectProtocol] = []
 
-    /// Starts the core, which throws `CoreError.AlreadyRunning` while another Nightcap serves this
-    /// instance's socket. `notifications` posts Sparkle's reminders; `accessibilityChanged` runs
-    /// as the grant flips, `notificationsChanged` as a read finds notifications changed, and
-    /// `showOnboarding` when the core asks for onboarding.
+    /// `nightShift` is nil while Night Shift is unavailable. `notificationsChanged` runs as a read
+    /// finds notifications changed.
     init(
-        dockIcon: DockIcon,
-        notifications: Notifications,
-        accessibilityChanged: @escaping () -> Void,
-        notificationsChanged: @escaping () -> Void,
-        showOnboarding: @escaping () -> Void
-    ) throws {
-        let inbox = Inbox()
-        let bundleFolder = Bundle.main.bundleURL.deletingLastPathComponent().path
-        core = try Core.start(
-            bundleId: Bundle.main.bundleIdentifier!,
-            bundleWritable: FileManager.default.isWritableFile(atPath: bundleFolder),
-            timeZone: TimeZone.current.identifier,
-            listener: inbox)
-        self.inbox = inbox
-        self.accessibilityChanged = accessibilityChanged
-        self.notificationsChanged = notificationsChanged
-        self.showOnboarding = showOnboarding
-        updater = Updater(dockIcon: dockIcon, notifications: notifications)
-        super.init()
-        let accessibility = AccessibilityPermission { [weak self] _ in
-            self?.accessibilityChanged()
-            Task { await self?.reportSystemState() }
-        }
+        core: Core,
+        nightShift: NightShiftAdapter?,
+        accessibility: AccessibilityPermission,
+        loginItem: LoginItemAdapter,
+        notificationsChanged: @escaping () -> Void
+    ) {
+        self.core = core
+        self.nightShift = nightShift
         self.accessibility = accessibility
-        let browser = BrowserWatch { [weak self] generation, host in
-            self?.reportHost(generation: generation, host: host)
-        }
-        nightShift = NightShiftAdapter { [weak self] status in self?.reportNightShift(status) }
-        executor = Executor(
-            core: core, inbox: inbox, nightShift: nightShift, loginItem: loginItem, updater: updater,
-            wakeups: WakeupTimer { [weak self] in self?.wakeupCameDue() }, browser: browser,
-            accessibility: accessibility, notifications: self, systemSettings: SystemSettings(), rereading: self,
-            showOnboarding: showOnboarding)
+        self.loginItem = loginItem
+        self.notificationsChanged = notificationsChanged
     }
-
-    /// Whether Sparkle runs, which the launch's outcome decides.
-    var updaterRunning: Bool { updater.running }
 
     /// Notifications as the core last heard of them; not asked for until the first read, as the
     /// core starts.
     var notificationPermission: NotificationPermission { reportedPermissions?.notifications ?? .notRequested }
-
-    // MARK: Subscriptions
-
-    func onEvent(_ handler: @escaping (Event) -> Void) {
-        executor?.onEvent(handler)
-    }
-
-    func onChange(_ handler: @escaping () -> Void) {
-        executor?.onChange(handler)
-    }
-
-    func onNextChange(_ handler: @escaping () -> Void) {
-        executor?.onNextChange(handler)
-    }
-
-    // MARK: Commands in
-
-    /// A command from the menu, Settings, onboarding or the shortcut, the same as the CLI's.
-    func send(_ command: Command) {
-        core.send(command: command)
-    }
-
-    /// A command only the app has.
-    func send(_ command: AppCommand) {
-        core.sendApp(command: command)
-    }
-
-    func perform(_ fix: AppFix) {
-        executor?.perform(fix)
-    }
-
-    func stop() {
-        executor?.stop()
-    }
-
-    // MARK: Facts in
 
     /// The launch's facts, then the launch itself, whose outcome can open onboarding.
     func launch() {
@@ -169,7 +102,6 @@ final class CoreHost: NSObject {
             case .denied: .denied
             default: .granted
             }
-        guard let accessibility else { return }
         let permissions = (accessibility: accessibility.granted, notifications: read)
         if let reportedPermissions, reportedPermissions == permissions { return }
         let notificationsDiffer = read != notificationPermission
@@ -180,10 +112,22 @@ final class CoreHost: NSObject {
         if notificationsDiffer { notificationsChanged() }
     }
 
-    private func reportNightShift(_ status: NightShiftAdapter.Status) {
+    /// Night Shift as CoreBrightness announces it.
+    func reportNightShift(_ status: NightShiftAdapter.Status) {
         core.report(
             fact: .statusChanged(
                 enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside))
+    }
+
+    /// The watched browser's host, read under `generation`.
+    func reportHost(generation: UInt64, host: String?) {
+        core.report(fact: .hostChanged(generation: generation, host: host))
+    }
+
+    /// The sun times, then the wakeup itself, as one comes due.
+    func wakeupCameDue() {
+        reportSunTimes()
+        core.report(fact: .timerFired)
     }
 
     /// CoreBrightness announces no strength change, so the strength is read whenever something
@@ -207,16 +151,6 @@ final class CoreHost: NSObject {
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
         core.report(fact: .appActivated(bundleId: bundleId, isBrowser: isBrowser))
-    }
-
-    private func reportHost(generation: UInt64, host: String?) {
-        core.report(fact: .hostChanged(generation: generation, host: host))
-    }
-
-    /// The sun times, then the wakeup itself, as one comes due.
-    private func wakeupCameDue() {
-        reportSunTimes()
-        core.report(fact: .timerFired)
     }
 
     private func reportLoginItem() {
@@ -297,7 +231,7 @@ final class CoreHost: NSObject {
     }
 }
 
-extension CoreHost: Rereading {
+extension Reporter: Rereading {
     func rereadLoginItem() {
         reportLoginItem()
     }
@@ -307,7 +241,7 @@ extension CoreHost: Rereading {
     }
 }
 
-extension CoreHost: NotificationsAsking {
+extension Reporter: NotificationsAsking {
     /// The macOS prompt while notifications were never asked for; it never shows again after
     /// that, so then Nightcap's page in Notification settings.
     func allowNotifications() {

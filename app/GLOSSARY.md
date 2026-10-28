@@ -89,3 +89,13 @@ _Avoid_: hotkey
 **Peek**:
 True colour while the shortcut is held, with Night Shift still on. It drops the tint and nothing else, so the core never learns of it.
 _Avoid_: preview, which is the strength's while its slider moves
+
+### Between macOS and the core
+
+**Reporter**:
+The app's part that tells the core what macOS observes, such as the front app, Night Shift's status or a grant, each as it changes.
+_Avoid_: host, observer
+
+**Executor**:
+The app's part that carries out what the core decides, in the order it decided it: first what macOS must do, then what happened, for the menu, Settings and notifications to show. The fixes the app carries out alone go through it too.
+_Avoid_: host, dispatcher
