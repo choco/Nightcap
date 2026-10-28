@@ -65,6 +65,7 @@
 				Wording/Notices.swift,
 				Wording/OnboardingSteps.swift,
 				Wording/PlaceRows.swift,
+				Wording/Refusals.swift,
 				Wording/SettingsTabs.swift,
 				Wording/Stage.swift,
 				Wording/TourQuotes.swift,

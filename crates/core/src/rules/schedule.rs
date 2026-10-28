@@ -58,7 +58,7 @@ impl From<CheckedSchedule> for Schedule {
     .0.hour,
     .0.minute
 )]
-pub(crate) struct OutOfRange(TimeOfDay);
+pub(crate) struct OutOfRange(pub(crate) TimeOfDay);
 
 /// One end of custom hours on the clock.
 fn clock_time(time: TimeOfDay) -> Result<civil::Time, OutOfRange> {

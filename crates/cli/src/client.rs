@@ -40,13 +40,20 @@ pub(crate) fn request(
             hello: Hello::current(),
         },
     )?;
-    if let HelloReply::Error(error) = receive(&mut reader)? {
-        return Err(Failure::Rejected(error));
+    match serde_json::from_str(&receive(&mut reader)?) {
+        Ok(HelloReply::Hello(_)) => {}
+        Ok(HelloReply::Mismatch(server)) => return Err(Failure::Mismatch(Some(server))),
+        Ok(HelloReply::Malformed { message }) => return Err(Failure::Malformed(message)),
+        // A Nightcap that speaks another protocol can answer in a shape this CLI can't read.
+        Err(_) => return Err(Failure::Mismatch(None)),
     }
     send(&mut writer, request)?;
-    match receive(&mut reader)? {
+    let response = serde_json::from_str(&receive(&mut reader)?)
+        .context("Nightcap sent a message this CLI doesn't understand")?;
+    match response {
         Response::Ok(payload) => Ok(payload),
-        Response::Error(error) => Err(Failure::Rejected(error)),
+        Response::Refused(refusal) => Err(Failure::Refused(refusal)),
+        Response::Malformed { message } => Err(Failure::Malformed(message)),
     }
 }
 
@@ -128,11 +135,12 @@ fn send(writer: &mut impl Write, message: &impl Serialize) -> anyhow::Result<()>
         .context("couldn't send to Nightcap")
 }
 
-fn receive<T: serde::de::DeserializeOwned>(reader: &mut impl BufRead) -> anyhow::Result<T> {
+/// The next line Nightcap sends.
+fn receive(reader: &mut impl BufRead) -> anyhow::Result<String> {
     let mut line = String::new();
     let read = reader
         .read_line(&mut line)
         .context("Nightcap didn't answer in time")?;
     anyhow::ensure!(read > 0, "Nightcap closed the connection without answering");
-    serde_json::from_str(&line).context("Nightcap sent a message this CLI doesn't understand")
+    Ok(line)
 }

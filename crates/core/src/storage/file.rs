@@ -206,7 +206,7 @@ mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, ErrorCode, Install, Instance, Lasting, Length, OnOff, Place, Rule, RuleIdentity,
+        Command, Install, Instance, Lasting, Length, OnOff, Place, Refusal, Rule, RuleIdentity,
         Schedule, SetBy, TimeOfDay,
     };
 
@@ -309,7 +309,11 @@ mod tests {
             says: OnOff::Off,
         });
 
-        assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
+        let rules = dir.path().join("rules.toml").display().to_string();
+        assert!(
+            matches!(&answer, Err(Refusal::AdHocRulesNotSaved { path, .. }) if *path == rules),
+            "{answer:?}"
+        );
         assert_eq!(
             inner.every_rule(inner.clock.now()),
             vec![Rule {

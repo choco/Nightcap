@@ -113,9 +113,59 @@ struct NoticeTests {
         #expect(problem(.configFile(.valid(rules: 1)), .ok) == nil)
     }
 
-    @Test func aRefusalTellsNothing() {
-        let refused = Event.refused(command: .off, why: ErrorReply(code: .nightShiftUnavailable, message: ""))
+    @Test func aRefusalSaysWhyTheChangeWasntMade() {
+        let notice = Notice(.refused(command: .on, why: .nightShiftUnavailable), frontApp: nil, words: .staged)
 
-        #expect(Notice(refused, frontApp: nil, words: .staged) == nil)
+        #expect(notice?.title == "Nightcap couldn’t make that change")
+        #expect(notice?.body == "Night Shift isn’t available on this Mac.")
+    }
+
+    @Test func aRefusalNamesTheRuleItsAboutAsTheOtherNoticesDo() {
+        let refused = { (why: Refusal) in
+            Notice(.refused(command: .toggle, why: why), frontApp: figma, words: .staged)?.body
+        }
+
+        #expect(
+            refused(.configSays(identity: .app("com.figma.desktop"), says: .off))
+                == "Your config’s rule for Figma keeps Night Shift off. Change it there.")
+        #expect(
+            refused(.configSays(identity: .domain("figma.com"), says: .on))
+                == "Your config’s rule for figma.com keeps Night Shift on. Change it there.")
+        #expect(
+            refused(.configRule(identity: .app("com.apple.mail")))
+                == "The rule for com.apple.mail is your config’s. Change it there.")
+        #expect(refused(.noSuchRule(identity: .domain("figma.com"))) == "There’s no rule for figma.com.")
+    }
+
+    @Test func aRefusalSaysWhatItCarries() {
+        let refused = { (why: Refusal) in
+            Notice(.refused(command: .toggle, why: why), frontApp: nil, words: .staged)?.body
+        }
+
+        #expect(refused(.strengthUnavailable) == "Night Shift’s strength can’t be read on this Mac.")
+        #expect(refused(.strengthOutOfRange(strength: 101)) == "A strength is 0 to 100, not 101.")
+        #expect(refused(.notATimeOfDay(TimeOfDay(hour: 24, minute: 0))) == "Custom hours are times of day.")
+        #expect(refused(.tooShort) == "A length is longer than zero.")
+        #expect(refused(.tooLong(length: 3_600)) == "That length is too long.")
+        #expect(refused(.passed) == "That time has passed.")
+        #expect(refused(.noSchedule) == "There’s no schedule to wait for.")
+        #expect(
+            refused(.indefiniteIsAdded) == "Only everywhere is set for good: an app or a site gets a rule instead.")
+        #expect(
+            refused(.adHocRulesOff(.newer(path: "/n/rules.toml", version: 3)))
+                == "Ad-hoc rules are off: /n/rules.toml is version 3, from a newer Nightcap than this one.")
+        #expect(
+            refused(.adHocRulesNotSaved(path: "/n/rules.toml", message: "Is a directory (os error 21)"))
+                == "Couldn’t save /n/rules.toml: Is a directory (os error 21).")
+        #expect(
+            refused(.invalidConfig(.malformed(path: "/n/config.toml", line: 2, message: "expected a sequence")))
+                == "Your config is invalid: /n/config.toml: line 2: expected a sequence.")
+        #expect(refused(.websiteCheckingInConfig) == "Your config sets website checking, with `websites`.")
+        #expect(refused(.noUpdater(.devBuild)) == "Dev builds don’t update themselves: rebuild instead.")
+        #expect(refused(.noUpdater(.managedInstall)) == "This install is kept up to date by its installer.")
+        #expect(refused(.noLoginItem(.devBuild)) == "Dev builds don’t open themselves at login.")
+        #expect(
+            refused(.noLoginItem(.managedInstall))
+                == "This install doesn’t open itself at login: its installer starts it.")
     }
 }

@@ -8,8 +8,9 @@ use jiff::SignedDuration;
 use nightcap_core::{AppCommand, Event, Fact, Fix, Scenario, Staged, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
-    ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, Request, Schedule, WebsiteChecking,
+    ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
+    NotificationPermission, NotificationsDetail, OnOff, Refusal, Request, Schedule,
+    WebsiteChecking,
 };
 
 use common::{
@@ -265,14 +266,14 @@ fn a_fix_whose_command_is_refused_comes_back_as_a_refusal() {
         stopped.events.as_slice(),
         [Event::Refused {
             command: Command::Websites(OnOff::Off),
-            ..
+            why: Refusal::WebsiteCheckingInConfig,
         }]
     ));
     assert!(matches!(
         not_opened.events.as_slice(),
         [Event::Refused {
             command: Command::OpenAtLogin(OnOff::Off),
-            ..
+            why: Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
         }]
     ));
 }

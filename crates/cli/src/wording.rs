@@ -1,13 +1,13 @@
 //! The CLI's own words for what Nightcap reports, which sends facts alone: its decisions, its
-//! rules, its checks and the status its queries make up.
+//! rules, its checks, its refusals and the status its queries make up.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
-    Decision, FileError, Install, Lasting, Length, NightShift, NightShiftDetail,
-    NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule,
-    RuleIdentity, Schedule, SetBy, TimeOfDay,
+    Decision, FileError, Hello, Install, Lasting, Length, NightShift, NightShiftDetail,
+    NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
+    PROTOCOL_VERSION, Place, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
 
 use crate::client::Report;
@@ -219,6 +219,78 @@ fn file_error(error: &FileError) -> String {
             format!("{path} is version {version}, from a newer Nightcap than this one")
         }
     }
+}
+
+/// Why Nightcap refused what the CLI asked, as it reads after "error: ".
+pub(crate) fn refusal(refusal: &Refusal) -> String {
+    match refusal {
+        Refusal::NightShiftUnavailable => "Night Shift isn't available on this Mac".to_owned(),
+        Refusal::StrengthUnavailable => {
+            "Night Shift's strength can't be read on this Mac".to_owned()
+        }
+        Refusal::StrengthOutOfRange { strength } => {
+            format!("a strength is 0 to 100, not {strength}")
+        }
+        // Not a time on the clock, so its numbers are written as they are.
+        Refusal::NotATimeOfDay(time) => format!(
+            "custom hours are times of day, from 00:00 to 23:59, not {:02}:{:02}",
+            time.hour, time.minute
+        ),
+        Refusal::TooShort => "a length is longer than zero".to_owned(),
+        Refusal::TooLong { length } => format!("{length:#} is too long"),
+        Refusal::Passed => "that time has passed".to_owned(),
+        Refusal::NoSchedule => "there's no schedule to wait for".to_owned(),
+        Refusal::IndefiniteIsAdded => {
+            "only everywhere's indefinite rule is set: an app's or a site's is added as a rule"
+                .to_owned()
+        }
+        Refusal::ConfigSays { identity, says } => {
+            format!("{identity} comes from the config, which says {says}; change it there")
+        }
+        Refusal::ConfigRule { identity } => {
+            format!("{identity} comes from the config; change it there")
+        }
+        Refusal::NoSuchRule { identity } => format!("{identity} isn't a rule"),
+        Refusal::AdHocRulesOff(error) => format!("ad-hoc rules are off: {}", file_error(error)),
+        Refusal::AdHocRulesNotSaved { path, message } => {
+            format!("couldn't save {path}: {message}")
+        }
+        Refusal::InvalidConfig(error) => file_error(error),
+        Refusal::WebsiteCheckingInConfig => {
+            "website checking is set by `websites` in the config".to_owned()
+        }
+        Refusal::NoUpdater(NotSelfManaged::DevBuild) => {
+            "dev builds don't update themselves; rebuild instead".to_owned()
+        }
+        Refusal::NoUpdater(NotSelfManaged::ManagedInstall) => {
+            "this install is managed by its installer, which keeps it up to date".to_owned()
+        }
+        Refusal::NoLoginItem(NotSelfManaged::DevBuild) => {
+            "dev builds don't open themselves at login".to_owned()
+        }
+        Refusal::NoLoginItem(NotSelfManaged::ManagedInstall) => {
+            "this install doesn't open itself at login: its installer starts it".to_owned()
+        }
+    }
+}
+
+/// Nightcap speaks another protocol than this CLI, as told by its hello where the CLI could
+/// read it.
+pub(crate) fn mismatch(server: Option<&Hello>) -> String {
+    match server {
+        Some(server) => format!(
+            "the running Nightcap is {} (protocol {}) and this CLI speaks protocol {PROTOCOL_VERSION}; restart Nightcap",
+            server.version, server.protocol
+        ),
+        None => format!(
+            "the running Nightcap speaks another protocol than this CLI's {PROTOCOL_VERSION}; restart Nightcap"
+        ),
+    }
+}
+
+/// Nightcap couldn't read what this CLI sent, for serde's reason.
+pub(crate) fn malformed(message: &str) -> String {
+    format!("Nightcap couldn't read the request: {message}")
 }
 
 fn schedule_text(schedule: Schedule) -> String {
@@ -748,6 +820,133 @@ mod tests {
         assert_eq!(
             rule_added(&figma, OnOff::On, Some(&there(SetBy::You, OnOff::Off))),
             "Changed the ad-hoc rule for app:com.figma.Desktop to turn Night Shift on."
+        );
+    }
+
+    #[test]
+    fn a_refusal_says_why_with_what_it_names() {
+        let figma: RuleIdentity = "app:com.figma.Desktop".parse().unwrap();
+        let config = || "/Users/me/.config/nightcap/config.toml".to_owned();
+        let rules = || "/Users/me/.local/share/nightcap/rules.toml".to_owned();
+
+        for (why, said) in [
+            (
+                Refusal::NightShiftUnavailable,
+                "Night Shift isn't available on this Mac",
+            ),
+            (
+                Refusal::StrengthUnavailable,
+                "Night Shift's strength can't be read on this Mac",
+            ),
+            (
+                Refusal::StrengthOutOfRange { strength: 101 },
+                "a strength is 0 to 100, not 101",
+            ),
+            (
+                Refusal::NotATimeOfDay(TimeOfDay {
+                    hour: 24,
+                    minute: 5,
+                }),
+                "custom hours are times of day, from 00:00 to 23:59, not 24:05",
+            ),
+            (Refusal::TooShort, "a length is longer than zero"),
+            (
+                Refusal::TooLong {
+                    length: jiff::SignedDuration::from_mins(90),
+                },
+                "1h 30m is too long",
+            ),
+            (Refusal::Passed, "that time has passed"),
+            (Refusal::NoSchedule, "there's no schedule to wait for"),
+            (
+                Refusal::IndefiniteIsAdded,
+                "only everywhere's indefinite rule is set: an app's or a site's is added as a rule",
+            ),
+            (
+                Refusal::ConfigSays {
+                    identity: figma.clone(),
+                    says: OnOff::Off,
+                },
+                "app:com.figma.Desktop comes from the config, which says off; change it there",
+            ),
+            (
+                Refusal::ConfigRule {
+                    identity: figma.clone(),
+                },
+                "app:com.figma.Desktop comes from the config; change it there",
+            ),
+            (
+                Refusal::NoSuchRule {
+                    identity: "domain:figma.com".parse().unwrap(),
+                },
+                "domain:figma.com isn't a rule",
+            ),
+            (
+                Refusal::AdHocRulesOff(FileError::Newer {
+                    path: rules(),
+                    version: 3,
+                }),
+                "ad-hoc rules are off: /Users/me/.local/share/nightcap/rules.toml is version 3, from a newer Nightcap than this one",
+            ),
+            (
+                Refusal::AdHocRulesNotSaved {
+                    path: rules(),
+                    message: "Is a directory (os error 21)".to_owned(),
+                },
+                "couldn't save /Users/me/.local/share/nightcap/rules.toml: Is a directory (os error 21)",
+            ),
+            (
+                Refusal::InvalidConfig(FileError::Malformed {
+                    path: config(),
+                    line: Some(2),
+                    message: "invalid type: string \"com.figma.Desktop\", expected a sequence"
+                        .to_owned(),
+                }),
+                "/Users/me/.config/nightcap/config.toml: line 2: invalid type: string \"com.figma.Desktop\", expected a sequence",
+            ),
+            (
+                Refusal::WebsiteCheckingInConfig,
+                "website checking is set by `websites` in the config",
+            ),
+            (
+                Refusal::NoUpdater(NotSelfManaged::DevBuild),
+                "dev builds don't update themselves; rebuild instead",
+            ),
+            (
+                Refusal::NoUpdater(NotSelfManaged::ManagedInstall),
+                "this install is managed by its installer, which keeps it up to date",
+            ),
+            (
+                Refusal::NoLoginItem(NotSelfManaged::DevBuild),
+                "dev builds don't open themselves at login",
+            ),
+            (
+                Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
+                "this install doesn't open itself at login: its installer starts it",
+            ),
+        ] {
+            assert_eq!(refusal(&why), said, "{why:?}");
+        }
+    }
+
+    #[test]
+    fn a_protocol_mismatch_names_the_running_nightcap_where_it_can() {
+        let server = Hello {
+            protocol: 6,
+            version: "1.2.0".to_owned(),
+        };
+
+        assert_eq!(
+            mismatch(Some(&server)),
+            format!(
+                "the running Nightcap is 1.2.0 (protocol 6) and this CLI speaks protocol {PROTOCOL_VERSION}; restart Nightcap"
+            )
+        );
+        assert_eq!(
+            mismatch(None),
+            format!(
+                "the running Nightcap speaks another protocol than this CLI's {PROTOCOL_VERSION}; restart Nightcap"
+            )
         );
     }
 

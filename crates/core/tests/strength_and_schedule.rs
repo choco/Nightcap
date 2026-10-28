@@ -11,7 +11,7 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, ErrorCode, Length, OnOff, Payload, Place, Request, Response, Schedule, TimeOfDay,
+    Command, Length, OnOff, Payload, Place, Refusal, Request, Response, Schedule, TimeOfDay,
 };
 
 use common::{
@@ -67,7 +67,7 @@ fn strength_while_night_shift_is_unavailable_is_refused() {
     let (effects, response) = send(&staged, Command::Strength(40));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(refusal(response), ErrorCode::NightShiftUnavailable);
+    assert_eq!(refusal(response), Refusal::NightShiftUnavailable);
 }
 
 #[test]
@@ -77,7 +77,7 @@ fn strength_before_the_shell_could_read_it_is_refused() {
     let (effects, response) = send(&staged, Command::PreviewStrength(40));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(refusal(response), ErrorCode::StrengthUnavailable);
+    assert_eq!(refusal(response), Refusal::StrengthUnavailable);
 }
 
 #[test]
@@ -87,7 +87,10 @@ fn a_strength_above_100_is_refused() {
     let (effects, response) = send(&staged, Command::Strength(101));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(refusal(response), ErrorCode::BadRequest);
+    assert_eq!(
+        refusal(response),
+        Refusal::StrengthOutOfRange { strength: 101 }
+    );
 }
 
 #[test]
@@ -128,7 +131,7 @@ fn set_schedule_while_night_shift_is_unavailable_is_refused() {
     let (effects, response) = send(&staged, Command::SetSchedule(Schedule::Off));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(refusal(response), ErrorCode::NightShiftUnavailable);
+    assert_eq!(refusal(response), Refusal::NightShiftUnavailable);
 }
 
 #[test]
@@ -145,7 +148,13 @@ fn custom_hours_that_arent_times_of_day_are_refused() {
     let (effects, response) = send(&staged, Command::SetSchedule(hours));
 
     assert_eq!(effects, Vec::new());
-    assert_eq!(refusal(response), ErrorCode::BadRequest);
+    assert_eq!(
+        refusal(response),
+        Refusal::NotATimeOfDay(TimeOfDay {
+            hour: 24,
+            minute: 0
+        })
+    );
 }
 
 #[test]
@@ -271,6 +280,9 @@ fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
         staged.write_config(Some(format!("[night_shift]\n{night_shift}\n").as_str()));
         let (outcome, response) = staged.request(Request::Reload);
         assert_eq!(outcome.effects, Vec::new(), "{night_shift}");
-        assert_eq!(refusal(response), ErrorCode::InvalidConfig, "{night_shift}");
+        assert!(
+            matches!(refusal(response), Refusal::InvalidConfig(_)),
+            "{night_shift}"
+        );
     }
 }

@@ -2,43 +2,47 @@ import Foundation
 import NightcapCore
 
 /// What a notification says about something the core told: an outside change adopted as a
-/// snooze, the first launch after an update, or a problem that appeared on its own.
+/// snooze, the first launch after an update, a problem that appeared on its own, or a command
+/// the core refused, which left what the user chose undone.
 struct Notice: Equatable {
     let title: String
     let body: String
     /// The page a click on the notification opens.
     var opens: URL?
 
-    /// The app in front, which a snoozed rule of its own is named by.
+    /// The app in front, which a rule of its own is named by.
     struct FrontApp {
         let bundleId: String
         let name: String?
     }
 
     /// The notice for `event`, in `words`, or nil where the user isn't told: an adoption that
-    /// snoozed no rule, or a refused command, which the user is looking at already.
+    /// snoozed no rule.
     init?(_ event: Event, frontApp: FrontApp?, words: Wording) {
+        // A rule goes by its app's name while that app is in front, else by its bundle ID.
+        let rule = { (identity: RuleIdentity) -> Wording.Place in
+            switch identity {
+            case .app(let bundleId):
+                .app(
+                    name: frontApp.flatMap { app in
+                        app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
+                    } ?? bundleId)
+            case .domain(let domain): .site(domain: domain)
+            }
+        }
         switch event {
         case .adopted(_, let snoozed, let state, let until):
             guard let snoozed else { return nil }
-            let rule: Wording.Place =
-                switch snoozed {
-                case .app(let bundleId):
-                    .app(
-                        name: frontApp.flatMap { app in
-                            app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
-                        } ?? bundleId)
-                case .domain(let domain): .site(domain: domain)
-                }
-            self.init(title: words.turnedOutsideNightcap(state), body: words.snoozed(rule, state, until: until))
+            self.init(
+                title: words.turnedOutsideNightcap(state), body: words.snoozed(rule(snoozed), state, until: until))
         case .updated(_, let to):
             self.init(
                 title: words.updated(to: to), body: words.whatsNew,
                 opens: URL(string: "https://nightcap.choco.me/changelog/#v\(to)"))
         case .problemAppeared(let check):
             self.init(problem: check.detail, words: words)
-        case .refused:
-            return nil
+        case .refused(_, let why):
+            self.init(title: words.refused, body: words.refusal(why, rule: rule))
         }
     }
 

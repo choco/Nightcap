@@ -14,8 +14,8 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
 use nightcap_protocol::{
-    Check, CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload,
-    Place, Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
+    Check, CheckKind, Command, Lasting, Length, NotificationPermission, OnOff, Payload, Place,
+    Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -123,11 +123,12 @@ pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
     rules
 }
 
-pub(crate) fn refusal(response: Response) -> ErrorCode {
-    let Response::Error(error) = response else {
-        panic!("expected an error, got {response:?}");
+/// Why the core refused a request, which it must have.
+pub(crate) fn refusal(response: Response) -> Refusal {
+    let Response::Refused(refusal) = response else {
+        panic!("expected a refusal, got {response:?}");
     };
-    error.code
+    refusal
 }
 
 /// The ad-hoc rules `rules.toml` keeps, as a core started on it alone would load them.

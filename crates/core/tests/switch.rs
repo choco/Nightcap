@@ -5,7 +5,7 @@ mod common;
 
 use nightcap_core::{Effect, Fact};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, Lasting, Length, OnOff, Payload, Place, Reason, Response, Rule,
+    Command, Decision, Lasting, Length, OnOff, Payload, Place, Reason, Refusal, Response, Rule,
     Schedule,
 };
 
@@ -34,10 +34,7 @@ fn a_command_while_night_shift_is_unavailable_is_refused() {
     let (effects, response) = send(&staged, Command::On);
 
     assert_eq!(effects, Vec::new());
-    let Response::Error(error) = response else {
-        panic!("expected an error, got {response:?}");
-    };
-    assert_eq!(error.code, ErrorCode::NightShiftUnavailable);
+    assert_eq!(refusal(response), Refusal::NightShiftUnavailable);
 }
 
 /// Everywhere set by `rule`, with no end, over no schedule.
@@ -353,23 +350,35 @@ fn lengths_that_cant_be_are_refused() {
     let staged = late().stage().unwrap();
     staged.report(reported(true, Schedule::Off));
 
-    for command in [
-        set(Place::Everywhere, OnOff::Off, minutes(0)),
-        set(
-            Place::Everywhere,
-            OnOff::Off,
-            Lasting::Until(at("2026-10-16T22:00:00+02:00")),
+    for (command, why) in [
+        (
+            set(Place::Everywhere, OnOff::Off, minutes(0)),
+            Refusal::TooShort,
         ),
-        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
-        set(
-            Place::App("com.figma.Desktop".parse().unwrap()),
-            OnOff::Off,
-            Lasting::Indefinite,
+        (
+            set(
+                Place::Everywhere,
+                OnOff::Off,
+                Lasting::Until(at("2026-10-16T22:00:00+02:00")),
+            ),
+            Refusal::Passed,
+        ),
+        (
+            set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
+            Refusal::NoSchedule,
+        ),
+        (
+            set(
+                Place::App("com.figma.Desktop".parse().unwrap()),
+                OnOff::Off,
+                Lasting::Indefinite,
+            ),
+            Refusal::IndefiniteIsAdded,
         ),
     ] {
         let (effects, response) = send(&staged, command.clone());
         assert_eq!(effects, Vec::new(), "{command:?}");
-        assert_eq!(refusal(response), ErrorCode::BadRequest, "{command:?}");
+        assert_eq!(refusal(response), why, "{command:?}");
     }
 }
 

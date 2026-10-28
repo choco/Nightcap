@@ -5,8 +5,8 @@ mod common;
 
 use nightcap_core::{AppCommand, Effect, Event, Fact, Fix, Outcome, Staged};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, CheckState, Command, ErrorCode, Install, Instance, LoginItem,
-    OnOff, OpenAtLoginDetail, Payload, Request, Response,
+    Check, CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem,
+    NotSelfManaged, OnOff, OpenAtLoginDetail, Payload, Refusal, Request, Response,
 };
 
 use common::{check, launch, noon, refusal, send};
@@ -26,19 +26,25 @@ fn update_in_a_self_managed_release_starts_sparkles_check() {
 
 #[test]
 fn update_is_refused_where_nightcap_doesnt_update_itself() {
-    for (instance, install) in [
-        (Instance::Release, Install::Managed),
-        (Instance::Dev, Install::SelfManaged),
+    for (instance, install, not_self_managed) in [
+        (
+            Instance::Release,
+            Install::Managed,
+            NotSelfManaged::ManagedInstall,
+        ),
+        (
+            Instance::Dev,
+            Install::SelfManaged,
+            NotSelfManaged::DevBuild,
+        ),
+        (Instance::Dev, Install::Managed, NotSelfManaged::DevBuild),
     ] {
         let staged = noon().installed(instance, install).stage().unwrap();
 
         let (outcome, response) = staged.request(Request::Update);
 
         assert_eq!(outcome.effects, Vec::new());
-        let Response::Error(error) = response else {
-            panic!("expected an error, got {response:?}");
-        };
-        assert_eq!(error.code, ErrorCode::NoUpdater);
+        assert_eq!(refusal(response), Refusal::NoUpdater(not_self_managed));
     }
 }
 
@@ -144,6 +150,11 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
         .unwrap();
     managed.report(login_item(LoginItem::NotRegistered));
     assert_eq!(login_check(&managed), None);
+    let (_, response) = send(&managed, Command::OpenAtLogin(OnOff::On));
+    assert_eq!(
+        refusal(response),
+        Refusal::NoLoginItem(NotSelfManaged::ManagedInstall)
+    );
 
     let dev = noon()
         .installed(Instance::Dev, Install::SelfManaged)
@@ -152,7 +163,10 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
     dev.report(login_item(LoginItem::NotRegistered));
     assert_eq!(login_check(&dev), None);
     let (_, response) = send(&dev, Command::OpenAtLogin(OnOff::On));
-    assert_eq!(refusal(response), ErrorCode::NoLoginItem);
+    assert_eq!(
+        refusal(response),
+        Refusal::NoLoginItem(NotSelfManaged::DevBuild)
+    );
 }
 
 /// What opening at login's check found and where that leaves it.

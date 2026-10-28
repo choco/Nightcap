@@ -5,9 +5,9 @@ mod common;
 
 use nightcap_core::{Effect, Event, Fact, File};
 use nightcap_protocol::{
-    Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
-    FileError, Lasting, Length, OnOff, Payload, Place, Reason, Request, Response, Rule,
-    RuleIdentity, SetBy,
+    Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ExportFormat, FileError,
+    Lasting, Length, OnOff, Payload, Place, Reason, Refusal, Request, Response, Rule, RuleIdentity,
+    SetBy,
 };
 
 use common::{
@@ -120,17 +120,12 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
     let (outcome, response) = staged.request(Request::Reload);
 
     assert_eq!(outcome.effects, Vec::new());
-    let Response::Error(error) = response else {
-        panic!("expected an error, got {response:?}");
+    let malformed = FileError::Malformed {
+        path: staged.core().config().path,
+        line: Some(2),
+        message: "invalid type: string \"com.figma.Desktop\", expected a sequence".to_owned(),
     };
-    assert_eq!(error.code, ErrorCode::InvalidConfig);
-    assert_eq!(
-        error.message,
-        format!(
-            "{}: line 2: invalid type: string \"com.figma.Desktop\", expected a sequence",
-            staged.core().config().path
-        )
-    );
+    assert_eq!(refusal(response), Refusal::InvalidConfig(malformed));
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
     assert_eq!(
         staged.core().config().error,
@@ -257,10 +252,10 @@ fn domains_in_the_config_are_normalized_and_checked() {
             format!("[rules.off]\ndomain = [{entry:?}]\n").as_str(),
         ));
         let (_, response) = staged.request(Request::Reload);
-        let Response::Error(error) = response else {
-            panic!("{entry:?} was accepted: {response:?}");
-        };
-        assert_eq!(error.code, ErrorCode::InvalidConfig, "{entry:?}");
+        assert!(
+            matches!(&response, Response::Refused(Refusal::InvalidConfig(_))),
+            "{entry:?} was accepted: {response:?}"
+        );
     }
 }
 
@@ -313,7 +308,7 @@ fn a_rule_that_doesnt_exist_is_refused() {
 
     let (_, removed) = send(&staged, Command::RemoveRule(figma()));
 
-    assert_eq!(refusal(removed), ErrorCode::NoSuchRule);
+    assert_eq!(refusal(removed), Refusal::NoSuchRule { identity: figma() });
 }
 
 #[test]
@@ -323,8 +318,22 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
 
     let (_, response) = send(&staged, add_rule(figma()));
 
-    assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
-    assert!(staged.core().config().ad_hoc_error.is_some());
+    let why = refusal(response);
+    assert!(
+        matches!(
+            &why,
+            Refusal::AdHocRulesOff(FileError::Newer { version: 3, .. })
+        ),
+        "{why:?}"
+    );
+    assert_eq!(
+        Some(why),
+        staged
+            .core()
+            .config()
+            .ad_hoc_error
+            .map(Refusal::AdHocRulesOff)
+    );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(newer));
 }
@@ -356,24 +365,25 @@ fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
 fn a_config_rule_cant_be_replaced_or_removed() {
     let staged = forced();
 
-    for command in [
-        Command::RemoveRule(figma()),
-        Command::AddRule {
-            identity: figma(),
-            says: OnOff::On,
-        },
+    for (command, why) in [
+        (
+            Command::RemoveRule(figma()),
+            Refusal::ConfigRule { identity: figma() },
+        ),
+        (
+            Command::AddRule {
+                identity: figma(),
+                says: OnOff::On,
+            },
+            Refusal::ConfigSays {
+                identity: figma(),
+                says: OnOff::Off,
+            },
+        ),
     ] {
         let (effects, response) = send(&staged, command.clone());
         assert_eq!(effects, Vec::new(), "{command:?}");
-        let Response::Error(error) = response else {
-            panic!("{command:?} was accepted: {response:?}");
-        };
-        assert_eq!(error.code, ErrorCode::ConfigRule, "{command:?}");
-        assert!(
-            error.message.contains("change it there"),
-            "{}",
-            error.message
-        );
+        assert_eq!(refusal(response), why, "{command:?}");
     }
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
 }
@@ -388,7 +398,7 @@ fn removing_a_config_rule_from_the_app_is_refused() {
     let (outcome, answer) = staged.send(Command::RemoveRule(figma()));
 
     assert_eq!(outcome.effects, Vec::new());
-    assert_eq!(answer.unwrap_err().code, ErrorCode::ConfigRule);
+    assert_eq!(answer, Err(Refusal::ConfigRule { identity: figma() }));
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
 }
 
@@ -404,7 +414,13 @@ fn adding_a_rule_from_the_app_while_rules_toml_is_from_a_newer_nightcap_is_refus
     let (outcome, answer) = staged.send(add_rule(figma()));
 
     assert_eq!(outcome.effects, Vec::new());
-    assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
+    assert!(
+        matches!(
+            answer,
+            Err(Refusal::AdHocRulesOff(FileError::Newer { version: 3, .. }))
+        ),
+        "{answer:?}"
+    );
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(newer));
 }
@@ -570,15 +586,12 @@ fn a_config_that_cant_be_is_refused() {
     ] {
         staged.write_config(Some(config));
         let (_, response) = staged.request(Request::Reload);
-        let Response::Error(error) = response else {
+        let Response::Refused(Refusal::InvalidConfig(FileError::Invalid { message, .. })) =
+            response
+        else {
             panic!("{config:?} was accepted: {response:?}");
         };
-        assert_eq!(error.code, ErrorCode::InvalidConfig, "{config:?}");
-        assert!(
-            error.message.contains(said),
-            "{config:?}: {}",
-            error.message
-        );
+        assert!(message.contains(said), "{config:?}: {message}");
     }
 }
 
@@ -615,13 +628,16 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
         staged.write_config(Some(config));
         let (_, response) = staged.request(Request::Reload);
 
-        let Response::Error(error) = response else {
-            panic!("{config:?} was accepted: {response:?}");
-        };
         assert!(
-            error.message.starts_with(&format!("{path}: line {line}: ")),
-            "{config:?}: {}",
-            error.message
+            matches!(
+                &response,
+                Response::Refused(Refusal::InvalidConfig(FileError::Invalid {
+                    path: at_path,
+                    line: Some(at),
+                    ..
+                })) if *at == line && *at_path == path
+            ),
+            "{config:?}: {response:?}"
         );
         let found = staged
             .core()

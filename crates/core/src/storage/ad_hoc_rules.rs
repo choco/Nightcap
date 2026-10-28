@@ -152,12 +152,13 @@ impl Store {
 
 /// The ad-hoc rules, ready to paste into the config of the given format. Bundle IDs and
 /// domains never hold quotes or backslashes, so they need no escaping.
-pub(crate) fn export(
-    rules: &[(RuleIdentity, OnOff)],
-    format: ExportFormat,
-) -> Result<String, toml::ser::Error> {
+#[expect(
+    clippy::expect_used,
+    reason = "TOML refuses only shapes the rule lists never have"
+)]
+pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> String {
     let rules = Rules::from(rules);
-    Ok(match format {
+    match format {
         ExportFormat::Nix => {
             let list = |items: &[String]| {
                 let quoted: Vec<_> = items.iter().map(|item| format!("\"{item}\" ")).collect();
@@ -181,9 +182,9 @@ pub(crate) fn export(
             struct Export<'a> {
                 rules: &'a Rules,
             }
-            toml::to_string(&Export { rules: &rules })?
+            toml::to_string(&Export { rules: &rules }).expect("rules always serialize")
         }
-    })
+    }
 }
 
 impl From<&[(RuleIdentity, OnOff)]> for Rules {

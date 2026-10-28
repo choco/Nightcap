@@ -10,7 +10,7 @@ mod common;
 
 use nightcap_core::{AppCommand, Effect, Fact, File, Scenario, Staged};
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason,
+    Command, Decision, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason, Refusal,
     Request, Response, Rule, RuleIdentity, SetBy, TourState,
 };
 
@@ -327,7 +327,10 @@ fn a_config_rule_reloaded_mid_tour_replaces_the_tours_rule_for_its_app() {
     };
     assert_eq!(rules(&staged), vec![config_rule]);
     let (_, response) = send(&staged, Command::RemoveRule(sample()));
-    assert_eq!(refusal(response), ErrorCode::ConfigRule);
+    assert_eq!(
+        refusal(response),
+        Refusal::ConfigRule { identity: sample() }
+    );
 }
 
 #[test]

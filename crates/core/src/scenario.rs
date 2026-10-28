@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, Decision, ErrorReply, Install, Instance, Request, Response};
+use nightcap_protocol::{Command, Decision, Install, Instance, Refusal, Request, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -85,8 +85,8 @@ pub enum ScenarioError {
     #[error("{message}")]
     Invalid { message: String },
     /// The core refused the command at this step, counted from 0.
-    #[error("step {step} was refused: {message}")]
-    Refused { step: u32, message: String },
+    #[error("step {step} was refused: {why:?}")]
+    Refused { step: u32, why: Refusal },
 }
 
 #[uniffi::export]
@@ -187,11 +187,8 @@ impl Scenario {
             match happening {
                 Step::Fact(fact) => _ = staged.report(fact),
                 Step::Command(command) => {
-                    if let (_, Err(refusal)) = staged.send(command) {
-                        return Err(ScenarioError::Refused {
-                            step,
-                            message: refusal.message,
-                        });
+                    if let (_, Err(why)) = staged.send(command) {
+                        return Err(ScenarioError::Refused { step, why });
                     }
                 }
                 Step::AppCommand(command) => _ = staged.send_app(command),
@@ -290,7 +287,7 @@ impl Staged {
 
     /// Sends a command as the app does, and returns its outcome, which tells of a refusal as an
     /// event, and what the core answers.
-    pub fn send(&self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
+    pub fn send(&self, command: Command) -> (Outcome, Result<Decision, Refusal>) {
         self.inline.decide(|inner| inner.choose(command))
     }
 

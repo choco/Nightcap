@@ -148,13 +148,8 @@ impl Core {
     }
 
     /// The ad-hoc rules, written for the config (ADR-0007).
-    #[expect(
-        clippy::expect_used,
-        reason = "TOML refuses only shapes the rule lists never have, and the shell's call can't fail"
-    )]
     pub fn export(&self, format: ExportFormat) -> String {
         ad_hoc_rules::export(&self.published.latest().ad_hoc, format)
-            .expect("rules always serialize")
     }
 
     /// Night Shift as the shell last reported it, and its schedule.

@@ -3,7 +3,8 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    BundleId, Decision, Domain, Lasting, Length, OnOff, Place, Reason, Rule, RuleIdentity, SetBy,
+    BundleId, Decision, Domain, Lasting, Length, OnOff, Place, Reason, Refusal, Rule, RuleIdentity,
+    SetBy,
 };
 
 use crate::rules::domain::{self, Host};
@@ -51,7 +52,7 @@ pub(crate) struct Kept {
 ///
 /// Nothing ends by itself: a caller expires what ended by its `now` before it changes
 /// anything, so no change lands on a rule that already ended, and `look` shows the places as of
-/// the last `expire`.
+/// the last `expire`. A change that's refused leaves the places as they were.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Places {
     /// What decides now, and outside a tour what's kept.
@@ -130,27 +131,6 @@ pub(crate) struct Adoption {
     pub snoozed: Option<RuleIdentity>,
     pub state: OnOff,
     pub until: Option<Timestamp>,
-}
-
-/// Why a change can't be made. A refused change leaves the places as they were.
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum Refusal {
-    #[error("a length is longer than zero")]
-    TooShort,
-    #[error("{0:#} is too long")]
-    TooLong(SignedDuration),
-    #[error("that time has passed")]
-    Passed,
-    #[error("there's no schedule to wait for")]
-    NoSchedule,
-    #[error("only everywhere's indefinite rule is set: an app's or a site's is added as a rule")]
-    IndefiniteIsAdded,
-    #[error("{identity} comes from the config, which says {says}; change it there")]
-    ConfigSays { identity: RuleIdentity, says: OnOff },
-    #[error("{0} comes from the config; change it there")]
-    ConfigRule(RuleIdentity),
-    #[error("{0} isn't a rule")]
-    NoSuchRule(RuleIdentity),
 }
 
 impl Places {
@@ -233,7 +213,7 @@ impl Places {
                 let until = world
                     .now
                     .checked_add(duration)
-                    .map_err(|_| Refusal::TooLong(duration))?;
+                    .map_err(|_| Refusal::TooLong { length: duration })?;
                 Length::Until { until }
             }
             Lasting::Until(until) => {
@@ -388,9 +368,13 @@ impl Places {
             self.live.ad_hoc.remove(index);
             tracing::info!("removed an ad-hoc rule: {}", loggable(identity));
         } else if self.config.iter().any(|(config, _)| config == identity) {
-            return Err(Refusal::ConfigRule(identity.clone()));
+            return Err(Refusal::ConfigRule {
+                identity: identity.clone(),
+            });
         } else {
-            return Err(Refusal::NoSuchRule(identity.clone()));
+            return Err(Refusal::NoSuchRule {
+                identity: identity.clone(),
+            });
         }
         self.clear(&Place::from(identity.clone()));
         self.lay_out();
@@ -1586,18 +1570,20 @@ mod tests {
             )]),
         );
         type Change<'a> = &'a dyn Fn(&mut Places) -> Result<(), Refusal>;
-        let refused: [(Change<'_>, &str); 8] = [
+        let refused: [(Change<'_>, Refusal); 8] = [
             (
                 &|places| places.set(&figma, OnOff::On, minutes(0), &world),
-                "a length is longer than zero",
+                Refusal::TooShort,
             ),
             (
                 &|places| places.set(&figma, OnOff::On, Lasting::For(SignedDuration::MAX), &world),
-                "is too long",
+                Refusal::TooLong {
+                    length: SignedDuration::MAX,
+                },
             ),
             (
                 &|places| places.set(&figma, OnOff::On, Lasting::Until(at(DAY)), &world),
-                "that time has passed",
+                Refusal::Passed,
             ),
             (
                 &|places| {
@@ -1608,30 +1594,36 @@ mod tests {
                         &unscheduled.world(),
                     )
                 },
-                "there's no schedule to wait for",
+                Refusal::NoSchedule,
             ),
             (
                 &|places| places.set(&figma, OnOff::On, Lasting::Indefinite, &world),
-                "an app's or a site's is added as a rule",
+                Refusal::IndefiniteIsAdded,
             ),
             (
                 &|places| places.add_rule(&identity("app:com.figma.Desktop"), OnOff::On),
-                "comes from the config, which says off; change it there",
+                Refusal::ConfigSays {
+                    identity: identity("app:com.figma.Desktop"),
+                    says: OnOff::Off,
+                },
             ),
             (
                 &|places| places.remove_rule(&identity("app:com.figma.Desktop")),
-                "comes from the config; change it there",
+                Refusal::ConfigRule {
+                    identity: identity("app:com.figma.Desktop"),
+                },
             ),
             (
                 &|places| places.remove_rule(&identity("app:com.apple.mail")),
-                "isn't a rule",
+                Refusal::NoSuchRule {
+                    identity: identity("app:com.apple.mail"),
+                },
             ),
         ];
 
         for (change, why) in refused {
             let mut places = before.clone();
-            let refusal = change(&mut places).unwrap_err();
-            assert!(refusal.to_string().ends_with(why), "{refusal}");
+            assert_eq!(change(&mut places), Err(why));
             assert_eq!(places, before);
         }
     }

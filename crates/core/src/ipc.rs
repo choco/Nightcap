@@ -14,9 +14,7 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
 
-use nightcap_protocol::{
-    ErrorCode, ErrorReply, Hello, HelloMessage, HelloReply, PROTOCOL_VERSION, Request, Response,
-};
+use nightcap_protocol::{Hello, HelloMessage, HelloReply, PROTOCOL_VERSION, Request, Response};
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::CoreError;
@@ -93,28 +91,21 @@ fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io:
     let hello = match read_line::<HelloMessage>(&mut reader)? {
         Ok(message) => message.hello,
         Err(error) => {
-            return write_line(&mut writer, &HelloReply::Error(bad_request(&error)));
+            let message = error.to_string();
+            return write_line(&mut writer, &HelloReply::Malformed { message });
         }
     };
     if hello.protocol != PROTOCOL_VERSION {
-        let ours = Hello::current();
-        let message = format!(
-            "the daemon is Nightcap {} (protocol {}) and this CLI speaks protocol {}; restart Nightcap",
-            ours.version, ours.protocol, hello.protocol
-        );
-        return write_line(
-            &mut writer,
-            &HelloReply::Error(ErrorReply {
-                code: ErrorCode::ProtocolMismatch,
-                message,
-            }),
-        );
+        return write_line(&mut writer, &HelloReply::Mismatch(Hello::current()));
     }
     write_line(&mut writer, &HelloReply::Hello(Hello::current()))?;
 
     let request = match read_line::<Request>(&mut reader)? {
         Ok(request) => request,
-        Err(error) => return write_line(&mut writer, &Response::Error(bad_request(&error))),
+        Err(error) => {
+            let message = error.to_string();
+            return write_line(&mut writer, &Response::Malformed { message });
+        }
     };
     let response = match request {
         Request::Query(query) => published.latest().answer(&query),
@@ -154,13 +145,6 @@ fn write_line(writer: &mut impl Write, message: &impl Serialize) -> io::Result<(
     writer.flush()
 }
 
-fn bad_request(error: &serde_json::Error) -> ErrorReply {
-    ErrorReply {
-        code: ErrorCode::BadRequest,
-        message: error.to_string(),
-    }
-}
-
 fn io_error(context: &str, error: &io::Error) -> CoreError {
     CoreError::Io {
         message: format!("{context}: {error}"),
@@ -178,9 +162,8 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Command, Decision, ErrorCode, Front, Hello, HelloMessage, HelloReply, Length, NightShift,
-        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule,
-        SetBy,
+        Command, Decision, Front, Hello, HelloMessage, HelloReply, Length, NightShift, OnOff,
+        PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule, SetBy,
     };
 
     use super::{bind, serve};
@@ -301,10 +284,7 @@ mod tests {
 
         let reply = Client::connect(&socket).hello(99);
 
-        let HelloReply::Error(error) = reply else {
-            panic!("expected an error, got {reply:?}");
-        };
-        assert_eq!(error.code, ErrorCode::ProtocolMismatch);
+        assert_eq!(reply, HelloReply::Mismatch(Hello::current()));
         assert!(
             inbox.try_recv().is_err(),
             "a refused client never reaches the core"
@@ -322,10 +302,10 @@ mod tests {
         client.send(r#"{"query":"weather"}"#);
         let response: Response = client.receive();
 
-        let Response::Error(error) = response else {
-            panic!("expected an error, got {response:?}");
-        };
-        assert_eq!(error.code, ErrorCode::BadRequest);
+        assert!(
+            matches!(&response, Response::Malformed { message } if message.contains("weather")),
+            "{response:?}"
+        );
         assert!(inbox.try_recv().is_err());
     }
 
@@ -342,10 +322,10 @@ mod tests {
                 r#"{{"command":{{"add_rule":{{"identity":"{bad}","says":"off"}}}}}}"#
             ));
             let response: Response = client.receive();
-            let Response::Error(error) = response else {
-                panic!("{bad} was passed on: {response:?}");
-            };
-            assert_eq!(error.code, ErrorCode::BadRequest, "{bad}");
+            assert!(
+                matches!(response, Response::Malformed { .. }),
+                "{bad} was passed on: {response:?}"
+            );
         }
         assert!(inbox.try_recv().is_err());
     }

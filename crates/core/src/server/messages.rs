@@ -6,7 +6,7 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    Check, Command, ErrorReply, LoginItem, NotificationPermission, OnOff, Place, RuleIdentity,
+    Check, Command, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity,
     Schedule,
 };
 
@@ -148,7 +148,7 @@ pub enum Event {
     ProblemAppeared { check: Check },
     /// The core refused a command from the app, sent on its own or run by a fix; the CLI hears
     /// its refusal as the reply.
-    Refused { command: Command, why: ErrorReply },
+    Refused { command: Command, why: Refusal },
 }
 
 /// What one fact or command led to, in the order the core decided it.

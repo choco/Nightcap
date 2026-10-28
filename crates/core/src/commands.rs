@@ -4,22 +4,24 @@
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
-    Command, Decision, ErrorCode, ErrorReply, LoginItem, NightShift, OnOff, RuleIdentity,
+    Command, Decision, FileError, Instance, LoginItem, NightShift, NotSelfManaged, OnOff, Refusal,
+    RuleIdentity,
 };
 
-use crate::rules::places::{Places, Refusal};
-use crate::rules::schedule::CheckedSchedule;
+use crate::rules::places::Places;
+use crate::rules::schedule::{CheckedSchedule, OutOfRange};
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config;
 use crate::storage::config::{ConfigError, NightShiftConfig};
+use crate::storage::file::File;
 use crate::{Effect, Event, Outcome};
 
 impl Inner {
     /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
     /// as an event. A problem it causes isn't announced: the user is looking at what
     /// they chose.
-    pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
+    pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Decision, Refusal>) {
         self.turn(false, |inner, outcome| inner.run_chosen(command, outcome))
     }
 
@@ -29,11 +31,10 @@ impl Inner {
         &mut self,
         command: Command,
         outcome: &mut Outcome,
-    ) -> Result<Decision, ErrorReply> {
+    ) -> Result<Decision, Refusal> {
         let answer = self.run_command(&command, &mut outcome.effects);
         if let Err(why) = &answer {
-            // The message can name a domain, so only the code is logged (ADR-0009).
-            tracing::warn!("a command from the app was refused: {:?}", why.code);
+            tracing::warn!("a command from the app was refused: {}", kind(why));
             outcome.events.push(Event::Refused {
                 command,
                 why: why.clone(),
@@ -47,7 +48,7 @@ impl Inner {
         &mut self,
         command: &Command,
         effects: &mut Vec<Effect>,
-    ) -> Result<Decision, ErrorReply> {
+    ) -> Result<Decision, Refusal> {
         let night_shift = self.facts.night_shift;
         let needs_night_shift = matches!(
             command,
@@ -61,10 +62,7 @@ impl Inner {
                 | Command::SetSchedule(_)
         );
         if needs_night_shift && night_shift == NightShift::Unavailable {
-            return Err(refused(
-                ErrorCode::NightShiftUnavailable,
-                "Night Shift isn't available on this Mac",
-            ));
+            return Err(Refusal::NightShiftUnavailable);
         }
         let now = self.clock.now();
         let done = match command {
@@ -86,10 +84,7 @@ impl Inner {
                 place,
                 state: on,
                 length,
-            } => self
-                .places
-                .set(place, *on, *length, &self.facts.world(now))
-                .map_err(ErrorReply::from),
+            } => self.places.set(place, *on, *length, &self.facts.world(now)),
             Command::Reset(place) => {
                 self.places.reset(place);
                 Ok(())
@@ -109,23 +104,14 @@ impl Inner {
                     }
                     Ok(())
                 } else {
-                    Err(refused(
-                        ErrorCode::NoLoginItem,
-                        "this install doesn't open itself at login: its installer starts it, or it's a dev build",
-                    ))
+                    Err(Refusal::NoLoginItem(self.not_self_managed()))
                 }
             }
             Command::Strength(value) | Command::PreviewStrength(value) => {
                 if self.strength.is_none() {
-                    Err(refused(
-                        ErrorCode::StrengthUnavailable,
-                        "Night Shift's strength can't be read on this Mac",
-                    ))
+                    Err(Refusal::StrengthUnavailable)
                 } else if *value > 100 {
-                    Err(refused(
-                        ErrorCode::BadRequest,
-                        format!("a strength is 0 to 100, not {value}"),
-                    ))
+                    Err(Refusal::StrengthOutOfRange { strength: *value })
                 } else {
                     let commit = matches!(command, Command::Strength(_));
                     if commit {
@@ -141,7 +127,7 @@ impl Inner {
                 }
             }
             Command::SetSchedule(schedule) => match CheckedSchedule::try_from(*schedule) {
-                Err(error) => Err(refused(ErrorCode::BadRequest, error.to_string())),
+                Err(OutOfRange(time)) => Err(Refusal::NotATimeOfDay(time)),
                 Ok(_) => {
                     tracing::info!("schedule set on command");
                     self.reconciling.writing_schedule(*schedule, night_shift);
@@ -164,13 +150,13 @@ impl Inner {
         done.map(|()| self.places.look(&self.facts.world(now)).decision)
     }
 
-    fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<(), ErrorReply> {
+    fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<(), Refusal> {
         let mut next = self.places.clone();
         next.add_rule(identity, says)?;
         self.commit_rules(next)
     }
 
-    fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), ErrorReply> {
+    fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {
         let mut next = self.places.clone();
         next.remove_rule(identity)?;
         self.commit_rules(next)
@@ -178,16 +164,14 @@ impl Inner {
 
     /// Takes `next` as the places once `rules.toml` keeps the ad-hoc rules it has, if they
     /// changed.
-    fn commit_rules(&mut self, next: Places) -> Result<(), ErrorReply> {
+    fn commit_rules(&mut self, next: Places) -> Result<(), Refusal> {
         if next.kept().ad_hoc != self.places.kept().ad_hoc {
             self.check_ad_hoc_rules_on()?;
             self.ad_hoc_store
                 .save(&next.kept().ad_hoc)
-                .map_err(|error| {
-                    refused(
-                        ErrorCode::AdHocRulesOff,
-                        format!("couldn't save rules.toml: {error}"),
-                    )
+                .map_err(|error| Refusal::AdHocRulesNotSaved {
+                    path: self.files.path(File::Rules).display().to_string(),
+                    message: error.to_string(),
                 })?;
         }
         self.places = next;
@@ -211,7 +195,7 @@ impl Inner {
 
     /// Loads the config again; an invalid one keeps the rules loaded before, and its check says
     /// why.
-    pub(crate) fn reload(&mut self, effects: &mut Vec<Effect>) -> Result<(), ErrorReply> {
+    pub(crate) fn reload(&mut self, effects: &mut Vec<Effect>) -> Result<(), Refusal> {
         match config::load(self.files.as_ref()) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
@@ -229,7 +213,7 @@ impl Inner {
                     "keeping the rules loaded before: the config {}",
                     error.kind()
                 );
-                let refusal = refused(ErrorCode::InvalidConfig, error.to_string());
+                let refusal = Refusal::InvalidConfig(FileError::from(&error));
                 self.loaded.config_error = Some(error);
                 Err(refusal)
             }
@@ -237,25 +221,27 @@ impl Inner {
     }
 
     /// Website checking as the user chose it, unless the config sets it (ADR-0012).
-    pub(crate) fn set_websites(&mut self, on: bool) -> Result<(), ErrorReply> {
+    pub(crate) fn set_websites(&mut self, on: bool) -> Result<(), Refusal> {
         if self.facts.config_websites.is_some() {
-            return Err(refused(
-                ErrorCode::SetInConfig,
-                "website checking is set by `websites` in the config",
-            ));
+            return Err(Refusal::WebsiteCheckingInConfig);
         }
         tracing::info!("website checking {}", OnOff::from(on));
         self.facts.websites = on;
         Ok(())
     }
 
-    fn check_ad_hoc_rules_on(&self) -> Result<(), ErrorReply> {
+    fn check_ad_hoc_rules_on(&self) -> Result<(), Refusal> {
         match &self.loaded.ad_hoc_error {
             None => Ok(()),
-            Some(error) => Err(refused(
-                ErrorCode::AdHocRulesOff,
-                format!("ad-hoc rules are off: {error}"),
-            )),
+            Some(error) => Err(Refusal::AdHocRulesOff(error.into())),
+        }
+    }
+
+    /// What runs, where it isn't a self-managed release (ADR-0011).
+    pub(crate) fn not_self_managed(&self) -> NotSelfManaged {
+        match self.instance {
+            Instance::Dev => NotSelfManaged::DevBuild,
+            Instance::Release => NotSelfManaged::ManagedInstall,
         }
     }
 
@@ -302,24 +288,26 @@ pub(crate) struct Loaded {
     pub(crate) ad_hoc_error: Option<AdHocError>,
 }
 
-impl From<Refusal> for ErrorReply {
-    fn from(refusal: Refusal) -> Self {
-        let code = match refusal {
-            Refusal::TooShort
-            | Refusal::TooLong(_)
-            | Refusal::Passed
-            | Refusal::NoSchedule
-            | Refusal::IndefiniteIsAdded => ErrorCode::BadRequest,
-            Refusal::ConfigSays { .. } | Refusal::ConfigRule(_) => ErrorCode::ConfigRule,
-            Refusal::NoSuchRule(_) => ErrorCode::NoSuchRule,
-        };
-        refused(code, refusal.to_string())
-    }
-}
-
-pub(crate) fn refused(code: ErrorCode, message: impl Into<String>) -> ErrorReply {
-    ErrorReply {
-        code,
-        message: message.into(),
+/// A refusal as the log may name it: never the app, domain or path it carries (ADR-0009).
+pub(crate) fn kind(refusal: &Refusal) -> &'static str {
+    match refusal {
+        Refusal::NightShiftUnavailable => "Night Shift unavailable",
+        Refusal::StrengthUnavailable => "strength unavailable",
+        Refusal::StrengthOutOfRange { .. } => "strength out of range",
+        Refusal::NotATimeOfDay(_) => "custom hours out of range",
+        Refusal::TooShort => "length too short",
+        Refusal::TooLong { .. } => "length too long",
+        Refusal::Passed => "time passed",
+        Refusal::NoSchedule => "no schedule",
+        Refusal::IndefiniteIsAdded => "indefinite rule is added",
+        Refusal::ConfigSays { .. } => "the config says otherwise",
+        Refusal::ConfigRule { .. } => "a config rule",
+        Refusal::NoSuchRule { .. } => "no such rule",
+        Refusal::AdHocRulesOff(_) => "ad-hoc rules off",
+        Refusal::AdHocRulesNotSaved { .. } => "rules.toml not saved",
+        Refusal::InvalidConfig(_) => "invalid config",
+        Refusal::WebsiteCheckingInConfig => "website checking in the config",
+        Refusal::NoUpdater(_) => "no updater",
+        Refusal::NoLoginItem(_) => "no login item",
     }
 }

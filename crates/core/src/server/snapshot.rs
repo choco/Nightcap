@@ -3,9 +3,8 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use nightcap_protocol::{ErrorCode, OnOff, Payload, Query, Response, RuleIdentity};
+use nightcap_protocol::{OnOff, Payload, Query, Response, RuleIdentity};
 
-use crate::commands::refused;
 use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
@@ -40,13 +39,9 @@ impl Snapshot {
             Query::Checks => Response::Ok(Payload::Checks(answers.checks.clone())),
             Query::Tour => Response::Ok(Payload::Tour(answers.tour)),
             Query::About => Response::Ok(Payload::About(answers.about.clone())),
-            Query::Export(format) => match ad_hoc_rules::export(&self.ad_hoc, *format) {
-                Ok(text) => Response::Ok(Payload::Export(text)),
-                Err(error) => Response::Error(refused(
-                    ErrorCode::Internal,
-                    format!("couldn't write the rules as TOML: {error}"),
-                )),
-            },
+            Query::Export(format) => {
+                Response::Ok(Payload::Export(ad_hoc_rules::export(&self.ad_hoc, *format)))
+            }
         }
     }
 }

@@ -7,10 +7,10 @@ use std::time::SystemTime;
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
-    CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ErrorCode,
-    ErrorReply, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length, LoginItem,
-    NightShift, NightShiftDetail, NightShiftState, NotificationPermission, NotificationsDetail,
-    OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Rule,
+    CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
+    FileError, Front, Inherited, Install, Lasting, Length, LoginItem, NightShift, NightShiftDetail,
+    NightShiftState, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
+    OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences, Reason, Refusal, Rule,
     RuleIdentity, Schedule, SetBy, TimeOfDay, TourState, WebsiteChecking,
 };
 
@@ -231,25 +231,31 @@ pub enum Command {
 }
 
 #[uniffi::remote(Enum)]
-pub enum ErrorCode {
-    ProtocolMismatch,
-    BadRequest,
+pub enum Refusal {
     NightShiftUnavailable,
     StrengthUnavailable,
-    InvalidConfig,
-    NoUpdater,
-    ConfigRule,
-    NoSuchRule,
-    AdHocRulesOff,
-    SetInConfig,
-    NoLoginItem,
-    Internal,
+    StrengthOutOfRange { strength: u8 },
+    NotATimeOfDay(TimeOfDay),
+    TooShort,
+    TooLong { length: SignedDuration },
+    Passed,
+    NoSchedule,
+    IndefiniteIsAdded,
+    ConfigSays { identity: RuleIdentity, says: OnOff },
+    ConfigRule { identity: RuleIdentity },
+    NoSuchRule { identity: RuleIdentity },
+    AdHocRulesOff(FileError),
+    AdHocRulesNotSaved { path: String, message: String },
+    InvalidConfig(FileError),
+    WebsiteCheckingInConfig,
+    NoUpdater(NotSelfManaged),
+    NoLoginItem(NotSelfManaged),
 }
 
-#[uniffi::remote(Record)]
-pub struct ErrorReply {
-    pub code: ErrorCode,
-    pub message: String,
+#[uniffi::remote(Enum)]
+pub enum NotSelfManaged {
+    DevBuild,
+    ManagedInstall,
 }
 
 #[uniffi::remote(Enum)]

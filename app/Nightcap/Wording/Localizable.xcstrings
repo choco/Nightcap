@@ -181,6 +181,9 @@
         }
       }
     },
+    "A length is longer than zero." : {
+
+    },
     "A little warm" : {
 
     },
@@ -191,6 +194,9 @@
 
     },
     "A site’s rule covers all its pages, in Safari, Chrome, Firefox and more." : {
+
+    },
+    "A strength is 0 to 100, not %lld." : {
 
     },
     "Accessibility" : {
@@ -370,6 +376,9 @@
     "Cancel" : {
 
     },
+    "Change it there." : {
+
+    },
     "Check for Updates…" : {
 
     },
@@ -452,7 +461,20 @@
     "Couldn't read it: %@." : {
 
     },
+    "Couldn’t save %@: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t save %1$@: %2$@."
+          }
+        }
+      }
+    },
     "Current step" : {
+
+    },
+    "Custom hours are times of day." : {
 
     },
     "Custom hours in Night Shift’s settings work without them." : {
@@ -471,6 +493,12 @@
 
     },
     "Design" : {
+
+    },
+    "Dev builds don’t open themselves at login." : {
+
+    },
+    "Dev builds don’t update themselves: rebuild instead." : {
 
     },
     "Display" : {
@@ -864,6 +892,9 @@
     "Night Shift, with exceptions" : {
 
     },
+    "Night Shift’s strength can’t be read on this Mac." : {
+
+    },
     "Nightcap" : {
 
     },
@@ -871,6 +902,9 @@
 
     },
     "Nightcap can’t follow sunset to sunrise" : {
+
+    },
+    "Nightcap couldn’t make that change" : {
 
     },
     "Nightcap doesn’t open at login." : {
@@ -1122,6 +1156,9 @@
     "On until you turn it off" : {
 
     },
+    "Only everywhere is set for good: an app or a site gets a rule instead." : {
+
+    },
     "Only the site’s name." : {
 
     },
@@ -1325,6 +1362,12 @@
     "Tell me when a rule is snoozed" : {
 
     },
+    "That length is too long." : {
+
+    },
+    "That time has passed." : {
+
+    },
     "That was a peek." : {
 
     },
@@ -1355,13 +1398,28 @@
     "The rule covers it and its subdomains." : {
 
     },
+    "The rule for %@ is your config’s." : {
+
+    },
     "The rule keeps Night Shift off here." : {
 
     },
     "The times follow your location." : {
 
     },
+    "There’s no rule for %@." : {
+
+    },
+    "There’s no schedule to wait for." : {
+
+    },
     "These are on your Mac." : {
+
+    },
+    "This install doesn’t open itself at login: its installer starts it." : {
+
+    },
+    "This install is kept up to date by its installer." : {
 
     },
     "This is Night Shift" : {
@@ -1549,6 +1607,18 @@
 
     },
     "Your config decides" : {
+
+    },
+    "Your config is invalid: %@." : {
+
+    },
+    "Your config sets website checking, with `websites`." : {
+
+    },
+    "Your config’s rule for %@ keeps Night Shift off." : {
+
+    },
+    "Your config’s rule for %@ keeps Night Shift on." : {
 
     },
     "Your screen is showing this strength now." : {

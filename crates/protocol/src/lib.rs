@@ -2,7 +2,8 @@
 //!
 //! Every message is one JSON object per line (ADR-0010). A connection opens with a
 //! [`HelloMessage`] from the client, answered by a [`HelloReply`]; then the client sends one
-//! [`Request`] and receives one [`Response`].
+//! [`Request`] and receives one [`Response`]. They carry facts, never words: each client words
+//! them itself.
 
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -13,8 +14,8 @@ use idna::AsciiDenyList;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
-/// Sent in every `Hello`; the CLI and the daemon must match exactly.
-pub const PROTOCOL_VERSION: u32 = 6;
+/// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -96,7 +97,13 @@ pub struct HelloMessage {
 #[serde(rename_all = "snake_case")]
 pub enum HelloReply {
     Hello(Hello),
-    Error(ErrorReply),
+    /// The client speaks another protocol: the server's own hello, for the client to say which
+    /// Nightcap answered and that it needs a restart.
+    Mismatch(Hello),
+    /// The hello isn't one: serde's reason.
+    Malformed {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -219,7 +226,11 @@ pub enum ExportFormat {
 #[serde(rename_all = "snake_case")]
 pub enum Response {
     Ok(Payload),
-    Error(ErrorReply),
+    Refused(Refusal),
+    /// The request isn't one this Nightcap reads: serde's reason.
+    Malformed {
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -894,34 +905,59 @@ pub enum NotificationPermission {
     Granted,
 }
 
+/// Why Nightcap refused a command, an update check or a reload, which then changes nothing:
+/// what each client needs to say why, in its own words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ErrorReply {
-    pub code: ErrorCode,
-    pub message: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ErrorCode {
-    ProtocolMismatch,
-    BadRequest,
+pub enum Refusal {
+    /// This Mac has no Night Shift, which the command needs.
     NightShiftUnavailable,
     /// Night Shift works, but its strength can't be read or set on this Mac.
     StrengthUnavailable,
-    InvalidConfig,
-    /// The install doesn't update itself: its installer does, or it's a dev build.
-    NoUpdater,
-    /// The rule comes from the config, so only the config can change it.
-    ConfigRule,
-    NoSuchRule,
-    /// `rules.toml` is invalid or from a newer Nightcap, so ad-hoc rules can't change.
-    AdHocRulesOff,
-    /// The config sets this, so only the config can change it.
-    SetInConfig,
-    /// The install doesn't open itself at login: its installer starts it, or it's a dev build.
-    NoLoginItem,
-    /// Nightcap failed at something it should always manage: a bug.
-    Internal,
+    /// A strength is 0 to 100.
+    StrengthOutOfRange { strength: u8 },
+    /// One end of custom hours isn't a time of day, from 00:00 to 23:59.
+    NotATimeOfDay(TimeOfDay),
+    /// A length of zero or less (ADR-0018).
+    TooShort,
+    /// A length that would end past any time Nightcap can keep.
+    TooLong { length: SignedDuration },
+    /// Until a time that has passed.
+    Passed,
+    /// Until the schedule turns, with no schedule to wait for.
+    NoSchedule,
+    /// Only everywhere's indefinite rule is set: an app's or a site's is added as a rule.
+    IndefiniteIsAdded,
+    /// The config's rule for the app or domain says the other way, and only the config changes
+    /// it (ADR-0006).
+    ConfigSays { identity: RuleIdentity, says: OnOff },
+    /// The rule is the config's, so only the config removes it.
+    ConfigRule { identity: RuleIdentity },
+    /// The app or domain has no rule of the user's or the tour's.
+    NoSuchRule { identity: RuleIdentity },
+    /// `rules.toml` can't be used, so ad-hoc rules can't change (ADR-0007).
+    AdHocRulesOff(FileError),
+    /// `rules.toml` couldn't be written, for the reason macOS gives; the rules stay as they were.
+    AdHocRulesNotSaved { path: String, message: String },
+    /// The config can't be used, so a reload keeps the rules loaded before.
+    InvalidConfig(FileError),
+    /// `websites` in the config sets website checking (ADR-0012).
+    WebsiteCheckingInConfig,
+    /// The install doesn't update itself (ADR-0011).
+    NoUpdater(NotSelfManaged),
+    /// The install doesn't open itself at login (ADR-0011).
+    NoLoginItem(NotSelfManaged),
+}
+
+/// What runs where it isn't a self-managed release, which updates itself and opens itself at
+/// login (ADR-0011).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotSelfManaged {
+    /// A dev build, which would shadow the installed app: it's rebuilt, and started by hand.
+    DevBuild,
+    /// A managed install, whose installer updates and starts it.
+    ManagedInstall,
 }
 
 #[cfg(test)]
@@ -945,16 +981,117 @@ mod tests {
             r#"{"hello":{"protocol":1,"version":"1.2.0"}}"#
         );
         assert_eq!(
-            json(&HelloReply::Error(ErrorReply {
-                code: ErrorCode::ProtocolMismatch,
+            json(&HelloReply::Mismatch(hello)),
+            r#"{"mismatch":{"protocol":1,"version":"1.2.0"}}"#
+        );
+        assert_eq!(
+            json(&HelloReply::Malformed {
                 message: "x".to_owned()
-            })),
-            r#"{"error":{"code":"protocol_mismatch","message":"x"}}"#
+            }),
+            r#"{"malformed":{"message":"x"}}"#
         );
         assert_eq!(
             json(&Request::Command(Command::Toggle)),
             r#"{"command":"toggle"}"#
         );
+        assert_eq!(
+            json(&Response::Malformed {
+                message: "x".to_owned()
+            }),
+            r#"{"malformed":{"message":"x"}}"#
+        );
+    }
+
+    #[test]
+    fn refusals_match_the_documented_wire_format_and_read_back() {
+        let figma = || RuleIdentity::App("com.figma.Desktop".parse().unwrap());
+        let rules = || "/Users/me/.local/share/nightcap/rules.toml".to_owned();
+        let refusals = [
+            (
+                Refusal::NightShiftUnavailable,
+                r#""night_shift_unavailable""#,
+            ),
+            (Refusal::StrengthUnavailable, r#""strength_unavailable""#),
+            (
+                Refusal::StrengthOutOfRange { strength: 101 },
+                r#"{"strength_out_of_range":{"strength":101}}"#,
+            ),
+            (
+                Refusal::NotATimeOfDay(TimeOfDay {
+                    hour: 24,
+                    minute: 0,
+                }),
+                r#"{"not_a_time_of_day":{"hour":24,"minute":0}}"#,
+            ),
+            (Refusal::TooShort, r#""too_short""#),
+            (
+                Refusal::TooLong {
+                    length: SignedDuration::from_hours(200_000),
+                },
+                r#"{"too_long":{"length":"PT200000H"}}"#,
+            ),
+            (Refusal::Passed, r#""passed""#),
+            (Refusal::NoSchedule, r#""no_schedule""#),
+            (Refusal::IndefiniteIsAdded, r#""indefinite_is_added""#),
+            (
+                Refusal::ConfigSays {
+                    identity: figma(),
+                    says: OnOff::Off,
+                },
+                r#"{"config_says":{"identity":"app:com.figma.Desktop","says":"off"}}"#,
+            ),
+            (
+                Refusal::ConfigRule { identity: figma() },
+                r#"{"config_rule":{"identity":"app:com.figma.Desktop"}}"#,
+            ),
+            (
+                Refusal::NoSuchRule {
+                    identity: RuleIdentity::Domain("figma.com".parse().unwrap()),
+                },
+                r#"{"no_such_rule":{"identity":"domain:figma.com"}}"#,
+            ),
+            (
+                Refusal::AdHocRulesOff(FileError::Newer {
+                    path: rules(),
+                    version: 3,
+                }),
+                r#"{"ad_hoc_rules_off":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}"#,
+            ),
+            (
+                Refusal::AdHocRulesNotSaved {
+                    path: rules(),
+                    message: "Permission denied (os error 13)".to_owned(),
+                },
+                r#"{"ad_hoc_rules_not_saved":{"path":"/Users/me/.local/share/nightcap/rules.toml","message":"Permission denied (os error 13)"}}"#,
+            ),
+            (
+                Refusal::InvalidConfig(FileError::Malformed {
+                    path: "/Users/me/.config/nightcap/config.toml".to_owned(),
+                    line: Some(2),
+                    message: "expected a sequence".to_owned(),
+                }),
+                r#"{"invalid_config":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"message":"expected a sequence"}}}"#,
+            ),
+            (
+                Refusal::WebsiteCheckingInConfig,
+                r#""website_checking_in_config""#,
+            ),
+            (
+                Refusal::NoUpdater(NotSelfManaged::DevBuild),
+                r#"{"no_updater":"dev_build"}"#,
+            ),
+            (
+                Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
+                r#"{"no_login_item":"managed_install"}"#,
+            ),
+        ];
+
+        for (refusal, wire) in refusals {
+            let response = Response::Refused(refusal);
+            let wire = format!(r#"{{"refused":{wire}}}"#);
+            assert_eq!(json(&response), wire);
+            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
+        }
     }
 
     #[test]

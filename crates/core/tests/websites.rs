@@ -10,7 +10,7 @@ mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{
-    Command, ErrorCode, Lasting, NotificationPermission, OnOff, Place, Reason, RuleIdentity,
+    Command, Lasting, NotificationPermission, OnOff, Place, Reason, Refusal, RuleIdentity,
     WebsiteChecking,
 };
 
@@ -208,7 +208,7 @@ fn the_config_decides_website_checking_when_it_sets_it() {
 
     let (_, response) = send(&staged, Command::Websites(OnOff::Off));
 
-    assert_eq!(refusal(response), ErrorCode::SetInConfig);
+    assert_eq!(refusal(response), Refusal::WebsiteCheckingInConfig);
     assert_eq!(
         staged.core().preferences().website_checking,
         WebsiteChecking {

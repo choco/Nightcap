@@ -9,7 +9,7 @@ use clap::Parser;
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, Zoned};
 use nightcap_protocol::{
-    self as protocol, Decision, ErrorReply, Instance, Lasting, OnOff, Payload, Place, Query,
+    self as protocol, Decision, Hello, Instance, Lasting, OnOff, Payload, Place, Query, Refusal,
     Request,
 };
 
@@ -63,12 +63,19 @@ fn next_occurrence(time: jiff::civil::Time, now: &Zoned) -> Result<Timestamp, St
     Ok(next.timestamp())
 }
 
-/// Why a command failed, which decides the exit code.
+/// Why a command failed, which decides the exit code: 1 where Nightcap couldn't be reached, else
+/// 2.
 enum Failure {
-    /// The server couldn't be reached or didn't answer: exit 1.
+    /// The server couldn't be reached or didn't answer.
     Unreachable(anyhow::Error),
-    /// The server answered and refused the request: exit 2.
-    Rejected(ErrorReply),
+    /// The server answered and refused the request.
+    Refused(Refusal),
+    /// The server speaks another protocol: its hello, where this CLI could read it.
+    Mismatch(Option<Hello>),
+    /// The server couldn't read what this CLI sent: serde's reason.
+    Malformed(String),
+    /// A mistake in what was asked, found before reaching Nightcap.
+    Mistaken(String),
 }
 
 impl From<anyhow::Error> for Failure {
@@ -100,11 +107,17 @@ fn main() -> ExitCode {
             eprintln!("error: {error:#}");
             ExitCode::from(1)
         }
-        Err(Failure::Rejected(error)) => {
-            eprintln!("error: {}", error.message);
-            ExitCode::from(2)
-        }
+        Err(Failure::Refused(refusal)) => refused(&wording::refusal(&refusal)),
+        Err(Failure::Mismatch(server)) => refused(&wording::mismatch(server.as_ref())),
+        Err(Failure::Malformed(message)) => refused(&wording::malformed(&message)),
+        Err(Failure::Mistaken(message)) => refused(&message),
     }
+}
+
+/// Says why Nightcap, or this CLI before it, refused what was asked: exit 2.
+fn refused(why: &str) -> ExitCode {
+    eprintln!("error: {why}");
+    ExitCode::from(2)
 }
 
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
@@ -139,10 +152,7 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                 return Err(unexpected_reply());
             };
             let Some(strength) = night_shift.strength else {
-                return Err(Failure::Rejected(ErrorReply {
-                    code: protocol::ErrorCode::StrengthUnavailable,
-                    message: "Night Shift's strength can't be read on this Mac".to_owned(),
-                }));
+                return Err(Failure::Refused(Refusal::StrengthUnavailable));
             };
             println!("Strength: {strength}");
             return Ok(());
@@ -162,8 +172,12 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             println!("Checking for updates; Nightcap shows what it finds.");
             return Ok(());
         }
-        Command::On(details) => change(OnOff::On, &details, &Zoned::now()).map_err(rejected)?,
-        Command::Off(details) => change(OnOff::Off, &details, &Zoned::now()).map_err(rejected)?,
+        Command::On(details) => {
+            change(OnOff::On, &details, &Zoned::now()).map_err(Failure::Mistaken)?
+        }
+        Command::Off(details) => {
+            change(OnOff::Off, &details, &Zoned::now()).map_err(Failure::Mistaken)?
+        }
         Command::Toggle => protocol::Command::Toggle,
         Command::Reset { place } => protocol::Command::Reset(place.place()),
         Command::Websites { state } => {
@@ -210,15 +224,6 @@ fn set_elsewhere(
         )),
         _ => None,
     }
-}
-
-/// A mistake in what was asked, said before reaching Nightcap: exit 2, as Nightcap's own
-/// refusals do.
-fn rejected(message: String) -> Failure {
-    Failure::Rejected(ErrorReply {
-        code: protocol::ErrorCode::BadRequest,
-        message,
-    })
 }
 
 fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {

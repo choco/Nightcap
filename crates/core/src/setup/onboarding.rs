@@ -4,6 +4,7 @@
 use nightcap_protocol::NightShift;
 
 use crate::Effect;
+use crate::commands::kind;
 use crate::server::state::Inner;
 
 /// The current onboarding version: welcome, notifications, and website checking.
@@ -52,7 +53,7 @@ impl Inner {
         tracing::info!("onboarding finished");
         self.onboarding = ONBOARDING;
         if let Err(refusal) = self.set_websites(websites) {
-            tracing::debug!("the config keeps website checking: {:?}", refusal.code);
+            tracing::debug!("the config keeps website checking: {}", kind(&refusal));
         }
     }
 }

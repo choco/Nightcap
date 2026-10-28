@@ -13,14 +13,8 @@ final class Notifications: NSObject {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    /// Tells the user of an event, with a notification where it calls for one. A refusal is only
-    /// logged, by its code: the user is looking at what they chose, and its message can name a
-    /// domain.
+    /// Tells the user of an event, with a notification where it calls for one.
     func tell(_ event: Event) {
-        if case .refused(_, let why) = event {
-            log.notice("the core refused a command: \(String(describing: why.code), privacy: .public)")
-            return
-        }
         let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
             app.bundleIdentifier.map { Notice.FrontApp(bundleId: $0, name: app.localizedName) }
         }
