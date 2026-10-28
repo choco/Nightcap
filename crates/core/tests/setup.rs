@@ -29,7 +29,7 @@ fn website_checking_switches_unless_the_config_sets_it() {
     assert_eq!(checking(&staged), state(OnOff::On, false));
 
     staged.write_config(Some("websites = false\n"));
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
     assert_eq!(checking(&staged), state(OnOff::Off, true));
 }
 
@@ -130,13 +130,13 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         config(ConfigFileDetail::Missing, CheckState::Off)
     );
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         config(ConfigFileDetail::Valid { rules: 1 }, CheckState::Ok)
     );
     staged.write_config(Some("[rules.off]\ndomian = [\"figma.com\"]\n"));
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         config(
@@ -149,7 +149,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         )
     );
     staged.write_config(Some("[night_shift]\nstrength = 101\n"));
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         config(

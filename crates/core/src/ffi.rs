@@ -240,6 +240,8 @@ pub enum Command {
     Strength(u8),
     PreviewStrength(u8),
     SetSchedule(Schedule),
+    Reload,
+    CheckForUpdates,
 }
 
 #[uniffi::remote(Enum)]

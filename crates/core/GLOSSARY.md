@@ -149,10 +149,10 @@ Nightcap's core as it runs, with the app and the CLI as its clients: the only wr
 _Avoid_: daemon, service
 
 **Command**:
-A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The app and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the app's alone.
+A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload or an update check, which Nightcap may refuse. The app and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the app's alone.
 
 **Refusal**:
-Why Nightcap refused a command, an update check or a reload, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too.
+Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too.
 
 **Query**:
 A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.

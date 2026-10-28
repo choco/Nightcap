@@ -6,7 +6,7 @@ mod common;
 use nightcap_core::{AppCommand, Effect, Event, Fact, Fix, Outcome, Staged};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem,
-    NotSelfManaged, OnOff, OpenAtLoginDetail, Payload, Refusal, Request, Response,
+    NotSelfManaged, OnOff, OpenAtLoginDetail, Payload, Refusal, Response,
 };
 
 use common::{check, launch, noon, refusal, send};
@@ -18,9 +18,9 @@ fn update_in_a_self_managed_release_starts_sparkles_check() {
         .stage()
         .unwrap();
 
-    let (outcome, response) = staged.request(Request::Update);
+    let (effects, response) = send(&staged, Command::CheckForUpdates);
 
-    assert_eq!(outcome.effects, vec![Effect::CheckForUpdates]);
+    assert_eq!(effects, vec![Effect::CheckForUpdates]);
     assert_eq!(response, Response::Ok(Payload::UpdateCheckStarted));
 }
 
@@ -41,11 +41,41 @@ fn update_is_refused_where_nightcap_doesnt_update_itself() {
     ] {
         let staged = noon().installed(instance, install).stage().unwrap();
 
-        let (outcome, response) = staged.request(Request::Update);
+        let (effects, response) = send(&staged, Command::CheckForUpdates);
 
-        assert_eq!(outcome.effects, Vec::new());
+        assert_eq!(effects, Vec::new());
         assert_eq!(refusal(response), Refusal::NoUpdater(not_self_managed));
     }
+}
+
+#[test]
+fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
+    let self_managed = noon()
+        .installed(Instance::Release, Install::SelfManaged)
+        .stage()
+        .unwrap();
+    let managed = noon().stage().unwrap();
+
+    let (started, _) = self_managed.send(Command::CheckForUpdates);
+    let (refused, _) = managed.send(Command::CheckForUpdates);
+
+    assert_eq!(
+        started,
+        Outcome {
+            effects: vec![Effect::CheckForUpdates],
+            events: Vec::new(),
+        }
+    );
+    assert_eq!(
+        refused,
+        Outcome {
+            effects: Vec::new(),
+            events: vec![Event::Refused {
+                command: Command::CheckForUpdates,
+                why: Refusal::NoUpdater(NotSelfManaged::ManagedInstall),
+            }],
+        }
+    );
 }
 
 #[test]
@@ -89,7 +119,7 @@ fn only_an_install_that_updates_itself_opens_itself_at_login() {
         let staged = noon().installed(instance, install).stage().unwrap();
         staged.report(login_item(LoginItem::NotRegistered));
 
-        let (_, update) = staged.request(Request::Update);
+        let (_, update) = send(&staged, Command::CheckForUpdates);
         let (_, login) = send(&staged, Command::OpenAtLogin(OnOff::On));
 
         let case = format!("{instance:?}, {install:?}");

@@ -222,7 +222,7 @@ final class CoreHost: NSObject {
         if notificationsDiffer { notificationsChanged() }
     }
 
-    func checkForUpdates() {
+    private func checkForUpdates() {
         guard let updater else {
             log.error("the updater isn't running; dropped a check for updates")
             return

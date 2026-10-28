@@ -321,7 +321,7 @@ fn a_config_rule_reloaded_mid_tour_replaces_the_tours_rule_for_its_app() {
     send(&staged, add_rule(sample()));
     staged.write_config(Some(format!("[rules.on]\napp = [\"{SAMPLE}\"]\n").as_str()));
 
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
 
     let config_rule = Rule {
         says: OnOff::On,

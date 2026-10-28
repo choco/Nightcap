@@ -137,7 +137,8 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             return Ok(());
         }
         Command::Reload { wait } => {
-            let Payload::Rules(rules) = request(instance, &Request::Reload, wait)? else {
+            let reload = Request::Command(protocol::Command::Reload);
+            let Payload::Rules(rules) = request(instance, &reload, wait)? else {
                 return Err(unexpected_reply());
             };
             println!(
@@ -168,7 +169,8 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
             return Ok(());
         }
         Command::Update => {
-            let Payload::UpdateCheckStarted = request(instance, &Request::Update, None)? else {
+            let check = Request::Command(protocol::Command::CheckForUpdates);
+            let Payload::UpdateCheckStarted = request(instance, &check, None)? else {
                 return Err(unexpected_reply());
             };
             println!("Checking for updates; Nightcap shows what it finds.");

@@ -261,12 +261,12 @@ mod tests {
 
         drop(UnixStream::connect(&socket).unwrap());
 
-        let response = ask(&socket, Request::Reload);
+        let response = ask(&socket, Request::Command(Command::Reload));
         let Ok(Mail::Request { request, reply }) = inbox.recv_timeout(Duration::from_secs(5))
         else {
             panic!("the reload reaches the mailbox");
         };
-        assert_eq!(request, Request::Reload);
+        assert_eq!(request, Request::Command(Command::Reload));
         reply
             .send(Response::Ok(Payload::Rules(Vec::new())))
             .unwrap();

@@ -1,8 +1,7 @@
-//! The CLI's requests (ADR-0010): commands, an update check and a reload, which the socket's
-//! thread puts into the core's mailbox, and the queries and an export, which it answers from the
-//! snapshot.
+//! The CLI's requests (ADR-0010): commands, which the socket's thread puts into the core's
+//! mailbox, and the queries and an export, which it answers from the snapshot.
 
-use nightcap_protocol::{Payload, Refusal, Request, Response};
+use nightcap_protocol::{Request, Response};
 
 use crate::server::snapshot::Snapshot;
 use crate::server::state::Inner;
@@ -25,18 +24,6 @@ impl Inner {
             },
             // The socket's thread answers queries from the snapshot, which says the same.
             Request::Query(query) => Snapshot::of(self).answer(query),
-            Request::Update => {
-                if self.manages_itself {
-                    tracing::info!("checking for updates");
-                    effects.push(Effect::CheckForUpdates);
-                    return Response::Ok(Payload::UpdateCheckStarted);
-                }
-                Response::Refused(Refusal::NoUpdater(self.not_self_managed()))
-            }
-            Request::Reload => match self.reload(effects) {
-                Ok(()) => Response::Ok(Payload::Rules(self.every_rule(self.clock.now()))),
-                Err(refusal) => Response::Refused(refusal),
-            },
         }
     }
 }

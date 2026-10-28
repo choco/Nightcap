@@ -231,7 +231,7 @@ fn reloading_applies_only_the_night_shift_value_that_changed() {
     staged.write_config(Some(
         "[night_shift]\nstrength = 50\nschedule = \"sunset-to-sunrise\"\n",
     ));
-    let (outcome, _) = staged.request(Request::Reload);
+    let (outcome, _) = staged.request(Request::Command(Command::Reload));
 
     assert_eq!(
         outcome.effects,
@@ -252,9 +252,9 @@ fn a_night_shift_value_taken_out_of_the_config_stays_and_applies_again_when_put_
     launch(&staged);
 
     staged.write_config(Some(""));
-    let (taken_out, _) = staged.request(Request::Reload);
+    let (taken_out, _) = staged.request(Request::Command(Command::Reload));
     staged.write_config(Some("[night_shift]\nstrength = 40\n"));
-    let (put_back, _) = staged.request(Request::Reload);
+    let (put_back, _) = staged.request(Request::Command(Command::Reload));
 
     assert_eq!(taken_out.effects, Vec::new());
     assert_eq!(
@@ -278,7 +278,7 @@ fn a_night_shift_value_the_config_cant_have_makes_it_invalid() {
         "schedule = \"24:00-07:00\"",
     ] {
         staged.write_config(Some(format!("[night_shift]\n{night_shift}\n").as_str()));
-        let (outcome, response) = staged.request(Request::Reload);
+        let (outcome, response) = staged.request(Request::Command(Command::Reload));
         assert_eq!(outcome.effects, Vec::new(), "{night_shift}");
         assert!(
             matches!(refusal(response), Refusal::InvalidConfig(_)),

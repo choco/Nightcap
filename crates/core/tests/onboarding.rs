@@ -5,7 +5,7 @@
 mod common;
 
 use nightcap_core::{AppCommand, Effect, Fact, Staged};
-use nightcap_protocol::{Install, Instance, OnOff, OnboardingAsks, Request, Schedule};
+use nightcap_protocol::{Command, Install, Instance, OnOff, OnboardingAsks, Request, Schedule};
 
 use common::{at, noon, report_night_shift};
 
@@ -50,7 +50,7 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
     assert!(checking.from_config);
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     staged.write_config(None);
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
     assert_eq!(
         staged.core().preferences().website_checking.state,
         OnOff::Off

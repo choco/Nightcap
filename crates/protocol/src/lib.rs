@@ -15,7 +15,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -111,13 +111,10 @@ pub enum HelloReply {
 pub enum Request {
     Command(Command),
     Query(Query),
-    /// Reads the config again; answers with every rule.
-    Reload,
-    /// Starts Sparkle's own check, whose window offers to install (ADR-0011).
-    Update,
 }
 
-/// What the CLI and the app ask Nightcap to do; each one answers with the resulting decision.
+/// What the CLI and the app ask Nightcap to do. Each answers with the resulting decision, short of
+/// a reload, which answers with every rule, and an update check, which answers that it started.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
@@ -151,6 +148,11 @@ pub enum Command {
     PreviewStrength(u8),
     /// Sets Night Shift's schedule, which macOS applies at once (ADR-0014).
     SetSchedule(Schedule),
+    /// Reads the config again, which is how a change to it takes effect.
+    Reload,
+    /// Starts Sparkle's own check, whose window offers to install, in a self-managed release
+    /// (ADR-0011).
+    CheckForUpdates,
 }
 
 /// Where a change applies: everywhere, an app, or a domain and its subdomains (ADR-0018).
@@ -960,8 +962,8 @@ pub enum NotificationPermission {
     Granted,
 }
 
-/// Why Nightcap refused a command, an update check or a reload, which then changes nothing:
-/// what each client needs to say why, in its own words.
+/// Why Nightcap refused a command, which then changes nothing: what each client needs to say
+/// why, in its own words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Refusal {
@@ -1498,8 +1500,14 @@ mod tests {
 
     #[test]
     fn decisions_match_the_documented_wire_format() {
-        assert_eq!(json(&Request::Reload), r#""reload""#);
-        assert_eq!(json(&Request::Update), r#""update""#);
+        assert_eq!(
+            json(&Request::Command(Command::Reload)),
+            r#"{"command":"reload"}"#
+        );
+        assert_eq!(
+            json(&Request::Command(Command::CheckForUpdates)),
+            r#"{"command":"check_for_updates"}"#
+        );
         assert_eq!(
             json(&Response::Ok(Payload::UpdateCheckStarted)),
             r#"{"ok":"update_check_started"}"#

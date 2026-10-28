@@ -210,7 +210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             icons: siteIcons,
             choose: { command in host.send(command) },
             perform: { fix in host.perform(fix) },
-            checkForUpdates: host.updaterRunning ? { host.checkForUpdates() } : nil,
+            checkForUpdates: host.updaterRunning ? { host.send(.checkForUpdates) } : nil,
             export: { core.export(format: $0) },
             takeTour: { [weak self] in
                 guard let self else { return }

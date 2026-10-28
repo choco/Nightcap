@@ -97,7 +97,7 @@ fn reload_applies_a_changed_config() {
     activate(&staged, "com.figma.Desktop");
 
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
-    let (outcome, response) = staged.request(Request::Reload);
+    let (outcome, response) = staged.request(Request::Command(Command::Reload));
 
     assert_eq!(
         outcome.effects,
@@ -117,7 +117,7 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
         .unwrap();
 
     staged.write_config(Some("[rules.off]\napp = \"com.figma.Desktop\"\n"));
-    let (outcome, response) = staged.request(Request::Reload);
+    let (outcome, response) = staged.request(Request::Command(Command::Reload));
 
     assert_eq!(outcome.effects, Vec::new());
     let malformed = FileError::Malformed {
@@ -256,7 +256,7 @@ fn domains_in_the_config_are_normalized_and_checked() {
         staged.write_config(Some(
             format!("[rules.off]\ndomain = [{entry:?}]\n").as_str(),
         ));
-        let (_, response) = staged.request(Request::Reload);
+        let (_, response) = staged.request(Request::Command(Command::Reload));
         assert!(
             matches!(&response, Response::Refused(Refusal::InvalidConfig(_))),
             "{entry:?} was accepted: {response:?}"
@@ -540,7 +540,7 @@ fn an_ad_hoc_rule_graduates_whatever_either_says() {
     );
 
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.desktop\"]\n"));
-    staged.request(Request::Reload);
+    staged.request(Request::Command(Command::Reload));
 
     assert_eq!(rules(&staged), vec![app_rule("com.figma.desktop")]);
     assert_eq!(kept_ad_hoc(&staged), Vec::new());
@@ -631,7 +631,7 @@ fn a_config_that_cant_be_is_refused() {
         ),
     ] {
         staged.write_config(Some(config));
-        let (_, response) = staged.request(Request::Reload);
+        let (_, response) = staged.request(Request::Command(Command::Reload));
         let Response::Refused(Refusal::InvalidConfig(FileError::Invalid { problem, .. })) =
             response
         else {
@@ -672,7 +672,7 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
         ("websites = true\n\n[menu]\nlengths = [\"45m\"]\n", 3),
     ] {
         staged.write_config(Some(config));
-        let (_, response) = staged.request(Request::Reload);
+        let (_, response) = staged.request(Request::Command(Command::Reload));
 
         assert!(
             matches!(

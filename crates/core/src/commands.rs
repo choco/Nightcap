@@ -1,6 +1,6 @@
-//! Commands, from the app and the CLI alike, each answering with the decision it leads to, and
-//! adding a rule with what it did too; the rule commits they make; and reading the config again,
-//! which is how a change to it takes effect.
+//! Commands, from the app and the CLI alike, each answering with the decision it leads to, adding
+//! a rule with what it did too, short of a reload and an update check; the rule commits they
+//! make; and reading the config again, which is how a change to it takes effect.
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
@@ -44,7 +44,8 @@ impl Inner {
     }
 
     /// Runs a command from the CLI or the app, answering with the resulting decision, and for
-    /// adding a rule what it did.
+    /// adding a rule what it did; a reload answers with every rule, and an update check that it
+    /// started.
     pub(crate) fn run_command(
         &mut self,
         command: &Command,
@@ -149,6 +150,19 @@ impl Inner {
                         effects.push(Effect::AskForAccessibility);
                     }
                 })
+            }
+            Command::Reload => {
+                return self
+                    .reload(effects)
+                    .map(|()| Payload::Rules(self.every_rule(now)));
+            }
+            Command::CheckForUpdates => {
+                if !self.manages_itself {
+                    return Err(Refusal::NoUpdater(self.not_self_managed()));
+                }
+                tracing::info!("checking for updates");
+                effects.push(Effect::CheckForUpdates);
+                return Ok(Payload::UpdateCheckStarted);
             }
         };
         done.map(|()| {
