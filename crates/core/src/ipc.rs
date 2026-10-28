@@ -177,9 +177,8 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Command, Decision, ErrorCode, Hello, HelloMessage, HelloReply, Install, NightShift,
-        NotificationPermission, OnOff, PROTOCOL_VERSION, Payload, Permissions, Place, Query,
-        Request, Response, Status, WebsiteChecking,
+        Command, Decision, ErrorCode, Front, Hello, HelloMessage, HelloReply, NightShift, OnOff,
+        PROTOCOL_VERSION, Payload, Place, Query, Request, Response,
     };
 
     use super::{bind, serve};
@@ -386,55 +385,36 @@ mod tests {
     }
 
     #[test]
-    fn a_status_query_is_answered_on_the_next_tick() {
+    fn a_query_is_answered_from_the_snapshot_without_the_mailbox() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
-        let (_core, outcomes) = served_core(&socket);
+        let (core, outcomes) = served_core(&socket);
 
-        let response = ask(&socket, Request::Query(Query::Status));
+        let front = ask(&socket, Request::Query(Query::Front));
+        let night_shift = ask(&socket, Request::Query(Query::NightShift));
 
-        let Response::Ok(Payload::Status(mut status)) = response.join().unwrap() else {
-            panic!("expected a status");
-        };
-        assert!(
-            outcomes.try_recv().is_err(),
-            "a query reaches neither the mailbox nor the shell"
-        );
-        // Checks have tests of their own.
-        status.checks.clear();
         assert_eq!(
-            status,
-            Box::new(Status {
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-                install: Install::Managed,
-                night_shift: NightShift::Unavailable,
-                strength: None,
-                config_strength: None,
+            front.join().unwrap(),
+            Response::Ok(Payload::Front(Front {
+                app: None,
+                watching: false,
+                host: None,
+                site: None,
                 decision: Decision {
                     state: None,
                     place: Place::Everywhere,
                     reasons: Vec::new(),
                 },
-                schedule: None,
-                config_schedule: None,
-                scheduled_state: None,
-                next_transition: None,
-                frontmost_app: None,
-                watching: false,
-                host: None,
-                rules: Vec::new(),
-                config_error: None,
-                ad_hoc_error: None,
-                website_checking: WebsiteChecking {
-                    state: OnOff::Off,
-                    from_config: false,
-                },
-                permissions: Permissions {
-                    accessibility: false,
-                    notifications: NotificationPermission::NotRequested,
-                },
-                checks: Vec::new(),
-            })
+            }))
+        );
+        let Response::Ok(Payload::NightShift(night_shift)) = night_shift.join().unwrap() else {
+            panic!("expected Night Shift");
+        };
+        assert_eq!(night_shift.state, NightShift::Unavailable);
+        assert_eq!(night_shift, core.night_shift());
+        assert!(
+            outcomes.try_recv().is_err(),
+            "a query reaches neither the mailbox nor the shell"
         );
     }
 

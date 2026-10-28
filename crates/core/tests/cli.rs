@@ -10,26 +10,26 @@ use nightcap_protocol::{
 };
 
 use common::{
-    ad_hoc, add_rule, app_rule, at, noon, on_by_the_schedule, reported, rules, send, status, yours,
+    ad_hoc, add_rule, app_rule, at, noon, on_by_the_schedule, reported, rules, send, yours,
 };
 
 #[test]
-fn the_status_reports_night_shift_as_last_observed() {
+fn night_shift_is_answered_as_last_observed() {
     let staged = noon().stage().unwrap();
 
     staged.report(reported(true, Schedule::Off));
 
-    assert_eq!(status(&staged).night_shift, NightShift::On);
+    assert_eq!(staged.core().night_shift().state, NightShift::On);
 }
 
 #[test]
-fn the_status_reports_the_strength_as_last_read() {
+fn the_strength_is_answered_as_last_read() {
     let staged = noon().stage().unwrap();
-    assert_eq!(status(&staged).strength, None);
+    assert_eq!(staged.core().night_shift().strength, None);
 
     staged.report(Fact::StrengthChanged { value: 60 });
 
-    assert_eq!(status(&staged).strength, Some(60));
+    assert_eq!(staged.core().night_shift().strength, Some(60));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn the_rules_query_lists_every_rule_with_its_source() {
 }
 
 #[test]
-fn the_status_reports_the_last_permission_change() {
+fn the_checks_answer_the_last_permission_change() {
     let staged = noon().stage().unwrap();
 
     staged.report(Fact::PermissionsChanged {
@@ -98,7 +98,7 @@ fn the_status_reports_the_last_permission_change() {
     });
 
     assert_eq!(
-        status(&staged).permissions,
+        staged.core().checks().permissions,
         Permissions {
             accessibility: true,
             notifications: NotificationPermission::Denied,

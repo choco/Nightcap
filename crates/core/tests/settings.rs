@@ -22,7 +22,7 @@ use nightcap_protocol::{
 use common::{
     add_rule, at, button, custom_hours, domain, figma, figma_app, mail, minutes, noon,
     on_by_the_schedule, permissions, report_zurich_sun, reported, rows, send, set, settings_check,
-    status, tells,
+    tells,
 };
 
 #[test]
@@ -62,9 +62,11 @@ fn check_of(staged: &Staged, kind: CheckKind) -> Option<(CheckState, String)> {
     settings_check(staged, kind).map(|check| (check.state, check.text))
 }
 
-/// What the check of `kind` found, as the status carries it.
+/// What the check of `kind` found, as the checks query answers it.
 fn found(staged: &Staged, kind: CheckKind) -> Option<CheckDetail> {
-    status(staged)
+    staged
+        .core()
+        .checks()
         .checks
         .into_iter()
         .map(|check| check.detail)

@@ -111,7 +111,7 @@ An indefinite rule at an app or a site the user added at runtime, kept by Nightc
 _Avoid_: runtime rule, dynamic rule
 
 **Tour rule**:
-An indefinite rule at an app or a site the user adds while the tour runs, kept in memory only until it ends: `status` shows it, but Settings, the saved state and exports never do.
+An indefinite rule at an app or a site the user adds while the tour runs, kept in memory only until it ends: the rules query and `nightcap status` show it, but Settings, the saved state and exports never do.
 
 **Graduation**:
 An ad-hoc rule's identity appearing in the config, whatever either says, at which point Nightcap drops its own copy.
@@ -147,5 +147,5 @@ _Avoid_: server, service
 **Command**:
 A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
 
-**Status**:
-The daemon's report of its decision and everything behind it: the context, every rule, grants and problems.
+**Query**:
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift, what's in front and what decides there, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.

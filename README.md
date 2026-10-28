@@ -43,7 +43,7 @@ nightcap rules add app:com.figma.Desktop
 nightcap rules add domain:figma.com
 nightcap rules add app:com.apple.iBooksX --on          # keep Night Shift on in Books
 nightcap strength 40                     # how warm Night Shift gets, 0 to 100
-nightcap status --json | jq -r .decision.state
+nightcap status --json | jq -r .front.decision.state
 ```
 
 `nightcap --help` lists the rest.

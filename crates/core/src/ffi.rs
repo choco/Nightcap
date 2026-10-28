@@ -1,15 +1,17 @@
 //! The protocol's types as the shell sees them, through UniFFI: the remote mirrors of its enums
-//! and records, and the custom types that cross as plain values, with the checks the shell runs
-//! before it sends one.
+//! and records, the queries' answers among them, and the custom types that cross as plain
+//! values, with the checks the shell runs before it sends one.
 
 use std::time::SystemTime;
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind, CheckState,
-    Command, ConfigFileDetail, Domain, ErrorCode, ErrorReply, ExportFormat, FileError, Lasting,
-    NightShiftDetail, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail, Place,
-    RuleIdentity, Schedule, TimeOfDay,
+    About, AccessibilityDetail, AdHocRulesDetail, BundleId, Check, CheckDetail, CheckKind,
+    CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ErrorCode,
+    ErrorReply, ExportFormat, FileError, Front, Install, Lasting, Length, NightShift,
+    NightShiftDetail, NightShiftState, NotificationPermission, NotificationsDetail, OnOff,
+    OpenAtLoginDetail, Permissions, Place, Preferences, Reason, Rule, RuleIdentity, Schedule,
+    SetBy, TimeOfDay, TourState, Turn, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -255,4 +257,132 @@ pub enum ErrorCode {
 pub struct ErrorReply {
     pub code: ErrorCode,
     pub message: String,
+}
+
+#[uniffi::remote(Enum)]
+pub enum NightShift {
+    Unavailable,
+    On,
+    Off,
+}
+
+#[uniffi::remote(Record)]
+pub struct NightShiftState {
+    pub state: NightShift,
+    pub strength: Option<u8>,
+    pub schedule: Option<Schedule>,
+    pub set_aside: bool,
+    pub scheduled: Option<OnOff>,
+    pub next_turn: Option<Turn>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Turn {
+    pub at: Timestamp,
+    pub to: OnOff,
+}
+
+#[uniffi::remote(Record)]
+pub struct Front {
+    pub app: Option<BundleId>,
+    pub watching: bool,
+    pub host: Option<String>,
+    pub site: Option<Domain>,
+    pub decision: Decision,
+}
+
+#[uniffi::remote(Record)]
+pub struct Decision {
+    pub state: Option<OnOff>,
+    pub place: Place,
+    pub reasons: Vec<Reason>,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Reason {
+    Rule(Rule),
+    Tour,
+    Schedule {
+        state: OnOff,
+        until: Option<Timestamp>,
+    },
+}
+
+#[uniffi::remote(Record)]
+pub struct Rule {
+    pub place: Place,
+    pub says: OnOff,
+    pub length: Length,
+    pub set_by: SetBy,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Length {
+    Indefinite,
+    UntilScheduleTurns { until: Option<Timestamp> },
+    Until { until: Timestamp },
+}
+
+#[uniffi::remote(Enum)]
+pub enum SetBy {
+    Config,
+    You,
+    Tour,
+    OutsideChange,
+}
+
+#[uniffi::remote(Record)]
+pub struct ConfigState {
+    pub path: String,
+    pub found: bool,
+    pub error: Option<FileError>,
+    pub strength: Option<u8>,
+    pub schedule: Option<Schedule>,
+    pub websites: Option<OnOff>,
+    pub lengths: Vec<SignedDuration>,
+    pub ad_hoc_error: Option<FileError>,
+}
+
+#[uniffi::remote(Record)]
+pub struct Preferences {
+    pub website_checking: WebsiteChecking,
+    pub notifications_wanted: bool,
+    pub open_at_login: bool,
+    pub onboarding_completed: u32,
+    pub onboarding_finished: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct WebsiteChecking {
+    pub state: OnOff,
+    pub from_config: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct Checks {
+    pub checks: Vec<Check>,
+    pub permissions: Permissions,
+}
+
+#[uniffi::remote(Record)]
+pub struct Permissions {
+    pub accessibility: bool,
+    pub notifications: NotificationPermission,
+}
+
+#[uniffi::remote(Record)]
+pub struct TourState {
+    pub stands_in: bool,
+}
+
+#[uniffi::remote(Record)]
+pub struct About {
+    pub version: String,
+    pub install: Install,
+}
+
+#[uniffi::remote(Enum)]
+pub enum Install {
+    Managed,
+    SelfManaged,
 }

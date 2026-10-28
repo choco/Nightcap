@@ -125,7 +125,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             browser: tourBrowser(core.settings()),
-            current: { (core.tour(), core.menu().icon) },
+            current: { (core.tourReport(), core.menu().icon) },
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
             begin: { host.send($0) },

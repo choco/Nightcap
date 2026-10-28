@@ -8,6 +8,7 @@ mod ipc;
 mod logging;
 mod menu;
 mod onboarding;
+mod queries;
 mod rows;
 mod rules;
 #[cfg(any(test, debug_assertions))]
@@ -38,7 +39,10 @@ use std::fmt;
 use std::os::unix::net::UnixListener;
 use std::sync::{Arc, mpsc};
 
-use nightcap_protocol::{Command, ExportFormat};
+use nightcap_protocol::{
+    About, Checks, Command, ConfigState, ExportFormat, Front, NightShiftState, Preferences, Rule,
+    TourState,
+};
 
 use server::react::Input;
 #[cfg(any(test, debug_assertions))]
@@ -50,8 +54,8 @@ use storage::ad_hoc_rules;
 use storage::file::{Disk, Paths};
 
 /// The core, a server on its own thread (ADR-0002): facts and commands go into its mailbox and
-/// return at once, its listener hears each one's outcome, and the reads answer from the snapshot
-/// it publishes after each.
+/// return at once, its listener hears each one's outcome, and the queries and the other reads
+/// answer from the snapshot it publishes after each, never the mailbox.
 #[derive(uniffi::Object)]
 pub struct Core {
     published: Arc<Published>,
@@ -174,8 +178,48 @@ impl Core {
     }
 
     /// What the tour's steps follow and the titles they quote, or None while no tour runs.
-    pub fn tour(&self) -> Option<TourSnapshot> {
-        self.published.latest().tour.clone()
+    pub fn tour_report(&self) -> Option<TourSnapshot> {
+        self.published.latest().tour_report.clone()
+    }
+
+    /// Night Shift as the shell last reported it, and its schedule.
+    pub fn night_shift(&self) -> NightShiftState {
+        self.published.latest().answers.night_shift
+    }
+
+    /// What's in front, and what decides Night Shift there (ADR-0018).
+    pub fn front(&self) -> Front {
+        self.published.latest().answers.front.clone()
+    }
+
+    /// Every rule at every place (ADR-0018).
+    pub fn rules(&self) -> Vec<Rule> {
+        self.published.latest().answers.rules.clone()
+    }
+
+    /// The config as Nightcap last read it, and why it or `rules.toml` can't be used.
+    pub fn config(&self) -> ConfigState {
+        self.published.latest().answers.config.clone()
+    }
+
+    /// The user's choices about how Nightcap runs.
+    pub fn preferences(&self) -> Preferences {
+        self.published.latest().answers.preferences
+    }
+
+    /// The checks, and the grants behind them.
+    pub fn checks(&self) -> Checks {
+        self.published.latest().answers.checks.clone()
+    }
+
+    /// The tour, while one runs (ADR-0016).
+    pub fn tour(&self) -> Option<TourState> {
+        self.published.latest().answers.tour
+    }
+
+    /// The Nightcap that answers: its version and its install (ADR-0011).
+    pub fn about(&self) -> About {
+        self.published.latest().answers.about.clone()
     }
 }
 

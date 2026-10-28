@@ -6,7 +6,7 @@ mod common;
 use nightcap_core::{Effect, Fact, OnboardingNightShift, OnboardingSteps, UiCommand};
 use nightcap_protocol::{Install, Instance, OnOff, Request, Schedule};
 
-use common::{at, noon, report_night_shift, status};
+use common::{at, noon, report_night_shift};
 
 #[test]
 fn onboarding_runs_at_the_first_launch_and_not_again() {
@@ -19,7 +19,10 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
             .contains(&Effect::ShowOnboarding { completed: 0 })
     );
     staged.send_ui(UiCommand::FinishOnboarding { websites: true });
-    assert_eq!(status(&staged).website_checking.state, OnOff::On);
+    assert_eq!(
+        staged.core().preferences().website_checking.state,
+        OnOff::On
+    );
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     assert!(
@@ -37,13 +40,16 @@ fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
 
     staged.send_ui(UiCommand::FinishOnboarding { websites: true });
 
-    let checking = status(&staged).website_checking;
+    let checking = staged.core().preferences().website_checking;
     assert_eq!(checking.state, OnOff::Off);
     assert!(checking.from_config);
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     staged.write_config(None);
     staged.request(Request::Reload);
-    assert_eq!(status(&staged).website_checking.state, OnOff::Off);
+    assert_eq!(
+        staged.core().preferences().website_checking.state,
+        OnOff::Off
+    );
 }
 
 #[test]

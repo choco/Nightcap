@@ -9,7 +9,7 @@ use nightcap_core::{Effect, Fact, Scenario};
 use nightcap_protocol::{NightShift, OnOff, Schedule, TimeOfDay};
 
 use common::{
-    at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, resettable, status,
+    at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, resettable,
 };
 
 #[test]
@@ -30,22 +30,23 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
     staged.set_now(at("2026-10-17T07:30:00+02:00"));
     staged.report(Fact::TimerFired);
 
-    let status = status(&staged);
-    assert_eq!(status.night_shift, NightShift::On);
-    assert_eq!(status.schedule, None);
-    assert_eq!(status.next_transition, None);
+    assert_eq!(staged.core().night_shift().state, NightShift::On);
+    assert_eq!(staged.core().night_shift().schedule, None);
+    assert_eq!(
+        staged.core().night_shift().next_turn.map(|turn| turn.at),
+        None
+    );
     assert_eq!(staged.core().menu().night_shift.reason, None);
 }
 
 #[test]
-fn the_status_reports_the_schedule_its_scheduled_state_and_the_next_transition() {
+fn night_shift_is_answered_with_the_schedule_what_it_says_and_its_next_turn() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    let status = status(&staged);
-    assert_eq!(status.schedule, Some(custom_hours()));
-    assert_eq!(status.scheduled_state, Some(OnOff::Off));
+    assert_eq!(staged.core().night_shift().schedule, Some(custom_hours()));
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        status.next_transition,
+        staged.core().night_shift().next_turn.map(|turn| turn.at),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }
@@ -115,7 +116,7 @@ fn sunset_to_sunrise_follows_the_reported_sun_times() {
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    assert_eq!(status(&staged).scheduled_state, Some(OnOff::On));
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -133,9 +134,11 @@ fn sun_times_the_shell_reports_out_of_range_count_as_none() {
         sunsets: Vec::new(),
     });
 
-    let status = status(&staged);
-    assert_eq!(status.scheduled_state, None);
-    assert_eq!(status.next_transition, None);
+    assert_eq!(staged.core().night_shift().scheduled, None);
+    assert_eq!(
+        staged.core().night_shift().next_turn.map(|turn| turn.at),
+        None
+    );
 }
 
 #[test]
@@ -172,7 +175,7 @@ fn until_corebrightness_has_the_sun_times_the_shell_reads_them_again_each_minute
             at: at("2026-10-16T05:50:47Z").into()
         }]
     );
-    assert_eq!(status(&staged).scheduled_state, Some(OnOff::On));
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
 }
 
 #[test]
@@ -182,7 +185,9 @@ fn turning_the_schedule_off_cancels_the_wakeup() {
     let effects = staged.report(reported(false, Schedule::Off)).effects;
 
     assert_eq!(effects, vec![Effect::CancelWakeup]);
-    let status = status(&staged);
-    assert_eq!(status.scheduled_state, Some(OnOff::Off));
-    assert_eq!(status.next_transition, None);
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
+    assert_eq!(
+        staged.core().night_shift().next_turn.map(|turn| turn.at),
+        None
+    );
 }

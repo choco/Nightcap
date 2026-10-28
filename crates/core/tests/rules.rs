@@ -14,7 +14,7 @@ use common::{
     activate, activate_event, ad_hoc, add_rule, app_row, app_rule, at, books, choice_titled,
     custom_hours, domain_rule, figma, figma_app, forced, in_books_at_noon, kept_ad_hoc, late,
     launch, mail, minutes, noon, on_by_the_schedule, refusal, reported, resettable, rules, send,
-    set, status, until_turn, yours,
+    set, until_turn, yours,
 };
 
 #[test]
@@ -27,10 +27,12 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
     let effects = activate(&staged, "com.figma.Desktop");
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    let status = status(&staged);
-    assert_eq!(status.frontmost_app.as_deref(), Some("com.figma.Desktop"));
     assert_eq!(
-        status.decision,
+        staged.core().front().app,
+        Some("com.figma.Desktop".parse().unwrap())
+    );
+    assert_eq!(
+        staged.core().front().decision,
         Decision {
             state: Some(OnOff::Off),
             place: figma_app(),
@@ -79,12 +81,14 @@ fn an_invalid_config_at_launch_runs_without_config_rules_and_says_so() {
         panic!("expected one announcement, got {outcome:?}");
     };
     assert!(message.contains("apps"), "{message}");
-    let status = status(&staged);
     assert_eq!(rules(&staged), Vec::new());
-    assert!(
-        status
-            .config_error
-            .is_some_and(|error| error.contains("apps"))
+    assert_eq!(
+        staged.core().config().error,
+        Some(FileError::Malformed {
+            path: staged.core().config().path,
+            line: Some(2),
+            message: message.clone(),
+        })
     );
 }
 
@@ -100,10 +104,10 @@ fn reload_applies_a_changed_config() {
         outcome.effects,
         vec![Effect::SetNightShift { enabled: false }]
     );
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
-    };
-    assert_eq!(status.rules, vec![app_rule("com.figma.Desktop")]);
+    assert_eq!(
+        response,
+        Response::Ok(Payload::Rules(vec![app_rule("com.figma.Desktop")]))
+    );
 }
 
 #[test]
@@ -128,9 +132,15 @@ fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
             staged.core().settings().config_path
         )
     );
-    let status = status(&staged);
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
-    assert_eq!(status.config_error, Some(error.message));
+    assert_eq!(
+        staged.core().config().error,
+        Some(FileError::Malformed {
+            path: staged.core().config().path,
+            line: Some(2),
+            message: "invalid type: string \"com.figma.Desktop\", expected a sequence".to_owned(),
+        })
+    );
 }
 
 #[test]
@@ -170,9 +180,8 @@ fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
     let effects = staged.report(Fact::TimerFired).effects;
 
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
-    let status = status(&staged);
     assert_eq!(resettable(&staged), Vec::new());
-    assert_eq!(status.decision.place, figma_app());
+    assert_eq!(staged.core().front().decision.place, figma_app());
 }
 
 #[test]
@@ -186,7 +195,7 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
 
     assert_eq!(activate(&staged, "com.apple.Terminal"), Vec::new());
     assert_eq!(activate(&staged, "com.figma.Desktop"), Vec::new());
-    assert_eq!(status(&staged).decision.state, Some(OnOff::On));
+    assert_eq!(staged.core().front().decision.state, Some(OnOff::On));
 }
 
 #[test]
@@ -306,7 +315,7 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
     let (_, response) = send(&staged, add_rule(figma()));
 
     assert_eq!(refusal(response), ErrorCode::AdHocRulesOff);
-    assert!(status(&staged).ad_hoc_error.is_some());
+    assert!(staged.core().config().ad_hoc_error.is_some());
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(newer));
 }
@@ -316,13 +325,11 @@ fn ad_hoc_rules_with_an_app_no_rule_could_name_are_left_alone() {
     let invalid = "version = 2\n[rules.off]\napp = [\"com.figma.Desktop \"]\n";
     let staged = noon().rules(invalid).stage().unwrap();
 
-    let status = status(&staged);
-
-    assert!(
-        status
-            .ad_hoc_error
-            .is_some_and(|error| error.contains("\"com.figma.Desktop \" isn't a bundle ID")),
-    );
+    assert!(matches!(
+        staged.core().config().ad_hoc_error,
+        Some(FileError::Invalid { message, .. })
+            if message.contains("\"com.figma.Desktop \" isn't a bundle ID")
+    ));
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(staged.file(File::Rules).as_deref(), Some(invalid));
 }
@@ -333,7 +340,7 @@ fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
 
     activate(&staged, "unity.Team Cherry.Hollow Knight");
 
-    assert_eq!(status(&staged).frontmost_app, None);
+    assert_eq!(staged.core().front().app, None);
     let app_rows = staged.core().menu().entries.into_iter().filter(|entry| {
         matches!(entry, MenuEntry::Row { row } if matches!(row.image, RowImage::App { .. }))
     });
@@ -613,7 +620,9 @@ fn a_config_that_cant_be_names_the_line_of_what_cant_be() {
             "{config:?}: {}",
             error.message
         );
-        let found = status(&staged)
+        let found = staged
+            .core()
+            .checks()
             .checks
             .into_iter()
             .map(|check| check.detail)

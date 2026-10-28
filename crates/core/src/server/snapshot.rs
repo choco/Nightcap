@@ -3,9 +3,10 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use nightcap_protocol::{ErrorCode, OnOff, Payload, Query, Response, RuleIdentity, Status};
+use nightcap_protocol::{ErrorCode, OnOff, Payload, Query, Response, RuleIdentity};
 
 use crate::commands::refused;
+use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
 use crate::storage::file::File;
@@ -17,10 +18,10 @@ pub(crate) struct Snapshot {
     pub(crate) menu: Menu,
     pub(crate) settings: Settings,
     pub(crate) onboarding: OnboardingSteps,
-    /// None while no tour runs.
-    pub(crate) tour: Option<TourSnapshot>,
-    /// The CLI's report, which lists every rule too.
-    pub(crate) status: Status,
+    /// What the tour's steps follow and the titles they quote, while one runs.
+    pub(crate) tour_report: Option<TourSnapshot>,
+    /// What the queries answer, in process and over the socket.
+    pub(crate) answers: Answers,
     /// The ad-hoc rules, for an export (ADR-0007).
     pub(crate) ad_hoc: Vec<(RuleIdentity, OnOff)>,
 }
@@ -32,20 +33,27 @@ impl Snapshot {
             menu: Menu::new(inner, now),
             settings: Settings::new(inner, now, &inner.files.path(File::Config)),
             onboarding: OnboardingSteps::new(inner),
-            tour: inner
+            tour_report: inner
                 .tour
                 .as_ref()
                 .map(|tour| tour.report(&inner.places.look(&inner.facts.world(now)))),
-            status: inner.status(),
+            answers: Answers::new(inner, now),
             ad_hoc: inner.places.kept().ad_hoc.clone(),
         }
     }
 
     /// The CLI's query, answered as of this snapshot (ADR-0010).
     pub(crate) fn answer(&self, query: &Query) -> Response {
+        let answers = &self.answers;
         match query {
-            Query::Status => Response::Ok(Payload::Status(Box::new(self.status.clone()))),
-            Query::Rules => Response::Ok(Payload::Rules(self.status.rules.clone())),
+            Query::NightShift => Response::Ok(Payload::NightShift(answers.night_shift)),
+            Query::Front => Response::Ok(Payload::Front(answers.front.clone())),
+            Query::Rules => Response::Ok(Payload::Rules(answers.rules.clone())),
+            Query::Config => Response::Ok(Payload::Config(answers.config.clone())),
+            Query::Preferences => Response::Ok(Payload::Preferences(answers.preferences)),
+            Query::Checks => Response::Ok(Payload::Checks(answers.checks.clone())),
+            Query::Tour => Response::Ok(Payload::Tour(answers.tour)),
+            Query::About => Response::Ok(Payload::About(answers.about.clone())),
             Query::Export(format) => match ad_hoc_rules::export(&self.ad_hoc, *format) {
                 Ok(text) => Response::Ok(Payload::Export(text)),
                 Err(error) => Response::Error(refused(

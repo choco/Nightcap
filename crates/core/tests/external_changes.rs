@@ -14,8 +14,8 @@ use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOf
 
 use common::{
     activate, adopted, at, custom_hours, figma, figma_app, forced, late, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, status,
-    until, until_turn, yours,
+    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, until,
+    until_turn, yours,
 };
 
 #[test]
@@ -113,8 +113,7 @@ fn a_change_just_before_a_schedule_transition_is_that_transition() {
         }]
     );
     assert_eq!(resettable(&staged), Vec::new());
-    let status = status(&staged);
-    assert_eq!(status.scheduled_state, Some(OnOff::On));
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::On));
 }
 
 #[test]
@@ -126,10 +125,9 @@ fn a_change_against_the_coming_transition_is_still_an_external_change() {
     staged.set_now(at("2026-10-16T21:59:00+02:00"));
     staged.report(reported(false, custom_hours()));
 
-    let status = status(&staged);
-    assert_eq!(status.scheduled_state, Some(OnOff::Off));
+    assert_eq!(staged.core().night_shift().scheduled, Some(OnOff::Off));
     assert_eq!(
-        status.next_transition,
+        staged.core().night_shift().next_turn.map(|turn| turn.at),
         Some(at("2026-10-16T22:00:00+02:00"))
     );
 }

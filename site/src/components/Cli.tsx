@@ -67,7 +67,7 @@ export function Cli() {
 				<Output>Night Shift following the schedule</Output>
 				<Command>
 					{" "}
-					status <Arg>--json</Arg> | jq -r <Arg>.decision.state</Arg>
+					status <Arg>--json</Arg> | jq -r <Arg>.front.decision.state</Arg>
 				</Command>
 				<Output>
 					<span className="text-[#30d158]">on</span>

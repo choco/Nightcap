@@ -40,7 +40,7 @@ impl OnboardingSteps {
     /// What onboarding asks, as `inner` has it.
     pub(crate) fn new(inner: &Inner) -> Self {
         OnboardingSteps {
-            finished: inner.onboarding >= ONBOARDING,
+            finished: inner.onboarding_done(),
             night_shift: inner.onboarding_night_shift(),
             websites_from_config: inner.facts.config_websites,
             opens_at_login: inner
@@ -53,6 +53,12 @@ impl OnboardingSteps {
 }
 
 impl Inner {
+    /// Whether the user went through this onboarding version, or the config answered all it
+    /// asks.
+    pub(crate) fn onboarding_done(&self) -> bool {
+        self.onboarding >= ONBOARDING
+    }
+
     fn onboarding_night_shift(&self) -> OnboardingNightShift {
         let available = self.facts.night_shift != NightShift::Unavailable;
         let ask_strength =

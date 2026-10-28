@@ -1,4 +1,5 @@
-//! The connection to the daemon: its socket, and the Hello before each request.
+//! The connection to the daemon: its socket, the Hello before each request, and the queries
+//! `nightcap status` asks.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
@@ -7,9 +8,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
-use nightcap_protocol::{Hello, HelloMessage, HelloReply, Instance, Payload, Request, Response};
+use nightcap_protocol::{
+    About, Checks, ConfigState, Front, Hello, HelloMessage, HelloReply, Instance, NightShiftState,
+    Payload, Preferences, Query, Request, Response, Rule,
+};
+use serde::Serialize;
 
-use crate::Failure;
+use crate::{Failure, unexpected_reply};
 
 /// How long the daemon may take to answer, including the core's turn at a command.
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -45,6 +50,54 @@ pub(crate) fn request(
     }
 }
 
+/// What `nightcap status` shows, from the queries it asks, one per connection; `--json` prints
+/// it as it is.
+#[derive(Serialize)]
+pub(crate) struct Report {
+    pub(crate) about: About,
+    pub(crate) night_shift: NightShiftState,
+    pub(crate) front: Front,
+    pub(crate) rules: Vec<Rule>,
+    pub(crate) config: ConfigState,
+    pub(crate) preferences: Preferences,
+    pub(crate) checks: Checks,
+}
+
+/// Asks the daemon what `nightcap status` shows.
+pub(crate) fn report(instance: Instance) -> Result<Report, Failure> {
+    let ask = |query| request(instance, &Request::Query(query), None);
+    let Payload::About(about) = ask(Query::About)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::NightShift(night_shift) = ask(Query::NightShift)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::Front(front) = ask(Query::Front)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::Rules(rules) = ask(Query::Rules)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::Config(config) = ask(Query::Config)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::Preferences(preferences) = ask(Query::Preferences)? else {
+        return Err(unexpected_reply());
+    };
+    let Payload::Checks(checks) = ask(Query::Checks)? else {
+        return Err(unexpected_reply());
+    };
+    Ok(Report {
+        about,
+        night_shift,
+        front,
+        rules,
+        config,
+        preferences,
+        checks,
+    })
+}
+
 /// Connects to the daemon, retrying for up to `wait` while it starts.
 fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> {
     let wait = wait.unwrap_or_default();
@@ -67,7 +120,7 @@ fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> 
     }
 }
 
-fn send(writer: &mut impl Write, message: &impl serde::Serialize) -> anyhow::Result<()> {
+fn send(writer: &mut impl Write, message: &impl Serialize) -> anyhow::Result<()> {
     serde_json::to_writer(&mut *writer, message).context("couldn't send to Nightcap")?;
     writer
         .write_all(b"\n")

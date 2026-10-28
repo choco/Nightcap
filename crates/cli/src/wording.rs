@@ -1,14 +1,16 @@
 //! The CLI's own words for what Nightcap reports, which sends facts alone: its decisions, its
-//! rules, its checks and its status.
+//! rules, its checks and the status its queries make up.
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, ConfigFileDetail, Decision,
-    FileError, Install, Lasting, Length, NightShift, NightShiftDetail, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule, RuleIdentity, Schedule,
-    SetBy, Status, TimeOfDay,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
+    Decision, FileError, Install, Lasting, Length, NightShift, NightShiftDetail,
+    NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail, Place, Reason, Rule,
+    RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
+
+use crate::client::Report;
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
 pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
@@ -249,79 +251,94 @@ pub(crate) fn length_text(length: &Lasting, zone: &TimeZone) -> String {
     }
 }
 
-pub(crate) fn print_status(status: &Status) {
-    let install = match status.install {
+pub(crate) fn print_status(report: &Report) {
+    let Report {
+        about,
+        night_shift,
+        front,
+        rules: every_rule,
+        config,
+        preferences,
+        checks,
+    } = report;
+    let install = match about.install {
         Install::Managed => "managed by its installer",
         Install::SelfManaged => "self-managed",
     };
-    let night_shift = match status.night_shift {
+    let state = match night_shift.state {
         NightShift::Unavailable => "unavailable",
         NightShift::On => "on",
         NightShift::Off => "off",
     };
-    let schedule = status.schedule.map_or("unknown".to_owned(), schedule_text);
-    let scheduled = match (status.schedule, status.scheduled_state) {
+    let schedule = night_shift
+        .schedule
+        .map_or("unknown".to_owned(), schedule_text);
+    let scheduled = match (night_shift.schedule, night_shift.scheduled) {
         (Some(Schedule::Off), _) | (None, _) => String::new(),
         (Some(_), None) => ", waiting for sun times".to_owned(),
         (Some(_), Some(scheduled)) => {
-            format!(", {}{}", scheduled, until(status.next_transition))
+            format!(
+                ", {}{}",
+                scheduled,
+                until(night_shift.next_turn.map(|turn| turn.at))
+            )
         }
     };
-    let accessibility = if status.permissions.accessibility {
+    let accessibility = if checks.permissions.accessibility {
         "granted"
     } else {
         "not granted"
     };
-    let notifications = match status.permissions.notifications {
+    let notifications = match checks.permissions.notifications {
         NotificationPermission::NotRequested => "not requested",
         NotificationPermission::Denied => "denied",
         NotificationPermission::Granted => "granted",
     };
-    println!("Nightcap {}, {install}", status.version);
-    let decided = decision(&status.decision, &TimeZone::system());
+    println!("Nightcap {}, {install}", about.version);
+    let decided = decision(&front.decision, &TimeZone::system());
     // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
-        status.decision.reasons.first(),
+        front.decision.reasons.first(),
         None | Some(Reason::Schedule { .. })
     );
-    let observed = match status.night_shift {
+    let observed = match night_shift.state {
         NightShift::Unavailable => None,
         NightShift::On => Some(OnOff::On),
         NightShift::Off => Some(OnOff::Off),
     };
     if says_state
-        && status
+        && front
             .decision
             .state
             .is_some_and(|state| Some(state) == observed)
     {
         println!("Night Shift: {decided}");
     } else {
-        println!("Night Shift: {night_shift}, {decided}");
+        println!("Night Shift: {state}, {decided}");
     }
     println!(
         "Schedule: {schedule}{scheduled}{}",
-        from_config(status.config_schedule, status.schedule, schedule_text)
+        from_config(config.schedule, night_shift.schedule, schedule_text)
     );
-    if let Some(strength) = status.strength {
+    if let Some(strength) = night_shift.strength {
         println!(
             "Strength: {strength}{}",
-            from_config(status.config_strength, status.strength, |value| value
+            from_config(config.strength, night_shift.strength, |value| value
                 .to_string())
         );
     }
-    let host = match (&status.host, status.watching) {
+    let host = match (&front.host, front.watching) {
         (Some(host), _) => format!(", on {host}"),
         (None, true) => ", host unknown".to_owned(),
         (None, false) => String::new(),
     };
     println!(
         "Frontmost app: {}{host}",
-        status.frontmost_app.as_deref().unwrap_or("unknown")
+        front.app.as_ref().map_or("unknown", |app| app.as_str())
     );
-    println!("Rules: {}", rules(&app_and_site_rules(&status.rules)));
-    let website_checking = status.website_checking;
+    println!("Rules: {}", rules(&app_and_site_rules(every_rule)));
+    let website_checking = preferences.website_checking;
     println!(
         "Website checking: {}{}",
         website_checking.state,
@@ -331,12 +348,12 @@ pub(crate) fn print_status(status: &Status) {
             ""
         }
     );
-    for line in places_rules(&status.rules) {
+    for line in places_rules(every_rule) {
         println!("{line}");
     }
     println!("Accessibility: {accessibility}");
     println!("Notifications: {notifications}");
-    let problems = needs_attention(status);
+    let problems = needs_attention(checks);
     if !problems.is_empty() {
         println!("Needs attention:");
         for problem in problems {
@@ -346,8 +363,8 @@ pub(crate) fn print_status(status: &Status) {
 }
 
 /// Each drifted or broken check's line.
-fn needs_attention(status: &Status) -> Vec<String> {
-    status
+fn needs_attention(checks: &Checks) -> Vec<String> {
+    checks
         .checks
         .iter()
         .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
@@ -739,14 +756,14 @@ mod tests {
     }
 
     #[test]
-    fn needs_attention_lists_each_problem_as_the_status_carries_it() {
-        let status: Status = serde_json::from_str(
-            r#"{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"on","place":"everywhere","reasons":[]},"schedule":null,"config_schedule":null,"scheduled_state":null,"next_transition":null,"frontmost_app":null,"watching":false,"host":null,"rules":[],"config_error":"/Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`","ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"permissions":{"accessibility":false,"notifications":"granted"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}]}"#,
+    fn needs_attention_lists_each_problem_as_the_checks_carry_it() {
+        let checks: Checks = serde_json::from_str(
+            r#"{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}],"permissions":{"accessibility":false,"notifications":"granted"}}"#,
         )
         .unwrap();
 
         assert_eq!(
-            needs_attention(&status),
+            needs_attention(&checks),
             [
                 "Accessibility isn’t allowed, so website checking can’t read the front tab.",
                 "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",

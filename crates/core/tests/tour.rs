@@ -22,7 +22,7 @@ use common::{
     activate, activate_browser, activate_browser_event, ad_hoc, add_rule, app_row, app_rule, at,
     choice_titled, domain, everywhere_row, figma, figma_app, kept_ad_hoc, late, mail, minutes,
     off_by_the_schedule, on_by_the_schedule, refusal, report, report_host, resettable, rules, send,
-    set, site_row, status, titles, until, yours,
+    set, site_row, titles, until, yours,
 };
 
 const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
@@ -102,8 +102,7 @@ fn a_tour_started_with_night_shift_off_by_the_schedule_turns_it_on_for_the_tour(
     );
     assert_eq!(report(&staged, true), Vec::new());
 
-    let status = status(&staged);
-    assert_eq!(status.decision, on_for_the_tour());
+    assert_eq!(staged.core().front().decision, on_for_the_tour());
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -119,9 +118,8 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
     );
     assert_eq!(report(&staged, false), Vec::new());
 
-    let status = status(&staged);
     assert_eq!(
-        status.decision.reasons,
+        staged.core().front().decision.reasons,
         vec![Reason::Schedule {
             state: OnOff::Off,
             until: Some(at("2026-10-16T22:00:00+02:00")),
@@ -179,7 +177,7 @@ fn the_tour_sets_aside_everywheres_rule_until_a_time_and_puts_it_back_with_its_e
     );
 
     assert_eq!(
-        status(&staged).decision.reasons[0],
+        staged.core().front().decision.reasons[0],
         Reason::Rule(yours(
             Place::Everywhere,
             OnOff::Off,
@@ -229,7 +227,7 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
 
     assert_eq!(start_tour(&staged), Vec::new());
     assert!(matches!(
-        status(&staged).decision.reasons[..],
+        staged.core().front().decision.reasons[..],
         [Reason::Schedule { .. }]
     ));
     assert_eq!(staged.send_ui(UiCommand::EndTour).effects, Vec::new());
@@ -536,7 +534,7 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
 
 /// The tour's facts, whose switch is always the Night Shift item's.
 fn tour_facts(staged: &Staged) -> TourFacts {
-    let facts = staged.core().tour().expect("a tour runs").facts;
+    let facts = staged.core().tour_report().expect("a tour runs").facts;
     assert_eq!(facts.everywhere_on, staged.core().menu().night_shift.on);
     facts
 }
@@ -591,16 +589,16 @@ fn sample_place() -> Place {
 #[test]
 fn the_tour_reports_nothing_before_it_starts_or_once_it_ends() {
     let staged = on_by_the_schedule().stage().unwrap();
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().tour_report(), None);
 
     start_tour(&staged);
-    assert!(staged.core().tour().is_some());
+    assert!(staged.core().tour_report().is_some());
     staged.send_ui(UiCommand::EndTour);
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().tour_report(), None);
 
     start_tour(&staged);
     staged.stop();
-    assert_eq!(staged.core().tour(), None);
+    assert_eq!(staged.core().tour_report(), None);
 }
 
 #[test]
@@ -783,7 +781,7 @@ fn a_tour_without_a_site_step_reports_no_site() {
         example: mail_app(),
     });
 
-    let tour = staged.core().tour().unwrap();
+    let tour = staged.core().tour_report().unwrap();
     assert_eq!(tour.facts.site, None);
     assert_eq!(tour.titles.add_site_rule, None);
 }
@@ -837,7 +835,7 @@ fn each_title_the_tour_quotes_is_where_the_menu_shows_it_in_the_situation_its_st
         .unwrap();
     start_tour(&staged);
     report(&staged, true);
-    let titles = staged.core().tour().unwrap().titles;
+    let titles = staged.core().tour_report().unwrap().titles;
     let quoted = |row: &PlaceRow, wanted: &dyn Fn(&Command) -> bool| {
         let item = item_sending(row, wanted);
         (

@@ -110,37 +110,35 @@ fn main() -> ExitCode {
 fn run(instance: Instance, command: Command) -> Result<(), Failure> {
     let command = match command {
         Command::Status { json } => {
-            let Payload::Status(status) = request(instance, &Request::Query(Query::Status), None)?
-            else {
-                return Err(unexpected_reply());
-            };
+            let report = client::report(instance)?;
             if json {
                 println!(
                     "{}",
-                    serde_json::to_string(&status).context("couldn't encode the status")?
+                    serde_json::to_string(&report).context("couldn't encode the status")?
                 );
             } else {
-                wording::print_status(&status);
+                wording::print_status(&report);
             }
             return Ok(());
         }
         Command::Reload { wait } => {
-            let Payload::Status(status) = request(instance, &Request::Reload, wait)? else {
+            let Payload::Rules(rules) = request(instance, &Request::Reload, wait)? else {
                 return Err(unexpected_reply());
             };
             println!(
                 "Reloaded the config. Rules: {}",
-                wording::rules(&wording::app_and_site_rules(&status.rules))
+                wording::rules(&wording::app_and_site_rules(&rules))
             );
             return Ok(());
         }
         Command::Rules { action } => return run_rules(instance, action),
         Command::Strength { value: None } => {
-            let Payload::Status(status) = request(instance, &Request::Query(Query::Status), None)?
+            let Payload::NightShift(night_shift) =
+                request(instance, &Request::Query(Query::NightShift), None)?
             else {
                 return Err(unexpected_reply());
             };
-            let Some(strength) = status.strength else {
+            let Some(strength) = night_shift.strength else {
                 return Err(Failure::Rejected(ErrorReply {
                     code: protocol::ErrorCode::StrengthUnavailable,
                     message: "Night Shift's strength can't be read on this Mac".to_owned(),
@@ -288,7 +286,7 @@ fn run_rules(instance: Instance, action: RulesAction) -> Result<(), Failure> {
     Ok(())
 }
 
-fn unexpected_reply() -> Failure {
+pub(crate) fn unexpected_reply() -> Failure {
     Failure::Unreachable(anyhow::anyhow!(
         "Nightcap sent a reply this CLI doesn't expect"
     ))

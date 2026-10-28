@@ -18,7 +18,7 @@ use nightcap_core::{
 };
 use nightcap_protocol::{
     CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload, Place,
-    Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, Status, TimeOfDay,
+    Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -92,14 +92,14 @@ pub(crate) fn send(staged: &Staged, command: Command) -> (Vec<Effect>, Response)
     (outcome.effects, response)
 }
 
-/// The status, as `nightcap status` asks for it; asking changes nothing.
-pub(crate) fn status(staged: &Staged) -> Status {
-    let (outcome, response) = staged.request(Request::Query(Query::Status));
+/// What `query` answers over the socket, as the CLI asks it; asking changes nothing.
+pub(crate) fn ask(staged: &Staged, query: Query) -> Payload {
+    let (outcome, response) = staged.request(Request::Query(query));
     assert_eq!(outcome, Outcome::default());
-    let Response::Ok(Payload::Status(status)) = response else {
-        panic!("expected a status, got {response:?}");
+    let Response::Ok(payload) = response else {
+        panic!("expected an answer, got {response:?}");
     };
-    *status
+    payload
 }
 
 /// The apps' and sites' indefinite rules, as `nightcap rules` lists them.
@@ -120,9 +120,8 @@ pub(crate) fn resettable(staged: &Staged) -> Vec<Rule> {
 
 /// Every rule at every place.
 pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
-    let (_, response) = staged.request(Request::Query(Query::Rules));
-    let Response::Ok(Payload::Rules(rules)) = response else {
-        panic!("expected rules, got {response:?}");
+    let Payload::Rules(rules) = ask(staged, Query::Rules) else {
+        panic!("expected rules");
     };
     rules
 }

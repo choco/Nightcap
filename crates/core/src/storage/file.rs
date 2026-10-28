@@ -310,9 +310,8 @@ mod tests {
         });
 
         assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);
-        let status = inner.status();
         assert_eq!(
-            status.rules,
+            inner.every_rule(inner.clock.now()),
             vec![Rule {
                 place: Place::from(mail),
                 says: OnOff::Off,

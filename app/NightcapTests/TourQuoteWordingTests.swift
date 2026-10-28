@@ -7,7 +7,7 @@ private let words = Wording.staged
 /// The menu's titles the tour quotes, as the core reports them for a running tour.
 struct TourQuoteWordingTests {
     @Test func theToursQuotesAreTheMenusWords() throws {
-        let titles = try #require(try onByTheSchedule(tourStarted).tour()).titles
+        let titles = try #require(try onByTheSchedule(tourStarted).tourReport()).titles
         let quote = { (path: MenuPath) in Wording.Quote(row: path.row, item: path.item) }
 
         #expect(quote(titles.addSampleRule) == words.addSampleRule("Tour Sample"))

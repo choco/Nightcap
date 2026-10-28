@@ -14,7 +14,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the daemon must match exactly.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -104,7 +104,7 @@ pub enum HelloReply {
 pub enum Request {
     Command(Command),
     Query(Query),
-    /// Reads the config again; answers with the status.
+    /// Reads the config again; answers with every rule.
     Reload,
     /// Starts Sparkle's own check, whose window offers to install (ADR-0011).
     Update,
@@ -190,11 +190,20 @@ pub enum Lasting {
     Indefinite,
 }
 
+/// What a client can ask, answered from the core's last snapshot without changing anything
+/// (ADR-0010): facts, never words.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Query {
-    Status,
+    NightShift,
+    Front,
+    /// Every rule at every place.
     Rules,
+    Config,
+    Preferences,
+    Checks,
+    Tour,
+    About,
     /// The ad-hoc rules that aren't in the config yet, ready to paste into it.
     Export(ExportFormat),
 }
@@ -216,12 +225,121 @@ pub enum Response {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
-    Status(Box<Status>),
+    NightShift(NightShiftState),
+    Front(Front),
+    Rules(Vec<Rule>),
+    Config(ConfigState),
+    Preferences(Preferences),
+    Checks(Checks),
+    /// None while no tour runs.
+    Tour(Option<TourState>),
+    About(About),
     Decision(Decision),
     /// Sparkle is checking; it shows what it finds in its own window.
     UpdateCheckStarted,
-    Rules(Vec<Rule>),
     Export(String),
+}
+
+/// Night Shift as the shell last reported it, and its schedule (ADR-0014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NightShiftState {
+    pub state: NightShift,
+    /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
+    pub strength: Option<u8>,
+    /// None until the shell first reports it.
+    pub schedule: Option<Schedule>,
+    /// macOS has sunset to sunrise set aside, and the schedule off, while Location Services is
+    /// off.
+    pub set_aside: bool,
+    /// What the schedule says now; None while the schedule, or the sun times it needs, aren't
+    /// known.
+    pub scheduled: Option<OnOff>,
+    /// The schedule's next transition; None while none is coming, or while the sun times it
+    /// needs aren't known.
+    pub next_turn: Option<Turn>,
+}
+
+/// A schedule transition: when, and which way it turns Night Shift. Sunset to sunrise turning
+/// it off is sunrise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Turn {
+    pub at: Timestamp,
+    pub to: OnOff,
+}
+
+/// What's in front, and what decides Night Shift there (ADR-0018).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Front {
+    /// The frontmost app's bundle ID, when it has one a rule could name.
+    pub app: Option<BundleId>,
+    /// Whether website checking reads the front browser's host (ADR-0012).
+    pub watching: bool,
+    /// The front tab's host, once read.
+    pub host: Option<String>,
+    /// The site in front while website checking knows the host: the most specific domain with
+    /// a rule covering it, else the tab domain (ADR-0017).
+    pub site: Option<Domain>,
+    /// What's in effect: the deciding place, what it says, and by which rule, else the tour
+    /// standing in or the schedule.
+    pub decision: Decision,
+}
+
+/// The config as Nightcap last read it, and why it or `rules.toml` can't be used (ADR-0007).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigState {
+    /// Where it's read from, whether or not it exists.
+    pub path: String,
+    /// Whether it existed when last read: a missing one is an empty config.
+    pub found: bool,
+    /// Why it can't be used; its rules are then the ones read before, or none.
+    pub error: Option<FileError>,
+    /// The strength it sets, if it sets one (ADR-0014).
+    pub strength: Option<u8>,
+    /// The schedule it sets, if it sets one (ADR-0014).
+    pub schedule: Option<Schedule>,
+    /// Website checking, if it sets it, which Settings and the CLI then can't change
+    /// (ADR-0012).
+    pub websites: Option<OnOff>,
+    /// The lengths a change can be picked for: its own, else 30 minutes, 1 hour and 2 hours.
+    pub lengths: Vec<SignedDuration>,
+    /// Why `rules.toml` can't be used; ad-hoc rules are then off.
+    pub ad_hoc_error: Option<FileError>,
+}
+
+/// The user's choices about how Nightcap runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Preferences {
+    pub website_checking: WebsiteChecking,
+    /// Whether the user wants Nightcap's notifications, which the notifications check compares
+    /// against.
+    pub notifications_wanted: bool,
+    /// Whether the user wants Nightcap to open at login (ADR-0011).
+    pub open_at_login: bool,
+    /// The last onboarding version the user went through, 0 for none.
+    pub onboarding_completed: u32,
+    /// Whether that's the current one, or the config answered all it asks.
+    pub onboarding_finished: bool,
+}
+
+/// The checks, and the grants behind them as macOS last reported them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checks {
+    pub checks: Vec<Check>,
+    pub permissions: Permissions,
+}
+
+/// A tour that runs (ADR-0016).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TourState {
+    /// It has Night Shift on, standing in for the schedule: Night Shift was off as it started.
+    pub stands_in: bool,
+}
+
+/// The Nightcap that answers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct About {
+    pub version: String,
+    pub install: Install,
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
@@ -479,40 +597,6 @@ where
     String::deserialize(deserializer)?
         .parse()
         .map_err(de::Error::custom)
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Status {
-    pub version: String,
-    pub install: Install,
-    pub night_shift: NightShift,
-    /// How warm Night Shift tints the display, 0 to 100; None until the shell first reads it.
-    pub strength: Option<u8>,
-    /// The strength the config sets, if it sets one (ADR-0014).
-    pub config_strength: Option<u8>,
-    pub decision: Decision,
-    /// None until the shell first reports Night Shift's status.
-    pub schedule: Option<Schedule>,
-    /// The schedule the config sets, if it sets one (ADR-0014).
-    pub config_schedule: Option<Schedule>,
-    /// None while the schedule, or the sun times it needs, aren't known.
-    pub scheduled_state: Option<OnOff>,
-    pub next_transition: Option<Timestamp>,
-    /// The frontmost app's bundle ID, when it has one a rule could name.
-    pub frontmost_app: Option<String>,
-    /// Whether the frontmost browser's host is being watched (ADR-0012).
-    pub watching: bool,
-    /// The watched browser's host, once known.
-    pub host: Option<String>,
-    /// Every rule at every place.
-    pub rules: Vec<Rule>,
-    /// Why the config couldn't be loaded; the rules are then the ones loaded before, or none.
-    pub config_error: Option<String>,
-    /// Why `rules.toml` can't be used; ad-hoc rules are then off.
-    pub ad_hoc_error: Option<String>,
-    pub website_checking: WebsiteChecking,
-    pub permissions: Permissions,
-    pub checks: Vec<Check>,
 }
 
 /// One thing Nightcap depends on, compared with what the user set up: what it found, which each
@@ -815,66 +899,128 @@ mod tests {
             r#"{"error":{"code":"protocol_mismatch","message":"x"}}"#
         );
         assert_eq!(
-            json(&Request::Query(Query::Status)),
-            r#"{"query":"status"}"#
-        );
-        assert_eq!(
             json(&Request::Command(Command::Toggle)),
             r#"{"command":"toggle"}"#
         );
-        assert_eq!(
-            json(&Response::Ok(Payload::Status(Box::new(Status {
-                version: "1.2.0".to_owned(),
-                install: Install::SelfManaged,
-                night_shift: NightShift::On,
-                strength: Some(60),
-                config_strength: None,
-                decision: Decision {
-                    state: Some(OnOff::Off),
-                    place: Place::Everywhere,
-                    reasons: vec![Reason::Schedule {
-                        state: OnOff::Off,
-                        until: Some("2026-10-16T20:00:00Z".parse().unwrap()),
-                    }],
-                },
-                schedule: Some(Schedule::Custom {
-                    from: TimeOfDay {
-                        hour: 22,
-                        minute: 0
-                    },
-                    to: TimeOfDay { hour: 7, minute: 0 },
+    }
+
+    #[test]
+    fn queries_and_their_answers_match_the_documented_wire_format() {
+        for (query, wire) in [
+            (Query::NightShift, r#"{"query":"night_shift"}"#),
+            (Query::Front, r#"{"query":"front"}"#),
+            (Query::Rules, r#"{"query":"rules"}"#),
+            (Query::Config, r#"{"query":"config"}"#),
+            (Query::Preferences, r#"{"query":"preferences"}"#),
+            (Query::Checks, r#"{"query":"checks"}"#),
+            (Query::Tour, r#"{"query":"tour"}"#),
+            (Query::About, r#"{"query":"about"}"#),
+        ] {
+            assert_eq!(json(&Request::Query(query)), wire);
+        }
+        let figma = || Place::Domain("figma.com".parse().unwrap());
+        let answers = [
+            (
+                Payload::NightShift(NightShiftState {
+                    state: NightShift::On,
+                    strength: Some(60),
+                    schedule: Some(Schedule::Custom {
+                        from: TimeOfDay {
+                            hour: 22,
+                            minute: 0,
+                        },
+                        to: TimeOfDay { hour: 7, minute: 0 },
+                    }),
+                    set_aside: false,
+                    scheduled: Some(OnOff::Off),
+                    next_turn: Some(Turn {
+                        at: "2026-10-16T20:00:00Z".parse().unwrap(),
+                        to: OnOff::On,
+                    }),
                 }),
-                config_schedule: None,
-                scheduled_state: Some(OnOff::Off),
-                next_transition: Some("2026-10-16T20:00:00Z".parse().unwrap()),
-                frontmost_app: Some("com.apple.Safari".to_owned()),
-                watching: true,
-                host: Some("www.figma.com".to_owned()),
-                rules: vec![Rule {
-                    place: Place::App("com.figma.Desktop".parse().unwrap()),
-                    says: OnOff::On,
-                    length: Length::Until {
-                        until: "2026-10-16T19:30:00Z".parse().unwrap(),
+                r#"{"night_shift":{"state":"on","strength":60,"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"set_aside":false,"scheduled":"off","next_turn":{"at":"2026-10-16T20:00:00Z","to":"on"}}}"#,
+            ),
+            (
+                Payload::Front(Front {
+                    app: Some("com.apple.Safari".parse().unwrap()),
+                    watching: true,
+                    host: Some("www.figma.com".to_owned()),
+                    site: Some("figma.com".parse().unwrap()),
+                    decision: Decision {
+                        state: Some(OnOff::Off),
+                        place: figma(),
+                        reasons: vec![Reason::Rule(Rule {
+                            place: figma(),
+                            says: OnOff::Off,
+                            length: Length::Indefinite,
+                            set_by: SetBy::Config,
+                        })],
                     },
-                    set_by: SetBy::You,
-                }],
-                config_error: None,
-                ad_hoc_error: None,
-                website_checking: WebsiteChecking {
-                    state: OnOff::On,
-                    from_config: false,
-                },
-                permissions: Permissions {
-                    accessibility: true,
-                    notifications: NotificationPermission::NotRequested,
-                },
-                checks: vec![Check {
-                    detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
-                    state: CheckState::Drifted,
-                }],
-            })))),
-            r#"{"ok":{"status":{"version":"1.2.0","install":"self_managed","night_shift":"on","strength":60,"config_strength":null,"decision":{"state":"off","place":"everywhere","reasons":[{"schedule":{"state":"off","until":"2026-10-16T20:00:00Z"}}]},"schedule":{"custom":{"from":{"hour":22,"minute":0},"to":{"hour":7,"minute":0}}},"config_schedule":null,"scheduled_state":"off","next_transition":"2026-10-16T20:00:00Z","frontmost_app":"com.apple.Safari","watching":true,"host":"www.figma.com","rules":[{"place":{"app":"com.figma.Desktop"},"says":"on","length":{"until":{"until":"2026-10-16T19:30:00Z"}},"set_by":"you"}],"config_error":null,"ad_hoc_error":null,"website_checking":{"state":"on","from_config":false},"permissions":{"accessibility":true,"notifications":"not_requested"},"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}]}}}"#
-        );
+                }),
+                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]}}}"#,
+            ),
+            (
+                Payload::Config(ConfigState {
+                    path: "/Users/me/.config/nightcap/config.toml".to_owned(),
+                    found: true,
+                    error: None,
+                    strength: Some(40),
+                    schedule: None,
+                    websites: Some(OnOff::On),
+                    lengths: vec![SignedDuration::from_mins(30), SignedDuration::from_mins(90)],
+                    ad_hoc_error: Some(FileError::Newer {
+                        path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
+                        version: 3,
+                    }),
+                }),
+                r#"{"config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}}"#,
+            ),
+            (
+                Payload::Preferences(Preferences {
+                    website_checking: WebsiteChecking {
+                        state: OnOff::On,
+                        from_config: true,
+                    },
+                    notifications_wanted: true,
+                    open_at_login: false,
+                    onboarding_completed: 1,
+                    onboarding_finished: true,
+                }),
+                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true}}"#,
+            ),
+            (
+                Payload::Checks(Checks {
+                    checks: vec![Check {
+                        detail: CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
+                        state: CheckState::Drifted,
+                    }],
+                    permissions: Permissions {
+                        accessibility: false,
+                        notifications: NotificationPermission::Granted,
+                    },
+                }),
+                r#"{"checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted"}}}"#,
+            ),
+            (
+                Payload::Tour(Some(TourState { stands_in: true })),
+                r#"{"tour":{"stands_in":true}}"#,
+            ),
+            (Payload::Tour(None), r#"{"tour":null}"#),
+            (
+                Payload::About(About {
+                    version: "1.2.0".to_owned(),
+                    install: Install::SelfManaged,
+                }),
+                r#"{"about":{"version":"1.2.0","install":"self_managed"}}"#,
+            ),
+        ];
+
+        for (payload, wire) in answers {
+            let response = Response::Ok(payload);
+            let wire = format!(r#"{{"ok":{wire}}}"#);
+            assert_eq!(json(&response), wire);
+            assert_eq!(serde_json::from_str::<Response>(&wire).unwrap(), response);
+        }
     }
 
     #[test]
