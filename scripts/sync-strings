@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Syncs the String Catalog, app/Nightcap/Wording/Localizable.xcstrings, with the strings the
+# app's code uses, from the dev build's .stringsdata, which xcodebuild writes but never syncs
+# itself. It adds the keys the catalog lacks, takes out those the code doesn't use, and takes in
+# the code's comments for translators, in Xcode's own style. A new key's plural forms are added
+# by hand. Run build-app first.
+#   --check  changes nothing, and fails if the catalog's keys, words or comments aren't as a
+#            sync would leave them, whatever its whitespace or order
+# Usage: sync-strings [--check]
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+check=
+case "${1:-}" in
+  "") ;;
+  --check) check=1 ;;
+  *)
+    echo "usage: sync-strings [--check]" >&2
+    exit 1
+    ;;
+esac
+
+catalog=app/Nightcap/Wording/Localizable.xcstrings
+built=build/xcode/Nightcap.build/Debug/Nightcap.build
+
+# A source file that's gone leaves its .stringsdata behind in the build, so only those of files
+# still there count.
+stringsdata=()
+if [[ -d "$built" ]]; then
+  while IFS= read -r file; do
+    if [[ -f "$(jq -r .source "$file")" ]]; then
+      stringsdata+=(--stringsdata "$file")
+    fi
+  done < <(find "$built" -name '*.stringsdata' ! -name ExtractedAppShortcutsMetadata.stringsdata)
+fi
+if [[ ${#stringsdata[@]} -eq 0 ]]; then
+  echo "error: no strings from a dev build in $built: run build-app first" >&2
+  exit 1
+fi
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+# sync reads the code's strings for the table its file is named for.
+synced="$work/Localizable.xcstrings"
+cp "$catalog" "$synced"
+xcrun xcstringstool sync "$synced" "${stringsdata[@]}"
+
+# sync keeps a key the code doesn't use, marked stale, where the key has words of its own, so
+# jq takes it out. It writes the file in Xcode's style, which sync leaves as it is when it finds
+# nothing to change: keys sorted by code point, " : " between a key and its value, an empty
+# object with a blank line inside, and no line break at the end.
+# shellcheck disable=SC2016 # $indent is jq's, not the shell's.
+xcode_style='
+def xcode($indent):
+  if type == "object" then
+    if length == 0 then "{\n\n\($indent)}"
+    else
+      "{\n"
+      + ([to_entries | sort_by(.key)[] | "\($indent)  \(.key | tojson) : \(.value | xcode("\($indent)  "))"]
+        | join(",\n"))
+      + "\n\($indent)}"
+    end
+  elif type == "array" then
+    if length == 0 then "[\n\n\($indent)]"
+    else "[\n" + ([.[] | "\($indent)  \(xcode("\($indent)  "))"] | join(",\n")) + "\n\($indent)]"
+    end
+  else tojson
+  end;
+del(.strings[] | select(.extractionState == "stale")) | xcode("")
+'
+jq -j "$xcode_style" "$synced" >"$work/styled.xcstrings"
+mv "$work/styled.xcstrings" "$synced"
+
+# Each key on a line of its own, as JSON, since a key can hold a line break.
+keys() {
+  jq -r '.strings | keys[] | @json' "$1" | LC_ALL=C sort
+}
+added="$(LC_ALL=C comm -13 <(keys "$catalog") <(keys "$synced"))"
+dropped="$(LC_ALL=C comm -23 <(keys "$catalog") <(keys "$synced"))"
+
+# Says $1, then the keys in $2, indented.
+list() {
+  echo "$1"
+  while IFS= read -r key; do
+    echo "  $key"
+  done <<<"$2"
+}
+
+if [[ -n "$check" ]]; then
+  # The check compares content, not bytes: another Xcode's xcstringstool, such as CI's, can
+  # write the same catalog with other whitespace or in another order.
+  same=
+  if cmp -s <(jq -S . "$catalog") <(jq -S . "$synced"); then
+    same=1
+  fi
+  if [[ -n "$added" ]]; then
+    list "error: the String Catalog lacks keys the code uses:" "$added" >&2
+  fi
+  if [[ -n "$dropped" ]]; then
+    list "error: the String Catalog holds keys the code doesn't use:" "$dropped" >&2
+  fi
+  if [[ -z "$added" && -z "$dropped" && -z "$same" ]]; then
+    echo "error: the String Catalog's comments or extraction states aren't the code's" >&2
+  fi
+  if [[ -z "$same" ]]; then
+    echo "Run scripts/sync-strings after build-app, then add any plural forms by hand." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+cp "$synced" "$catalog"
+if [[ -n "$added" ]]; then
+  list "Added these keys; give any plural ones their forms by hand:" "$added"
+fi
+if [[ -n "$dropped" ]]; then
+  list "Took out these keys, which the code doesn't use:" "$dropped"
+fi

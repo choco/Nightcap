@@ -675,6 +675,7 @@
 
     },
     "In %@, a length of time" : {
+      "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
