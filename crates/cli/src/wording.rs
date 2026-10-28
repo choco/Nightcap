@@ -26,7 +26,7 @@ fn decision(decision: &Decision, zone: &TimeZone) -> String {
         Place::Everywhere => String::new(),
         place => format!(" at {place}"),
     };
-    let mut description = match top {
+    match top {
         Reason::Rule(rule) if is_app_or_site_rule(rule) => format!(
             "{} by the {} rule for {}",
             rule.says,
@@ -37,23 +37,22 @@ fn decision(decision: &Decision, zone: &TimeZone) -> String {
         // Only the app's tour begins a trial, which the CLI's user knows by the tour's name.
         Reason::StandIn => "on for the tour".to_owned(),
         Reason::Schedule { .. } => "following the schedule".to_owned(),
-    };
-    let snoozed = decision
-        .reasons
-        .iter()
-        .skip(1)
-        .find_map(|reason| match reason {
-            Reason::Rule(rule)
-                if is_app_or_site_rule(rule) && Some(rule.says) != decision.state =>
-            {
-                Some(rule)
-            }
-            _ => None,
-        });
-    if let Some(rule) = snoozed {
-        description.push_str(&format!(", its {} rule snoozed", source(rule.set_by)));
     }
-    description
+}
+
+/// ", its config rule snoozed" while the rule at the app or site that decides is snoozed, as
+/// the rules answer serves it, else nothing.
+fn snoozed(place: &Place, rules: &[ListedRule]) -> String {
+    rules
+        .iter()
+        .find(|listed| {
+            listed.snooze.is_some()
+                && listed.rule.place == *place
+                && is_app_or_site_rule(&listed.rule)
+        })
+        .map_or_else(String::new, |listed| {
+            format!(", its {} rule snoozed", source(listed.rule.set_by))
+        })
 }
 
 /// `app:com.figma.Desktop (config rule, off)`, and while it's snoozed
@@ -516,7 +515,11 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         NotificationPermission::Granted => "granted",
     };
     let mut lines = vec![format!("Nightcap {}, {install}", about.version)];
-    let decided = decision(&front.decision, zone);
+    let decided = format!(
+        "{}{}",
+        decision(&front.decision, zone),
+        snoozed(&front.decision.place, every_rule)
+    );
     // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
@@ -754,7 +757,7 @@ mod tests {
                     Reason::Rule(figma.clone()),
                 ]
             ),
-            "on at app:com.figma.Desktop until 07:00, its config rule snoozed"
+            "on at app:com.figma.Desktop until 07:00"
         );
         assert_eq!(
             described(OnOff::Off, figma_app(), vec![Reason::Rule(figma)]),
@@ -1384,6 +1387,42 @@ mod tests {
                 "Needs attention:",
                 "  Notifications were allowed, but they’re switched off in System Settings.",
             ]
+        );
+    }
+
+    #[test]
+    fn status_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let figma = || Place::Domain("figma.com".parse().unwrap());
+        let snooze = Rule {
+            place: figma(),
+            says: OnOff::On,
+            length: Length::UntilScheduleTurns {
+                until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
+            },
+            set_by: SetBy::OutsideChange,
+        };
+        let night_shift_line = |served: Option<Rule>| {
+            let mut report = on_figma();
+            report.front.decision = Decision {
+                state: Some(OnOff::On),
+                place: figma(),
+                reasons: vec![
+                    Reason::Rule(snooze.clone()),
+                    Reason::Rule(indefinite("domain:figma.com", OnOff::Off, SetBy::Config)),
+                ],
+            };
+            report.rules[0].snooze = served;
+            status(&report, &zone).swap_remove(1)
+        };
+
+        assert_eq!(
+            night_shift_line(Some(snooze.clone())),
+            "Night Shift: on at domain:figma.com until 07:00, its config rule snoozed"
+        );
+        assert_eq!(
+            night_shift_line(None),
+            "Night Shift: on at domain:figma.com until 07:00"
         );
     }
 
