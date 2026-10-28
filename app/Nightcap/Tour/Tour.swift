@@ -137,11 +137,7 @@ final class Tour {
     /// where its status item is, so nothing points at it. The first step follows `snapshot`.
     func start(_ snapshot: Snapshot) {
         refresh(snapshot)
-        if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(
-                NSPoint(
-                    x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
-        }
+        panel.moveUnderMenuBar()
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -345,14 +341,7 @@ final class Tour {
     private func draw() {
         drawn = shown
         let content = self.content()
-        let glass = panel.glass
-        glass.subviews.forEach { $0.removeFromSuperview() }
-        content.translatesAutoresizingMaskIntoConstraints = false
-        glass.addSubview(content)
-        NSLayoutConstraint.activate([
-            content.leadingAnchor.constraint(equalTo: glass.leadingAnchor),
-            content.topAnchor.constraint(equalTo: glass.topAnchor),
-        ])
+        panel.setContent(content)
         fit(content.fittingSize)
     }
 

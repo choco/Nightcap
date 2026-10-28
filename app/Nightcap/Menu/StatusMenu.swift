@@ -167,18 +167,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 pointing = popover
             } else {
                 let panel = FloatingPanel()
-                content.view.translatesAutoresizingMaskIntoConstraints = false
-                panel.glass.addSubview(content.view)
-                NSLayoutConstraint.activate([
-                    content.view.leadingAnchor.constraint(equalTo: panel.glass.leadingAnchor),
-                    content.view.topAnchor.constraint(equalTo: panel.glass.topAnchor),
-                ])
+                panel.setContent(content.view)
                 panel.setContentSize(content.size)
-                if let screen = NSScreen.main?.visibleFrame {
-                    panel.setFrameOrigin(
-                        NSPoint(
-                            x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
-                }
+                panel.moveUnderMenuBar()
                 panel.makeKeyAndOrderFront(nil)
                 hiddenPanel = (panel, content)
             }

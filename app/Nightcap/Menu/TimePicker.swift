@@ -48,23 +48,14 @@ final class TimePicker: NSObject, NSWindowDelegate {
         stack.edgeInsets = NSEdgeInsets(
             top: 14, left: Self.padding, bottom: 14, right: Self.padding)
         buttons.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * Self.padding).isActive = true
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        panel.glass.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: panel.glass.leadingAnchor),
-            stack.topAnchor.constraint(equalTo: panel.glass.topAnchor),
-        ])
+        panel.setContent(stack)
         panel.setContentSize(stack.fittingSize)
         panel.delegate = self
     }
 
     /// At the top right, under the menu bar, where the moon's menu was.
     func show() {
-        if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(
-                NSPoint(
-                    x: screen.maxX - panel.frame.width - 12, y: screen.maxY - panel.frame.height - 8))
-        }
+        panel.moveUnderMenuBar()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(picker)
     }
