@@ -81,6 +81,7 @@ impl Answers {
                 open_at_login: inner.grants.open_at_login,
                 onboarding_completed: inner.onboarding,
                 onboarding_finished: inner.onboarding_done(),
+                onboarding_asks: inner.onboarding_asks(),
             },
             checks: Checks {
                 checks: inner.checks(now),

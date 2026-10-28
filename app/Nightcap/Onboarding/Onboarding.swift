@@ -74,7 +74,8 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// is the time the stage's timeline marks; `shortcut` is the one Ready's menu shows; `choose`
     /// sends a command to the core, as the menu does; `notifications` says whether notifications
     /// are allowed, denied or not asked for yet, as last read; `onFinish` runs once onboarding
-    /// ends, by Done or the close button.
+    /// ends, by Done or the close button, with whether the user chose website checking, or nil
+    /// where the config sets it.
     init(
         setup: OnboardingFlow.Setup,
         rules: @escaping () -> [Rule],
@@ -87,7 +88,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         choose: @escaping (Command) -> Void,
         notifications: @escaping () -> NotificationPermission,
         askForNotifications: @escaping () -> Void,
-        onFinish: @escaping (_ websites: Bool) -> Void
+        onFinish: @escaping (_ websites: Bool?) -> Void
     ) {
         // One place is kept for an app the user chooses.
         let words = self.words

@@ -1,7 +1,7 @@
 //! Onboarding's part in the core: when it shows, which the config or the install can make
 //! unneeded, and what finishing it sets (ADR-0012, ADR-0014). What it asks is the shell's.
 
-use nightcap_protocol::NightShift;
+use nightcap_protocol::{NightShift, OnboardingAsks};
 
 use crate::Effect;
 use crate::commands::kind;
@@ -23,8 +23,10 @@ impl Inner {
         if self.onboarding < ONBOARDING {
             // The config can answer website checking and Night Shift; opening at login
             // it can't.
+            let asks = self.onboarding_asks();
             if self.facts.config_websites.is_some()
-                && self.config_answers_night_shift()
+                && !asks.strength
+                && !asks.schedule
                 && !self.manages_itself
             {
                 self.onboarding = ONBOARDING;
@@ -36,24 +38,28 @@ impl Inner {
         }
     }
 
-    /// Whether onboarding's Night Shift steps have nothing to ask (ADR-0014): the config sets
-    /// the strength, or it can't be read, and the config sets the schedule, or Night Shift is
+    /// What onboarding's Night Shift steps ask (ADR-0014): the strength, unless the config sets
+    /// it or it can't be read, and the schedule, unless the config sets it or Night Shift is
     /// unavailable.
-    fn config_answers_night_shift(&self) -> bool {
+    pub(crate) fn onboarding_asks(&self) -> OnboardingAsks {
         let night_shift = &self.loaded.config_night_shift;
-        let strength_answered = self.strength.is_none() || night_shift.strength.is_some();
-        let schedule_answered =
-            self.facts.night_shift == NightShift::Unavailable || night_shift.schedule.is_some();
-        strength_answered && schedule_answered
+        OnboardingAsks {
+            strength: self.strength.is_some() && night_shift.strength.is_none(),
+            schedule: self.facts.night_shift != NightShift::Unavailable
+                && night_shift.schedule.is_none(),
+        }
     }
 
-    /// The user went through onboarding, choosing whether to check websites, which it asks
-    /// only where the config doesn't set it.
-    pub(crate) fn onboarding_finished(&mut self, websites: bool) {
+    /// The user went through onboarding, with whether they chose to check websites where it
+    /// asked, which is only where the config doesn't set it.
+    pub(crate) fn onboarding_finished(&mut self, websites: Option<bool>) {
         tracing::info!("onboarding finished");
         self.onboarding = ONBOARDING;
-        if let Err(refusal) = self.set_websites(websites) {
-            tracing::debug!("the config keeps website checking: {}", kind(&refusal));
+        if let Some(on) = websites
+            && let Err(refusal) = self.set_websites(on)
+        {
+            // The config came to set it while onboarding was open.
+            tracing::info!("the config keeps website checking: {}", kind(&refusal));
         }
     }
 }

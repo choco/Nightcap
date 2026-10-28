@@ -78,8 +78,9 @@ pub enum AppCommand {
     StartTour,
     /// Ends the tour, as it finishes or the user leaves it.
     EndTour,
-    /// Finishes onboarding, with whether the user chose to check websites.
-    FinishOnboarding { websites: bool },
+    /// Finishes onboarding, with whether the user chose to check websites, or None where the
+    /// config sets it and onboarding never asked.
+    FinishOnboarding { websites: Option<bool> },
     /// Carries out one of the core's fixes, which the user chose in the app.
     Fix(Fix),
 }

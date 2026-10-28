@@ -376,6 +376,17 @@ pub struct Preferences {
     pub onboarding_completed: u32,
     /// Whether that's the current one, or the config answered all it asks.
     pub onboarding_finished: bool,
+    /// What onboarding's Night Shift steps ask (ADR-0014).
+    pub onboarding_asks: OnboardingAsks,
+}
+
+/// What onboarding's Night Shift steps ask, which the config can answer (ADR-0014).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnboardingAsks {
+    /// How warm, unless the config sets it or the strength can't be read.
+    pub strength: bool,
+    /// When it comes on, unless the config sets it or Night Shift is unavailable.
+    pub schedule: bool,
 }
 
 /// The checks, and what macOS last reported behind them: the grants and the login item.
@@ -1262,8 +1273,12 @@ mod tests {
                     open_at_login: false,
                     onboarding_completed: 1,
                     onboarding_finished: true,
+                    onboarding_asks: OnboardingAsks {
+                        strength: false,
+                        schedule: true,
+                    },
                 }),
-                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true}}"#,
+                r#"{"preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false,"onboarding_completed":1,"onboarding_finished":true,"onboarding_asks":{"strength":false,"schedule":true}}}"#,
             ),
             (
                 Payload::Checks(Checks {

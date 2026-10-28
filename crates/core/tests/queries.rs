@@ -10,9 +10,9 @@ use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Check, CheckDetail, CheckState, Checks, Command, ConfigState,
     Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, LoginItem,
-    NightShift, NightShiftState, NotificationPermission, OnOff, Payload, Permissions, Place,
-    PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay, TourState,
-    WebsiteChecking,
+    NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks, Payload,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay,
+    TourState, WebsiteChecking,
 };
 
 use common::{
@@ -469,7 +469,9 @@ fn config_answers_why_it_or_rules_toml_cant_be_used() {
 fn preferences_answer_the_users_choices() {
     let staged = noon()
         .then(permissions(true, NotificationPermission::Granted))
-        .then(AppCommand::FinishOnboarding { websites: true })
+        .then(AppCommand::FinishOnboarding {
+            websites: Some(true),
+        })
         .stage()
         .unwrap();
 
@@ -484,6 +486,10 @@ fn preferences_answer_the_users_choices() {
             open_at_login: false,
             onboarding_completed: 1,
             onboarding_finished: true,
+            onboarding_asks: OnboardingAsks {
+                strength: false,
+                schedule: false,
+            },
         }
     );
     answers_alike(&staged);

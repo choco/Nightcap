@@ -38,7 +38,7 @@ private func setup(_ core: Core) -> OnboardingFlow.Setup {
 private func onboarding(
     _ core: Core, sent: Sent = Sent(),
     notifications: @escaping () -> NotificationPermission = { .notRequested },
-    onFinish: @escaping (Bool) -> Void = { _ in }
+    onFinish: @escaping (Bool?) -> Void = { _ in }
 ) -> OnboardingFlow {
     OnboardingFlow(
         setup: setup(core), apps: [imovie, photos], sites: ["figma.com"],
@@ -243,7 +243,7 @@ struct OnboardingFlowTests {
 
     @Test func websiteCheckingIsSentOnlyAtTheFinish() throws {
         let sent = Sent()
-        var finished: [Bool] = []
+        var finished: [Bool?] = []
         let flow = onboarding(try core(), sent: sent, onFinish: { finished.append($0) })
         flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
 
@@ -256,8 +256,19 @@ struct OnboardingFlowTests {
         #expect(sent.commands == [])
     }
 
+    @Test func websiteCheckingTheConfigSetsIsntSentAtTheFinish() throws {
+        for config in ["websites = true\n", "websites = false\n"] {
+            var finished: [Bool?] = []
+            let flow = onboarding(try core(config: config), onFinish: { finished.append($0) })
+
+            flow.finish()
+
+            #expect(finished == [nil], "\(config)")
+        }
+    }
+
     @Test func notNowLeavesWebsiteCheckingOff() throws {
-        var finished: [Bool] = []
+        var finished: [Bool?] = []
         let flow = onboarding(try core(), onFinish: { finished.append($0) })
         flow.go(to: try #require(flow.steps.firstIndex(of: .websites)))
 

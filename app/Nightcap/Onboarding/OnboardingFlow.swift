@@ -134,13 +134,14 @@ final class OnboardingFlow {
     private let choose: (Command) -> Void
     private let readNotifications: () -> NotificationPermission
     private let askForNotifications: () -> Void
-    private let onFinish: (_ websites: Bool) -> Void
+    private let onFinish: (_ websites: Bool?) -> Void
 
     /// `apps` are the bundle IDs of the suggested apps the grid shows, and `sites` the suggested
     /// sites' domains. `rules` are the core's rules as they stand, and `words` say where one comes
     /// from; `choose` sends a command to the core, as the menu does; `notifications` says whether
     /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
-    /// onboarding finishes.
+    /// onboarding finishes, with whether the user chose website checking, or nil where the config
+    /// sets it.
     init(
         setup: Setup,
         apps: [String],
@@ -152,7 +153,7 @@ final class OnboardingFlow {
         choose: @escaping (Command) -> Void,
         notifications: @escaping () -> NotificationPermission,
         askForNotifications: @escaping () -> Void,
-        onFinish: @escaping (_ websites: Bool) -> Void
+        onFinish: @escaping (_ websites: Bool?) -> Void
     ) {
         self.setup = setup
         self.rules = rules
@@ -325,9 +326,10 @@ final class OnboardingFlow {
         }
     }
 
-    /// Onboarding ends, by Done or the close button, with what was chosen so far.
+    /// Onboarding ends, by Done or the close button, with what was chosen so far: website
+    /// checking only where onboarding asks it, which is where the config doesn't set it.
     func finish() {
-        onFinish(websites == true)
+        onFinish(setup.websitesFromConfig == nil ? websites == true : nil)
     }
 
     // MARK: The steps' choices
@@ -430,13 +432,15 @@ final class OnboardingFlow {
 }
 
 extension OnboardingFlow.Setup {
-    /// What onboarding asks, as `core` answers its queries now.
+    /// What onboarding asks, as `core` answers its queries now: the core decides what its Night
+    /// Shift steps ask, as it does whether it opens.
     init(_ core: Core) {
         let nightShift = core.nightShift()
         let config = core.config()
         let checks = core.checks()
-        let askStrength = nightShift.strength != nil && config.strength == nil
-        let askSchedule = nightShift.state != .unavailable && config.schedule == nil
+        let asks = core.preferences().onboardingAsks
+        let askStrength = asks.strength
+        let askSchedule = asks.schedule
         // Only an install that opens itself at login has the check.
         let opensItself = checks.checks.contains { $0.detail.kind == .openAtLogin }
         self.init(
