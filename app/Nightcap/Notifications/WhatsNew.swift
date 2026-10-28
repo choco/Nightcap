@@ -9,13 +9,12 @@ struct WhatsNew {
 
     private static let lastVersion = "lastVersion"
 
-    /// The update notice as `about`'s version launches, if it isn't the one that last launched,
-    /// and records it as that one. A first run has nothing new; a run from before the app kept the
-    /// version is an update once the user has `onboarded`.
-    func launched(_ about: About, onboarded: Bool) -> Notice? {
+    /// The update notice as `about`'s version launches, if another one launched last, and records
+    /// it as the one that last launched. A first run, with none recorded, has nothing new.
+    func launched(_ about: About) -> Notice? {
         let last = defaults.string(forKey: Self.lastVersion)
         defaults.set(about.version, forKey: Self.lastVersion)
-        guard last != about.version, last != nil || onboarded else { return nil }
+        guard let last, last != about.version else { return nil }
         return Notice(updatedTo: about.version, words: words)
     }
 }

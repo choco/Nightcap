@@ -15,7 +15,7 @@ struct WhatsNewTests {
         withScratchDefaults { defaults in
             let whatsNew = WhatsNew(defaults: defaults, words: .staged)
 
-            #expect(whatsNew.launched(about, onboarded: false) == nil)
+            #expect(whatsNew.launched(about) == nil)
             #expect(defaults.string(forKey: "lastVersion") == about.version)
         }
     }
@@ -26,11 +26,11 @@ struct WhatsNewTests {
             defaults.set("1.0.0", forKey: "lastVersion")
             let whatsNew = WhatsNew(defaults: defaults, words: .staged)
 
-            let notice = whatsNew.launched(about, onboarded: true)
+            let notice = whatsNew.launched(about)
 
             #expect(notice == Notice(updatedTo: about.version, words: .staged))
             #expect(notice?.title == "Nightcap updated to \(about.version)")
-            #expect(whatsNew.launched(about, onboarded: true) == nil)
+            #expect(whatsNew.launched(about) == nil)
         }
     }
 
@@ -40,16 +40,7 @@ struct WhatsNewTests {
             defaults.set(about.version, forKey: "lastVersion")
             let whatsNew = WhatsNew(defaults: defaults, words: .staged)
 
-            #expect(whatsNew.launched(about, onboarded: true) == nil)
-        }
-    }
-
-    @Test func aRunFromBeforeTheAppKeptTheVersionCountsAsAnUpdateOnceOnboarded() throws {
-        let about = try launching()
-        withScratchDefaults { defaults in
-            #expect(
-                WhatsNew(defaults: defaults, words: .staged).launched(about, onboarded: true)
-                    == Notice(updatedTo: about.version, words: .staged))
+            #expect(whatsNew.launched(about) == nil)
         }
     }
 }

@@ -84,14 +84,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let whatsNew = WhatsNew(defaults: .standard, words: .system)
         let announcer = Announcer(defaults: .standard, words: .system)
         executor.onEvent { [notifications] event in notifications.tell(event) }
-        // Ahead of the launch's onboarding below, which can record it as gone through, so what's
-        // new reads whether the user went through onboarding before this launch.
         executor.onChange { [notifications] cause, snapshot in
-            if cause == .launch,
-                let notice = whatsNew.launched(snapshot.about(), onboarded: onboardingRecord.finished)
-            {
-                notifications.post(notice)
-            }
+            if cause == .launch, let notice = whatsNew.launched(snapshot.about()) { notifications.post(notice) }
             announcer.heard(cause, snapshot).forEach { notifications.post($0) }
         }
         executor.onChange { [weak self] cause, snapshot in
