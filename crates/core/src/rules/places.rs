@@ -9,13 +9,11 @@ use nightcap_protocol::{
 use crate::rules::domain::{self, Host};
 use crate::rules::schedule::Timeline;
 
-/// What rules match against, and the front app's name, which the menu calls it by.
+/// What rules match against.
 #[derive(Default)]
 pub(crate) struct Context {
     /// The frontmost app's bundle ID, when it has one a rule could name.
     pub app: Option<BundleId>,
-    /// The frontmost app's name as the user sees it.
-    pub app_name: Option<String>,
     /// The frontmost browser's host, while it's watched and known.
     pub host: Option<Host>,
 }
@@ -85,8 +83,6 @@ struct Tour {
 #[derive(Debug)]
 pub(crate) struct Look<'a> {
     pub decision: Decision,
-    /// What's on screen: the decision's state, else Night Shift as last reported.
-    pub screen: OnOff,
     pub everywhere: PlaceLook,
     /// The front app's, when it has a bundle ID a rule could name.
     pub app: Option<PlaceLook>,
@@ -475,7 +471,6 @@ impl Places {
         let mut switched = self.clone();
         switched.switched(everywhere.gives.other(), world);
         Look {
-            screen: decision.state.unwrap_or(world.observed),
             decision,
             app: world
                 .context
@@ -1147,7 +1142,7 @@ mod tests {
     }
 
     #[test]
-    fn with_the_schedule_unknown_and_nothing_else_the_screen_is_as_last_reported() {
+    fn with_the_schedule_unknown_and_nothing_else_everywhere_gives_night_shift_as_last_reported() {
         let lent = Lent::unscheduled(NIGHT);
         let places = with_config(Vec::new());
 
@@ -1161,7 +1156,6 @@ mod tests {
                 reasons: Vec::new(),
             }
         );
-        assert_eq!(look.screen, OnOff::On);
         assert_eq!(look.everywhere.gives, OnOff::On);
     }
 

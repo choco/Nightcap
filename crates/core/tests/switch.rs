@@ -415,7 +415,6 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
     report(&staged, true);
     staged.report(Fact::AppActivated {
         bundle_id: Some("com.figma.Desktop".to_owned()),
-        name: Some("Figma".to_owned()),
         is_browser: false,
     });
     let figma = Place::App("com.figma.Desktop".parse().unwrap());

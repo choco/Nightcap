@@ -125,7 +125,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             browser: tourBrowser(core.settings()),
-            current: { (core.tourReport(), core.menu().icon) },
+            current: {
+                (
+                    core.tourReport(),
+                    Menu(.init(asking: core), now: Date(), appName: Apps.runningName(of:), words: .system).moon
+                )
+            },
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
             begin: { host.send($0) },
@@ -187,7 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host else { return }
         let core = host.core
         statusMenu = StatusMenu(
-            current: { core.menu() },
+            current: { Menu(Menu.Answers(asking: core), now: Date(), appName: Apps.runningName(of:), words: .system) },
             icons: siteIcons,
             choose: { command in host.send(command) },
             openSettings: { [weak self] onProblem in
@@ -231,9 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let core = host?.core else { return }
         let settings = core.settings()
         guard settings.websiteChecking.on else { return }
-        let front = core.menu().entries.compactMap { entry -> String? in
-            if case .row(let row) = entry { row.site } else { nil }
-        }
+        let front = core.front().site.map { [$0] } ?? []
         let ruled = settings.rules.compactMap { rule -> String? in
             if case .domain(let domain) = rule.identity { domain } else { nil }
         }

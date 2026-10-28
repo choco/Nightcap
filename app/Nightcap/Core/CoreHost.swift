@@ -258,7 +258,7 @@ final class CoreHost: NSObject {
     private func reportFrontmostApp(_ app: NSRunningApplication?) {
         let bundleId = app?.bundleIdentifier
         let isBrowser = bundleId.map(BrowserWatcher.browsers.contains) ?? false
-        core.report(fact: .appActivated(bundleId: bundleId, name: app?.localizedName, isBrowser: isBrowser))
+        core.report(fact: .appActivated(bundleId: bundleId, isBrowser: isBrowser))
     }
 
     private func reportHost(generation: UInt64, host: String?) {

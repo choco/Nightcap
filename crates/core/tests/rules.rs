@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, File, MenuEntry, RowImage};
+use nightcap_core::{Effect, Event, Fact, File};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, Command, ConfigFileDetail, Decision, ErrorCode, ExportFormat,
     FileError, Lasting, Length, OnOff, Payload, Place, Reason, Request, Response, Rule,
@@ -11,10 +11,9 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, activate_event, ad_hoc, add_rule, app_row, app_rule, at, books, choice_titled,
-    custom_hours, domain_rule, figma, figma_app, forced, in_books_at_noon, kept_ad_hoc, late,
-    launch, mail, minutes, noon, on_by_the_schedule, refusal, reported, resettable, rules, send,
-    set, until_turn, yours,
+    activate, activate_event, ad_hoc, add_rule, app_rule, at, books, custom_hours, domain_rule,
+    figma, figma_app, forced, in_books_at_noon, kept_ad_hoc, late, launch, mail, minutes, noon,
+    on_by_the_schedule, refusal, reported, resettable, rules, send, set, until_turn, yours,
 };
 
 #[test]
@@ -286,6 +285,16 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
 }
 
 #[test]
+fn a_rule_the_menu_adds_applies_at_once() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    activate(&staged, "com.figma.Desktop");
+
+    let effects = staged.send(add_rule(figma())).0.effects;
+
+    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+}
+
+#[test]
 fn removing_an_ad_hoc_rule_lifts_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
@@ -341,10 +350,6 @@ fn an_app_whose_bundle_id_no_rule_could_name_counts_as_having_none() {
     activate(&staged, "unity.Team Cherry.Hollow Knight");
 
     assert_eq!(staged.core().front().app, None);
-    let app_rows = staged.core().menu().entries.into_iter().filter(|entry| {
-        matches!(entry, MenuEntry::Row { row } if matches!(row.image, RowImage::App { .. }))
-    });
-    assert_eq!(app_rows.count(), 0);
 }
 
 #[test]
@@ -396,9 +401,7 @@ fn always_from_the_menu_while_rules_toml_is_from_a_newer_nightcap_is_refused() {
         .then(activate_event("com.figma.Desktop"))
         .stage()
         .unwrap();
-    let always = choice_titled(&app_row(&staged).unwrap(), "Always").command;
-
-    let (outcome, answer) = staged.send(always);
+    let (outcome, answer) = staged.send(add_rule(figma()));
 
     assert_eq!(outcome.effects, Vec::new());
     assert_eq!(answer.unwrap_err().code, ErrorCode::AdHocRulesOff);

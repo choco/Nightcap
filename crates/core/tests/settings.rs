@@ -10,8 +10,8 @@ mod common;
 
 use jiff::SignedDuration;
 use nightcap_core::{
-    Event, Fact, Fix, ProblemLine, RuleAction, Scenario, SettingsCheck, SettingsForNow,
-    SettingsRule, SettingsSwitch, Staged, UiCommand, normalize_domain,
+    Event, Fact, Fix, RuleAction, Scenario, SettingsCheck, SettingsForNow, SettingsRule,
+    SettingsSwitch, Staged, UiCommand, normalize_domain,
 };
 use nightcap_protocol::{
     AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
@@ -21,8 +21,7 @@ use nightcap_protocol::{
 
 use common::{
     add_rule, at, button, custom_hours, domain, figma, figma_app, mail, minutes, noon,
-    on_by_the_schedule, permissions, report_zurich_sun, reported, rows, send, set, settings_check,
-    tells,
+    on_by_the_schedule, permissions, report_zurich_sun, reported, send, set, settings_check, tells,
 };
 
 #[test]
@@ -34,11 +33,6 @@ fn settings_switch_website_checking_unless_the_config_sets_it() {
         command,
     };
 
-    assert!(
-        !rows(&staged)
-            .iter()
-            .any(|row| row.title == "Check Websites")
-    );
     assert_eq!(
         staged.core().settings().website_checking,
         switch(false, false, Command::Websites(OnOff::On))
@@ -397,13 +391,6 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
         },
     }));
     assert_eq!(settings_check(&staged, CheckKind::NightShift), set_aside());
-    assert_eq!(
-        staged.core().menu().problem_line,
-        Some(ProblemLine {
-            title: "1 Thing Needs Attention…".to_owned(),
-            subtitle: Some("Night Shift".to_owned()),
-        })
-    );
 
     staged.report(reported(true, Schedule::SunsetToSunrise));
     assert_eq!(

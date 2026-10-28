@@ -33,7 +33,7 @@ fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
     assert_eq!(staged.core().night_shift().state, NightShift::On);
     assert_eq!(staged.core().night_shift().schedule, None);
     assert_eq!(staged.core().night_shift().next_transition(), None);
-    assert_eq!(staged.core().menu().night_shift.reason, None);
+    assert_eq!(staged.core().front().decision.reasons, Vec::new());
 }
 
 #[test]

@@ -361,10 +361,6 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
                             name: "Tour Sample".to_owned(),
                         },
                         site: None,
-                        example: TourApp {
-                            bundle_id: "com.apple.mail".parse().unwrap(),
-                            name: "Mail".to_owned(),
-                        },
                     })
                     .then(reported(true, schedule))
                     .then(Command::Off);
@@ -579,7 +575,6 @@ fn start_tour(staged: &Staged) {
     staged.send_ui(UiCommand::StartTour {
         sample: app("io.github.choco.nightcap.tour-sample", "Tour Sample"),
         site: None,
-        example: app("com.apple.mail", "Mail"),
     });
 }
 

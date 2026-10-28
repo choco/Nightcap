@@ -6,10 +6,8 @@ mod commands;
 mod ffi;
 mod ipc;
 mod logging;
-mod menu;
 mod onboarding;
 mod queries;
-mod rows;
 mod rules;
 #[cfg(any(test, debug_assertions))]
 mod scenario;
@@ -20,15 +18,11 @@ mod storage;
 mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use menu::{Menu, MenuEntry, MenuIcon, NightShiftItem};
 pub use onboarding::{OnboardingNightShift, OnboardingSteps};
-pub use rows::{MenuItem, PlaceRow, RowImage, RowItem};
 pub use server::messages::{Effect, Event, Fact, Listener, LoginItem, Outcome, UiCommand};
 pub use settings::{RuleAction, Settings, SettingsForNow, SettingsRule, SettingsSwitch};
-pub use setup::checks::{Fix, FixButton, ProblemLine, SettingsCheck};
-pub use tour::{
-    MenuPath, TourApp, TourFacts, TourPlace, TourSite, TourSnapshot, TourTitles, tour_titles,
-};
+pub use setup::checks::{Fix, FixButton, SettingsCheck};
+pub use tour::{TourApp, TourFacts, TourPlace, TourSite};
 
 #[cfg(any(test, debug_assertions))]
 pub use scenario::{Scenario, ScenarioError, Staged, Step};
@@ -173,12 +167,8 @@ impl Core {
         self.published.latest().settings.clone()
     }
 
-    pub fn menu(&self) -> Menu {
-        self.published.latest().menu.clone()
-    }
-
-    /// What the tour's steps follow and the titles they quote, or None while no tour runs.
-    pub fn tour_report(&self) -> Option<TourSnapshot> {
+    /// What the tour's steps follow, or None while no tour runs.
+    pub fn tour_report(&self) -> Option<TourFacts> {
         self.published.latest().tour_report.clone()
     }
 

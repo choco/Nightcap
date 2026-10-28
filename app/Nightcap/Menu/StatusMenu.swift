@@ -2,12 +2,13 @@ import AppKit
 import KeyboardShortcuts
 import NightcapCore
 
-/// Nightcap's menu-bar item. The core decides what it shows (`Core.menu()`); this only draws
-/// it, rebuilding the menu each time it opens, and sends the chosen command back.
+/// Nightcap's menu-bar item. `Menu` decides what it shows from the core's answers; this only
+/// draws it, rebuilding the menu each time it opens, and sends the chosen command to the core.
 final class StatusMenu: NSObject, NSMenuDelegate {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let current: () -> Menu
     private let icons: SiteIcons
+    private let words = Wording.system
     private let choose: (Command) -> Void
     /// Opens Settings: on the problem's tab for the problem line, on the last tab otherwise.
     private let openSettings: (_ onProblem: Bool) -> Void
@@ -36,16 +37,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// Boxes what Custom… asks for, likewise.
     private final class Pick: NSObject {
-        let title: String
-        let place: Place
-        let state: OnOff
-        let start: Date
-        init(title: String, place: Place, state: OnOff, start: Date) {
-            self.title = title
-            self.place = place
-            self.state = state
-            self.start = start
-        }
+        let pick: Menu.PickTime
+        init(_ pick: Menu.PickTime) { self.pick = pick }
     }
 
     init(
@@ -91,12 +84,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// strength alone moves the slider in place, since rebuilding the menu would end a drag.
     func refresh() {
         let snapshot = current()
-        let image = MenuArt.moon(for: snapshot.icon)
-        if snapshot.problemLine != nil, let description = image?.accessibilityDescription {
-            image?.accessibilityDescription = "\(description), needs attention"
-        }
+        let image = MenuArt.moon(for: snapshot.moon)
+        if snapshot.problemLine != nil { image?.accessibilityDescription = words.needingAttention(snapshot.moon) }
         item.button?.image = image
-        item.button?.appearsDisabled = snapshot.icon == .unavailable
+        item.button?.appearsDisabled = snapshot.moon == .unavailable
         dot.isHidden = snapshot.problemLine == nil
         guard let shown, snapshot != shown, let menu = item.menu else { return }
         if let slider, Self.apartFromStrength(snapshot) == Self.apartFromStrength(shown),
@@ -231,7 +222,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         if let problemLine = snapshot.problemLine {
             let line = NSMenuItem(title: problemLine.title, action: #selector(problemLineChosen), keyEquivalent: "")
-            line.subtitle = problemLine.subtitle.map(MenuArt.wrapped)
+            line.subtitle = MenuArt.wrapped(problemLine.subtitle)
             line.image = MenuArt.warning
             Self.showImage(line)
             menu.addItem(line)
@@ -249,11 +240,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             }
         }
         menu.addItem(.separator())
-        let settings = NSMenuItem(title: "Settings…", action: #selector(settingsChosen), keyEquivalent: ",")
+        let settings = NSMenuItem(title: words.settings, action: #selector(settingsChosen), keyEquivalent: ",")
         settings.image = Self.symbol("gear")
         Self.showImage(settings)
         menu.addItem(settings)
-        let quit = NSMenuItem(title: "Quit Nightcap", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: words.quitNightcap, action: #selector(quit), keyEquivalent: "q")
         quit.image = Self.symbol("power")
         Self.showImage(quit)
         menu.addItem(quit)
@@ -264,11 +255,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// decides the screen, and the shortcut that does the same.
     private func nightShiftItem(_ menu: Menu) -> NSMenuItem {
         let state = menu.nightShift
-        let item = NSMenuItem(title: "Night Shift", action: #selector(chose(_:)), keyEquivalent: "")
-        item.image = MenuArt.moon(for: menu.icon).map(Self.menuSized)
+        let item = NSMenuItem(title: words.nightShift, action: #selector(chose(_:)), keyEquivalent: "")
+        item.image = MenuArt.moon(for: menu.moon).map(Self.menuSized)
         Self.showImage(item)
         item.state = state.on ? .on : .off
-        item.subtitle = state.reason.map(MenuArt.wrapped)
+        item.subtitle = state.line.map(MenuArt.wrapped)
         if let command = state.command {
             item.representedObject = Choice(command)
         } else {
@@ -304,8 +295,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     /// The image beside a place row: its symbol, or the app's own icon, running or installed.
-    private static func image(for image: RowImage) -> NSImage? {
-        guard case .app(let bundleId) = image else { return MenuArt.symbol(for: image).flatMap(symbol) }
+    private static func image(for place: Place) -> NSImage? {
+        guard case .app(let bundleId) = place else { return MenuArt.symbol(for: place).flatMap(symbol) }
         let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
         let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
             .map { NSWorkspace.shared.icon(forFile: $0.path) }
@@ -314,15 +305,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     /// A place row: a submenu that turns its place the other way, or a greyed item with only what
     /// its place says, while it has nothing to offer (ADR-0018).
-    private func rowItem(_ row: PlaceRow) -> NSMenuItem {
+    private func rowItem(_ row: Menu.PlaceRow) -> NSMenuItem {
         let item = NSMenuItem(title: row.title, action: nil, keyEquivalent: "")
         // A site's row names the site on the first line under its title, unwrapped.
         let lines = [row.site, row.subtitle.map(MenuArt.wrapped)].compactMap { $0 }
         item.subtitle = lines.isEmpty ? nil : lines.joined(separator: "\n")
-        item.image = row.site.flatMap(icons.icon(for:)).map(Self.menuSized) ?? Self.image(for: row.image)
+        item.image = row.site.flatMap(icons.icon(for:)).map(Self.menuSized) ?? Self.image(for: row.place)
         if let site = row.site { siteRow = (site, item) }
         Self.showImage(item)
-        item.indentationLevel = row.indented ? 1 : 0
+        // A site's row sits under its browser's.
+        if case .domain = row.place { item.indentationLevel = 1 }
         guard !row.items.isEmpty else {
             item.isEnabled = false
             return item
@@ -333,10 +325,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             switch entry {
             case .choice(let choice):
                 submenu.addItem(menuItem(choice))
-            case .pickTime(let title, let place, let state, let start):
-                let custom = NSMenuItem(title: "Custom…", action: #selector(pickTime(_:)), keyEquivalent: "")
+            case .pickTime(let pick):
+                let custom = NSMenuItem(title: pick.item, action: #selector(pickTime(_:)), keyEquivalent: "")
                 custom.target = self
-                custom.representedObject = Pick(title: title, place: place, state: state, start: start)
+                custom.representedObject = Pick(pick)
                 submenu.addItem(custom)
             case .separator:
                 submenu.addItem(.separator())
@@ -347,9 +339,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func pickTime(_ sender: NSMenuItem) {
-        guard let pick = sender.representedObject as? Pick else { return }
+        guard let pick = (sender.representedObject as? Pick)?.pick else { return }
         let picker = TimePicker(
-            title: pick.title, place: pick.place, state: pick.state, start: pick.start,
+            title: pick.title, place: pick.place, state: pick.state, start: pick.start, words: words,
             choose: choose,
             onClose: { [weak self] in self?.picking = nil })
         picking = picker
@@ -368,7 +360,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             choose(.strength(UInt8(slider.doubleValue.rounded())))
         }
         slider.controlSize = .small
-        slider.setAccessibilityLabel("Strength")
+        slider.setAccessibilityLabel(words.strength)
         slider.translatesAutoresizingMaskIntoConstraints = false
         let view = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 26))
         view.autoresizingMask = [.width]
@@ -402,7 +394,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         choose(sender.dragging ? .previewStrength(value) : .strength(value))
     }
 
-    private func menuItem(_ item: MenuItem) -> NSMenuItem {
+    private func menuItem(_ item: Menu.Choice) -> NSMenuItem {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
         menuItem.subtitle = item.subtitle.map(MenuArt.wrapped)
@@ -442,21 +434,14 @@ final class PointOut: NSViewController {
         self.onOK = onOK
         self.takeTour = takeTour
         super.init(nibName: nil, bundle: nil)
-        let title = Look.label(
-            hidden ? "No room for Nightcap’s moon" : "Nightcap is up here",
-            size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
+        let words = Wording.system
+        let said = hidden ? words.noRoomForTheMoon : words.upHere
+        let title = Look.label(said.title, size: 13, weight: .semibold, color: .labelColor, width: Self.width - 32)
         // The system's label colours, which stay readable on the popover's glass.
         let text = Look.label(
-            hidden
-                ? "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu. "
-                    + "Quit an app with an icon up there and the moon appears. "
-                    + "Until then, open Nightcap again for its Settings."
-                : "Its menu turns Night Shift on or off, everywhere or just in the app in front, "
-                    + "for as long as you choose, and changes its strength: click OK, then the moon. "
-                    + "New to Nightcap? The tour shows a rule at work, in about a minute.",
-            size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
-        let ok = Look.button("OK", .primary) { [weak self] in self?.onOK() }
-        let tour = Look.button("Take the Tour", .regular) { [weak self] in self?.takeTour() }
+            said.body, size: 12, weight: .regular, color: .secondaryLabelColor, width: Self.width - 32)
+        let ok = Look.button(words.ok, .primary) { [weak self] in self?.onOK() }
+        let tour = Look.button(words.takeTheTour, .regular) { [weak self] in self?.takeTour() }
         let buttons = NSStackView(views: hidden ? [NSView(), ok] : [NSView(), tour, ok])
         buttons.orientation = .horizontal
         let stack = NSStackView(views: [title, text, buttons])

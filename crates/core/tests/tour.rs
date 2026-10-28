@@ -1,17 +1,15 @@
 #![cfg(debug_assertions)]
-//! The tour: its stand-in, its rules, and the facts and titles its steps follow (ADR-0016).
+//! The tour: its stand-in, its rules, and the facts its steps follow (ADR-0016).
 
 #![expect(
     clippy::unwrap_used,
-    clippy::panic,
-    reason = "clippy.toml lets tests unwrap and panic, but not the helpers beside them"
+    reason = "clippy.toml lets tests unwrap, but not the helpers beside them"
 )]
 
 mod common;
 
 use nightcap_core::{
-    Effect, Fact, File, MenuItem, MenuPath, PlaceRow, RowItem, Scenario, Staged, TourApp,
-    TourFacts, TourPlace, TourSite, TourTitles, UiCommand, tour_titles,
+    Effect, Fact, File, Scenario, Staged, TourApp, TourFacts, TourPlace, TourSite, UiCommand,
 };
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason,
@@ -19,10 +17,9 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, activate_browser, activate_browser_event, ad_hoc, add_rule, app_row, app_rule, at,
-    choice_titled, domain, everywhere_row, figma, figma_app, kept_ad_hoc, late, mail, minutes,
-    off_by_the_schedule, on_by_the_schedule, refusal, report, report_host, resettable, rules, send,
-    set, site_row, titles, until, yours,
+    activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, domain, figma, figma_app,
+    kept_ad_hoc, late, minutes, off_by_the_schedule, on_by_the_schedule, refusal, report,
+    report_host, resettable, rules, send, set, until, yours,
 };
 
 const SAMPLE: &str = "io.github.choco.nightcap.tour-sample";
@@ -56,24 +53,15 @@ fn tour_site() -> TourSite {
     }
 }
 
-/// The app the tour's steps give as an example of a rule that says on.
-fn mail_app() -> TourApp {
-    TourApp {
-        bundle_id: "com.apple.mail".parse().unwrap(),
-        name: "Mail".to_owned(),
-    }
-}
-
 fn start_tour(staged: &Staged) -> Vec<Effect> {
     staged.send_ui(tour_started()).effects
 }
 
-/// The tour starts with its sample, its site and Mail as the example.
+/// The tour starts with its sample and its site.
 fn tour_started() -> UiCommand {
     UiCommand::StartTour {
         sample: tour_sample(),
         site: Some(tour_site()),
-        example: mail_app(),
     }
 }
 
@@ -187,25 +175,6 @@ fn the_tour_sets_aside_everywheres_rule_until_a_time_and_puts_it_back_with_its_e
 }
 
 #[test]
-fn while_the_tour_stands_in_everywheres_row_offers_no_way_back_to_the_schedule() {
-    let staged = off_by_the_schedule().stage().unwrap();
-    start_tour(&staged);
-    report(&staged, true);
-
-    send(
-        &staged,
-        set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
-    );
-    send(&staged, set(Place::Everywhere, OnOff::Off, minutes(30)));
-
-    // With nothing else to offer, the row is left out.
-    assert!(
-        everywhere_row(&staged)
-            .is_none_or(|row| !titles(&row).contains(&"Back to the Schedule".to_owned()))
-    );
-}
-
-#[test]
 fn while_the_tour_stands_in_a_tap_off_and_on_returns_to_the_tours_on() {
     let staged = off_by_the_schedule().stage().unwrap();
     start_tour(&staged);
@@ -281,30 +250,6 @@ fn removing_the_samples_rule_mid_tour_drops_it() {
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
     assert_eq!(rules(&staged), Vec::new());
-}
-
-#[test]
-fn the_menu_offers_to_add_the_samples_rule_and_then_to_remove_it() {
-    let staged = on_by_the_schedule().stage().unwrap();
-    start_tour(&staged);
-    staged.report(Fact::AppActivated {
-        bundle_id: Some(SAMPLE.to_owned()),
-        name: Some("Tour Sample".to_owned()),
-        is_browser: false,
-    });
-    let row = app_row(&staged).unwrap();
-    assert_eq!(row.title, "Turn Off in Tour Sample");
-    assert_eq!(choice_titled(&row, "Always").command, add_rule(sample()));
-
-    send(&staged, add_rule(sample()));
-
-    let row = app_row(&staged).unwrap();
-    assert_eq!(row.title, "Turn On in Tour Sample");
-    assert_eq!(row.subtitle.as_deref(), Some("Always off: the tour’s rule"));
-    assert_eq!(
-        choice_titled(&row, "Remove Your Rule").command,
-        Command::RemoveRule(sample())
-    );
 }
 
 #[test]
@@ -530,13 +475,11 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
     );
 }
 
-// What the tour's steps follow and the titles they quote (ADR-0016).
+// What the tour's steps follow (ADR-0016).
 
-/// The tour's facts, whose switch is always the Night Shift item's.
+/// The tour's facts.
 fn tour_facts(staged: &Staged) -> TourFacts {
-    let facts = staged.core().tour_report().expect("a tour runs").facts;
-    assert_eq!(facts.everywhere_on, staged.core().menu().night_shift.on);
-    facts
+    staged.core().tour_report().expect("a tour runs")
 }
 
 fn away() -> TourPlace {
@@ -547,39 +490,8 @@ fn away() -> TourPlace {
     }
 }
 
-fn bring(staged: &Staged, app: &TourApp) -> Vec<Effect> {
-    staged
-        .report(Fact::AppActivated {
-            bundle_id: Some(app.bundle_id.to_string()),
-            name: Some(app.name.clone()),
-            is_browser: false,
-        })
-        .effects
-}
-
 fn choose(staged: &Staged, command: Command) -> Vec<Effect> {
     staged.send(command).0.effects
-}
-
-/// The row's item that sends a command `wanted` picks out, which it must have.
-fn item_sending(row: &PlaceRow, wanted: impl Fn(&Command) -> bool) -> MenuItem {
-    row.items
-        .iter()
-        .find_map(|item| match item {
-            RowItem::Choice { item } if wanted(&item.command) => Some(item.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("no such item in {:?}", titles(row)))
-}
-
-fn snoozes(command: &Command) -> bool {
-    matches!(
-        command,
-        Command::Set {
-            length: Lasting::For(_),
-            ..
-        }
-    )
 }
 
 fn sample_place() -> Place {
@@ -607,7 +519,7 @@ fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
     start_tour(&staged);
     assert_eq!(tour_facts(&staged).sample, away());
 
-    bring(&staged, &tour_sample());
+    activate(&staged, SAMPLE);
     assert_eq!(
         tour_facts(&staged).sample,
         TourPlace {
@@ -615,8 +527,7 @@ fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
             ..away()
         }
     );
-    let always = choice_titled(&app_row(&staged).unwrap(), "Always");
-    choose(&staged, always.command);
+    choose(&staged, add_rule(sample()));
     assert_eq!(
         tour_facts(&staged).sample,
         TourPlace {
@@ -625,7 +536,7 @@ fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
             snoozed: false,
         }
     );
-    bring(&staged, &mail_app());
+    activate(&staged, "com.apple.mail");
 
     assert_eq!(
         tour_facts(&staged).sample,
@@ -640,21 +551,17 @@ fn the_samples_facts_follow_it_to_the_front_into_its_rule_and_away() {
 fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
-    bring(&staged, &tour_sample());
+    activate(&staged, SAMPLE);
     choose(&staged, add_rule(sample()));
 
-    let snooze = item_sending(&app_row(&staged).unwrap(), snoozes);
-    choose(&staged, snooze.command);
+    choose(&staged, set(sample_place(), OnOff::On, minutes(30)));
     let snoozed = TourPlace {
         in_front: true,
         rule: Some(OnOff::Off),
         snoozed: true,
     };
     assert_eq!(tour_facts(&staged).sample, snoozed);
-    let back = item_sending(&app_row(&staged).unwrap(), |command| {
-        *command == Command::Reset(sample_place())
-    });
-    choose(&staged, back.command);
+    choose(&staged, Command::Reset(sample_place()));
 
     assert_eq!(
         tour_facts(&staged).sample,
@@ -669,10 +576,10 @@ fn a_snooze_from_the_samples_row_and_putting_the_rule_back_show_in_its_facts() {
 fn a_snooze_that_ends_while_the_sample_is_in_the_background_shows_in_its_facts() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
-    bring(&staged, &tour_sample());
+    activate(&staged, SAMPLE);
     choose(&staged, add_rule(sample()));
     choose(&staged, set(sample_place(), OnOff::On, minutes(30)));
-    bring(&staged, &mail_app());
+    activate(&staged, "com.apple.mail");
     assert!(tour_facts(&staged).sample.snoozed);
 
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
@@ -746,9 +653,7 @@ fn the_site_is_in_front_on_its_host_and_its_www_and_not_on_another_tab() {
 fn the_sites_own_rule_shows_in_its_facts_and_a_tap_changes_only_the_switch() {
     let staged = tour_in_safari().stage().unwrap();
     report_host(&staged, 1, "www.nightcap.choco.me");
-    let always = choice_titled(&site_row(&staged).unwrap(), "Always");
-    assert_eq!(always.command, add_rule(domain(SITE)));
-    choose(&staged, always.command);
+    choose(&staged, add_rule(domain(SITE)));
     let ruled = tour_facts(&staged);
     assert_eq!(
         ruled.site,
@@ -778,12 +683,10 @@ fn a_tour_without_a_site_step_reports_no_site() {
     staged.send_ui(UiCommand::StartTour {
         sample: tour_sample(),
         site: None,
-        example: mail_app(),
     });
 
     let tour = staged.core().tour_report().unwrap();
-    assert_eq!(tour.facts.site, None);
-    assert_eq!(tour.titles.add_site_rule, None);
+    assert_eq!(tour.site, None);
 }
 
 #[test]
@@ -806,68 +709,4 @@ fn the_tour_stands_in_as_night_shift_was_when_it_started_whatever_the_switch_doe
     let tapped = tour_facts(&staged);
     assert!(!tapped.stands_in);
     assert!(!tapped.everywhere_on);
-}
-
-#[test]
-fn the_tours_titles_are_the_menus() {
-    let path = |row: &str, item: &str| MenuPath {
-        row: row.to_owned(),
-        item: item.to_owned(),
-    };
-
-    assert_eq!(
-        tour_titles(tour_sample(), Some(tour_site()), mail_app()),
-        TourTitles {
-            add_sample_rule: path("Turn Off in Tour Sample", "Always"),
-            snooze_sample: "Turn On in Tour Sample".to_owned(),
-            put_sample_rule_back: path("Turn Off in Tour Sample", "Put the Rule Back"),
-            add_site_rule: Some(path("Turn Off at This Site", "Always")),
-            add_example_rule: path("Turn On in Mail", "Always"),
-        }
-    );
-}
-
-#[test]
-fn each_title_the_tour_quotes_is_where_the_menu_shows_it_in_the_situation_its_step_describes() {
-    let staged = off_by_the_schedule()
-        .config("websites = true\n")
-        .stage()
-        .unwrap();
-    start_tour(&staged);
-    report(&staged, true);
-    let titles = staged.core().tour_report().unwrap().titles;
-    let quoted = |row: &PlaceRow, wanted: &dyn Fn(&Command) -> bool| {
-        let item = item_sending(row, wanted);
-        (
-            MenuPath {
-                row: row.title.clone(),
-                item: item.title,
-            },
-            item.command,
-        )
-    };
-    let rule_for = |identity: RuleIdentity| move |command: &Command| matches!(command, Command::AddRule { identity: ruled, .. } if *ruled == identity);
-
-    bring(&staged, &tour_sample());
-    let (shown, always) = quoted(&app_row(&staged).unwrap(), &rule_for(sample()));
-    assert_eq!(shown, titles.add_sample_rule);
-    choose(&staged, always);
-    let row = app_row(&staged).unwrap();
-    assert_eq!(row.title, titles.snooze_sample);
-    choose(&staged, item_sending(&row, snoozes).command);
-    let (shown, _) = quoted(&app_row(&staged).unwrap(), &|command| {
-        *command == Command::Reset(sample_place())
-    });
-    assert_eq!(shown, titles.put_sample_rule_back);
-
-    activate_browser(&staged, "com.apple.Safari");
-    report_host(&staged, 1, SITE);
-    let (shown, _) = quoted(&site_row(&staged).unwrap(), &rule_for(domain(SITE)));
-    assert_eq!(Some(shown), titles.add_site_rule);
-
-    choose(&staged, Command::Off);
-    report(&staged, false);
-    bring(&staged, &mail_app());
-    let (shown, _) = quoted(&app_row(&staged).unwrap(), &rule_for(mail()));
-    assert_eq!(shown, titles.add_example_rule);
 }

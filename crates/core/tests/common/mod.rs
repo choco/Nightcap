@@ -1,5 +1,5 @@
 //! What the integration tests share: the scenarios they start from, the shell's reports, the
-//! CLI's queries, and ways to find the menu's rows and items.
+//! CLI's queries, and the rules and checks they expect.
 
 #![allow(
     dead_code,
@@ -12,10 +12,7 @@
 )]
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_core::{
-    Effect, Fact, File, Fix, FixButton, MenuEntry, MenuItem, Outcome, PlaceRow, RowImage, RowItem,
-    Scenario, SettingsCheck, Staged,
-};
+use nightcap_core::{Effect, Fact, File, Fix, FixButton, Outcome, Scenario, SettingsCheck, Staged};
 use nightcap_protocol::{
     CheckKind, Command, ErrorCode, Lasting, Length, NotificationPermission, OnOff, Payload, Place,
     Query, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
@@ -210,7 +207,6 @@ pub(crate) fn activate(staged: &Staged, bundle_id: &str) -> Vec<Effect> {
 pub(crate) fn activate_event(bundle_id: &str) -> Fact {
     Fact::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
-        name: None,
         is_browser: false,
     }
 }
@@ -223,7 +219,6 @@ pub(crate) fn activate_browser(staged: &Staged, bundle_id: &str) -> Vec<Effect> 
 pub(crate) fn activate_browser_event(bundle_id: &str) -> Fact {
     Fact::AppActivated {
         bundle_id: Some(bundle_id.to_owned()),
-        name: None,
         is_browser: true,
     }
 }
@@ -368,62 +363,6 @@ pub(crate) fn set(place: Place, state: OnOff, length: Lasting) -> Command {
 
 pub(crate) fn minutes(count: i64) -> Lasting {
     Lasting::For(SignedDuration::from_mins(count))
-}
-
-/// The menu's place rows, top down.
-pub(crate) fn rows(staged: &Staged) -> Vec<PlaceRow> {
-    staged
-        .core()
-        .menu()
-        .entries
-        .into_iter()
-        .filter_map(|entry| match entry {
-            MenuEntry::Row { row } => Some(row),
-            _ => None,
-        })
-        .collect()
-}
-
-pub(crate) fn everywhere_row(staged: &Staged) -> Option<PlaceRow> {
-    rows(staged)
-        .into_iter()
-        .find(|row| row.image == RowImage::Everywhere)
-}
-
-pub(crate) fn app_row(staged: &Staged) -> Option<PlaceRow> {
-    rows(staged)
-        .into_iter()
-        .find(|row| matches!(row.image, RowImage::App { .. }))
-}
-
-pub(crate) fn site_row(staged: &Staged) -> Option<PlaceRow> {
-    rows(staged)
-        .into_iter()
-        .find(|row| row.image == RowImage::Site)
-}
-
-/// A row's items as they read: their titles, "Custom…" for picking a time, and "—" between
-/// groups.
-pub(crate) fn titles(row: &PlaceRow) -> Vec<String> {
-    row.items
-        .iter()
-        .map(|item| match item {
-            RowItem::Choice { item } => item.title.clone(),
-            RowItem::PickTime { .. } => "Custom…".to_owned(),
-            RowItem::Separator => "—".to_owned(),
-        })
-        .collect()
-}
-
-/// The item titled `title` in a row, which must have one.
-pub(crate) fn choice_titled(row: &PlaceRow, title: &str) -> MenuItem {
-    row.items
-        .iter()
-        .find_map(|item| match item {
-            RowItem::Choice { item } if item.title == title => Some(item.clone()),
-            _ => None,
-        })
-        .unwrap_or_else(|| panic!("no {title:?} in {:?}", titles(row)))
 }
 
 /// The check of `kind` as Settings shows it.

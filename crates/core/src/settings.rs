@@ -1,18 +1,18 @@
-//! The settings window, which the shell pulls like the menu (ADR-0002): website checking and
+//! The settings window, which the shell reads from the snapshot (ADR-0002): website checking and
 //! opening at login, the checks, where the config is read from, and the Rules tab's rules and
 //! what's on or off for now.
 
 use std::path::Path;
 
 use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use nightcap_protocol::{Command, OnOff, Place, Rule, RuleIdentity, SetBy};
 
-use crate::rows::{rules_text, until_text};
 use crate::rules::places::{is_app_or_site_rule, place_identity};
 use crate::server::state::Inner;
 use crate::{LoginItem, SettingsCheck};
 
-/// What the settings window shows, pulled like the menu: the shell only draws it.
+/// What the settings window shows, read from the snapshot: the shell only draws it.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct Settings {
     /// "Check websites", locked while the config sets `websites`.
@@ -171,4 +171,27 @@ fn for_now(rules: &[(&Rule, Option<&Rule>)]) -> Vec<(Place, Vec<Rule>)> {
         }
     }
     places
+}
+
+/// A place's rules, shortest first: "on until 23:30, then off until 07:00".
+fn rules_text(rules: &[Rule], zone: &TimeZone) -> String {
+    rules
+        .iter()
+        .map(|rule| {
+            format!(
+                "{} {}",
+                rule.says,
+                until_text(rule.length.end(), rule.says, zone)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", then ")
+}
+
+/// "until 07:00", or "until you turn it on" for an off with no end.
+fn until_text(until: Option<Timestamp>, state: OnOff, zone: &TimeZone) -> String {
+    match until {
+        Some(until) => format!("until {}", until.to_zoned(zone.clone()).strftime("%H:%M")),
+        None => format!("until you turn it {}", state.other()),
+    }
 }

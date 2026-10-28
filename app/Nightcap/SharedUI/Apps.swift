@@ -10,6 +10,12 @@ enum Apps {
         FileManager.default.displayName(atPath: url.path)
     }
 
+    /// The name of the running app with this bundle ID, as the menu bar shows it while it's in
+    /// front.
+    static func runningName(of bundleId: String) -> String? {
+        NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.localizedName
+    }
+
     /// The icon of the app at `url`, drawn once at `side` points on a Retina screen, since icons
     /// from an asset catalog fill in lazily, blank until something asks for their pixels.
     static func icon(at url: URL, side: CGFloat) -> NSImage {

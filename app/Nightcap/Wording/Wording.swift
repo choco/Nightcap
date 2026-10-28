@@ -23,7 +23,7 @@ struct Wording {
 
     /// Whose a rule is.
     enum Whose {
-        case config, yours, tour
+        case config, yours, tour, outsideChange
     }
 
     /// A change at a place for a while: on or off, until a time, or with no end until the user
@@ -50,6 +50,7 @@ struct Wording {
         case .config: text("your config’s rule")
         case .yours: text("your rule")
         case .tour: text("the tour’s rule")
+        case .outsideChange: text("the outside change’s rule")
         }
     }
 }

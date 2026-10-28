@@ -6,16 +6,15 @@ import NightcapCore
 /// subtitle breaks.
 enum MenuArt {
     /// The mockup's moons, template images from the asset catalog.
-    static func moon(for icon: MenuIcon) -> NSImage? {
-        let (name, description) =
-            switch icon {
-            case .on: ("MenuBarOn", "Night Shift on")
-            case .off: ("MenuBarOff", "Night Shift off")
-            case .forcedOff: ("MenuBarForcedOff", "Night Shift forced off")
-            case .unavailable: ("MenuBarOff", "Night Shift unavailable")
+    static func moon(for moon: Menu.Moon) -> NSImage? {
+        let name =
+            switch moon {
+            case .on: "MenuBarOn"
+            case .off, .unavailable: "MenuBarOff"
+            case .forcedOff: "MenuBarForcedOff"
             }
         let image = NSImage(named: name)?.copy() as? NSImage
-        image?.accessibilityDescription = description
+        image?.accessibilityDescription = Wording.system.moon(moon)
         return image
     }
 
@@ -58,7 +57,7 @@ enum MenuArt {
             ).fill()
             return true
         }
-        image.accessibilityDescription = "Needs attention"
+        image.accessibilityDescription = Wording.system.needsAttention
         return image
     }
 
@@ -96,10 +95,10 @@ enum MenuArt {
 
     /// The SF Symbol beside a place row: the timer beside everywhere's, under the switch, and a
     /// globe beside a site's; nil beside an app's, which shows the app's own icon.
-    static func symbol(for image: RowImage) -> String? {
-        switch image {
+    static func symbol(for place: Place) -> String? {
+        switch place {
         case .everywhere: "timer"
-        case .site: "globe"
+        case .domain: "globe"
         case .app: nil
         }
     }

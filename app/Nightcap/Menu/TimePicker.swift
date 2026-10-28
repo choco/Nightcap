@@ -11,30 +11,32 @@ final class TimePicker: NSObject, NSWindowDelegate {
     private let hint: NSTextField
     private let place: Place
     private let state: OnOff
+    private let words: Wording
     private let choose: (Command) -> Void
     private let onClose: () -> Void
 
     init(
-        title: String, place: Place, state: OnOff, start: Date,
+        title: String, place: Place, state: OnOff, start: Date, words: Wording,
         choose: @escaping (Command) -> Void, onClose: @escaping () -> Void
     ) {
         self.place = place
         self.state = state
+        self.words = words
         self.choose = choose
         self.onClose = onClose
-        hint = Look.secondary(Self.hintText(until: Self.next(start)), width: 200)
+        hint = Look.secondary(Self.hintText(until: Self.next(start), words: words), width: 200)
         super.init()
         picker.datePickerStyle = .textFieldAndStepper
         picker.datePickerElements = .hourMinute
         picker.dateValue = start
-        picker.setAccessibilityLabel("Until")
+        picker.setAccessibilityLabel(words.untilTime)
         Look.attach(picker) { [weak self] in self?.updateHint() }
         let heading = Look.label(title, size: 13, weight: .semibold, color: .labelColor, width: 220)
-        let until = NSStackView(views: [NSTextField(labelWithString: "Until"), picker])
+        let until = NSStackView(views: [NSTextField(labelWithString: words.untilTime), picker])
         until.spacing = 8
-        let cancel = Look.button("Cancel", .regular) { [weak self] in self?.close() }
+        let cancel = Look.button(words.cancel, .regular) { [weak self] in self?.close() }
         cancel.keyEquivalent = "\u{1b}"
-        let done = Look.button(state == .on ? "Turn On" : "Turn Off", .primary) { [weak self] in self?.done() }
+        let done = Look.button(words.turn(state), .primary) { [weak self] in self?.done() }
         done.keyEquivalent = "\r"
         let buttons = NSStackView(views: [NSView(), cancel, done])
         let stack = NSStackView(views: [heading, until, hint, buttons])
@@ -83,18 +85,14 @@ final class TimePicker: NSObject, NSWindowDelegate {
         return calendar.nextDate(after: now, matching: components, matchingPolicy: .nextTime) ?? now
     }
 
-    /// "In 1 hour, 15 minutes".
-    private static func hintText(until end: Date) -> String {
-        let minutes = Int((end.timeIntervalSinceNow / 60).rounded(.up))
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.unitsStyle = .full
-        return "In \(formatter.string(from: TimeInterval(minutes * 60)) ?? "")"
+    /// "In 1 hour, 15 minutes", to the minute, rounded up.
+    private static func hintText(until end: Date, words: Wording) -> String {
+        words.inTime((end.timeIntervalSinceNow / 60).rounded(.up) * 60)
     }
 
     private func updateHint() {
         hint.attributedStringValue = NSAttributedString(
-            string: Self.hintText(until: end),
+            string: Self.hintText(until: end, words: words),
             attributes: hint.attributedStringValue.attributes(at: 0, effectiveRange: nil))
     }
 

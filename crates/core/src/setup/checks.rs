@@ -1,6 +1,6 @@
 //! The checks: each thing Nightcap depends on, compared with what the user set up, as the facts
-//! the status carries and in the words Settings shows it in, with its fixes; the menu's problem
-//! line; and the event that announces a problem when it appears.
+//! the status carries and in the words Settings shows it in, with its fixes; and the event that
+//! announces a problem when it appears.
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
@@ -9,7 +9,6 @@ use nightcap_protocol::{
     NotificationsDetail, OnOff, OpenAtLoginDetail, Schedule, SetBy, TimeOfDay,
 };
 
-use crate::rows::capitalized;
 use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
@@ -57,14 +56,6 @@ pub enum Fix {
     OpenAtLogin,
     DontOpenAtLogin,
     Reload,
-}
-
-/// The menu's line about problems, above the Night Shift item. Choosing it opens Settings, and
-/// while it's set the shell marks the icon too.
-#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
-pub struct ProblemLine {
-    pub title: String,
-    pub subtitle: Option<String>,
 }
 
 impl Inner {
@@ -179,40 +170,6 @@ impl Inner {
             }
             _ => (None, None),
         }
-    }
-
-    /// The menu's problem line, from the checks.
-    pub(crate) fn problem_line(&self, now: Timestamp) -> Option<ProblemLine> {
-        let problems: Vec<_> = self
-            .checks(now)
-            .into_iter()
-            .filter(|check| matches!(check.state, CheckState::Drifted | CheckState::Broken))
-            .map(|check| check.detail.kind())
-            .collect();
-        if problems.is_empty() {
-            return None;
-        }
-        let names: Vec<_> = problems
-            .iter()
-            .map(|kind| {
-                match kind {
-                    CheckKind::NightShift => "Night Shift",
-                    CheckKind::Accessibility => "Accessibility",
-                    CheckKind::Notifications => "notifications",
-                    CheckKind::OpenAtLogin => "opening at login",
-                    CheckKind::ConfigFile => "the config file",
-                    CheckKind::AdHocRules => "ad-hoc rules",
-                }
-                .to_owned()
-            })
-            .collect();
-        Some(ProblemLine {
-            title: match problems.len() {
-                1 => "1 Thing Needs Attention…".to_owned(),
-                count => format!("{count} Things Need Attention…"),
-            },
-            subtitle: Some(capitalized(&listed(&names))),
-        })
     }
 
     /// Everything Nightcap depends on, compared with what the user set up.
@@ -541,11 +498,14 @@ impl From<&AdHocError> for FileError {
     }
 }
 
-/// "a", "a and b", "a, b and c".
-fn listed(parts: &[String]) -> String {
-    match parts {
-        [] => String::new(),
-        [only] => only.clone(),
-        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
-    }
+/// `text` with its first letter capitalized.
+fn capitalized(text: &str) -> String {
+    let mut letters = text.chars();
+    letters
+        .next()
+        .map(char::to_uppercase)
+        .into_iter()
+        .flatten()
+        .chain(letters)
+        .collect()
 }

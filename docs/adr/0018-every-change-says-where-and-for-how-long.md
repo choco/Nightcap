@@ -51,7 +51,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 - Commands: `On`, `Off` and `Toggle` are the switch. `Set { place, state, length }` sets a rule of the user's for a time, until a time, until the schedule turns, or, for everywhere alone, indefinitely; an app's or site's indefinite rule is added with `AddRule` (ADR-0006). `Reset(place)` takes off what a reset does.
 - The CLI: `nightcap on|off [--for 45m | --until 23:30 | --until-schedule] [--app ID | --domain D]`, `nightcap toggle` and `nightcap reset [--app ID | --domain D]`. A length is written as `30m`, `1h` or `1h30m`.
 - The config's top-level `lengths` sets the lengths a change can be picked for, in the same form, and a `[menu]` table is an error that names it: the lengths are the model's, whichever client offers them.
-- What the menu offers for each place, and in what words, is the App context's: its glossary's Place row.
+- The core answers how each place in front stands: what it gives, what it inherits and from where, what a reset would take off and what it and the place's rule until a time would leave, and what the switch would leave everywhere. `night_shift()` answers when the schedule next turns Night Shift each way, which is when a rule until the schedule turns would end. What the menu offers for each place from these, and in what words, is the App context's: its glossary's Place row.
 
 ## Consequences
 

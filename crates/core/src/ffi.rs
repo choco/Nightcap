@@ -34,7 +34,8 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
-// A menu item carries the very command the CLI would send (ADR-0002).
+// A length crosses as whole seconds: the config's lengths, and the commands the menu sends with
+// them, the very ones the CLI would send (ADR-0002).
 uniffi::custom_type!(SignedDuration, i64, {
     remote,
     lower: |duration| duration.as_secs(),

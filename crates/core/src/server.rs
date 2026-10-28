@@ -82,14 +82,16 @@ pub(crate) mod tests {
     use std::time::Duration;
 
     use jiff::tz::TimeZone;
-    use nightcap_protocol::{Command, Install, Instance, OnOff, RuleIdentity, Schedule, TimeOfDay};
+    use nightcap_protocol::{
+        Command, Install, Instance, NightShift, OnOff, RuleIdentity, Schedule, TimeOfDay,
+    };
 
     use super::Listener;
     use crate::scenario::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};
-    use crate::{Core, Effect, Fact, MenuIcon, Outcome};
+    use crate::{Core, Effect, Fact, Outcome};
 
     /// Stands in for the shell: every outcome arrives on a channel the test can wait on.
     pub(crate) struct ChannelListener(Mutex<mpsc::Sender<Outcome>>);
@@ -156,7 +158,6 @@ pub(crate) mod tests {
     fn figma() -> Fact {
         Fact::AppActivated {
             bundle_id: Some("com.figma.Desktop".to_owned()),
-            name: Some("Figma".to_owned()),
             is_browser: false,
         }
     }
@@ -188,12 +189,12 @@ pub(crate) mod tests {
     #[test]
     fn a_read_after_an_outcome_sees_what_its_input_left() {
         let (core, outcomes) = running(noon(None));
-        assert_eq!(core.menu().icon, MenuIcon::Unavailable);
+        assert_eq!(core.night_shift().state, NightShift::Unavailable);
 
         core.report(reported(false));
         next(&outcomes);
 
-        assert_eq!(core.menu().icon, MenuIcon::Off);
+        assert_eq!(core.night_shift().state, NightShift::Off);
     }
 
     #[test]

@@ -279,27 +279,29 @@ enum StageArt {
         return side(by: left, bar)
     }
 
-    /// The menu as the core describes it at 21:42, with Mail in front and Night Shift following
-    /// its schedule. Each row's one item stands for its submenu, which the stage leaves closed.
-    private static let readyMenu = Menu(
-        icon: .on,
-        nightShift: NightShiftItem(on: true, reason: "Following the schedule until 07:00", command: .off),
-        problemLine: nil,
-        entries: [
-            .strength(value: 60),
-            .row(row: turnOff("Turn Off", image: .everywhere, place: .everywhere)),
-            .separator,
-            .row(
-                row: turnOff(
-                    "Turn Off in Mail", image: .app(bundleId: "com.apple.mail"), place: .app("com.apple.mail"))),
-        ])
-
-    private static func turnOff(_ title: String, image: RowImage, place: Place) -> PlaceRow {
-        let hour = MenuItem(
-            title: "For 1 Hour", subtitle: nil, enabled: true,
-            command: .set(place: place, state: .off, length: .for(3600)))
-        return PlaceRow(
-            title: title, site: nil, subtitle: nil, image: image, indented: false, items: [.choice(item: hour)])
+    /// The menu at 21:42, from what the core answers with Mail in front and Night Shift on by
+    /// sunset to sunrise until 07:00. The stage leaves each row's submenu closed.
+    private static var readyMenu: Menu {
+        let calendar = Calendar.current
+        let evening = calendar.date(bySettingHour: 21, minute: 42, second: 0, of: Date())!
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: evening)!
+        let sunrise = calendar.date(bySettingHour: 7, minute: 0, second: 0, of: tomorrow)!
+        let schedule = Reason.schedule(state: .on, until: sunrise)
+        let mail = PlaceInFront(
+            place: .app("com.apple.mail"), gives: .on, rules: [], base: nil,
+            inherits: Inherited(from: .everywhere, says: .on), afterUntil: .on, afterReset: .on)
+        let everywhere = PlaceInFront(
+            place: .everywhere, gives: .on, rules: [], base: schedule, inherits: nil, afterUntil: .on, afterReset: .on)
+        let answers = Menu.Answers(
+            nightShift: NightShiftState(
+                state: .on, strength: 60, schedule: .sunsetToSunrise, setAside: false, scheduled: .on, nextOn: nil,
+                nextOff: sunrise),
+            front: Front(
+                app: "com.apple.mail", watching: false, host: nil, site: nil,
+                decision: Decision(state: .on, place: .everywhere, reasons: [schedule]), places: [mail, everywhere],
+                afterSwitch: [Rule(place: .everywhere, says: .off, length: .indefinite, setBy: .you)]),
+            lengths: [30 * 60, 60 * 60, 120 * 60], checks: [])
+        return Menu(answers, now: evening, appName: { _ in "Mail" }, words: .system)
     }
 
     /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift
@@ -307,7 +309,7 @@ enum StageArt {
     /// (ADR-0018). It stops there: Settings and Quit, under them, don't fit the stage.
     private static func ready(shortcut: KeyboardShortcuts.Shortcut?) -> NSView {
         let menu = readyMenu
-        let reason = menu.nightShift.reason.map { MenuArt.wrapped($0).split(separator: "\n").map(String.init) } ?? []
+        let reason = menu.nightShift.line.map { MenuArt.wrapped($0).split(separator: "\n").map(String.init) } ?? []
         // Down the menu: the Night Shift item, whose lines set its height, then each entry, a
         // separator 9 points high and anything else 21, then the menu's bottom edge.
         let top = 23.5 + 12 * CGFloat(reason.count)
@@ -323,7 +325,7 @@ enum StageArt {
             Paint.text("Edit", font, .labelColor, at: NSPoint(x: 88, y: 7))
             let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
             Paint.rounded(moon, 10, Paint.highlight)
-            Paint.moon(menu.icon, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
+            Paint.moon(menu.moon, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
             Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
             Paint.lifted { Paint.rounded(box, 10, Paint.menu) }
             let item = NSFont.systemFont(ofSize: 11)
@@ -340,8 +342,8 @@ enum StageArt {
             if menu.nightShift.on {
                 Paint.glyph("checkmark", 9, .labelColor, centredAt: NSPoint(x: check, y: box.minY + 25))
             }
-            Paint.moon(menu.icon, .labelColor, in: NSRect(x: image - 6.5, y: box.minY + 18.5, width: 13, height: 13))
-            line("Night Shift", item, .labelColor, title, 13.5)
+            Paint.moon(menu.moon, .labelColor, in: NSRect(x: image - 6.5, y: box.minY + 18.5, width: 13, height: 13))
+            line(Wording.system.nightShift, item, .labelColor, title, 13.5)
             for (index, text) in reason.enumerated() {
                 line(text, .systemFont(ofSize: 10), .nightcapSecondary, title, 26 + CGFloat(index) * 12)
             }
@@ -357,9 +359,9 @@ enum StageArt {
                     strength(value, in: box, at: box.minY + middle, from: title)
                 case .row(let row):
                     let centre = NSPoint(x: image, y: box.minY + middle)
-                    if let symbol = MenuArt.symbol(for: row.image) {
+                    if let symbol = MenuArt.symbol(for: row.place) {
                         Paint.glyph(symbol, 10, .labelColor, centredAt: centre)
-                    } else if case .app(let bundleId) = row.image,
+                    } else if case .app(let bundleId) = row.place,
                         let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
                     {
                         Apps.icon(at: app, side: 14).draw(
@@ -545,7 +547,7 @@ final class MiniScreen: NSView {
             Loop.middle(second)
             Loop.ends(first)
         }
-        let status = { (icon: MenuIcon) in
+        let status = { (icon: Menu.Moon) in
             Drawn(NSSize(width: 40, height: 15)) { _ in
                 Paint.moon(icon, ink, in: NSRect(x: 0, y: 3, width: 9, height: 9))
                 Paint.text(daytime ? "14:00" : "21:42", .systemFont(ofSize: 8), ink, at: NSPoint(x: 13, y: 3))
@@ -736,7 +738,7 @@ enum Paint {
     }
 
     /// One of the menu-bar moons, in `colour`.
-    static func moon(_ icon: MenuIcon, _ colour: NSColor, in rect: NSRect) {
+    static func moon(_ icon: Menu.Moon, _ colour: NSColor, in rect: NSRect) {
         guard let image = MenuArt.moon(for: icon) else { return }
         template(image, colour, in: rect)
     }

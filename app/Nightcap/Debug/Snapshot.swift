@@ -154,7 +154,7 @@ enum Snapshot {
                     to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
             }
         }
-        for icon in [MenuIcon.on, .off, .forcedOff] {
+        for icon in [Menu.Moon.on, .off, .forcedOff] {
             for problems in [false, true] {
                 let name = "icon-\(icon)-\(problems ? "problems" : "plain").png"
                 try! menuBarIcon(icon, problems: problems)
@@ -166,7 +166,7 @@ enum Snapshot {
 
     /// The menu-bar icon at 8x, black on white as a template draws in a light menu bar, with the
     /// dot where the status item lays it over the moon.
-    private static func menuBarIcon(_ icon: MenuIcon, problems: Bool) -> Data {
+    private static func menuBarIcon(_ icon: Menu.Moon, problems: Bool) -> Data {
         let image = MenuArt.moon(for: icon)!
         let scale: CGFloat = 8
         let size = NSSize(width: image.size.width * scale + 64, height: image.size.height * scale + 64)

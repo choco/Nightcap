@@ -31,13 +31,8 @@ impl Watching {
 }
 
 impl Inner {
-    /// An app came to the front, by its bundle ID and name if it has them.
-    pub(crate) fn app_activated(
-        &mut self,
-        bundle_id: Option<String>,
-        name: Option<String>,
-        is_browser: bool,
-    ) {
+    /// An app came to the front, by its bundle ID if it has one.
+    pub(crate) fn app_activated(&mut self, bundle_id: Option<String>, is_browser: bool) {
         tracing::debug!("frontmost app: {bundle_id:?}, browser: {is_browser}");
         // An app whose bundle ID no rule could name counts as having none.
         let bundle_id = bundle_id.and_then(|bundle_id| {
@@ -47,7 +42,6 @@ impl Inner {
                 .ok()
         });
         self.facts.context.app = bundle_id;
-        self.facts.context.app_name = name;
         self.watching.is_browser = is_browser;
     }
 

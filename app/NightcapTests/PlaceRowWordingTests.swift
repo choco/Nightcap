@@ -2,77 +2,76 @@ import Foundation
 import NightcapCore
 import Testing
 
-private let words = Wording.staged
-
-/// The place rows' words, each as the core writes it in the situation that shows it.
+/// The place rows' words, each in the situation that shows it.
 struct PlaceRowWordingTests {
     @Test func everywheresRowTurnsItTheOtherWayForEachLengthOrUntilTheScheduleStarts() throws {
         let core = try onByTheSchedule()
 
         let row = try #require(core.everywhereRow)
 
-        #expect(row.title == words.turn(.off))
+        #expect(row.title == "Turn Off")
         #expect(row.subtitle == nil)
-        for length: Int64 in [30, 60, 120] {
-            let item = row.item(sending: .set(place: .everywhere, state: .off, length: minutes(length)))
-            #expect(item?.title == words.forLength(length * 60))
+        for (length, title): (Int64, String) in [(30, "For 30 Minutes"), (60, "For 1 Hour"), (120, "For 2 Hours")] {
+            let item = row.choice(sending: .set(place: .everywhere, state: .off, length: minutes(length)))
+            #expect(item?.title == title)
         }
-        #expect(row.timePickerTitle == words.timePickerTitle(.off))
-        let until = try #require(row.item(sending: .set(place: .everywhere, state: .off, length: .untilScheduleTurns)))
-        #expect(until.title == words.until(at("2026-10-17T22:00:00+02:00")))
-        #expect(until.subtitle == words.moment(of: customHours, turning: .on))
+        #expect(row.timePickerTitle == "Turn Off Everywhere")
+        let until = try #require(
+            row.choice(sending: .set(place: .everywhere, state: .off, length: .untilScheduleTurns)))
+        #expect(until.title == "Until 22:00")
+        #expect(until.subtitle == "When the schedule starts")
     }
 
     @Test func untilTheScheduleTurnsNamesSunriseOrSunsetOrTheCustomHoursEndOrStart() throws {
-        let cases: [(now: String, enabled: Bool, schedule: Schedule, state: OnOff, turn: String)] = [
-            ("2026-10-16T01:40:00+02:00", true, .sunsetToSunrise, .off, "2026-10-16T16:31:32Z"),
-            ("2026-10-16T12:00:00+02:00", false, .sunsetToSunrise, .on, "2026-10-17T05:52:14Z"),
-            ("2026-10-16T23:00:00+02:00", true, customHours, .off, "2026-10-17T22:00:00+02:00"),
-            ("2026-10-16T12:00:00+02:00", false, customHours, .on, "2026-10-17T07:00:00+02:00"),
+        let cases: [(now: String, enabled: Bool, schedule: Schedule, state: OnOff, title: String, moment: String)] = [
+            ("2026-10-16T01:40:00+02:00", true, .sunsetToSunrise, .off, "Until 18:31", "At sunset"),
+            ("2026-10-16T12:00:00+02:00", false, .sunsetToSunrise, .on, "Until 07:52", "At sunrise"),
+            ("2026-10-16T23:00:00+02:00", true, customHours, .off, "Until 22:00", "When the schedule starts"),
+            ("2026-10-16T12:00:00+02:00", false, customHours, .on, "Until 07:00", "When the schedule ends"),
         ]
-        for (now, enabled, schedule, state, turn) in cases {
+        for (now, enabled, schedule, state, title, moment) in cases {
             let core = try staged(now, zurichSun, reported(enabled, schedule))
 
             let row = try #require(core.everywhereRow)
 
             let until = try #require(
-                row.item(sending: .set(place: .everywhere, state: state, length: .untilScheduleTurns)))
-            #expect(until.title == words.until(at(turn)))
-            #expect(until.subtitle == words.moment(of: schedule, turning: state == .on ? .off : .on))
+                row.choice(sending: .set(place: .everywhere, state: state, length: .untilScheduleTurns)))
+            #expect(until.title == title)
+            #expect(until.subtitle == moment)
         }
     }
 
     @Test func theConfigsLengthsAreWordedWithTheirPlurals() throws {
-        let preset: [(text: String, seconds: Int64)] = [
-            ("1m", 60), ("15m", 900), ("1h", 3600), ("1h1m", 3660), ("1h30m", 5400), ("2h", 7200), ("2h1m", 7260),
-            ("24h", 86400),
+        let preset: [(text: String, seconds: Int64, title: String)] = [
+            ("1m", 60, "For 1 Minute"), ("15m", 900, "For 15 Minutes"), ("1h", 3600, "For 1 Hour"),
+            ("1h1m", 3660, "For 1 Hour 1 Minute"), ("1h30m", 5400, "For 1 Hour 30 Minutes"),
+            ("2h", 7200, "For 2 Hours"), ("2h1m", 7260, "For 2 Hours 1 Minute"), ("24h", 86400, "For 24 Hours"),
         ]
         let core = try onByTheSchedule(config: lengths(preset.map(\.text)))
 
         let row = try #require(core.everywhereRow)
 
-        for (_, seconds) in preset {
-            let item = row.item(sending: .set(place: .everywhere, state: .off, length: .for(seconds)))
-            #expect(item?.title == words.forLength(seconds))
+        for (_, seconds, title) in preset {
+            let item = row.choice(sending: .set(place: .everywhere, state: .off, length: .for(seconds)))
+            #expect(item?.title == title)
         }
     }
 
     @Test func everywheresRowNamesTheAppOrSiteInFrontThatKeepsTheOtherWay() throws {
         let app = try staged(
             "2026-10-16T12:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n", reported(false),
-            front("com.figma.Desktop", "Figma"))
+            front("com.figma.Desktop"))
         let site = try staged(
             "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n",
-            accessibilityGranted, reported(false), front("com.apple.Safari", "Safari", browser: true),
-            host("www.figma.com"))
+            accessibilityGranted, reported(false), front("com.apple.Safari", browser: true), host("www.figma.com"))
 
         let appRow = try #require(app.everywhereRow)
         let siteRow = try #require(site.everywhereRow)
 
-        #expect(appRow.title == words.turn(.on))
-        #expect(appRow.subtitle == words.everywhereBut(.app(name: "Figma")))
-        #expect(appRow.timePickerTitle == words.timePickerTitle(.on))
-        #expect(siteRow.subtitle == words.everywhereBut(.site(domain: "figma.com")))
+        #expect(appRow.title == "Turn On")
+        #expect(appRow.subtitle == "Everywhere but in Figma")
+        #expect(appRow.timePickerTitle == "Turn On Everywhere")
+        #expect(siteRow.subtitle == "Everywhere but at figma.com")
     }
 
     /// The switch would leave everywhere's hold, which going back to the schedule takes off too.
@@ -83,47 +82,45 @@ struct PlaceRowWordingTests {
 
         let row = try #require(core.everywhereRow)
 
-        #expect(row.title == words.turn(.on))
-        #expect(row.item(sending: .reset(.everywhere))?.title == words.backToTheSchedule)
+        #expect(row.title == "Turn On")
+        #expect(row.choice(sending: .reset(.everywhere))?.title == "Back to the Schedule")
     }
 
     @Test func anAppsRowTurnsItTheOtherWayAndGivesItARuleThenRemovesIt() throws {
-        let core = try onByTheSchedule(front("com.figma.Desktop", "Figma"))
-        let figma = Wording.Place.app(name: "Figma")
+        let core = try onByTheSchedule(front("com.figma.Desktop"))
         let rule = Command.addRule(identity: .app("com.figma.Desktop"), says: .off)
 
         var row = try #require(core.appRow)
-        #expect(row.title == words.turn(.off, at: figma))
-        #expect(row.subtitle == words.placeSays([], then: nil))
+        #expect(row.title == "Turn Off in Figma")
+        #expect(row.subtitle == nil)
+        #expect(row.choice(sending: .set(place: figmaApp, state: .off, length: minutes(30)))?.title == "For 30 Minutes")
+        #expect(row.timePickerTitle == "Turn Off in Figma")
         #expect(
-            row.item(sending: .set(place: figmaApp, state: .off, length: minutes(30)))?.title == words.forLength(1800))
-        #expect(row.timePickerTitle == words.timePickerTitle(.off, at: figma))
-        #expect(
-            row.item(sending: .set(place: figmaApp, state: .off, length: .untilScheduleTurns))?.title
-                == words.until(at("2026-10-17T22:00:00+02:00")))
-        #expect(row.item(sending: rule)?.title == words.always)
+            row.choice(sending: .set(place: figmaApp, state: .off, length: .untilScheduleTurns))?.title
+                == "Until 22:00")
+        #expect(row.choice(sending: rule)?.title == "Always")
         core.send(command: rule)
 
         row = try #require(core.appRow)
-        #expect(row.title == words.turn(.on, at: figma))
-        #expect(row.subtitle == words.placeSays([], then: (.off, .yours)))
-        #expect(row.item(sending: .removeRule(.app("com.figma.Desktop")))?.title == words.removeYourRule)
+        #expect(row.title == "Turn On in Figma")
+        #expect(row.subtitle == "Always off: your rule")
+        #expect(row.choice(sending: .removeRule(.app("com.figma.Desktop")))?.title == "Remove Your Rule")
     }
 
     @Test func anAppWhoseNameIsntKnownGoesByItsBundleId() throws {
         let core = try onByTheSchedule(front("com.figma.Desktop"))
 
-        #expect(try #require(core.appRow).title == words.turn(.off, at: .app(name: "com.figma.Desktop")))
+        #expect(core.menu(names: [:]).rows.last?.title == "Turn Off in com.figma.Desktop")
     }
 
     @Test func aConfigRulesAlwaysIsGreyedBecauseTheConfigDecides() throws {
         let row = try #require(try forced().appRow)
 
-        #expect(row.title == words.turn(.on, at: .app(name: "Figma")))
-        #expect(row.subtitle == words.placeSays([], then: (.off, .config)))
-        let always = try #require(row.item(sending: .addRule(identity: .app("com.figma.Desktop"), says: .on)))
-        #expect(always.title == words.always)
-        #expect(always.subtitle == words.yourConfigDecides)
+        #expect(row.title == "Turn On in Figma")
+        #expect(row.subtitle == "Always off: your config’s rule")
+        let always = try #require(row.choice(sending: .addRule(identity: .app("com.figma.Desktop"), says: .on)))
+        #expect(always.title == "Always")
+        #expect(always.subtitle == "Your config decides")
         #expect(!always.enabled)
     }
 
@@ -132,11 +129,9 @@ struct PlaceRowWordingTests {
 
         let row = try #require(core.appRow)
 
-        #expect(row.title == words.turn(.off, at: .app(name: "Figma")))
-        #expect(
-            row.subtitle
-                == words.placeSays([.init(state: .on, until: at("2026-10-17T07:00:00+02:00"))], then: (.off, .config)))
-        #expect(row.item(sending: .reset(figmaApp))?.title == words.putTheRuleBack)
+        #expect(row.title == "Turn Off in Figma")
+        #expect(row.subtitle == "On until 07:00, then your config’s rule")
+        #expect(row.choice(sending: .reset(figmaApp))?.title == "Put the Rule Back")
     }
 
     @Test func aChangeOverAnotherIsToldTopDownThenTheRule() throws {
@@ -145,7 +140,7 @@ struct PlaceRowWordingTests {
             .command(.set(place: figmaApp, state: .off, length: minutes(30))))
         let on = try staged(
             "2026-10-16T12:00:00+02:00", config: "[rules.on]\napp = [\"com.apple.iBooksX\"]\n", reported(false),
-            front("com.apple.iBooksX", "Books"), reported(true),
+            front("com.apple.iBooksX"), reported(true),
             .command(.set(place: .app("com.apple.iBooksX"), state: .off, length: .untilScheduleTurns)),
             .command(.set(place: .app("com.apple.iBooksX"), state: .on, length: minutes(30))))
         // Without the sun times, an outside change holds the site in front with no end.
@@ -154,49 +149,37 @@ struct PlaceRowWordingTests {
             accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
             host("figma.com"), reported(true, .sunsetToSunrise), reported(false, .sunsetToSunrise),
             .command(.set(place: .domain("figma.com"), state: .on, length: minutes(30))))
-        let halfPast = at("2026-10-16T12:30:00+02:00")
 
         #expect(
-            try #require(off.appRow).subtitle
-                == words.placeSays(
-                    [
-                        .init(state: .off, until: at("2026-10-16T23:30:00+02:00")),
-                        .init(state: .on, until: at("2026-10-17T07:00:00+02:00")),
-                    ], then: (.off, .config)))
+            try #require(off.appRow).subtitle == "Off until 23:30, then on until 07:00, then your config’s rule")
         #expect(
-            try #require(on.appRow).subtitle
-                == words.placeSays(
-                    [.init(state: .on, until: halfPast), .init(state: .off, until: at("2026-10-16T22:00:00+02:00"))],
-                    then: (.on, .config)))
+            try #require(on.appRow).subtitle == "On until 12:30, then off until 22:00, then your config’s rule")
         #expect(
             try #require(untilTurnedBack.siteRow).subtitle
-                == words.placeSays(
-                    [.init(state: .on, until: halfPast), .init(state: .off, until: nil)], then: (.on, .config)))
+                == "On until 12:30, then off until you turn it on, then your config’s rule")
     }
 
     @Test func aChangeAtAnAppWithNoRuleGoesBackLikeEverywhereElse() throws {
         let core = try onByTheSchedule(
-            front("com.apple.mail", "Mail"), .command(.set(place: mailApp, state: .off, length: minutes(30))))
+            front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(30))))
 
         let row = try #require(core.appRow)
 
-        #expect(row.title == words.turn(.on, at: .app(name: "Mail")))
-        #expect(
-            row.subtitle == words.placeSays([.init(state: .off, until: at("2026-10-16T23:30:00+02:00"))], then: nil))
-        #expect(row.item(sending: .reset(mailApp))?.title == words.likeEverywhereElse)
+        #expect(row.title == "Turn On in Mail")
+        #expect(row.subtitle == "Off until 23:30")
+        #expect(row.choice(sending: .reset(mailApp))?.title == "Like Everywhere Else")
     }
 
     @Test func aSitesRowSaysThisSiteWhileItsPickerNamesTheDomain() throws {
         let core = try onByTheSchedule(
             config: "websites = true\n", front("com.apple.Safari", browser: true), host("docs.figma.com"))
-        let site = Wording.Place.site(domain: "docs.figma.com")
 
         let row = try #require(core.siteRow)
 
-        #expect(row.title == words.turn(.off, at: site))
+        #expect(row.title == "Turn Off at This Site")
         #expect(row.site == "docs.figma.com")
-        #expect(row.timePickerTitle == words.timePickerTitle(.off, at: site))
-        #expect(row.item(sending: .addRule(identity: .domain("docs.figma.com"), says: .off))?.title == words.always)
+        #expect(row.timePickerTitle == "Turn Off at docs.figma.com")
+        #expect(row.choice(sending: .addRule(identity: .domain("docs.figma.com"), says: .off))?.title == "Always")
     }
 
     @Test func aSitesRowTellsItsRuleAndItsSnooze() throws {
@@ -204,16 +187,14 @@ struct PlaceRowWordingTests {
         let core = try onByTheSchedule(
             config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n", accessibilityGranted,
             front("com.apple.Safari", browser: true), host("www.figma.com"), reported(false))
-        #expect(try #require(core.siteRow).subtitle == words.placeSays([], then: (.off, .config)))
+        #expect(try #require(core.siteRow).subtitle == "Always off: your config’s rule")
 
         core.send(command: .set(place: figma, state: .on, length: .untilScheduleTurns))
 
         let row = try #require(core.siteRow)
-        #expect(row.title == words.turn(.off, at: .site(domain: "figma.com")))
-        #expect(
-            row.subtitle
-                == words.placeSays([.init(state: .on, until: at("2026-10-17T07:00:00+02:00"))], then: (.off, .config)))
-        #expect(row.item(sending: .reset(figma))?.title == words.putTheRuleBack)
+        #expect(row.title == "Turn Off at This Site")
+        #expect(row.subtitle == "On until 07:00, then your config’s rule")
+        #expect(row.choice(sending: .reset(figma))?.title == "Put the Rule Back")
     }
 
     @Test func aSiteGoesBackToItsBrowsersSayByTheBrowsersName() throws {
@@ -221,14 +202,14 @@ struct PlaceRowWordingTests {
         let core = try onByTheSchedule(
             config:
                 "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-            front("com.apple.Safari", "Safari", browser: true), host("example.com"),
+            front("com.apple.Safari", browser: true), host("example.com"),
             .command(.set(place: example, state: .on, length: minutes(30))))
 
         let row = try #require(core.siteRow)
 
-        #expect(row.title == words.turn(.off, at: .site(domain: "example.com")))
-        #expect(row.subtitle == words.placeSays([.init(state: .on, until: at("2026-10-16T23:30:00+02:00"))], then: nil))
-        #expect(row.item(sending: .reset(example))?.title == words.likeTheRest(of: "Safari"))
+        #expect(row.title == "Turn Off at This Site")
+        #expect(row.subtitle == "On until 23:30")
+        #expect(row.choice(sending: .reset(example))?.title == "Like the Rest of Safari")
     }
 
     /// Without the sun times, an outside change holds the app or site in front, and everywhere, with
@@ -236,29 +217,29 @@ struct PlaceRowWordingTests {
     @Test func aRowWithNothingToOfferIsGreyedWithWhatItsPlaceSays() throws {
         let app = try staged(
             "2026-10-16T23:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-            reported(true, .sunsetToSunrise), front("com.figma.Desktop", "Figma"), reported(false, .sunsetToSunrise),
+            reported(true, .sunsetToSunrise), front("com.figma.Desktop"), reported(false, .sunsetToSunrise),
             reported(true, .sunsetToSunrise), .command(.set(place: figmaApp, state: .off, length: minutes(30))))
         let site = try staged(
             "2026-10-16T23:00:00+02:00", config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n",
             accessibilityGranted, reported(true, .sunsetToSunrise), front("com.apple.Safari", browser: true),
             host("figma.com"), reported(false, .sunsetToSunrise), reported(true, .sunsetToSunrise),
             .command(.set(place: .domain("figma.com"), state: .off, length: minutes(30))))
-        let changes = [
-            Wording.Change(state: .off, until: at("2026-10-16T23:30:00+02:00")), .init(state: .on, until: nil),
-        ]
+        let says = "Off until 23:30, then on until you turn it off, then your config’s rule"
 
         let appRow = try #require(app.appRow)
         let siteRow = try #require(site.siteRow)
 
         #expect(appRow.items.isEmpty)
-        #expect(appRow.title == words.nothingToOffer(at: .app(name: "Figma")))
-        #expect(appRow.subtitle == words.placeSays(changes, then: (.off, .config)))
+        #expect(appRow.title == "In Figma")
+        #expect(appRow.subtitle == says)
         #expect(siteRow.items.isEmpty)
-        #expect(siteRow.title == words.nothingToOffer(at: .site(domain: "figma.com")))
-        #expect(siteRow.subtitle == words.placeSays(changes, then: (.off, .config)))
+        #expect(siteRow.title == "At This Site")
+        #expect(siteRow.subtitle == says)
     }
 
-    @Test func customIsTheItemThatAsksForATime() {
-        #expect(words.custom == "Custom…")
+    @Test func customIsTheItemThatAsksForATime() throws {
+        let row = try #require(try onByTheSchedule().everywhereRow)
+
+        #expect(row.titles.contains("Custom…"))
     }
 }

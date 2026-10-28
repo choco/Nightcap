@@ -10,16 +10,15 @@ use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
 use crate::storage::file::File;
-use crate::{Menu, OnboardingSteps, Settings, TourSnapshot};
+use crate::{OnboardingSteps, Settings, TourFacts};
 
 /// The core after one input, as each read sees it.
 #[derive(Debug)]
 pub(crate) struct Snapshot {
-    pub(crate) menu: Menu,
     pub(crate) settings: Settings,
     pub(crate) onboarding: OnboardingSteps,
-    /// What the tour's steps follow and the titles they quote, while one runs.
-    pub(crate) tour_report: Option<TourSnapshot>,
+    /// What the tour's steps follow, while one runs.
+    pub(crate) tour_report: Option<TourFacts>,
     /// What the queries answer, in process and over the socket.
     pub(crate) answers: Answers,
     /// The ad-hoc rules, for an export (ADR-0007).
@@ -30,7 +29,6 @@ impl Snapshot {
     pub(crate) fn of(inner: &Inner) -> Self {
         let now = inner.clock.now();
         Self {
-            menu: Menu::new(inner, now),
             settings: Settings::new(inner, now, &inner.files.path(File::Config)),
             onboarding: OnboardingSteps::new(inner),
             tour_report: inner

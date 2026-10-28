@@ -17,7 +17,7 @@ use nightcap_protocol::{
 use common::{
     accessibility_granted, activate, activate_browser, add_rule, custom_hours, domain_rule, late,
     noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send, set,
-    site_row, until_turn, watch, with_figma_domain, yours,
+    until_turn, watch, with_figma_domain, yours,
 };
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
@@ -241,7 +241,7 @@ fn a_browser_its_own_app_rule_forces_off_is_not_watched() {
 
     let (effects, _) = send(&staged, add_rule(safari()));
     assert!(effects.contains(&Effect::StopWatching));
-    assert_eq!(site_row(&staged), None);
+    assert_eq!(staged.core().front().site, None);
     assert_eq!(staged.core().front().host, None);
     let (effects, _) = send(&staged, Command::RemoveRule(safari()));
     assert!(effects.contains(&watch("com.apple.Safari", 2)));

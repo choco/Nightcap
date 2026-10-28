@@ -19,8 +19,6 @@ pub enum Fact {
     /// it's in the shell's browser list, so its host can be watched.
     AppActivated {
         bundle_id: Option<String>,
-        /// The app's name as the user sees it, for the menu.
-        name: Option<String>,
         is_browser: bool,
     },
     /// The watched browser's host, read under `generation`; None when the read failed or timed
@@ -75,12 +73,10 @@ pub enum Fact {
 /// (ADR-0016), no onboarding and no fixes.
 #[derive(Debug, uniffi::Enum)]
 pub enum UiCommand {
-    /// Starts the tour (ADR-0016), with its sample, the site where it has a site step, and the
-    /// app its steps give as an example of a rule that says on.
+    /// Starts the tour (ADR-0016), with its sample and the site where it has a site step.
     StartTour {
         sample: TourApp,
         site: Option<TourSite>,
-        example: TourApp,
     },
     /// Ends the tour, as it finishes or the user leaves it.
     EndTour,

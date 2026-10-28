@@ -48,9 +48,8 @@ impl Inner {
             Fact::Launched => self.launched(outcome),
             Fact::AppActivated {
                 bundle_id,
-                name,
                 is_browser,
-            } => self.app_activated(bundle_id, name, is_browser),
+            } => self.app_activated(bundle_id, is_browser),
             Fact::HostChanged { generation, host } => self.host_changed(generation, host),
             Fact::LoginItemChanged { item } => self.grants.login_item_changed(item),
             Fact::PermissionsChanged {
@@ -104,11 +103,7 @@ impl Inner {
 
     fn ui_command(&mut self, command: UiCommand, outcome: &mut Outcome) {
         match command {
-            UiCommand::StartTour {
-                sample,
-                site,
-                example,
-            } => self.tour_started(&sample, site.as_ref(), &example),
+            UiCommand::StartTour { sample, site } => self.tour_started(&sample, site.as_ref()),
             UiCommand::EndTour => self.tour_ended(self.clock.now()),
             UiCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
             UiCommand::Fix(fix) => self.run_fix(fix, &mut outcome.effects),

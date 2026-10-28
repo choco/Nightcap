@@ -7,7 +7,8 @@ import os
 /// rule the user makes for Tour Sample and sees act, snoozing that rule, the same rule for a site
 /// where website checking can, and the peek. Every step can be skipped, and the tour ended.
 /// While it runs, the core has Night Shift on for it if it was off, holds the rules added during
-/// it in memory, and reports what its steps follow and the menu's titles they quote.
+/// it in memory, and reports what its steps follow. The steps quote the menu's items as `Menu`
+/// words them.
 final class Tour {
     enum Step {
         case moon, rule, snooze, site, peek, end
@@ -68,14 +69,17 @@ final class Tour {
     private let browser: Browser?
     /// The project's site in `browser`, for the site step.
     private let site: TourSite?
+    private let words = Wording.system
+    /// The menu's items the steps quote.
+    private let quotes: TourQuotes
     private let steps: [Step]
     private var index = 0
     /// The core hears of the tour once the user continues from its first step.
     private var begun = false
     /// The core's report, from the moment it hears of the tour.
-    private var report: TourSnapshot?
+    private var report: TourFacts?
     /// The menu-bar moon's look.
-    private var moon = MenuIcon.on
+    private var moon = Menu.Moon.on
     private var milestones = Milestones()
     private var drawn: Shown?
     private var keysDown = false
@@ -86,7 +90,7 @@ final class Tour {
     private weak var hint: NSTextField?
     /// Reopens the sample if the user quits it during the rule step.
     private var terminations: NSObjectProtocol?
-    private let current: () -> (tour: TourSnapshot?, moon: MenuIcon)
+    private let current: () -> (tour: TourFacts?, moon: Menu.Moon)
     private let press: () -> Void
     private let release: () -> Void
     private let begin: (_ start: UiCommand) -> Void
@@ -99,7 +103,7 @@ final class Tour {
     init(
         shortcut: KeyboardShortcuts.Shortcut?,
         browser: Browser?,
-        current: @escaping () -> (tour: TourSnapshot?, moon: MenuIcon),
+        current: @escaping () -> (tour: TourFacts?, moon: Menu.Moon),
         press: @escaping () -> Void,
         release: @escaping () -> Void,
         begin: @escaping (_ start: UiCommand) -> Void,
@@ -108,6 +112,7 @@ final class Tour {
         self.shortcut = shortcut
         self.browser = browser
         site = browser.map { TourSite(domain: Self.siteURL.host()!, browser: $0.bundleId) }
+        quotes = TourQuotes(sample: Self.sample, site: site, example: Self.example, words: words)
         self.current = current
         self.press = press
         self.release = release
@@ -120,9 +125,7 @@ final class Tour {
     private var step: Step { steps[index] }
 
     /// What every step after the first follows.
-    private var facts: TourFacts { report!.facts }
-
-    private var titles: TourTitles { report!.titles }
+    private var facts: TourFacts { report! }
 
     /// The rule the rule step asks for, which the snooze step snoozes.
     private var ruled: Bool { facts.sample.rule == .off }
@@ -133,7 +136,7 @@ final class Tour {
 
     /// Whether the tour has Night Shift on in place of the schedule: as the core decided once it
     /// heard of the tour, and until then as the moon shows Night Shift off now.
-    private var standsIn: Bool { report?.facts.standsIn ?? (moon == .off || moon == .forcedOff) }
+    private var standsIn: Bool { report?.standsIn ?? (moon == .off || moon == .forcedOff) }
 
     /// Tour Sample stays open through the steps that use it.
     private var usesSample: Bool { step == .rule || step == .snooze }
@@ -167,7 +170,7 @@ final class Tour {
     /// redraws what they change.
     func refresh() {
         let (report, moon) = current()
-        if let before = self.report?.facts, let after = report?.facts { follow(from: before, to: after) }
+        if let before = self.report, let after = report { follow(from: before, to: after) }
         self.report = report
         self.moon = moon
         guard reported else { return }
@@ -236,7 +239,7 @@ final class Tour {
     private func advance() {
         if step == .moon, !begun {
             begun = true
-            begin(.startTour(sample: Self.sample, site: site, example: Self.example))
+            begin(.startTour(sample: Self.sample, site: site))
         }
         let hadSample = usesSample
         index += 1
@@ -274,7 +277,7 @@ final class Tour {
             )
         case .rule where facts.sample.inFront:
             return (
-                "Give it a rule", "Click the moon to open the menu, then choose \(titles.addSampleRule.quoted)."
+                "Give it a rule", "Click the moon to open the menu, then choose \(words.quoted(quotes.addSampleRule))."
             )
         case .rule:
             return ("Try a rule", "Bring \(sample) to the front: click its window, or its icon in the Dock.")
@@ -283,34 +286,34 @@ final class Tour {
                 "And the rule’s back",
                 "True colour again in the sample. "
                     + "Rules work the other way too: "
-                    + "while Night Shift is off, \(titles.addExampleRule.quoted) keeps it on in \(Self.example.name)."
+                    + "while Night Shift is off, \(words.quoted(quotes.addExampleRule)) keeps it on in \(Self.example.name)."
             )
         case .snooze where snoozed && facts.sample.inFront:
             return (
                 "That’s a snooze",
                 "Night Shift is back in the sample until the time you chose, then the rule returns by itself. "
-                    + "To end it sooner, choose \(titles.putSampleRuleBack.quoted)."
+                    + "To end it sooner, choose \(words.quoted(quotes.putSampleRuleBack))."
             )
         case .snooze where snoozed:
             return (
                 "Put the rule back",
-                "Bring \(sample) back to the front, then choose \(titles.putSampleRuleBack.quoted)."
+                "Bring \(sample) back to the front, then choose \(words.quoted(quotes.putSampleRuleBack))."
             )
         case .snooze where !ruled && facts.sample.inFront:
             return (
                 "Snoozing needs a rule",
-                "Choose \(titles.addSampleRule.quoted) to give the sample its rule again."
+                "Choose \(words.quoted(quotes.addSampleRule)) to give the sample its rule again."
             )
         case .snooze where !ruled:
             return (
                 "Snoozing needs a rule",
-                "Bring \(sample) back to the front, then choose \(titles.addSampleRule.quoted)."
+                "Bring \(sample) back to the front, then choose \(words.quoted(quotes.addSampleRule))."
             )
         case .snooze where facts.sample.inFront:
             return (
                 "Snooze it",
                 "The rule keeps Night Shift off here. "
-                    + "To give it a break, click the moon, then choose “\(titles.snoozeSample)” and how long for."
+                    + "To give it a break, click the moon, then choose “\(quotes.snoozeSample)” and how long for."
             )
         case .snooze:
             return (
@@ -332,7 +335,7 @@ final class Tour {
         case .site where facts.site?.inFront == true:
             return (
                 "Now a site",
-                "\(browser) has Nightcap’s site open. Click the moon, then choose \(titles.addSiteRule!.quoted)."
+                "\(browser) has Nightcap’s site open. Click the moon, then choose \(words.quoted(quotes.addSiteRule!))."
             )
         case .site:
             return ("Now a site", "Bring \(browser) back to the front, on Nightcap’s site.")
@@ -355,7 +358,7 @@ final class Tour {
 
     private var hintText: String {
         if keysDown { return "True colour while you hold. Let go and the warmth comes back." }
-        if report?.facts.everywhereOn == false { return "Night Shift is off. Tap the shortcut to turn it back on." }
+        if report?.everywhereOn == false { return "Night Shift is off. Tap the shortcut to turn it back on." }
         switch lastTry {
         case .hold: return "That was a peek. Tap it instead to turn Night Shift off."
         case .tap: return "Night Shift is back on. Now try holding it."
@@ -488,7 +491,7 @@ final class Tour {
 
     /// The moon's three looks, as the status item draws them.
     private func legend(width: CGFloat) -> NSView {
-        let rows: [(MenuIcon, String, String)] = [
+        let rows: [(Menu.Moon, String, String)] = [
             (.on, "On", "Night Shift is warming the screen."),
             (.off, "Off", "True colour, from the schedule or from you."),
             (.forcedOff, "Forced off", "Nightcap is holding it off for an app or a site."),
@@ -572,10 +575,10 @@ final class Tour {
 
     #if DEBUG
     /// The panel at `step` as a PNG, on the menu's colour, for comparing against the prototype:
-    /// with `facts` as the core would report them, and the titles it would quote.
+    /// with `facts` as the core would report them.
     func snapshot(_ step: Step, facts: TourFacts, milestones: Milestones = Milestones()) -> Data? {
         index = steps.firstIndex(of: step)!
-        report = TourSnapshot(facts: facts, titles: tourTitles(sample: Self.sample, site: site, example: Self.example))
+        report = facts
         self.milestones = milestones
         let content = self.content()
         let size = content.fittingSize
@@ -682,11 +685,6 @@ private final class KeyCaps: NSView {
     override func mouseUp(with event: NSEvent) {
         release()
     }
-}
-
-extension MenuPath {
-    /// The item as a step quotes it: “Turn Off in Tour Sample” › “Always”.
-    var quoted: String { "“\(row)” › “\(item)”" }
 }
 
 #if DEBUG
