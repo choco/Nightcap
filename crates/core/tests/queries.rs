@@ -11,7 +11,7 @@ use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, Front, Inherited, Install, Lasting, Length, ListedRule,
     LoginItem, NightShift, NightShiftState, NotSelfManaged, NotificationPermission, OnOff,
-    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rules, Schedule, TrialState,
     WebsiteChecking,
 };
 
@@ -300,7 +300,7 @@ fn front_answers_an_external_on_over_the_rule_it_snoozed() {
 }
 
 #[test]
-fn rules_answers_every_rule_at_every_place_each_with_its_snooze() {
+fn rules_answers_the_apps_and_sites_rules_with_their_snoozes_apart_from_the_temporary_rules() {
     let staged = forced();
     let mail_app = Place::from(mail());
     let until_morning = || {
@@ -333,21 +333,21 @@ fn rules_answers_every_rule_at_every_place_each_with_its_snooze() {
 
     assert_eq!(
         staged.core().snapshot().rules(),
-        vec![
-            snoozed(app_rule("com.figma.Desktop"), until_morning()),
-            listed(ad_hoc(mail())),
-            listed(until_morning()),
-            listed(yours(
-                mail_app,
-                OnOff::Off,
-                until("2026-10-16T23:30:00+02:00")
-            )),
-            listed(for_an_hour()),
-            snoozed(
-                yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
-                for_an_hour()
-            ),
-        ]
+        Rules {
+            rules: vec![
+                snoozed(app_rule("com.figma.Desktop"), until_morning()),
+                listed(ad_hoc(mail())),
+            ],
+            temporary: vec![
+                until_morning(),
+                yours(mail_app, OnOff::Off, until("2026-10-16T23:30:00+02:00")),
+                for_an_hour(),
+            ],
+        }
+    );
+    assert_eq!(
+        staged.core().snapshot().front().everywhere.indefinite,
+        Some(yours(Place::Everywhere, OnOff::Off, Length::Indefinite))
     );
     answers_alike(&staged);
 }

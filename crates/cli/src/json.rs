@@ -32,21 +32,16 @@ pub(crate) struct Status {
 
 impl From<&Report> for Status {
     fn from(report: &Report) -> Self {
-        let (rules, changes): (Vec<_>, Vec<_>) = report
-            .rules
-            .iter()
-            .partition(|listed| wording::is_app_or_site_rule(&listed.rule));
+        // Every temporary rule, then everywhere's indefinite one: what a reset takes off.
+        let changes = (report.rules.temporary.iter()).chain(&report.front.everywhere.indefinite);
         Self {
             schema: SCHEMA,
             nightcap: Nightcap::from(&report.about),
             night_shift: NightShift::from(&report.night_shift),
             front: Front::from(&report.front),
             tour: report.trial,
-            rules: rules.into_iter().map(ListedRule::from).collect(),
-            changes: changes
-                .into_iter()
-                .map(|listed| Rule::from(&listed.rule))
-                .collect(),
+            rules: report.rules.rules.iter().map(ListedRule::from).collect(),
+            changes: changes.map(Rule::from).collect(),
             website_checking: report.preferences.website_checking,
             config: Config {
                 path: report.config.path.clone(),
@@ -74,11 +69,7 @@ impl From<&[protocol::ListedRule]> for Rules {
     fn from(rules: &[protocol::ListedRule]) -> Self {
         Self {
             schema: SCHEMA,
-            rules: rules
-                .iter()
-                .filter(|listed| wording::is_app_or_site_rule(&listed.rule))
-                .map(ListedRule::from)
-                .collect(),
+            rules: rules.iter().map(ListedRule::from).collect(),
         }
     }
 }
@@ -620,7 +611,7 @@ mod tests {
             });
 
         assert_eq!(
-            printed(snoozed, |report| Rules::from(&report.rules[..])),
+            printed(snoozed, |report| Rules::from(&report.rules.rules[..])),
             r#"{
   "schema": 1,
   "rules": [

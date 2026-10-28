@@ -204,8 +204,8 @@ mod tests {
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
         AdHocRulesDetail, CheckDetail, CheckKind, Command, ConfigFileDetail, FileError, Install,
-        IoFailure, Lasting, Length, ListedRule, NotSelfManaged, OnOff, Place, Refusal, Rule,
-        RuleIdentity, Schedule, SetBy, TimeOfDay,
+        IoFailure, Lasting, Length, NotSelfManaged, OnOff, Place, Refusal, Rule, RuleIdentity,
+        Rules, Schedule, SetBy, TimeOfDay,
     };
 
     use super::{Disk, File, Files, Owned, Paths};
@@ -375,18 +375,18 @@ mod tests {
             })
         );
         assert_eq!(
-            inner.places.listed(),
-            vec![ListedRule {
-                rule: Rule {
+            inner.places.rules(),
+            Rules {
+                rules: Vec::new(),
+                temporary: vec![Rule {
                     place: Place::from(mail),
                     says: OnOff::Off,
                     length: Length::Until {
                         until: "2026-10-16T23:30:00+02:00".parse().unwrap(),
                     },
                     set_by: SetBy::You,
-                },
-                snooze: None,
-            }]
+                }],
+            }
         );
     }
 }

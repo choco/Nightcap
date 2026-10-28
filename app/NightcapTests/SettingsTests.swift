@@ -300,7 +300,7 @@ struct SettingsTests {
             tourBegun, front(tourSample),
             .command(.addRule(identity: .app(tourSample), says: .off)))
 
-        #expect(core.snapshot().rules().contains { $0.rule.setBy == .trial })
+        #expect(core.snapshot().rules().rules.contains { $0.rule.setBy == .trial })
         #expect(settings(core).rules == [])
     }
 

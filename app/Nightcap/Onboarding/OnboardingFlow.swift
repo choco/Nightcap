@@ -127,7 +127,7 @@ final class OnboardingFlow {
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
 
-    /// The core's rules, as the snapshot onboarding last took has them.
+    /// The apps' and sites' rules, as the snapshot onboarding last took has them.
     private var rules: [ListedRule]
     /// The grants, as the snapshot onboarding last took has them.
     private var permissions: Permissions
@@ -155,7 +155,7 @@ final class OnboardingFlow {
         onFinish: @escaping (_ websites: OnOff?) -> Void
     ) {
         setup = Setup(snapshot)
-        rules = snapshot.rules()
+        rules = snapshot.rules().rules
         permissions = snapshot.checks().permissions
         configSetsWebsites = setup.websitesFromConfig != nil
         self.words = words
@@ -186,7 +186,7 @@ final class OnboardingFlow {
     /// way to the sites as the grant arrives while it doesn't show; while it shows, it shows the
     /// grant first (`grantArrived`).
     func refresh(_ snapshot: Snapshot) {
-        rules = snapshot.rules()
+        rules = snapshot.rules().rules
         permissions = snapshot.checks().permissions
         configSetsWebsites = snapshot.config().websites != nil
         if step != .websites, page == .accessibility, accessibilityGranted {

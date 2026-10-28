@@ -157,7 +157,7 @@ impl Inner {
             Command::Reload => {
                 return self
                     .reload(effects)
-                    .map(|()| Payload::Rules(self.places.listed()));
+                    .map(|()| Payload::Rules(self.places.rules().rules));
             }
             Command::CheckForUpdates => {
                 if let Install::NotSelfManaged(why) = self.install {

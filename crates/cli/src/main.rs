@@ -155,7 +155,6 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                 );
                 return Ok(());
             }
-            let rules = wording::app_and_site_rules(&rules);
             if rules.is_empty() {
                 println!("{}", wording::no_rules());
             } else {

@@ -217,7 +217,7 @@ struct OnboardingFlowTests {
         #expect(flow.footer.primary == .addRules(count: 0))
         flow.perform(.addRules(count: 0))
         #expect(sent.commands == [])
-        let rules = staged.snapshot().rules().map(\.rule)
+        let rules = staged.snapshot().rules().rules.map(\.rule)
         #expect(rules.first { $0.place == .app(books) }?.says == .on)
         #expect(rules.first { $0.place == .app(tv) }?.says == .on)
     }
@@ -240,7 +240,7 @@ struct OnboardingFlowTests {
         flow.perform(.addRules(count: 0))
         #expect(sent.commands == [])
         #expect(flow.addedApps == [])
-        #expect(staged.snapshot().rules().contains { $0.rule.place == .app(imovie) && $0.rule.says == .on })
+        #expect(staged.snapshot().rules().rules.contains { $0.rule.place == .app(imovie) && $0.rule.says == .on })
     }
 
     @Test func theScheduleIsSentOnlyWhenItChanges() throws {

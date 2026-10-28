@@ -268,8 +268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let snapshot = core.snapshot()
         guard snapshot.preferences().websiteChecking.state == .on else { return }
         let front = snapshot.front().site.map { [$0] } ?? []
-        let ruled = snapshot.rules().compactMap { listed -> String? in
-            guard case .domain(let domain) = listed.rule.place, listed.rule.length == .indefinite else { return nil }
+        let ruled = snapshot.rules().rules.compactMap { listed -> String? in
+            guard case .domain(let domain) = listed.rule.place else { return nil }
             switch listed.rule.setBy {
             case .config, .you: return domain
             case .trial, .outsideChange: return nil

@@ -119,14 +119,14 @@ struct Settings: Equatable {
                 restore: fixes.restore, accept: fixes.accept)
         }
         configPath = snapshot.config().path
-        self.rules = Self.rows(of: rules, words: words)
-        forNow = Self.forNow(rules.map(\.rule)).compactMap { rule in
-            rule.place.identity().map { identity in
-                ForNowRow(
-                    identity: identity,
-                    label: words.forNow(Wording.TemporaryRule(state: rule.says, until: rule.length.end())),
-                    button: CommandButton(title: words.end, command: .reset(rule.place)))
-            }
+        self.rules = Self.rows(of: rules.rules, words: words)
+        forNow = rules.temporary.compactMap { rule in
+            guard let identity = rule.place.identity(), !rules.rules.contains(where: { $0.rule.place == rule.place })
+            else { return nil }
+            return ForNowRow(
+                identity: identity,
+                label: words.forNow(Wording.TemporaryRule(state: rule.says, until: rule.length.end())),
+                button: CommandButton(title: words.end, command: .reset(rule.place)))
         }
         version = snapshot.about().version
     }
@@ -141,11 +141,11 @@ struct Settings: Equatable {
         checks.contains { tab.checks.contains($0.kind) && $0.isProblem }
     }
 
-    /// The Rules tab's rows for `rules`, every rule at every place: the apps' and sites'
-    /// indefinite rules, the config's then the user's, each with its label and what can be done
-    /// about it. Onboarding's suggestions say where their rules come from in the same words.
+    /// The Rules tab's rows for `rules`, the apps' and sites' indefinite rules: the config's
+    /// then the user's, each with its label and what can be done about it. Onboarding's
+    /// suggestions say where their rules come from in the same words.
     static func rows(of rules: [ListedRule], words: Wording) -> [RuleRow] {
-        rules.filter { isAppOrSiteRule($0.rule) }.compactMap { listed in row(listed, words) }
+        rules.compactMap { listed in row(listed, words) }
     }
 
     /// The tab with the problem the menu points at: General's first, then Rules'.
@@ -217,20 +217,6 @@ struct Settings: Equatable {
         return RuleRow(
             identity: identity, says: rule.says, label: shown.label, snoozed: listed.snooze != nil,
             button: shown.button)
-    }
-
-    /// The temporary rules at apps and sites with no indefinite one, as the rules query lists
-    /// them.
-    private static func forNow(_ rules: [Rule]) -> [Rule] {
-        rules.filter { rule in
-            rule.place != .everywhere && rule.length != .indefinite
-                && !rules.contains { $0.place == rule.place && isAppOrSiteRule($0) }
-        }
-    }
-
-    /// Whether a rule is an app's or a site's indefinite one, as the Rules tab lists them.
-    private static func isAppOrSiteRule(_ rule: Rule) -> Bool {
-        rule.place != .everywhere && rule.length == .indefinite
     }
 }
 

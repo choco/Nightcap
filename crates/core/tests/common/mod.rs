@@ -14,9 +14,9 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
 use nightcap_protocol::{
-    Answer, Check, CheckKind, Command, Lasting, Length, ListedRule, NotificationPermission, OnOff,
-    Payload, Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule,
-    SetBy, TimeOfDay,
+    Answer, Check, CheckKind, Command, Front, Lasting, Length, ListedRule, NotificationPermission,
+    OnOff, Payload, Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity,
+    Rules, Schedule, SetBy, TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -101,29 +101,28 @@ pub(crate) fn ask(staged: &Staged, queries: Vec<Query>) -> Vec<Answer> {
     answers
 }
 
+/// What the rules query and what's in front answer, in one request.
+fn rules_and_front(staged: &Staged) -> (Rules, Front) {
+    let Ok([Answer::Rules(rules), Answer::Front(front)]) =
+        <[Answer; 2]>::try_from(ask(staged, vec![Query::Rules, Query::Front]))
+    else {
+        panic!("expected the rules and what's in front");
+    };
+    (rules, *front)
+}
+
 /// The apps' and sites' indefinite rules, as `nightcap rules` lists them.
 pub(crate) fn rules(staged: &Staged) -> Vec<Rule> {
-    every_rule(staged)
-        .into_iter()
-        .filter(|rule| rule.place != Place::Everywhere && rule.length == Length::Indefinite)
-        .collect()
+    let (rules, _) = rules_and_front(staged);
+    rules.rules.into_iter().map(|listed| listed.rule).collect()
 }
 
 /// Every rule a reset takes off: the temporary ones, and everywhere's indefinite one.
 pub(crate) fn resettable(staged: &Staged) -> Vec<Rule> {
-    every_rule(staged)
-        .into_iter()
-        .filter(|rule| rule.place == Place::Everywhere || rule.length != Length::Indefinite)
+    let (rules, front) = rules_and_front(staged);
+    (rules.temporary.into_iter())
+        .chain(front.everywhere.indefinite)
         .collect()
-}
-
-/// Every rule at every place.
-pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
-    let Ok([Answer::Rules(rules)]) = <[Answer; 1]>::try_from(ask(staged, vec![Query::Rules]))
-    else {
-        panic!("expected rules");
-    };
-    rules.into_iter().map(|listed| listed.rule).collect()
 }
 
 /// A rule as the rules query lists it while nothing snoozes it.

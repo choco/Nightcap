@@ -54,7 +54,7 @@ _Avoid_: timer, hold, timed disable, manual state
 Who set a rule: the config, the user, the user during a trial, or an outside change Nightcap adopted.
 
 **Snooze**:
-A temporary rule over an indefinite one at its place that says the other way. The indefinite one waits underneath and comes back when it ends. The rules query lists each indefinite rule with its snooze.
+A temporary rule over an indefinite one at its place that says the other way. The indefinite one waits underneath and comes back when it ends. The rules query lists each app's or site's rule with its snooze.
 _Avoid_: pause, override
 
 **Switch**:
@@ -161,4 +161,4 @@ Why Nightcap refused a command, which then changes nothing: what the client need
 Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.
 
 **Query**:
-A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, every rule, each indefinite one with its snooze, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.
+A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, the apps' and sites' rules, each with its snooze, apart from every place's temporary rule, the config, the user's preferences, the checks, the trial and the install. A read asks any of them of one snapshot; `nightcap status` asks most of them.

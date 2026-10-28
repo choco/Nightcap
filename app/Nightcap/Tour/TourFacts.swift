@@ -49,9 +49,9 @@ extension TourFacts {
     init?(_ snapshot: Snapshot, sample: String, site: String?) {
         guard let trial = snapshot.trial() else { return nil }
         let front = snapshot.front()
-        let everyRule = snapshot.rules()
+        let rules = snapshot.rules().rules
         let followed = { (place: Place, inFront: Bool) in
-            let listed = everyRule.first { $0.rule.place == place && $0.rule.length == .indefinite }
+            let listed = rules.first { $0.rule.place == place }
             return TourPlace(inFront: inFront, rule: listed?.rule.says, snoozed: listed?.snooze != nil)
         }
         self.init(

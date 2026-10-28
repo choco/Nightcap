@@ -26,30 +26,32 @@ fn decision(decision: &Decision, zone: &TimeZone) -> String {
         Place::Everywhere => String::new(),
         place => format!(" at {place}"),
     };
-    match top {
-        Reason::Rule(rule) if is_app_or_site_rule(rule) => format!(
-            "{} by the {} rule for {}",
-            rule.says,
-            source(rule.set_by),
-            rule.place
-        ),
-        Reason::Rule(rule) => format!("{}{at}{}", rule.says, until(rule.length.end(), rule.says)),
+    match (top, &decision.place) {
+        (Reason::Rule(rule), Place::App(_) | Place::Domain(_))
+            if rule.length == Length::Indefinite =>
+        {
+            format!(
+                "{} by the {} rule for {}",
+                rule.says,
+                source(rule.set_by),
+                rule.place
+            )
+        }
+        (Reason::Rule(rule), _) => {
+            format!("{}{at}{}", rule.says, until(rule.length.end(), rule.says))
+        }
         // Only the app's tour begins a trial, which the CLI's user knows by the tour's name.
-        Reason::StandIn => "on for the tour".to_owned(),
-        Reason::Schedule { .. } => "following the schedule".to_owned(),
+        (Reason::StandIn, _) => "on for the tour".to_owned(),
+        (Reason::Schedule { .. }, _) => "following the schedule".to_owned(),
     }
 }
 
 /// ", its config rule snoozed" while the rule at the app or site that decides is snoozed, as
-/// the rules answer serves it, else nothing.
+/// the rules answer serves the apps' and sites' rules, else nothing.
 fn snoozed(place: &Place, rules: &[ListedRule]) -> String {
     rules
         .iter()
-        .find(|listed| {
-            listed.snooze.is_some()
-                && listed.rule.place == *place
-                && is_app_or_site_rule(&listed.rule)
-        })
+        .find(|listed| listed.snooze.is_some() && listed.rule.place == *place)
         .map_or_else(String::new, |listed| {
             format!(", its {} rule snoozed", source(listed.rule.set_by))
         })
@@ -70,20 +72,6 @@ pub(crate) fn rule(listed: &ListedRule, zone: &TimeZone) -> String {
         source(rule.set_by),
         rule.says
     )
-}
-
-/// The apps' and sites' indefinite rules, the ones `nightcap rules` lists: the config's, the
-/// user's and the tour's.
-pub(crate) fn app_and_site_rules(rules: &[ListedRule]) -> Vec<ListedRule> {
-    rules
-        .iter()
-        .filter(|listed| is_app_or_site_rule(&listed.rule))
-        .cloned()
-        .collect()
-}
-
-pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
-    rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }
 
 /// What adding a rule for `identity` that says `says` did, as Nightcap answers it: added one,
@@ -458,10 +446,7 @@ pub(crate) fn no_rules() -> String {
 
 /// What a reload did, with the rules it leads to and times in `zone`.
 pub(crate) fn reloaded(rules: &[ListedRule], zone: &TimeZone) -> String {
-    format!(
-        "Reloaded the config. Rules: {}",
-        self::rules(&app_and_site_rules(rules), zone)
-    )
+    format!("Reloaded the config. Rules: {}", self::rules(rules, zone))
 }
 
 pub(crate) fn strength(strength: u8) -> String {
@@ -494,7 +479,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         about,
         night_shift,
         front,
-        rules: every_rule,
+        rules: answered,
         config,
         preferences,
         checks,
@@ -539,7 +524,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
     let decided = format!(
         "{}{}",
         decision(&front.decision, zone),
-        snoozed(&front.decision.place, every_rule)
+        snoozed(&front.decision.place, &answered.rules)
     );
     // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
@@ -582,10 +567,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         "Frontmost app: {}{host}",
         front.app.as_ref().map_or("unknown", |app| app.as_str())
     ));
-    lines.push(format!(
-        "Rules: {}",
-        rules(&app_and_site_rules(every_rule), zone)
-    ));
+    lines.push(format!("Rules: {}", rules(&answered.rules, zone)));
     let website_checking = preferences.website_checking;
     lines.push(format!(
         "Website checking: {}{}",
@@ -596,7 +578,13 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
             ""
         }
     ));
-    lines.extend(places_rules(every_rule, zone));
+    lines.extend(places_rules(
+        answered
+            .temporary
+            .iter()
+            .chain(&front.everywhere.indefinite),
+        zone,
+    ));
     lines.push(format!("Accessibility: {accessibility}"));
     lines.push(format!("Notifications: {notifications}"));
     let problems = needs_attention(checks);
@@ -643,13 +631,9 @@ fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
 /// Each place's temporary rule, and everywhere's indefinite one after it, a line per place, with
 /// times in `zone`: "app:com.figma.Desktop: on until 07:00", "Everywhere: on until 07:00, then off
 /// until you turn it on".
-fn places_rules(rules: &[ListedRule], zone: &TimeZone) -> Vec<String> {
+fn places_rules<'a>(rules: impl Iterator<Item = &'a Rule>, zone: &TimeZone) -> Vec<String> {
     let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
-    for rule in rules
-        .iter()
-        .map(|listed| &listed.rule)
-        .filter(|rule| !is_app_or_site_rule(rule))
-    {
+    for rule in rules {
         let part = match rule.length.end() {
             Some(end) => format!("{}{}", rule.says, until(Some(end), zone)),
             None => format!("{} until you turn it {}", rule.says, rule.says.other()),
@@ -1273,7 +1257,7 @@ mod tests {
                 night_shift_line(&report),
                 "Night Shift: on at domain:figma.com until 07:00, its config rule snoozed"
             );
-            for listed in &mut report.rules {
+            for listed in &mut report.rules.rules {
                 listed.snooze = None;
             }
             assert_eq!(

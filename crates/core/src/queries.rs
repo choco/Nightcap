@@ -4,8 +4,8 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    About, Checks, ConfigState, Front, ListedRule, NightShiftState, OnOff, Permissions,
-    Preferences, Schedule, TrialState, WebsiteChecking,
+    About, Checks, ConfigState, Front, NightShiftState, OnOff, Permissions, Preferences, Rules,
+    Schedule, TrialState, WebsiteChecking,
 };
 
 use crate::server::state::Inner;
@@ -16,7 +16,7 @@ use crate::storage::file::File;
 pub(crate) struct Answers {
     pub(crate) night_shift: NightShiftState,
     pub(crate) front: Front,
-    pub(crate) rules: Vec<ListedRule>,
+    pub(crate) rules: Rules,
     pub(crate) config: ConfigState,
     pub(crate) preferences: Preferences,
     pub(crate) checks: Checks,
@@ -43,7 +43,7 @@ impl Answers {
                 next_off: timeline.next_turn(facts.applied_until, OnOff::On),
             },
             front: (inner.places).front(&facts.world(now), inner.watching.is_watching()),
-            rules: inner.places.listed(),
+            rules: inner.places.rules(),
             config: ConfigState {
                 path: inner.files.path(File::Config).display().to_string(),
                 strength: inner.loaded.config_night_shift.strength,

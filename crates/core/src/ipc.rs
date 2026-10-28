@@ -459,8 +459,8 @@ mod tests {
         let after = core.snapshot();
         let asked_after = ask(&socket, queries()).join().unwrap();
 
-        assert_eq!(before.rules(), Vec::new());
-        assert_eq!(after.rules().len(), 1);
+        assert_eq!(before.rules().rules, Vec::new());
+        assert_eq!(after.rules().rules.len(), 1);
         assert_ne!(before.checks(), after.checks());
         let answers = |snapshot: &Snapshot| {
             Response::Ok(Payload::Answers(vec![

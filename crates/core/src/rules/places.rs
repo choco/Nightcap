@@ -453,21 +453,22 @@ impl Places {
         }
     }
 
-    /// Every rule at every place, as they decide now, each indefinite one with its snooze: its
-    /// place's temporary rule, where that says the other way. The apps' and sites' indefinite
-    /// rules come first, the config's, then the ad-hoc ones, then a trial's, then every place's
-    /// temporary rule, then everywhere's indefinite one.
-    pub(crate) fn listed(&self) -> Vec<ListedRule> {
+    /// What the rules query answers, as the rules decide now: the apps' and sites' indefinite
+    /// rules, the config's, then the ad-hoc ones, then a trial's, each with its snooze, its
+    /// place's temporary rule where that says the other way; and every place's temporary rule.
+    pub(crate) fn rules(&self) -> nightcap_protocol::Rules {
         let live = &self.live;
-        let rules = live.indefinite.iter().chain(&live.temporary);
-        (rules.chain(&live.switched))
-            .map(|rule| ListedRule {
-                rule: rule.clone(),
-                snooze: (live.temporary_at(&rule.place))
-                    .filter(|temporary| temporary.says != rule.says)
-                    .cloned(),
-            })
-            .collect()
+        nightcap_protocol::Rules {
+            rules: (live.indefinite.iter())
+                .map(|rule| ListedRule {
+                    rule: rule.clone(),
+                    snooze: (live.temporary_at(&rule.place))
+                        .filter(|temporary| temporary.says != rule.says)
+                        .cloned(),
+                })
+                .collect(),
+            temporary: live.temporary.clone(),
+        }
     }
 
     /// When each rule with an end ends.
@@ -1202,7 +1203,7 @@ mod tests {
         assert_sound(&places);
         places.end_trial(at("2026-10-17T01:00:00+02:00"));
         assert_eq!(kept(&places), (Vec::new(), None, Vec::new()));
-        assert_eq!(places.listed().len(), 2);
+        assert_eq!(places.rules().rules.len(), 2);
     }
 
     #[test]

@@ -239,8 +239,8 @@ pub(crate) mod tests {
         let (_, after_the_report) = next_heard(&outcomes);
         let (_, after_the_command) = next_heard(&outcomes);
         assert_eq!(after_the_report.night_shift().state, NightShift::Off);
-        assert_eq!(after_the_report.rules(), Vec::new());
-        assert_eq!(after_the_command.rules().len(), 1);
+        assert_eq!(after_the_report.front().everywhere.indefinite, None);
+        assert!(after_the_command.front().everywhere.indefinite.is_some());
         assert!(Arc::ptr_eq(&after_the_command, &core.snapshot()));
     }
 

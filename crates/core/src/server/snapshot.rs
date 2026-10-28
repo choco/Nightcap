@@ -4,8 +4,8 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use nightcap_protocol::{
-    About, Answer, Checks, ConfigState, ExportFormat, Front, ListedRule, NightShiftState, OnOff,
-    Payload, Preferences, Query, Response, RuleIdentity, TrialState,
+    About, Answer, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload,
+    Preferences, Query, Response, RuleIdentity, Rules, TrialState,
 };
 
 use crate::queries::Answers;
@@ -34,10 +34,9 @@ impl Snapshot {
         self.answers.front.clone()
     }
 
-    /// Every rule at every place, each indefinite one with its snooze: the apps' and sites'
-    /// indefinite rules first, then every place's temporary rule, then everywhere's indefinite
-    /// one (ADR-0018).
-    pub fn rules(&self) -> Vec<ListedRule> {
+    /// The apps' and sites' indefinite rules, each with its snooze, apart from every place's
+    /// temporary rule (ADR-0018).
+    pub fn rules(&self) -> Rules {
         self.answers.rules.clone()
     }
 

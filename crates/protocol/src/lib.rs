@@ -248,9 +248,8 @@ pub enum Lasting {
 pub enum Query {
     NightShift,
     Front,
-    /// Every rule at every place, each indefinite one with its snooze: the apps' and sites'
-    /// indefinite rules first, then every place's temporary rule, then everywhere's indefinite
-    /// one.
+    /// The apps' and sites' indefinite rules, each with its snooze, apart from every place's
+    /// temporary rule.
     Rules,
     Config,
     Preferences,
@@ -267,7 +266,7 @@ pub enum Query {
 pub enum Answer {
     NightShift(NightShiftState),
     Front(Box<Front>),
-    Rules(Vec<ListedRule>),
+    Rules(Rules),
     Config(Box<ConfigState>),
     Preferences(Preferences),
     Checks(Checks),
@@ -310,7 +309,7 @@ impl From<Result<Payload, Refusal>> for Response {
 pub enum Payload {
     /// The queries' answers, in the order asked.
     Answers(Vec<Answer>),
-    /// Every rule, after a reload, as the rules query lists them.
+    /// The apps' and sites' indefinite rules after a reload, as the rules query lists them.
     Rules(Vec<ListedRule>),
     /// What a command leads to.
     Decision(Decision),
@@ -505,13 +504,25 @@ pub struct Rule {
     pub set_by: SetBy,
 }
 
-/// A rule as the rules query lists it, written as the rule with its snooze beside it.
+/// What the rules query answers (ADR-0018): the apps' and sites' indefinite rules apart from
+/// every place's temporary rule. Everywhere's indefinite rule is what's in front's.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct Rules {
+    /// The apps' and sites' indefinite rules, each with its snooze: the config's, then the
+    /// user's ad-hoc ones, then a trial's (ADR-0006).
+    pub rules: Vec<ListedRule>,
+    /// Every place's temporary rule, one at most at each.
+    pub temporary: Vec<Rule>,
+}
+
+/// An app's or site's indefinite rule as the rules query lists it, written as the rule with its
+/// snooze beside it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ListedRule {
     #[serde(flatten)]
     pub rule: Rule,
-    /// The temporary rule that snoozes an indefinite one: its place's, where that says the other
-    /// way. The indefinite rule waits underneath, and comes back when its snooze ends (ADR-0018).
+    /// Its place's temporary rule, where that says the other way. The indefinite rule waits
+    /// underneath, and comes back when its snooze ends (ADR-0018).
     pub snooze: Option<Rule>,
 }
 
@@ -1450,10 +1461,18 @@ mod tests {
                 next_off: None,
             }),
             Answer::Front(Box::new(front)),
-            Answer::Rules(vec![ListedRule {
-                rule: figma_rule(),
-                snooze: None,
-            }]),
+            Answer::Rules(Rules {
+                rules: vec![ListedRule {
+                    rule: figma_rule(),
+                    snooze: None,
+                }],
+                temporary: vec![Rule {
+                    place: Place::Everywhere,
+                    length: Length::UntilScheduleTurns { until: None },
+                    set_by: SetBy::OutsideChange,
+                    ..figma_rule()
+                }],
+            }),
             Answer::Config(Box::new(ConfigState {
                 path: "/Users/me/.config/nightcap/config.toml".to_owned(),
                 strength: Some(40),

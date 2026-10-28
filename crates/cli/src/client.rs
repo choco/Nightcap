@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use nightcap_protocol::{
     About, Answer, Checks, ConfigState, Front, Hello, HelloMessage, HelloReply, Instance,
-    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response, TrialState,
+    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response, Rules, TrialState,
 };
 use serde::Serialize;
 
@@ -71,14 +71,14 @@ pub(crate) fn ask(
     Ok(answer)
 }
 
-/// Every rule with its snooze, in the one request `send` sends.
+/// The apps' and sites' rules, each with its snooze, in the one request `send` sends.
 pub(crate) fn rules(
     send: impl FnOnce(&Request) -> Result<Payload, Failure>,
 ) -> Result<Vec<ListedRule>, Failure> {
     let Answer::Rules(rules) = ask(send, Query::Rules)? else {
         return Err(unexpected_reply());
     };
-    Ok(rules)
+    Ok(rules.rules)
 }
 
 /// What `nightcap status` shows, from the queries it asks in one request, so every answer is
@@ -88,7 +88,7 @@ pub(crate) struct Report {
     pub(crate) about: About,
     pub(crate) night_shift: NightShiftState,
     pub(crate) front: Front,
-    pub(crate) rules: Vec<ListedRule>,
+    pub(crate) rules: Rules,
     pub(crate) config: ConfigState,
     pub(crate) preferences: Preferences,
     pub(crate) checks: Checks,
