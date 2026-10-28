@@ -125,14 +125,12 @@ impl Store {
     }
 }
 
-/// The rules a file of this version or an earlier one lists, each with what it says: version
-/// 1's lists straight under `[rules]`, from before rules said off or on, when every rule was off,
-/// then `[rules.off]` and `[rules.on]`.
+/// The rules `[rules.off]` and `[rules.on]` list, each with what it says (ADR-0006).
 fn read(top: &Table<'_, '_>) -> Result<Vec<(RuleIdentity, OnOff)>, Spanned<Problem>> {
     let Some(rules) = top.table("rules")? else {
         return Ok(Vec::new());
     };
-    let mut lists = vec![(OnOff::Off, identities(&rules)?)];
+    let mut lists = Vec::new();
     for (says, key) in [(OnOff::Off, "off"), (OnOff::On, "on")] {
         if let Some(table) = rules.table(key)? {
             lists.push((says, identities(&table)?));
@@ -251,7 +249,7 @@ mod tests {
     #[test]
     fn ad_hoc_rules_with_keys_this_build_doesnt_know_still_load() {
         let files = holding(Some(
-            "version = 1\nlabel = \"x\"\n[rules]\napp = [\"com.figma.Desktop\"]\nkeyword = []\n",
+            "version = 2\nlabel = \"x\"\n[rules]\nkeyword = []\n[rules.off]\napp = [\"com.figma.Desktop\"]\nwindow = []\n",
         ));
 
         assert_eq!(
