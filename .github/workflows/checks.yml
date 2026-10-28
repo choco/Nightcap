@@ -1,10 +1,12 @@
 name: checks
 
 on:
+  # Dependabot's branches run as pull requests alone, behind the gate below.
   push:
-    branches: ["**"]
+    branches-ignore: ["dependabot/**"]
     paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
     paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
   workflow_call:
 
@@ -12,7 +14,21 @@ permissions:
   contents: read
 
 jobs:
+  # A Dependabot pull request runs its checks only once it has the `ci` label, so an update is
+  # looked at before its code runs; adding the label starts the run, and later pushes to the
+  # pull request run as any other. Adding any other label runs nothing.
+  gate:
+    if: >-
+      github.event_name != 'pull_request'
+      || (github.event.action != 'labeled' || github.event.label.name == 'ci')
+      && (github.event.pull_request.user.login != 'dependabot[bot]'
+        || contains(github.event.pull_request.labels.*.name, 'ci'))
+    runs-on: ubuntu-24.04
+    steps:
+      - run: "true"
+
   rust:
+    needs: gate
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -21,6 +37,7 @@ jobs:
 
   # The linters come from the flake, at the dev shell's versions.
   lint:
+    needs: gate
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +45,7 @@ jobs:
       - run: nix develop .#lint --command scripts/check --deps --scripts
 
   macos:
+    needs: gate
     runs-on: xcode-27
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +56,7 @@ jobs:
       - run: scripts/check --rust --swift
 
   site:
+    needs: gate
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
