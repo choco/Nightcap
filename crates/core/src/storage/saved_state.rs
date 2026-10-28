@@ -5,14 +5,13 @@ use std::io;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use nightcap_protocol::{Length, OnOff, Place, Rule, SetBy};
+use nightcap_protocol::{OnOff, Place, Rule};
 use serde::{Deserialize, Serialize};
 
 use crate::storage::config::NightShiftConfig;
 use crate::storage::file::{self, Files, Owned};
 
-/// Version 2 keeps rules (ADR-0018). Version 1 kept each place's hold and timer, which a load
-/// translates.
+/// Version 2 keeps rules (ADR-0018).
 const VERSION: u32 = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,77 +68,6 @@ struct File {
     version: u32,
     #[serde(flatten)]
     state: Persisted,
-    /// Version 1's holds and timers, read only to translate them.
-    #[serde(default, skip_serializing)]
-    layers: Vec<FirstLayers>,
-}
-
-/// A place's hold and timer, as version 1 kept them.
-#[derive(Deserialize)]
-struct FirstLayers {
-    place: Place,
-    hold: Option<FirstLayer>,
-    timer: Option<FirstLayer>,
-}
-
-/// On or off at a place until a time, or a hold with no end, with the place an outside change
-/// held beside it.
-#[derive(Deserialize)]
-struct FirstLayer {
-    state: OnOff,
-    until: Option<Timestamp>,
-    #[serde(default)]
-    with: Option<Place>,
-}
-
-/// Version 1's holds and timers as rules. Version 1 didn't keep who set a hold, so one is the
-/// user's unless an outside change linked it or only Adoption could have made it: an app's or
-/// site's with no end.
-fn translated(first: Vec<FirstLayers>) -> (Vec<Rule>, Option<Place>) {
-    let mut rules = Vec::new();
-    let mut links = Vec::new();
-    for FirstLayers { place, hold, timer } in first {
-        if let Some(FirstLayer {
-            state,
-            until: Some(until),
-            ..
-        }) = timer
-        {
-            rules.push(Rule {
-                place: place.clone(),
-                says: state,
-                length: Length::Until { until },
-                set_by: SetBy::You,
-            });
-        }
-        if let Some(hold) = hold {
-            let switched =
-                place == Place::Everywhere && hold.until.is_none() && hold.with.is_none();
-            let adopted = hold.with.is_some() || (hold.until.is_none() && !switched);
-            if let Some(with) = hold.with {
-                links.push((place.clone(), with));
-            }
-            rules.push(Rule {
-                place,
-                says: hold.state,
-                length: if switched {
-                    Length::Indefinite
-                } else {
-                    Length::UntilScheduleTurns { until: hold.until }
-                },
-                set_by: if adopted {
-                    SetBy::OutsideChange
-                } else {
-                    SetBy::You
-                },
-            });
-        }
-    }
-    let linked = links.iter().find_map(|(place, with)| {
-        (*with == Place::Everywhere && links.contains(&(Place::Everywhere, place.clone())))
-            .then(|| place.clone())
-    });
-    (rules, linked)
 }
 
 pub(crate) struct Store {
@@ -164,14 +92,6 @@ impl Store {
             }
         };
         match serde_json::from_str::<File>(&text) {
-            Ok(file) if file.version == 1 => {
-                let (rules, linked) = translated(file.layers);
-                Persisted {
-                    rules,
-                    linked,
-                    ..file.state
-                }
-            }
             Ok(file) if file.version <= VERSION => file.state,
             Ok(file) => {
                 tracing::warn!(
@@ -192,7 +112,6 @@ impl Store {
         let file = File {
             version: VERSION,
             state: state.clone(),
-            layers: Vec::new(),
         };
         self.files
             .write(Owned::State, &serde_json::to_string_pretty(&file)?)
@@ -203,7 +122,7 @@ impl Store {
 mod tests {
     use std::path::Path;
 
-    use nightcap_protocol::{Schedule, TimeOfDay};
+    use nightcap_protocol::{Length, Schedule, SetBy, TimeOfDay};
 
     use super::*;
     use crate::storage::file::{Memory, Paths};
@@ -277,83 +196,6 @@ mod tests {
     }
 
     #[test]
-    fn version_1s_holds_and_timers_load_as_rules() {
-        let files = holding(Some(
-            r#"{"version":1,"layers":[{"place":{"app":"com.figma.Desktop"},"hold":{"state":"on","until":"2026-10-17T05:00:00Z","with":"everywhere"},"timer":{"state":"off","until":"2026-10-16T22:00:00Z"}},{"place":"everywhere","hold":{"state":"on","until":"2026-10-17T05:00:00Z","with":{"app":"com.figma.Desktop"}},"timer":null},{"place":{"domain":"figma.com"},"hold":{"state":"on","until":null},"timer":null},{"place":{"app":"com.apple.mail"},"hold":{"state":"off","until":"2026-10-16T20:00:00Z"},"timer":null}],"websites":true}"#,
-        ));
-
-        let state = Store::new(files).load();
-
-        let morning = Length::UntilScheduleTurns {
-            until: Some(at("2026-10-17T05:00:00Z")),
-        };
-        assert_eq!(
-            state.rules,
-            vec![
-                rule(
-                    figma(),
-                    OnOff::Off,
-                    Length::Until {
-                        until: at("2026-10-16T22:00:00Z")
-                    },
-                    SetBy::You
-                ),
-                rule(figma(), OnOff::On, morning, SetBy::OutsideChange),
-                rule(Place::Everywhere, OnOff::On, morning, SetBy::OutsideChange),
-                rule(
-                    Place::Domain("figma.com".parse().unwrap()),
-                    OnOff::On,
-                    Length::UntilScheduleTurns { until: None },
-                    SetBy::OutsideChange
-                ),
-                rule(
-                    Place::App("com.apple.mail".parse().unwrap()),
-                    OnOff::Off,
-                    Length::UntilScheduleTurns {
-                        until: Some(at("2026-10-16T20:00:00Z"))
-                    },
-                    SetBy::You
-                ),
-            ]
-        );
-        assert_eq!(state.linked, Some(figma()));
-        assert!(state.websites);
-    }
-
-    #[test]
-    fn version_1s_switch_loads_as_everywheres_indefinite_rule() {
-        let files = holding(Some(
-            r#"{"version":1,"layers":[{"place":"everywhere","hold":{"state":"off","until":null},"timer":null}]}"#,
-        ));
-
-        let state = Store::new(files).load();
-
-        assert_eq!(
-            state.rules,
-            vec![rule(
-                Place::Everywhere,
-                OnOff::Off,
-                Length::Indefinite,
-                SetBy::You
-            )]
-        );
-        assert_eq!(state.linked, None);
-    }
-
-    #[test]
-    fn state_from_an_earlier_build_loads_without_its_manual_state_snoozes_or_timed_disable() {
-        let files = holding(Some(
-            r#"{"version":1,"manual_state":"off","snoozes":["app:com.figma.Desktop"],"timed_disable":"2026-10-16T22:00:00Z","websites":true,"onboarding":1}"#,
-        ));
-
-        let state = Store::new(files).load();
-
-        assert_eq!(state.rules, Vec::new());
-        assert!(state.websites);
-        assert_eq!(state.onboarding, 1);
-    }
-
-    #[test]
     fn the_onboarding_version_loads_and_is_never_saved() {
         let files = holding(Some(r#"{"version":2,"websites":true,"onboarding":1}"#));
         let store = Store::new(files.clone());
@@ -378,18 +220,6 @@ mod tests {
         let files = holding(Some(r#"{"version":3,"login_item_registered":true}"#));
 
         assert_eq!(Store::new(files).load(), Persisted::default());
-    }
-
-    #[test]
-    fn state_from_a_build_that_kept_what_the_app_was_told_still_loads() {
-        let files = holding(Some(
-            r#"{"version":2,"websites":true,"onboarding":1,"announced":["accessibility"],"last_version":"1.2.0"}"#,
-        ));
-
-        let state = Store::new(files).load();
-
-        assert!(state.websites);
-        assert_eq!(state.onboarding, 1);
     }
 
     #[test]
