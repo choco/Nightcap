@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 use nightcap_protocol::{
     About, Answer, Checks, ConfigState, Front, Hello, HelloMessage, HelloReply, Instance,
-    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response,
+    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response, TrialState,
 };
 use serde::Serialize;
 
@@ -79,6 +79,7 @@ pub(crate) struct Report {
     pub(crate) config: ConfigState,
     pub(crate) preferences: Preferences,
     pub(crate) checks: Checks,
+    pub(crate) trial: Option<TrialState>,
 }
 
 /// Asks what `nightcap status` shows, in the one request `ask` sends to the server.
@@ -93,6 +94,7 @@ pub(crate) fn report(
         Query::Config,
         Query::Preferences,
         Query::Checks,
+        Query::Trial,
     ]);
     let Payload::Answers(answers) = ask(&request)? else {
         return Err(unexpected_reply());
@@ -106,8 +108,9 @@ pub(crate) fn report(
             Answer::Config(config),
             Answer::Preferences(preferences),
             Answer::Checks(checks),
+            Answer::Trial(trial),
         ],
-    ) = <[Answer; 7]>::try_from(answers)
+    ) = <[Answer; 8]>::try_from(answers)
     else {
         return Err(unexpected_reply());
     };
@@ -119,6 +122,7 @@ pub(crate) fn report(
         config,
         preferences,
         checks,
+        trial,
     })
 }
 
@@ -176,7 +180,8 @@ mod tests {
         r#""rules":[{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config","snooze":null}],"#,
         r#""config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":null},"#,
         r#""preferences":{"website_checking":{"state":"on","from_config":true},"notifications_wanted":true,"open_at_login":false},"#,
-        r#""checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}}}"#,
+        r#""checks":{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"}],"permissions":{"accessibility":false,"notifications":"granted","login_item":"requires_approval"}},"#,
+        r#""trial":{"stands_in":true}}"#,
     );
 
     #[test]
@@ -213,6 +218,7 @@ mod tests {
                 Query::Config,
                 Query::Preferences,
                 Query::Checks,
+                Query::Trial,
             ])]
         );
         assert_eq!(serde_json::to_string(&report).unwrap(), STATUS);

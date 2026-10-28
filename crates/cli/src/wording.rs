@@ -8,7 +8,7 @@ use nightcap_protocol::{
     Decision, FileError, Hello, IdentityError, Install, Lasting, Length, ListedRule, NightShift,
     NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
     OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
-    RuleIdentity, Schedule, SetBy, TimeOfDay,
+    RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
 };
 
 use crate::client::Report;
@@ -478,6 +478,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         config,
         preferences,
         checks,
+        trial,
     } = report;
     // A self-managed install that doesn't manage itself is a dev build (ADR-0011).
     let install = match (about.manages_itself, about.install) {
@@ -515,6 +516,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         NotificationPermission::Granted => "granted",
     };
     let mut lines = vec![format!("Nightcap {}, {install}", about.version)];
+    lines.extend(trial.map(tour));
     let decided = format!(
         "{}{}",
         decision(&front.decision, zone),
@@ -584,6 +586,17 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         lines.extend(problems.into_iter().map(|problem| format!("  {problem}")));
     }
     lines
+}
+
+/// The line for a trial that runs, which only the app's tour begins (ADR-0016): what changes
+/// during it lasts until it ends.
+fn tour(trial: TrialState) -> String {
+    let stands_in = if trial.stands_in {
+        ", with Night Shift on for it"
+    } else {
+        ""
+    };
+    format!("Tour: running in the app{stands_in}, so rules and changes you make last until it ends")
 }
 
 /// Each problem's line.
@@ -1364,6 +1377,7 @@ mod tests {
                     login_item: None,
                 },
             },
+            trial: None,
         }
     }
 
@@ -1423,6 +1437,29 @@ mod tests {
         assert_eq!(
             night_shift_line(None),
             "Night Shift: on at domain:figma.com until 07:00"
+        );
+    }
+
+    #[test]
+    fn status_says_the_tour_runs_and_whether_night_shift_is_on_for_it() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let second_line = |trial| {
+            let mut report = on_figma();
+            report.trial = trial;
+            status(&report, &zone).swap_remove(1)
+        };
+
+        assert_eq!(
+            second_line(Some(TrialState { stands_in: false })),
+            "Tour: running in the app, so rules and changes you make last until it ends"
+        );
+        assert_eq!(
+            second_line(Some(TrialState { stands_in: true })),
+            "Tour: running in the app, with Night Shift on for it, so rules and changes you make last until it ends"
+        );
+        assert_eq!(
+            second_line(None),
+            "Night Shift: on, off by the config rule for domain:figma.com"
         );
     }
 
