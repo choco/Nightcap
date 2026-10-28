@@ -48,13 +48,12 @@ extension Wording {
     }
 
     /// Where in the file and what, without the path, which Settings shows under the config's
-    /// setting, its path: "Line 4: unknown field `domian`, expected `app` or `domain`." toml's
-    /// message with no line gains a capital.
+    /// setting, its path: "Line 4, column 12 isn’t valid TOML."
     private func inTheFile(_ error: FileError) -> String {
         switch error {
         case .unreadable(_, let failure): unreadable(failure)
-        case .malformed(_, let line?, let message): text("Line \(Int(line)): \(message).")
-        case .malformed(_, nil, let message): text("\(message.prefix(1).uppercased() + message.dropFirst()).")
+        case .malformed(_, let at?): text("Line \(Int(at.line)), column \(Int(at.column)) isn’t valid TOML.")
+        case .malformed(_, nil): text("It isn’t valid TOML.")
         case .invalid(_, let line, let problem): text("Line \(Int(line)): \(self.problem(problem)).")
         case .newer(_, let version): text("It’s version \(Int(version)), from a newer Nightcap than this one.")
         }
@@ -72,14 +71,14 @@ extension Wording {
         }
     }
 
-    /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
+    /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3, column 7 isn’t
+    /// valid TOML".
     func located(_ error: FileError) -> String {
         switch error {
         case .unreadable(let path, let failure): unreadable(path, failure)
-        case .malformed(let path, let line?, let message):
-            text("\(path): line \(Int(line)): \(message)")
-        case .malformed(let path, nil, let message):
-            text("\(path): \(message)")
+        case .malformed(let path, let at?):
+            text("\(path): line \(Int(at.line)), column \(Int(at.column)) isn’t valid TOML")
+        case .malformed(let path, nil): text("\(path) isn’t valid TOML")
         case .invalid(let path, let line, let problem):
             text("\(path): line \(Int(line)): \(self.problem(problem))")
         case .newer(let path, let version):
@@ -100,10 +99,15 @@ extension Wording {
         }
     }
 
-    /// What makes an entry or a value in a file invalid, from the key or entry as the file
+    /// What makes a key, an entry or a value in a file invalid, from the key or entry as the file
     /// writes it, which keeps its first letter: "night_shift.strength is 0 to 100, not 101".
     private func problem(_ problem: Problem) -> String {
         switch problem {
+        case .unknownKey(_, let key, let expected) where expected.isEmpty: text("`\(key)` isn’t a key here")
+        case .unknownKey(_, let key, let expected): text("`\(key)` isn’t a key here; use \(either(expected))")
+        case .wrongType(let table, let key, let found, let expected):
+            text("`\(dotted(table, key))` is \(valueType(expected)), not \(valueType(found))")
+        case .missingKey(let table, let key): text("`\(dotted(table, key))` is missing")
         case .unsaidRules: text("rules are listed by what they say, under [rules.off] and [rules.on]")
         case .notABundleId(let entry):
             text("“\(entry)” isn’t a bundle ID like com.figma.Desktop: only letters, digits, hyphens and periods")
@@ -123,6 +127,30 @@ extension Wording {
         case .notLengths:
             text("lengths are like “30m”, “1h” or “1h30m”, each from a minute to a day, and there’s at least one")
         case .lengthsUnderMenu: text("lengths is a key of its own, before any table, not one under [menu]")
+        }
+    }
+
+    /// A key with the keys that lead to its table, as the file would write it: "rules.off.app".
+    private func dotted(_ table: [String], _ key: String) -> String {
+        (table + [key]).joined(separator: ".")
+    }
+
+    /// Keys to pick one of, in the user's language: "`app` or `domain`".
+    private func either(_ keys: [String]) -> String {
+        keys.map { "`\($0)`" }.formatted(.list(type: .or).locale(locale))
+    }
+
+    /// What a value is, as a problem names it: "a list of strings".
+    private func valueType(_ type: ValueType) -> String {
+        switch type {
+        case .string: text("a string")
+        case .strings: text("a list of strings")
+        case .list: text("a list that isn’t all strings")
+        case .integer: text("an integer")
+        case .float: text("a float")
+        case .boolean: text("true or false")
+        case .datetime: text("a date or a time")
+        case .table: text("a table")
         }
     }
 

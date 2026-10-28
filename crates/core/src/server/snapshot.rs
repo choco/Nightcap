@@ -92,7 +92,7 @@ impl Snapshot {
             Query::NightShift => Answer::NightShift(self.night_shift()),
             Query::Front => Answer::Front(Box::new(self.front())),
             Query::Rules => Answer::Rules(self.rules()),
-            Query::Config => Answer::Config(self.config()),
+            Query::Config => Answer::Config(Box::new(self.config())),
             Query::Preferences => Answer::Preferences(self.preferences()),
             Query::Checks => Answer::Checks(self.checks()),
             Query::Trial => Answer::Trial(self.trial()),

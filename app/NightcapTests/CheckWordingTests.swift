@@ -79,14 +79,27 @@ struct CheckWordingTests {
         #expect(check(try atNoon(config: "websites = true\n"), .configFile)! == (.ok, "Valid, with no rules."))
         #expect(
             check(try atNoon(config: "[rules.off]\ndomian = [\"figma.com\"]\n"), .configFile)!
-                == (.broken, "Line 2: unknown field `domian`, expected `app` or `domain`."))
+                == (.broken, "Line 2: `domian` isn’t a key here; use `app` or `domain`."))
+        #expect(
+            check(try atNoon(config: "website = true\n"), .configFile)!
+                == (
+                    .broken,
+                    "Line 1: `website` isn’t a key here; use `websites`, `lengths`, `night_shift`, or `rules`."
+                ))
+        #expect(
+            check(try atNoon(config: "websites = \"yes\"\n"), .configFile)!
+                == (.broken, "Line 1: `websites` is true or false, not a string."))
+        #expect(
+            check(try atNoon(config: "websites = true\n[rules.off\n"), .configFile)!
+                == (.broken, "Line 2, column 11 isn’t valid TOML."))
         #expect(
             check(try atNoon(config: "[night_shift]\nstrength = 101\n"), .configFile)!
                 == (.broken, "Line 2: night_shift.strength is 0 to 100, not 101."))
     }
 
-    /// A staged core's files are in memory, which macOS never refuses: these checks are worded
-    /// from what the core reports for a file on the disk it can't read.
+    /// A staged core's files are in memory, which macOS never refuses, and toml places every
+    /// error a test can stage: these checks are worded from what the core reports for a file on
+    /// the disk it can't read, or an error toml finds nowhere.
     @Test func anUnreadableConfigSaysWhyMacOSCouldntReadIt() {
         let unreadable: [(IoFailure, String)] = [
             (.notFound, "It, or a folder on its path, isn’t there."),
@@ -104,6 +117,9 @@ struct CheckWordingTests {
         #expect(
             Wording.staged.check(.adHocRules(.off(.unreadable(path: "/n/rules.toml", failure: .isAFolder))))
                 == "Ad-hoc rules are off: /n/rules.toml is a folder, not a file.")
+        #expect(
+            Wording.staged.check(.configFile(.error(.malformed(path: "/n/config.toml", at: nil))))
+                == "It isn’t valid TOML.")
     }
 
     @Test func anInvalidConfigNamesTheEntryOrValueOnItsLine() throws {
@@ -167,14 +183,23 @@ struct CheckWordingTests {
             check(newer, .adHocRules)!
                 == (.broken, "Ad-hoc rules are off: \(path) is version 3, from a newer Nightcap than this one."))
 
-        let malformed = try atNoon(rules: "version = 2\n[rules.off]\napp = \"com.figma.Desktop\"\n")
+        let unexpected = try atNoon(rules: "version = 2\n[rules.off]\napp = \"com.figma.Desktop\"\n")
         #expect(
-            check(malformed, .adHocRules)!
+            check(unexpected, .adHocRules)!
                 == (
                     .broken,
-                    "Ad-hoc rules are off: \(path): line 3: invalid type: string \"com.figma.Desktop\", "
-                        + "expected a sequence."
+                    "Ad-hoc rules are off: \(path): line 3: `rules.off.app` is a list of strings, not a string."
                 ))
+
+        let missing = try atNoon(rules: "[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        #expect(
+            check(missing, .adHocRules)!
+                == (.broken, "Ad-hoc rules are off: \(path): line 1: `version` is missing."))
+
+        let malformed = try atNoon(rules: "version = 2\n[rules.off]\napp = [\"com.figma.Desktop\"\n")
+        #expect(
+            check(malformed, .adHocRules)!
+                == (.broken, "Ad-hoc rules are off: \(path): line 3, column 27 isn’t valid TOML."))
 
         let invalid = try atNoon(rules: "version = 2\n[rules.on]\ndomain = [\"figma.com\", \"*.figma.com\"]\n")
         #expect(

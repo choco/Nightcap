@@ -142,8 +142,7 @@ impl From<&ConfigError> for FileError {
             },
             ConfigError::Malformed { path, error } => Self::Malformed {
                 path: path.display().to_string(),
-                line: error.line,
-                message: error.message.clone(),
+                at: error.at,
             },
             ConfigError::Invalid {
                 path,
@@ -167,8 +166,7 @@ impl From<&AdHocError> for FileError {
             },
             AdHocError::Malformed { path, error } => Self::Malformed {
                 path: path.display().to_string(),
-                line: error.line,
-                message: error.message.clone(),
+                at: error.at,
             },
             AdHocError::Newer { path, version } => Self::Newer {
                 path: path.display().to_string(),

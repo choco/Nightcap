@@ -100,11 +100,25 @@ struct NoticeTests {
 
     @Test func aFilesProblemSaysWhatsWrongFromItsPath() {
         let config = { (error: FileError) in problem(.configFile(.error(error))) }
-        let malformed = config(
-            .malformed(
-                path: "/n/config.toml", line: 2, message: "unknown field `domian`, expected `app` or `domain`"))
+        let malformed = config(.malformed(path: "/n/config.toml", at: Position(line: 2, column: 12)))
         #expect(malformed?.title == "Nightcap’s config is invalid")
-        #expect(malformed?.body == "/n/config.toml: line 2: unknown field `domian`, expected `app` or `domain`")
+        #expect(malformed?.body == "/n/config.toml: line 2, column 12 isn’t valid TOML")
+        #expect(config(.malformed(path: "/n/config.toml", at: nil))?.body == "/n/config.toml isn’t valid TOML")
+        #expect(
+            config(
+                .invalid(
+                    path: "/n/config.toml", line: 2,
+                    problem: .unknownKey(table: ["rules", "off"], key: "domian", expected: ["app", "domain"])))?
+                .body == "/n/config.toml: line 2: `domian` isn’t a key here; use `app` or `domain`")
+        #expect(
+            config(.invalid(path: "/n/config.toml", line: 2, problem: .unknownKey(table: [], key: "x", expected: [])))?
+                .body == "/n/config.toml: line 2: `x` isn’t a key here")
+        #expect(
+            config(
+                .invalid(
+                    path: "/n/config.toml", line: 3,
+                    problem: .wrongType(table: ["night_shift"], key: "strength", found: .float, expected: .integer)))?
+                .body == "/n/config.toml: line 3: `night_shift.strength` is an integer, not a float")
         #expect(
             config(.invalid(path: "/n/config.toml", line: 3, problem: .strengthOutOfRange(strength: 101)))?
                 .body == "/n/config.toml: line 3: night_shift.strength is 0 to 100, not 101")
@@ -125,8 +139,8 @@ struct NoticeTests {
         #expect(newer?.title == "Ad-hoc rules are off")
         #expect(newer?.body == "/n/rules.toml is version 3, from a newer Nightcap than this one")
         #expect(
-            rules(.malformed(path: "/n/rules.toml", line: nil, message: "expected a table"))?.body
-                == "/n/rules.toml: expected a table")
+            rules(.invalid(path: "/n/rules.toml", line: 1, problem: .missingKey(table: [], key: "version")))?.body
+                == "/n/rules.toml: line 1: `version` is missing")
         #expect(
             rules(.invalid(path: "/n/rules.toml", line: 3, problem: .notABundleId(entry: "a/b")))?.body
                 == "/n/rules.toml: line 3: “a/b” isn’t a bundle ID like com.figma.Desktop: only letters, digits, "
@@ -193,8 +207,13 @@ struct NoticeTests {
             #expect(refused(.adHocRulesNotSaved(path: "/n/rules.toml", failure: failure)) == body)
         }
         #expect(
-            refused(.invalidConfig(.malformed(path: "/n/config.toml", line: 2, message: "expected a sequence")))
-                == "Your config is invalid: /n/config.toml: line 2: expected a sequence.")
+            refused(
+                .invalidConfig(
+                    .invalid(
+                        path: "/n/config.toml", line: 2,
+                        problem: .wrongType(table: ["rules", "off"], key: "app", found: .string, expected: .strings))))
+                == "Your config is invalid: /n/config.toml: line 2: `rules.off.app` is a list of strings, not a string."
+        )
         #expect(refused(.websiteCheckingInConfig) == "Your config sets website checking, with `websites`.")
         #expect(refused(.noUpdater(.devBuild)) == "Dev builds don’t update themselves: rebuild instead.")
         #expect(refused(.noUpdater(.managedInstall)) == "This install is kept up to date by its installer.")

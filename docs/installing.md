@@ -69,7 +69,7 @@ nightcap reload --wait 5s
 ```
 
 - Exit 0: loaded.
-- Exit 2: the config is invalid. Nightcap keeps the rules it had and prints the parse error. Fail the installation.
+- Exit 2: the config is invalid. Nightcap keeps the rules it had and prints what's wrong, at which line and, for TOML it can't read, which column. Fail the installation.
 - Exit 1: Nightcap didn't come up within the wait. Warn, but don't fail: it reads the config when it starts.
 
 ## Scripting against the CLI

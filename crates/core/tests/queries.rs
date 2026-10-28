@@ -11,7 +11,7 @@ use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
     Length, ListedRule, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff,
-    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
+    Permissions, Place, PlaceInFront, Preferences, Problem, Query, Reason, Schedule, TrialState,
     WebsiteChecking,
 };
 
@@ -45,7 +45,7 @@ fn answers_alike(staged: &Staged) {
             Answer::NightShift(snapshot.night_shift()),
             Answer::Front(Box::new(snapshot.front())),
             Answer::Rules(snapshot.rules()),
-            Answer::Config(snapshot.config()),
+            Answer::Config(Box::new(snapshot.config())),
             Answer::Preferences(snapshot.preferences()),
             Answer::Checks(snapshot.checks()),
             Answer::Trial(snapshot.trial()),
@@ -397,7 +397,11 @@ fn config_answers_why_it_or_rules_toml_cant_be_used() {
 
     assert!(matches!(
         config.error,
-        Some(FileError::Malformed { line: Some(2), .. })
+        Some(FileError::Invalid {
+            line: 2,
+            problem: Problem::UnknownKey { .. },
+            ..
+        })
     ));
     assert!(matches!(
         config.ad_hoc_error,

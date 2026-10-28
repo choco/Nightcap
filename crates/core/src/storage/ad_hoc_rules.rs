@@ -7,86 +7,56 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use nightcap_protocol::{ExportFormat, OnOff, Problem, RuleIdentity};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use toml::Spanned;
 
-use crate::storage::config::{Malformed, app_entry, domain_entry, line_at};
+use crate::storage::config::identities;
+use crate::storage::document::{self, Malformed, Table};
 use crate::storage::file::{self, Files, Owned};
 
 /// Version 2 lists rules by what they say (ADR-0006).
 const VERSION: u32 = 2;
 
-/// The file, with each entry as written: as Nightcap writes it, and as toml reads it, where each
-/// keeps its place in the file, so an invalid one names its line. Its lists default to empty,
-/// whatever their entries.
-#[derive(Serialize, Deserialize)]
-#[serde(bound(deserialize = "Entry: Deserialize<'de>"))]
-struct File<Entry> {
+/// The file as Nightcap writes it.
+#[derive(Serialize)]
+struct File {
     version: u32,
-    #[serde(default)]
-    rules: Rules<Entry>,
+    rules: Rules,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(bound(deserialize = "Entry: Deserialize<'de>"))]
-struct Rules<Entry> {
-    #[serde(default, skip_serializing_if = "RuleLists::is_empty")]
-    off: RuleLists<Entry>,
-    #[serde(default, skip_serializing_if = "RuleLists::is_empty")]
-    on: RuleLists<Entry>,
-    /// Version 1's lists, from before rules said off or on, when every rule was off.
-    #[serde(default, skip_serializing)]
-    app: Vec<Entry>,
-    #[serde(default, skip_serializing)]
-    domain: Vec<Entry>,
+#[derive(Default, Serialize)]
+struct Rules {
+    #[serde(skip_serializing_if = "RuleLists::is_empty")]
+    off: RuleLists,
+    #[serde(skip_serializing_if = "RuleLists::is_empty")]
+    on: RuleLists,
 }
 
-#[derive(Serialize, Deserialize)]
-#[serde(bound(deserialize = "Entry: Deserialize<'de>"))]
-struct RuleLists<Entry> {
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    app: Vec<Entry>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    domain: Vec<Entry>,
+#[derive(Default, Serialize)]
+struct RuleLists {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    app: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    domain: Vec<String>,
 }
 
-impl<Entry> RuleLists<Entry> {
+impl RuleLists {
     fn is_empty(&self) -> bool {
         self.app.is_empty() && self.domain.is_empty()
     }
 }
 
-impl<Entry> Default for Rules<Entry> {
-    fn default() -> Self {
-        Self {
-            off: RuleLists::default(),
-            on: RuleLists::default(),
-            app: Vec::new(),
-            domain: Vec::new(),
-        }
-    }
-}
-
-impl<Entry> Default for RuleLists<Entry> {
-    fn default() -> Self {
-        Self {
-            app: Vec::new(),
-            domain: Vec::new(),
-        }
-    }
-}
-
 /// Why `rules.toml` can't be used, which turns ad-hoc rules off, and which each client words
-/// from the checks. It reads as the log may say it: never what the file holds, which can quote a
-/// domain (ADR-0009).
+/// from the checks. It reads as the log may say it: never what the file holds, such as a key or
+/// a value, which can be a domain (ADR-0009).
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum AdHocError {
     #[error("rules.toml can't be read: {error}")]
     Unreadable { path: PathBuf, error: io::Error },
-    #[error("rules.toml is malformed")]
+    #[error("rules.toml {error}")]
     Malformed { path: PathBuf, error: Malformed },
     #[error("rules.toml is version {version}, from a newer Nightcap than this one")]
-    Newer { path: PathBuf, version: u32 },
+    Newer { path: PathBuf, version: i64 },
     #[error("rules.toml is invalid at line {line}")]
     Invalid {
         path: PathBuf,
@@ -119,44 +89,27 @@ impl Store {
                 });
             }
         };
-        let file: File<Spanned<String>> =
-            toml::from_str(&text).map_err(|error| AdHocError::Malformed {
-                path: path(),
-                error: Malformed::new(&error, text.as_bytes()),
-            })?;
-        if file.version > VERSION {
+        let document = document::parse(&text).map_err(|error| AdHocError::Malformed {
+            path: path(),
+            error,
+        })?;
+        let invalid = |problem: Spanned<Problem>| AdHocError::Invalid {
+            path: path(),
+            line: document::position(&text, problem.span().start).line,
+            problem: problem.into_inner(),
+        };
+        let top = Table::top(&document);
+        let version = top
+            .required("version", top.integer("version").map_err(invalid)?)
+            .map_err(invalid)?
+            .into_inner();
+        if version > i64::from(VERSION) {
             return Err(AdHocError::Newer {
                 path: path(),
-                version: file.version,
+                version,
             });
         }
-        let Rules {
-            off,
-            on,
-            app,
-            domain,
-        } = file.rules;
-        let earlier = RuleLists { app, domain };
-        let mut rules = Vec::new();
-        for (says, lists) in [(OnOff::Off, earlier), (OnOff::Off, off), (OnOff::On, on)] {
-            let apps = lists
-                .app
-                .iter()
-                .map(|entry| (entry, app_entry(entry.get_ref())));
-            let domains = lists
-                .domain
-                .iter()
-                .map(|entry| (entry, domain_entry(entry.get_ref())));
-            for (entry, identity) in apps.chain(domains) {
-                let identity = identity.map_err(|problem| AdHocError::Invalid {
-                    path: path(),
-                    line: line_at(text.as_bytes(), entry.span().start),
-                    problem,
-                })?;
-                rules.push((identity, says));
-            }
-        }
-        Ok(rules)
+        read(&top).map_err(invalid)
     }
 
     pub(crate) fn save(&self, rules: &[(RuleIdentity, OnOff)]) -> io::Result<()> {
@@ -170,6 +123,29 @@ impl Store {
             &format!("# Written by Nightcap: change it with `nightcap rules`.\n{text}"),
         )
     }
+}
+
+/// The rules a file of this version or an earlier one lists, each with what it says: version
+/// 1's lists straight under `[rules]`, from before rules said off or on, when every rule was off,
+/// then `[rules.off]` and `[rules.on]`.
+fn read(top: &Table<'_, '_>) -> Result<Vec<(RuleIdentity, OnOff)>, Spanned<Problem>> {
+    let Some(rules) = top.table("rules")? else {
+        return Ok(Vec::new());
+    };
+    let mut lists = vec![(OnOff::Off, identities(&rules)?)];
+    for (says, key) in [(OnOff::Off, "off"), (OnOff::On, "on")] {
+        if let Some(table) = rules.table(key)? {
+            lists.push((says, identities(&table)?));
+        }
+    }
+    Ok(lists
+        .into_iter()
+        .flat_map(|(says, identities)| {
+            identities
+                .into_iter()
+                .map(move |identity| (identity.into_inner(), says))
+        })
+        .collect())
 }
 
 /// The ad-hoc rules, ready to paste into the config of the given format. Bundle IDs and
@@ -186,7 +162,7 @@ pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> S
                 let quoted: Vec<_> = items.iter().map(|item| format!("\"{item}\" ")).collect();
                 format!("[ {}]", quoted.concat())
             };
-            let lists = |lists: &RuleLists<String>| {
+            let lists = |lists: &RuleLists| {
                 format!(
                     "{{ app = {}; domain = {}; }}",
                     list(&lists.app),
@@ -202,14 +178,14 @@ pub(crate) fn export(rules: &[(RuleIdentity, OnOff)], format: ExportFormat) -> S
         ExportFormat::Toml => {
             #[derive(Serialize)]
             struct Export<'a> {
-                rules: &'a Rules<String>,
+                rules: &'a Rules,
             }
             toml::to_string(&Export { rules: &rules }).expect("rules always serialize")
         }
     }
 }
 
-impl From<&[(RuleIdentity, OnOff)]> for Rules<String> {
+impl From<&[(RuleIdentity, OnOff)]> for Rules {
     fn from(rules: &[(RuleIdentity, OnOff)]) -> Self {
         let mut lists = Self::default();
         for (identity, says) in rules {

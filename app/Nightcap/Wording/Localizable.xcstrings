@@ -39,6 +39,9 @@
     "%@ isn’t UTF-8 text" : {
 
     },
+    "%@ isn’t valid TOML" : {
+
+    },
     "%@ to %@" : {
       "localizations" : {
         "en" : {
@@ -78,21 +81,18 @@
         }
       }
     },
-    "%@." : {
+    "%@: Nightcap isn’t allowed to read it" : {
 
     },
-    "%@: %@" : {
+    "%@: line %lld, column %lld isn’t valid TOML" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "%1$@: %2$@"
+            "value" : "%1$@: line %2$lld, column %3$lld isn’t valid TOML"
           }
         }
       }
-    },
-    "%@: Nightcap isn’t allowed to read it" : {
-
     },
     "%@: line %lld: %@" : {
       "localizations" : {
@@ -751,6 +751,9 @@
     "It isn’t UTF-8 text." : {
 
     },
+    "It isn’t valid TOML." : {
+
+    },
     "It lives in the menu bar, under the moon." : {
 
     },
@@ -831,6 +834,16 @@
     },
     "Like youtube.com; the rest of the address is dropped, and the icon comes from the site." : {
 
+    },
+    "Line %lld, column %lld isn’t valid TOML." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Line %1$lld, column %2$lld isn’t valid TOML."
+          }
+        }
+      }
     },
     "Line %lld: %@." : {
       "localizations" : {
@@ -1713,7 +1726,54 @@
     "Your screen is showing this strength now." : {
 
     },
+    "`%@` is %@, not %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "`%1$@` is %2$@, not %3$@"
+          }
+        }
+      }
+    },
+    "`%@` is missing" : {
+
+    },
+    "`%@` isn’t a key here" : {
+
+    },
+    "`%@` isn’t a key here; use %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "`%1$@` isn’t a key here; use %2$@"
+          }
+        }
+      }
+    },
+    "a date or a time" : {
+
+    },
+    "a float" : {
+
+    },
+    "a list of strings" : {
+
+    },
+    "a list that isn’t all strings" : {
+
+    },
+    "a string" : {
+
+    },
+    "a table" : {
+
+    },
     "ad-hoc rules" : {
+
+    },
+    "an integer" : {
 
     },
     "figma.com" : {
@@ -1777,6 +1837,9 @@
 
     },
     "to" : {
+
+    },
+    "true or false" : {
 
     },
     "your config’s rule" : {

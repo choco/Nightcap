@@ -119,7 +119,7 @@ pub(crate) fn report(
         night_shift,
         front: *front,
         rules,
-        config,
+        config: *config,
         preferences,
         checks,
         trial,

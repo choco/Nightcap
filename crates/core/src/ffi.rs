@@ -10,9 +10,9 @@ use nightcap_protocol::{
     CheckState, Checks, Command, ConfigFileDetail, ConfigState, Decision, Domain, ExportFormat,
     FileError, Front, Inherited, Install, IoFailure, Lasting, Length, ListedRule, LoginItem,
     NightShift, NightShiftDetail, NightShiftState, NotSelfManaged, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Preferences,
-    Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
-    WebsiteChecking,
+    NotificationsDetail, OnOff, OpenAtLoginDetail, Permissions, Place, PlaceInFront, Position,
+    Preferences, Problem, Reason, Refusal, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
+    TrialState, ValueType, WebsiteChecking,
 };
 
 #[uniffi::remote(Enum)]
@@ -134,8 +134,7 @@ pub enum FileError {
     },
     Malformed {
         path: String,
-        line: Option<u32>,
-        message: String,
+        at: Option<Position>,
     },
     Invalid {
         path: String,
@@ -144,8 +143,26 @@ pub enum FileError {
     },
     Newer {
         path: String,
-        version: u32,
+        version: i64,
     },
+}
+
+#[uniffi::remote(Enum)]
+pub enum ValueType {
+    String,
+    Strings,
+    List,
+    Integer,
+    Float,
+    Boolean,
+    Datetime,
+    Table,
+}
+
+#[uniffi::remote(Record)]
+pub struct Position {
+    pub line: u32,
+    pub column: u32,
 }
 
 #[uniffi::remote(Enum)]
@@ -160,13 +177,40 @@ pub enum IoFailure {
 
 #[uniffi::remote(Enum)]
 pub enum Problem {
+    UnknownKey {
+        table: Vec<String>,
+        key: String,
+        expected: Vec<String>,
+    },
+    WrongType {
+        table: Vec<String>,
+        key: String,
+        found: ValueType,
+        expected: ValueType,
+    },
+    MissingKey {
+        table: Vec<String>,
+        key: String,
+    },
     UnsaidRules,
-    NotABundleId { entry: String },
-    NotADomain { entry: String },
-    BothWays { identity: RuleIdentity },
-    StrengthOutOfRange { strength: u8 },
-    NotASchedule { schedule: String },
-    NotLengths { lengths: Vec<String> },
+    NotABundleId {
+        entry: String,
+    },
+    NotADomain {
+        entry: String,
+    },
+    BothWays {
+        identity: RuleIdentity,
+    },
+    StrengthOutOfRange {
+        strength: i64,
+    },
+    NotASchedule {
+        schedule: String,
+    },
+    NotLengths {
+        lengths: Vec<String>,
+    },
     LengthsUnderMenu,
 }
 

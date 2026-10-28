@@ -9,8 +9,8 @@ use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, normalize_doma
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
-    NotificationPermission, NotificationsDetail, OnOff, Problem, Refusal, Request, Schedule,
-    WebsiteChecking,
+    NotificationPermission, NotificationsDetail, OnOff, Position, Problem, Refusal, Request,
+    Schedule, ValueType, WebsiteChecking,
 };
 
 use common::{
@@ -140,10 +140,60 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         config(
+            ConfigFileDetail::Error(FileError::Invalid {
+                path: path.clone(),
+                line: 2,
+                problem: Problem::UnknownKey {
+                    table: vec!["rules".to_owned(), "off".to_owned()],
+                    key: "domian".to_owned(),
+                    expected: vec!["app".to_owned(), "domain".to_owned()],
+                },
+            }),
+            CheckState::Broken
+        )
+    );
+    staged.write_config(Some("[rules.off\napp = [\"com.figma.Desktop\"]\n"));
+    staged.request(Request::Command(Command::Reload));
+    assert_eq!(
+        found(&staged, CheckKind::ConfigFile),
+        config(
             ConfigFileDetail::Error(FileError::Malformed {
                 path: path.clone(),
-                line: Some(2),
-                message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
+                at: Some(Position {
+                    line: 1,
+                    column: 11
+                }),
+            }),
+            CheckState::Broken
+        )
+    );
+    staged.write_config(Some("[night_shift]\nstrength = 300\n"));
+    staged.request(Request::Command(Command::Reload));
+    assert_eq!(
+        found(&staged, CheckKind::ConfigFile),
+        config(
+            ConfigFileDetail::Error(FileError::Invalid {
+                path: path.clone(),
+                line: 2,
+                problem: Problem::StrengthOutOfRange { strength: 300 },
+            }),
+            CheckState::Broken
+        )
+    );
+    staged.write_config(Some("websites = \"yes\"\n"));
+    staged.request(Request::Command(Command::Reload));
+    assert_eq!(
+        found(&staged, CheckKind::ConfigFile),
+        config(
+            ConfigFileDetail::Error(FileError::Invalid {
+                path: path.clone(),
+                line: 1,
+                problem: Problem::WrongType {
+                    table: Vec::new(),
+                    key: "websites".to_owned(),
+                    found: ValueType::String,
+                    expected: ValueType::Boolean,
+                },
             }),
             CheckState::Broken
         )
@@ -201,11 +251,34 @@ fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
     assert_eq!(
         found(&staged, CheckKind::AdHocRules),
         ad_hoc(
-            AdHocRulesDetail::Off(FileError::Malformed {
+            AdHocRulesDetail::Off(FileError::Invalid {
+                path: path.clone(),
+                line: 3,
+                problem: Problem::WrongType {
+                    table: vec!["rules".to_owned(), "off".to_owned()],
+                    key: "app".to_owned(),
+                    found: ValueType::String,
+                    expected: ValueType::Strings,
+                },
+            }),
+            CheckState::Broken
+        )
+    );
+
+    let staged = noon()
+        .rules("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .stage()
+        .unwrap();
+    assert_eq!(
+        found(&staged, CheckKind::AdHocRules),
+        ad_hoc(
+            AdHocRulesDetail::Off(FileError::Invalid {
                 path,
-                line: Some(3),
-                message: "invalid type: string \"com.figma.Desktop\", expected a sequence"
-                    .to_owned(),
+                line: 1,
+                problem: Problem::MissingKey {
+                    table: Vec::new(),
+                    key: "version".to_owned(),
+                },
             }),
             CheckState::Broken
         )

@@ -8,7 +8,7 @@ use nightcap_protocol::{
     ConfigState, Decision, FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length,
     ListedRule, NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission,
     NotificationsDetail, OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason,
-    Refusal, Rule, RuleAdded, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState,
+    Refusal, Rule, RuleAdded, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, ValueType,
 };
 
 use crate::client::Report;
@@ -203,23 +203,19 @@ fn night_shift(found: &NightShiftDetail) -> String {
     }
 }
 
-/// What's wrong with a file, starting from its path: "/…/config.toml: line 4: unknown field".
+/// What's wrong with a file, starting from its path: "/…/config.toml: line 4, column 12 isn't
+/// valid TOML".
 fn file_error(error: &FileError) -> String {
     match error {
         FileError::Unreadable { path, failure } => match io_failure(*failure) {
             Some(why) => format!("couldn't read {path}: {why}"),
             None => format!("couldn't read {path}"),
         },
-        FileError::Malformed {
-            path,
-            line: Some(line),
-            message,
-        } => format!("{path}: line {line}: {message}"),
-        FileError::Malformed {
-            path,
-            line: None,
-            message,
-        } => format!("{path}: {message}"),
+        FileError::Malformed { path, at: Some(at) } => format!(
+            "{path}: line {}, column {} isn't valid TOML",
+            at.line, at.column
+        ),
+        FileError::Malformed { path, at: None } => format!("{path} isn't valid TOML"),
         FileError::Invalid {
             path,
             line,
@@ -248,6 +244,30 @@ fn io_failure(failure: IoFailure) -> Option<&'static str> {
 /// writes it.
 fn problem(problem: &Problem) -> String {
     match problem {
+        Problem::UnknownKey {
+            table,
+            key,
+            expected,
+        } => match expected.as_slice() {
+            [] => format!("`{}` isn't a key here", dotted(table, key)),
+            _ => format!(
+                "`{}` isn't a key here; use {}",
+                dotted(table, key),
+                either(expected)
+            ),
+        },
+        Problem::WrongType {
+            table,
+            key,
+            found,
+            expected,
+        } => format!(
+            "`{}` is {}, not {}",
+            dotted(table, key),
+            value_type(*expected),
+            value_type(*found)
+        ),
+        Problem::MissingKey { table, key } => format!("`{}` is missing", dotted(table, key)),
         Problem::UnsaidRules => {
             "rules are listed by what they say, under [rules.off] and [rules.on]".to_owned()
         }
@@ -268,6 +288,40 @@ fn problem(problem: &Problem) -> String {
         Problem::LengthsUnderMenu => {
             "lengths is a key of its own, before any table, not one under [menu]".to_owned()
         }
+    }
+}
+
+/// A key with the keys that lead to its table: "rules.off.app".
+fn dotted(table: &[String], key: &str) -> String {
+    table
+        .iter()
+        .map(String::as_str)
+        .chain([key])
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Keys to pick one of: "`app` or `domain`", or "`a`, `b` or `c`".
+fn either(keys: &[String]) -> String {
+    let quoted: Vec<_> = keys.iter().map(|key| format!("`{key}`")).collect();
+    match quoted.split_last() {
+        Some((last, [])) => last.clone(),
+        Some((last, others)) => format!("{} or {last}", others.join(", ")),
+        None => String::new(),
+    }
+}
+
+/// What a value is, as a problem names it: "a list of strings".
+fn value_type(value: ValueType) -> &'static str {
+    match value {
+        ValueType::String => "a string",
+        ValueType::Strings => "a list of strings",
+        ValueType::List => "a list that isn't all strings",
+        ValueType::Integer => "an integer",
+        ValueType::Float => "a float",
+        ValueType::Boolean => "true or false",
+        ValueType::Datetime => "a date or a time",
+        ValueType::Table => "a table",
     }
 }
 
@@ -710,8 +764,8 @@ fn time_of_day(time: TimeOfDay) -> String {
 #[cfg(test)]
 mod tests {
     use nightcap_protocol::{
-        About, Check, CheckState, Front, NightShiftState, Permissions, PlaceInFront, Preferences,
-        WebsiteChecking,
+        About, Check, CheckState, Front, NightShiftState, Permissions, PlaceInFront, Position,
+        Preferences, WebsiteChecking,
     };
 
     use super::*;
@@ -1046,18 +1100,31 @@ mod tests {
         assert_eq!(
             invalid(FileError::Malformed {
                 path: path(),
-                line: Some(4),
-                message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
+                at: Some(Position {
+                    line: 4,
+                    column: 12
+                }),
             }),
-            "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`"
+            "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4, column 12 isn't valid TOML"
         );
         assert_eq!(
             invalid(FileError::Malformed {
                 path: path(),
-                line: None,
-                message: "expected a table".to_owned(),
+                at: None
             }),
-            "The config file is invalid: /Users/me/.config/nightcap/config.toml: expected a table"
+            "The config file is invalid: /Users/me/.config/nightcap/config.toml isn't valid TOML"
+        );
+        assert_eq!(
+            invalid(FileError::Invalid {
+                path: path(),
+                line: 4,
+                problem: Problem::UnknownKey {
+                    table: vec!["rules".to_owned(), "off".to_owned()],
+                    key: "domian".to_owned(),
+                    expected: vec!["app".to_owned(), "domain".to_owned()],
+                },
+            }),
+            "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: `rules.off.domian` isn't a key here; use `app` or `domain`"
         );
         assert_eq!(
             invalid(FileError::Invalid {
@@ -1093,8 +1160,102 @@ mod tests {
     }
 
     #[test]
-    fn a_files_problem_names_the_entry_or_value_as_written() {
+    fn a_files_problem_names_the_key_entry_or_value_as_written() {
+        let keys = |keys: &[&str]| keys.iter().map(|&key| key.to_owned()).collect::<Vec<_>>();
         for (found, said) in [
+            (
+                Problem::UnknownKey {
+                    table: keys(&["rules", "off"]),
+                    key: "domian".to_owned(),
+                    expected: keys(&["app", "domain"]),
+                },
+                "`rules.off.domian` isn't a key here; use `app` or `domain`",
+            ),
+            (
+                Problem::UnknownKey {
+                    table: Vec::new(),
+                    key: "website".to_owned(),
+                    expected: keys(&["websites", "lengths", "night_shift", "rules"]),
+                },
+                "`website` isn't a key here; use `websites`, `lengths`, `night_shift` or `rules`",
+            ),
+            (
+                Problem::UnknownKey {
+                    table: keys(&["rules"]),
+                    key: "of".to_owned(),
+                    expected: keys(&["off"]),
+                },
+                "`rules.of` isn't a key here; use `off`",
+            ),
+            (
+                Problem::UnknownKey {
+                    table: Vec::new(),
+                    key: "x".to_owned(),
+                    expected: Vec::new(),
+                },
+                "`x` isn't a key here",
+            ),
+            (
+                Problem::WrongType {
+                    table: keys(&["rules", "off"]),
+                    key: "app".to_owned(),
+                    found: ValueType::String,
+                    expected: ValueType::Strings,
+                },
+                "`rules.off.app` is a list of strings, not a string",
+            ),
+            (
+                Problem::WrongType {
+                    table: Vec::new(),
+                    key: "websites".to_owned(),
+                    found: ValueType::Integer,
+                    expected: ValueType::Boolean,
+                },
+                "`websites` is true or false, not an integer",
+            ),
+            (
+                Problem::WrongType {
+                    table: Vec::new(),
+                    key: "lengths".to_owned(),
+                    found: ValueType::List,
+                    expected: ValueType::Strings,
+                },
+                "`lengths` is a list of strings, not a list that isn't all strings",
+            ),
+            (
+                Problem::WrongType {
+                    table: Vec::new(),
+                    key: "night_shift".to_owned(),
+                    found: ValueType::Float,
+                    expected: ValueType::Table,
+                },
+                "`night_shift` is a table, not a float",
+            ),
+            (
+                Problem::WrongType {
+                    table: keys(&["night_shift"]),
+                    key: "schedule".to_owned(),
+                    found: ValueType::Datetime,
+                    expected: ValueType::String,
+                },
+                "`night_shift.schedule` is a string, not a date or a time",
+            ),
+            (
+                Problem::WrongType {
+                    table: keys(&["night_shift"]),
+                    key: "strength".to_owned(),
+                    found: ValueType::Table,
+                    expected: ValueType::Integer,
+                },
+                "`night_shift.strength` is an integer, not a table",
+            ),
+            (
+                Problem::MissingKey {
+                    table: Vec::new(),
+                    key: "version".to_owned(),
+                },
+                "`version` is missing",
+            ),
             (
                 Problem::UnsaidRules,
                 "rules are listed by what they say, under [rules.off] and [rules.on]",
@@ -1281,13 +1442,17 @@ mod tests {
                 "couldn't save /Users/me/.local/share/nightcap/rules.toml",
             ),
             (
-                Refusal::InvalidConfig(FileError::Malformed {
+                Refusal::InvalidConfig(FileError::Invalid {
                     path: config(),
-                    line: Some(2),
-                    message: "invalid type: string \"com.figma.Desktop\", expected a sequence"
-                        .to_owned(),
+                    line: 2,
+                    problem: Problem::WrongType {
+                        table: vec!["rules".to_owned(), "off".to_owned()],
+                        key: "app".to_owned(),
+                        found: ValueType::String,
+                        expected: ValueType::Strings,
+                    },
                 }),
-                "/Users/me/.config/nightcap/config.toml: line 2: invalid type: string \"com.figma.Desktop\", expected a sequence",
+                "/Users/me/.config/nightcap/config.toml: line 2: `rules.off.app` is a list of strings, not a string",
             ),
             (
                 Refusal::WebsiteCheckingInConfig,
@@ -1350,7 +1515,7 @@ mod tests {
     #[test]
     fn needs_attention_lists_each_problem_as_the_checks_carry_it() {
         let checks: Checks = serde_json::from_str(
-            r#"{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}],"permissions":{"accessibility":false,"notifications":"granted"}}"#,
+            r#"{"checks":[{"kind":"accessibility","detail":"not_allowed","state":"drifted"},{"kind":"notifications","detail":"allowed","state":"ok"},{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"problem":{"unknown_key":{"table":["rules","off"],"key":"domian","expected":["app","domain"]}}}}},"state":"broken"}],"permissions":{"accessibility":false,"notifications":"granted"}}"#,
         )
         .unwrap();
 
@@ -1358,7 +1523,7 @@ mod tests {
             needs_attention(&checks),
             [
                 "Accessibility isn’t allowed, so website checking can’t read the front tab.",
-                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",
+                "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: `rules.off.domian` isn't a key here; use `app` or `domain`",
             ]
         );
     }

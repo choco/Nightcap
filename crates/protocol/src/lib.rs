@@ -233,7 +233,7 @@ pub enum Answer {
     NightShift(NightShiftState),
     Front(Box<Front>),
     Rules(Vec<ListedRule>),
-    Config(ConfigState),
+    Config(Box<ConfigState>),
     Preferences(Preferences),
     Checks(Checks),
     /// None while no trial runs.
@@ -812,21 +812,40 @@ pub enum AdHocRulesDetail {
 pub enum FileError {
     /// It can't be read: why, by kind.
     Unreadable { path: String, failure: IoFailure },
-    /// It isn't TOML in the shape Nightcap reads: toml's message, and its line where toml knows
-    /// it.
-    Malformed {
-        path: String,
-        line: Option<u32>,
-        message: String,
-    },
-    /// Well-formed, but an entry or a value can't be: which, and its line.
+    /// It isn't valid TOML: where toml found the first error, where toml says.
+    Malformed { path: String, at: Option<Position> },
+    /// Valid TOML, but a key, an entry or a value in it can't be: which, and its line.
     Invalid {
         path: String,
         line: u32,
         problem: Problem,
     },
     /// It's from a newer Nightcap, which wrote this version of it.
-    Newer { path: String, version: u32 },
+    Newer { path: String, version: i64 },
+}
+
+/// What a value in a file is, as TOML writes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValueType {
+    String,
+    /// A list of strings, or an empty one.
+    Strings,
+    /// A list with something other than a string in it.
+    List,
+    Integer,
+    Float,
+    Boolean,
+    /// A date, a time of day, or both.
+    Datetime,
+    Table,
+}
+
+/// Where in a file's text: a line, and a column on it in characters, each counted from 1.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Position {
+    pub line: u32,
+    pub column: u32,
 }
 
 /// Why macOS couldn't read or write a file or a folder, by kind, which each client words itself;
@@ -863,11 +882,28 @@ impl From<io::ErrorKind> for IoFailure {
     }
 }
 
-/// What makes a well-formed config or `rules.toml` invalid, with the entry or value as the file
-/// writes it.
+/// What makes a well-formed config or `rules.toml` invalid, with the key, entry or value as the
+/// file writes it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Problem {
+    /// A key its table doesn't take: the keys that lead to the table from the top of the file,
+    /// the key, and the keys the table takes.
+    UnknownKey {
+        table: Vec<String>,
+        key: String,
+        expected: Vec<String>,
+    },
+    /// A key whose value isn't of the type Nightcap reads there: the keys that lead to its table,
+    /// the key, what its value is, and what it takes.
+    WrongType {
+        table: Vec<String>,
+        key: String,
+        found: ValueType,
+        expected: ValueType,
+    },
+    /// A key its table must have, which it lacks: the keys that lead to the table, and the key.
+    MissingKey { table: Vec<String>, key: String },
     /// Rules straight under `[rules]`, which names no say: they're listed under `[rules.off]`
     /// and `[rules.on]` (ADR-0006).
     UnsaidRules,
@@ -877,8 +913,8 @@ pub enum Problem {
     NotADomain { entry: String },
     /// An app or domain under both `rules.off` and `rules.on`, which has one rule (ADR-0006).
     BothWays { identity: RuleIdentity },
-    /// `night_shift.strength` past 100 (ADR-0014).
-    StrengthOutOfRange { strength: u8 },
+    /// `night_shift.strength` outside 0 to 100 (ADR-0014).
+    StrengthOutOfRange { strength: i64 },
     /// A `night_shift.schedule` that's none of "off", "sunset-to-sunrise" or custom hours such
     /// as "22:00-07:00".
     NotASchedule { schedule: String },
@@ -1188,10 +1224,12 @@ mod tests {
             (
                 Refusal::InvalidConfig(FileError::Malformed {
                     path: "/Users/me/.config/nightcap/config.toml".to_owned(),
-                    line: Some(2),
-                    message: "expected a sequence".to_owned(),
+                    at: Some(Position {
+                        line: 2,
+                        column: 12,
+                    }),
                 }),
-                r#"{"invalid_config":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":2,"message":"expected a sequence"}}}"#,
+                r#"{"invalid_config":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":{"line":2,"column":12}}}}"#,
             ),
             (
                 Refusal::WebsiteCheckingInConfig,
@@ -1309,7 +1347,7 @@ mod tests {
                 r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"}},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"}}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null}}}"#,
             ),
             (
-                Answer::Config(ConfigState {
+                Answer::Config(Box::new(ConfigState {
                     path: "/Users/me/.config/nightcap/config.toml".to_owned(),
                     found: true,
                     error: None,
@@ -1321,7 +1359,7 @@ mod tests {
                         path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
                         version: 3,
                     }),
-                }),
+                })),
                 r#"{"config":{"path":"/Users/me/.config/nightcap/config.toml","found":true,"error":null,"strength":40,"schedule":null,"websites":"on","lengths":["PT30M","PT1H30M"],"ad_hoc_error":{"newer":{"path":"/Users/me/.local/share/nightcap/rules.toml","version":3}}}}"#,
             ),
             (
@@ -1379,6 +1417,23 @@ mod tests {
         let wire = r#"{"ok":{"answers":[{"trial":null},{"export":"{ }"},{"rules":[]}]}}"#;
         assert_eq!(json(&in_order), wire);
         assert_eq!(serde_json::from_str::<Response>(wire).unwrap(), in_order);
+    }
+
+    #[test]
+    fn value_types_match_the_documented_wire_format_and_read_back() {
+        for (found, wire) in [
+            (ValueType::String, r#""string""#),
+            (ValueType::Strings, r#""strings""#),
+            (ValueType::List, r#""list""#),
+            (ValueType::Integer, r#""integer""#),
+            (ValueType::Float, r#""float""#),
+            (ValueType::Boolean, r#""boolean""#),
+            (ValueType::Datetime, r#""datetime""#),
+            (ValueType::Table, r#""table""#),
+        ] {
+            assert_eq!(json(&found), wire);
+            assert_eq!(serde_json::from_str::<ValueType>(wire).unwrap(), found);
+        }
     }
 
     #[test]
@@ -1480,11 +1535,60 @@ mod tests {
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
                     path: config.clone(),
-                    line: Some(4),
-                    message: "unknown field `domian`, expected `app` or `domain`".to_owned(),
+                    at: Some(Position {
+                        line: 4,
+                        column: 12,
+                    }),
                 })),
                 CheckState::Broken,
-                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"message":"unknown field `domian`, expected `app` or `domain`"}}},"state":"broken"}"#,
+                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":{"line":4,"column":12}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Malformed {
+                    path: config.clone(),
+                    at: None,
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"malformed":{"path":"/Users/me/.config/nightcap/config.toml","at":null}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 4,
+                    problem: Problem::UnknownKey {
+                        table: vec!["rules".to_owned(), "off".to_owned()],
+                        key: "domian".to_owned(),
+                        expected: vec!["app".to_owned(), "domain".to_owned()],
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":4,"problem":{"unknown_key":{"table":["rules","off"],"key":"domian","expected":["app","domain"]}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Invalid {
+                    path: config.clone(),
+                    line: 3,
+                    problem: Problem::WrongType {
+                        table: vec!["rules".to_owned(), "off".to_owned()],
+                        key: "app".to_owned(),
+                        found: ValueType::String,
+                        expected: ValueType::Strings,
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"config_file","detail":{"error":{"invalid":{"path":"/Users/me/.config/nightcap/config.toml","line":3,"problem":{"wrong_type":{"table":["rules","off"],"key":"app","found":"string","expected":"strings"}}}}},"state":"broken"}"#,
+            ),
+            (
+                CheckDetail::AdHocRules(AdHocRulesDetail::Off(FileError::Invalid {
+                    path: rules.clone(),
+                    line: 1,
+                    problem: Problem::MissingKey {
+                        table: Vec::new(),
+                        key: "version".to_owned(),
+                    },
+                })),
+                CheckState::Broken,
+                r#"{"kind":"ad_hoc_rules","detail":{"off":{"invalid":{"path":"/Users/me/.local/share/nightcap/rules.toml","line":1,"problem":{"missing_key":{"table":[],"key":"version"}}}}},"state":"broken"}"#,
             ),
             (
                 CheckDetail::ConfigFile(ConfigFileDetail::Error(FileError::Unreadable {
