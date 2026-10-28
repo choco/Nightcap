@@ -106,7 +106,7 @@ impl Inner {
             UiCommand::StartTour => self.tour_started(),
             UiCommand::EndTour => self.tour_ended(self.clock.now()),
             UiCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
-            UiCommand::Fix(fix) => self.run_fix(fix, &mut outcome.effects),
+            UiCommand::Fix(fix) => self.run_fix(fix, outcome),
         }
     }
 

@@ -253,6 +253,31 @@ fn stopping_website_checking_settles_missing_accessibility() {
 }
 
 #[test]
+fn a_fix_whose_command_is_refused_comes_back_as_a_refusal() {
+    let set_in_config = noon().config("websites = true\n").stage().unwrap();
+    set_in_config.report(permissions(false, NotificationPermission::Granted));
+    let managed = noon().stage().unwrap();
+
+    let stopped = set_in_config.send_ui(UiCommand::Fix(Fix::StopCheckingWebsites));
+    let not_opened = managed.send_ui(UiCommand::Fix(Fix::DontOpenAtLogin));
+
+    assert!(matches!(
+        stopped.events.as_slice(),
+        [Event::Refused {
+            command: Command::Websites(OnOff::Off),
+            ..
+        }]
+    ));
+    assert!(matches!(
+        not_opened.events.as_slice(),
+        [Event::Refused {
+            command: Command::OpenAtLogin(OnOff::Off),
+            ..
+        }]
+    ));
+}
+
+#[test]
 fn keeping_notifications_off_settles_them_switched_off() {
     let staged = noon().stage().unwrap();
     staged.report(permissions(true, NotificationPermission::Granted));

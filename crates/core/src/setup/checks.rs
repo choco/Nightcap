@@ -13,7 +13,7 @@ use crate::rules::places::is_app_or_site_rule;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules::AdHocError;
 use crate::storage::config::ConfigError;
-use crate::{Effect, Event};
+use crate::{Effect, Event, Outcome};
 
 /// How long sunset to sunrise can go without sun times before it's a problem. CoreBrightness
 /// took 83 seconds to work them out after a login, and two minutes after Location Services came
@@ -105,29 +105,25 @@ impl Inner {
             .collect()
     }
 
-    /// Carries out a fix the user chose in Settings; the shell carries out its own.
-    pub(crate) fn run_fix(&mut self, fix: Fix, effects: &mut Vec<Effect>) {
+    /// Carries out a fix the user chose in Settings; the shell carries out its own. A fix that
+    /// runs a command tells of its refusal as the command would.
+    pub(crate) fn run_fix(&mut self, fix: Fix, outcome: &mut Outcome) {
         match fix {
-            Fix::StopCheckingWebsites => self.fix_by(&Command::Websites(OnOff::Off), effects),
-            Fix::DontOpenAtLogin => self.fix_by(&Command::OpenAtLogin(OnOff::Off), effects),
+            Fix::StopCheckingWebsites => {
+                _ = self.run_chosen(Command::Websites(OnOff::Off), outcome);
+            }
+            Fix::DontOpenAtLogin => _ = self.run_chosen(Command::OpenAtLogin(OnOff::Off), outcome),
             Fix::KeepNotificationsOff => self.grants.notifications_wanted = false,
             Fix::KeepScheduleOff => self.grants.schedule_off_accepted = true,
-            Fix::OpenAtLogin => effects.push(Effect::RegisterLoginItem),
+            Fix::OpenAtLogin => outcome.effects.push(Effect::RegisterLoginItem),
             // An invalid config shows in its check again.
-            Fix::Reload => _ = self.reload(effects),
+            Fix::Reload => _ = self.reload(&mut outcome.effects),
             Fix::AskForAccessibility
             | Fix::AllowNotifications
             | Fix::OpenLoginItems
             | Fix::OpenLocationServices => {
                 tracing::debug!("{fix:?} is the shell's to carry out");
             }
-        }
-    }
-
-    /// Carries out a fix by running `command`.
-    fn fix_by(&mut self, command: &Command, effects: &mut Vec<Effect>) {
-        if let Err(error) = self.run_command(command, effects) {
-            tracing::warn!("a fix was refused: {:?}", error.code);
         }
     }
 }

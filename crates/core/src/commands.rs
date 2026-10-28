@@ -20,9 +20,17 @@ impl Inner {
     /// refusal as an event. A problem it causes isn't announced: the user is looking at what
     /// they chose.
     pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
-        let (mut outcome, answer) = self.turn(false, |inner, outcome| {
-            inner.run_command(&command, &mut outcome.effects)
-        });
+        self.turn(false, |inner, outcome| inner.run_chosen(command, outcome))
+    }
+
+    /// Runs a command the user chose in the app, on its own or as a fix, telling of its refusal
+    /// as an event.
+    pub(crate) fn run_chosen(
+        &mut self,
+        command: Command,
+        outcome: &mut Outcome,
+    ) -> Result<Decision, ErrorReply> {
+        let answer = self.run_command(&command, &mut outcome.effects);
         if let Err(why) = &answer {
             // The message can name a domain, so only the code is logged (ADR-0009).
             tracing::warn!("a menu command was refused: {:?}", why.code);
@@ -31,7 +39,7 @@ impl Inner {
                 why: why.clone(),
             });
         }
-        (outcome, answer)
+        answer
     }
 
     /// Runs a command from the CLI or the menu, answering with the resulting decision.

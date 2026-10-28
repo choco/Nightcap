@@ -146,7 +146,8 @@ pub enum Event {
     /// where that leaves it. Night Shift being unavailable, notifications switched off and a
     /// login item waiting for approval never are.
     ProblemAppeared { check: Check },
-    /// The core refused a command from the menu-bar UI; the CLI hears its refusal as the reply.
+    /// The core refused a command from the app, sent on its own or run by a fix; the CLI hears
+    /// its refusal as the reply.
     Refused { command: Command, why: ErrorReply },
 }
 
