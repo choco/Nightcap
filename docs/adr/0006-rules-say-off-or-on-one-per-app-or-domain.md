@@ -20,7 +20,7 @@ Nightcap's rules say what Night Shift does while a given app is in front, or whi
 
 ## Rejected alternatives
 
-- **Rules that only force off**: undoing a force would only ever mean undoing an off, but the user's indefinite choices would go one way only. A temporary rule sits over an indefinite one (ADR-0018), so a rule that says on no longer clashes with a change for a while.
+- **Rules that only force off**: undoing a force would only ever mean undoing an off, but the user's indefinite choices would go one way only. A temporary rule sits over an indefinite one (ADR-0018), so a rule that says on and a change for a while don't clash.
 - **Exceptions as a separate kind**, an on over an off rule, or a subdomain cancelling its domain's rule: a second concept, where a rule that says the other way on a narrower domain is the same one.
 - **Running-app rules, applying while an app is open at all**: few real uses, and they add launch and quit tracking to what the rule engine matches against.
 - **Matching by registrable domain**: entries like `github.io` or `maps.google.com` would match nothing.
