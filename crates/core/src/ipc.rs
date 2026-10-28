@@ -1,9 +1,7 @@
-//! The CLI's connection (ADR-0010): the socket's thread, and the core's answers to the requests
-//! it passes on. The thread never touches the core's state: a request's queries are all answered
-//! from the one snapshot the core last published, and anything else goes into the core's
-//! mailbox, its answer back over the socket once the core's thread has decided it.
-
-mod requests;
+//! The CLI's connection (ADR-0010): the socket's thread, which never touches the core's state: a
+//! request's queries are all answered from the one snapshot the core last published, and a
+//! command goes into the core's mailbox, its answer back over the socket once the core's thread
+//! has decided it.
 
 use std::fs::{self, DirBuilder, Permissions};
 use std::io::{self, BufRead, BufReader, Write};
@@ -109,17 +107,17 @@ fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io:
     };
     let response = match request {
         Request::Queries(queries) => published.latest().answer(&queries),
-        request => {
-            let (reply, response) = mpsc::channel();
+        Request::Command(command) => {
+            let (reply, answer) = mpsc::channel();
             mailbox
-                .post(Mail::Request { request, reply })
+                .post(Mail::Command { command, reply })
                 .map_err(io::Error::other)?;
-            response.recv_timeout(TIMEOUT).map_err(|_| {
+            Response::from(answer.recv_timeout(TIMEOUT).map_err(|_| {
                 io::Error::new(
                     io::ErrorKind::TimedOut,
                     "the core's thread didn't answer in time",
                 )
-            })?
+            })?)
         }
     };
     write_line(&mut writer, &response)
@@ -263,14 +261,12 @@ mod tests {
         drop(UnixStream::connect(&socket).unwrap());
 
         let response = ask(&socket, Request::Command(Command::Reload));
-        let Ok(Mail::Request { request, reply }) = inbox.recv_timeout(Duration::from_secs(5))
+        let Ok(Mail::Command { command, reply }) = inbox.recv_timeout(Duration::from_secs(5))
         else {
             panic!("the reload reaches the mailbox");
         };
-        assert_eq!(request, Request::Command(Command::Reload));
-        reply
-            .send(Response::Ok(Payload::Rules(Vec::new())))
-            .unwrap();
+        assert_eq!(command, Command::Reload);
+        reply.send(Ok(Payload::Rules(Vec::new()))).unwrap();
         assert_eq!(
             response.join().unwrap(),
             Response::Ok(Payload::Rules(Vec::new()))

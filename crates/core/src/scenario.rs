@@ -311,7 +311,10 @@ impl Staged {
                 Outcome::default(),
                 self.inline.published.latest().answer(&queries),
             ),
-            request => self.inline.decide(|inner| inner.answer(&request)),
+            Request::Command(command) => {
+                let (outcome, answer) = self.inline.decide(|inner| inner.answer(&command));
+                (outcome, Response::from(answer))
+            }
         };
         (outcome, over_the_wire(&response))
     }

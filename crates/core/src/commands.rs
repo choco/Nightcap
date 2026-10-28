@@ -37,6 +37,14 @@ impl Inner {
         })
     }
 
+    /// Runs a command the CLI sent, whose refusal is in the answer alone. A problem it causes
+    /// isn't announced: the CLI already printed what went wrong.
+    pub(crate) fn answer(&mut self, command: &Command) -> (Outcome, Result<Payload, Refusal>) {
+        self.turn(false, |inner, outcome| {
+            inner.run_command(command, &mut outcome.effects)
+        })
+    }
+
     /// Runs a command from the CLI or the app, answering with the resulting decision, and for
     /// adding a rule what it did; a reload answers with every rule, and an update check that it
     /// started.

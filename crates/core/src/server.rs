@@ -55,12 +55,12 @@ fn serve(
                 published.publish(Snapshot::of(&inner));
                 listener.outcome(outcome);
             }
-            Mail::Request { request, reply } => {
-                let (outcome, response) = inner.answer(&request);
+            Mail::Command { command, reply } => {
+                let (outcome, answer) = inner.answer(&command);
                 published.publish(Snapshot::of(&inner));
                 // The receiver is gone only if the client already hung up, and then no one is
                 // waiting.
-                let _ = reply.send(response);
+                let _ = reply.send(answer);
                 listener.outcome(outcome);
             }
             Mail::Stop { reply } => {

@@ -258,6 +258,16 @@ pub enum Response {
     },
 }
 
+/// A command's answer, or why it was refused.
+impl From<Result<Payload, Refusal>> for Response {
+    fn from(answer: Result<Payload, Refusal>) -> Self {
+        match answer {
+            Ok(payload) => Self::Ok(payload),
+            Err(refusal) => Self::Refused(refusal),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Payload {
