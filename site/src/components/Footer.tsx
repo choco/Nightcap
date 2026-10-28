@@ -64,10 +64,10 @@ const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
 ];
 
 /** The appearance: the system's, unless this switch chose one, remembered on this device.
- *  index.html applies a remembered choice before the first paint. */
+ *  The page's head (src/pages.ts) applies a remembered choice before the first paint. */
 function ThemeSwitch() {
 	// The server can't know the visitor's choice, so the page hydrates as "system" and then reads
-	// the one index.html applied.
+	// the one the head applied.
 	const [choice, setChoice] = useState<Theme>("system");
 	useEffect(() => {
 		const applied = document.documentElement.dataset.theme;
