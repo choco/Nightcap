@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let core = host.core
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
-            browser: tourBrowser(core.settings()),
+            browser: tourBrowser(core.preferences()),
             current: { TourFacts.Answers(asking: core) },
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
@@ -140,8 +140,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// The default browser, for the tour's site step, while website checking can watch it.
-    private func tourBrowser(_ settings: Settings) -> Tour.Browser? {
-        guard settings.websiteChecking.on, host?.accessibility?.granted == true,
+    private func tourBrowser(_ preferences: Preferences) -> Tour.Browser? {
+        guard preferences.websiteChecking.state == .on, host?.accessibility?.granted == true,
             let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
             let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
@@ -191,7 +191,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             icons: siteIcons,
             choose: { command in host.send(command) },
             openSettings: { [weak self] onProblem in
-                self?.showSettings(onProblem ? SettingsWindow.tab(for: core.settings()) : nil)
+                self?.showSettings(onProblem ? Settings.tab(for: core.checks().checks) : nil)
             },
             onOpen: { [weak self] in
                 self?.tour?.menuOpened()
@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeSettingsWindow(_ host: CoreHost) -> SettingsWindow {
         let core = host.core
         return SettingsWindow(
-            current: { core.settings() },
+            current: { Settings(core, loginItem: host.loginItem, words: .system) },
             icons: siteIcons,
             choose: { command in host.send(command) },
             perform: { fix in host.perform(fix) },
@@ -228,11 +228,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// While website checking is on, the icons of the site in front and every site with a rule,
     /// which the menu and the Rules tab show (ADR-0019).
     private func askForSiteIcons() {
-        guard let core = host?.core else { return }
-        let settings = core.settings()
-        guard settings.websiteChecking.on else { return }
+        guard let host else { return }
+        let core = host.core
+        guard core.preferences().websiteChecking.state == .on else { return }
         let front = core.front().site.map { [$0] } ?? []
-        let ruled = settings.rules.compactMap { rule -> String? in
+        let ruled = Settings(core, loginItem: host.loginItem, words: .system).rules.compactMap { rule -> String? in
             if case .domain(let domain) = rule.identity { domain } else { nil }
         }
         siteIcons.ask(front + ruled)

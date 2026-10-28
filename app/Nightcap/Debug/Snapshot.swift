@@ -43,7 +43,8 @@ enum Snapshot {
         let icons = SiteIcons(
             directory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString), online: false)
         let window = SettingsWindow(
-            current: { settingsCore.settings() }, icons: icons, choose: { _ in }, perform: { _ in },
+            current: { Settings(settingsCore, loginItem: .enabled, words: .system) }, icons: icons, choose: { _ in },
+            perform: { _ in },
             checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
         for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             NSApp.appearance = NSAppearance(named: appearance)

@@ -28,11 +28,12 @@ enum Look {
     /// circle for a step not reached yet, or the current step's ring and pulsing dot.
     static func mark(_ mark: Mark) -> NSView {
         let symbol: (name: String, colors: [NSColor], description: String)
+        let words = Wording.system
         switch mark {
-        case .ok: symbol = ("checkmark.circle.fill", [.white, .nightcapGreen], "OK")
-        case .off: symbol = ("minus.circle", [.nightcapGrey], "Off")
-        case .drifted: symbol = ("exclamationmark.triangle.fill", [.white, .nightcapOrange], "Needs attention")
-        case .broken: symbol = ("xmark.circle.fill", [.white, .nightcapRed], "Broken")
+        case .ok: symbol = ("checkmark.circle.fill", [.white, .nightcapGreen], words.mark(.ok))
+        case .off: symbol = ("minus.circle", [.nightcapGrey], words.mark(.off))
+        case .drifted: symbol = ("exclamationmark.triangle.fill", [.white, .nightcapOrange], words.mark(.drifted))
+        case .broken: symbol = ("xmark.circle.fill", [.white, .nightcapRed], words.mark(.broken))
         case .todo: return StepRing(current: false)
         case .current: return StepRing(current: true)
         }

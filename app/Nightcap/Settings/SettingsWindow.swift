@@ -3,30 +3,13 @@
 import KeyboardShortcuts
 import NightcapCore
 
-/// Nightcap's settings, as the core describes them (`Core.settings()`). The shell only draws
-/// them, rebuilding the shown tab whenever the snapshot changes while the window is open.
+/// Nightcap's settings, as `Settings` decides them from the core's queries. The window only
+/// draws them, rebuilding the shown tab whenever they change while it's open.
 final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
-    enum Tab: String, CaseIterable {
-        case general, rules
-
-        var title: String {
-            switch self {
-            case .general: "General"
-            case .rules: "Rules"
-            }
-        }
-
-        var symbol: String {
-            switch self {
-            case .general: "gearshape"
-            case .rules: "list.bullet"
-            }
-        }
-
-        var identifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier(rawValue) }
-    }
+    typealias Tab = Settings.Tab
 
     private let current: () -> Settings
+    private let words = Wording.system
     private let icons: SiteIcons
     private let choose: (Command) -> Void
     private let perform: (Fix) -> Void
@@ -49,10 +32,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     /// The groups' width, which makes the mockup's 600-point window.
     private static let width: CGFloat = 552
-    private static let checksByTab: [Tab: [CheckKind]] = [
-        .general: [.nightShift, .accessibility, .notifications, .openAtLogin],
-        .rules: [.configFile, .adHocRules],
-    ]
 
     init(
         current: @escaping () -> Settings,
@@ -73,13 +52,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         self.takeTour = takeTour
         self.onClose = onClose
         super.init()
-    }
-
-    /// The tab with the problem the menu points at: General's first, then Rules'.
-    static func tab(for settings: Settings) -> Tab {
-        let problems = settings.checks.filter(\.isProblem).map(\.kind)
-        return problems.isEmpty || problems.contains(where: { checksByTab[.general]!.contains($0) })
-            ? .general : .rules
     }
 
     /// Opens on `tab`, or on the tab last shown, as macOS settings windows do.
@@ -147,8 +119,8 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     ) -> NSToolbarItem? {
         guard let tab = Tab(rawValue: identifier.rawValue) else { return nil }
         let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = tab.title
-        item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: tab.title)
+        item.label = words.title(of: tab)
+        item.image = NSImage(systemSymbolName: tab.symbol, accessibilityDescription: item.label)
         item.target = self
         item.action = #selector(tabChosen(_:))
         return item
@@ -181,7 +153,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private func select(_ tab: Tab) {
         self.tab = tab
         window?.toolbar?.selectedItemIdentifier = tab.identifier
-        window?.title = tab.title
+        window?.title = words.title(of: tab)
         draw(current())
     }
 
@@ -221,91 +193,71 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         guard #available(macOS 26, *) else { return }
         for item in window?.toolbar?.items ?? [] {
             guard let tab = Tab(rawValue: item.itemIdentifier.rawValue) else { continue }
-            let kinds = Self.checksByTab[tab] ?? []
-            let problem = settings.checks.contains { kinds.contains($0.kind) && $0.isProblem }
-            item.badge = problem ? .indicator : nil
+            item.badge = settings.hasProblem(in: tab) ? .indicator : nil
         }
     }
 
     // MARK: Panes
 
     private func generalPane(_ settings: Settings) -> NSView {
-        let check = { (kind: CheckKind) in settings.checks.first { $0.kind == kind } }
         let websites = settings.websiteChecking
         let toggle = NSSwitch()
         toggle.state = websites.on ? .on : .off
         toggle.isEnabled = !websites.locked
         Look.attach(toggle) { [choose] in choose(websites.command) }
-        var websitesDetail =
-            "Also keep Night Shift off, or on, on the websites you choose, "
-            + "in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion. "
-            + "Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, "
-            + "and asks the site for its icon."
-        if websites.locked { websitesDetail += " Set in your config." }
-        // Accessibility goes unmentioned while website checking doesn't need it.
-        let accessibility = check(.accessibility).flatMap { $0.state == .off ? nil : $0 }
-
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         return pane([
             block(
-                "Websites",
-                [
-                    cell(row(title: "Check websites", detail: websitesDetail, accessory: toggle), accessibility)
-                ]),
-            block(
-                "Night Shift",
+                words.websites,
                 [
                     cell(
                         row(
-                            title: "Schedule and strength",
-                            detail: "Kept by macOS. The menu’s slider sets the strength, and your config can set both.",
-                            accessory: Look.button("Open Night Shift Settings…", .regular) {
+                            title: words.checkWebsites, detail: words.checkWebsitesDetail(setInConfig: websites.locked),
+                            accessory: toggle),
+                        settings.check(.accessibility))
+                ]),
+            block(
+                words.nightShift,
+                [
+                    cell(
+                        row(
+                            title: words.scheduleAndStrength,
+                            detail: words.scheduleAndStrengthDetail,
+                            accessory: Look.button(words.openNightShiftSettings, .regular) {
                                 let pane = "x-apple.systempreferences:com.apple.Displays-Settings.extension"
                                 NSWorkspace.shared.open(URL(string: pane)!)
                             }),
-                        check(.nightShift)),
-                    cell(
-                        row(
-                            title: "Shortcut",
-                            detail:
-                                "Tap it to turn Night Shift on or off. Hold it to see true colour until you let go.",
-                            accessory: shortcutRecorder()),
-                        nil),
+                        settings.check(.nightShift)),
+                    cell(row(title: words.shortcut, detail: words.shortcutDetail, accessory: shortcutRecorder()), nil),
                 ]),
             block(
-                "Notifications",
+                words.notifications,
                 [
                     cell(
-                        row(
-                            title: nil,
-                            detail: "Nightcap tells you when a change made outside it overrides one of your rules.",
-                            accessory: nil),
-                        check(.notifications))
+                        row(title: nil, detail: words.notificationsDetail, accessory: nil),
+                        settings.check(.notifications))
                 ]),
             block(
-                "Nightcap",
+                words.nightcap,
                 openAtLogin(settings) + [
                     cell(
                         row(
-                            title: "Tour",
-                            detail: "A rule at work, the peek and the menu, in about a minute.",
-                            accessory: Look.button("Take the Tour", .regular) { [takeTour] in takeTour() }),
+                            title: words.tour,
+                            detail: words.tourDetail,
+                            accessory: Look.button(words.takeTheTour, .regular) { [takeTour] in takeTour() }),
                         nil),
                     cell(
                         row(
-                            title: "Version \(version)",
-                            detail: checkForUpdates == nil
-                                ? "Updates come from your installer."
-                                : "Checks for updates once a day and installs them when you quit.",
+                            title: words.version(settings.version),
+                            detail: words.updates(byItself: checkForUpdates != nil),
                             accessory: checkForUpdates.map { update in
-                                Look.button("Check for Updates…", .regular, update)
+                                Look.button(words.checkForUpdates, .regular, update)
                             }),
                         nil),
                     cell(
                         row(
-                            title: "Support Nightcap",
-                            detail: "It’s free and open source. If it helps you, you can sponsor it on GitHub.",
-                            accessory: Look.button("Sponsor…", .regular) {
+                            title: words.supportNightcap,
+                            detail: words.supportNightcapDetail,
+                            accessory: Look.button(words.sponsor, .regular) {
                                 NSWorkspace.shared.open(URL(string: "https://github.com/sponsors/choco")!)
                             }),
                         nil),
@@ -322,61 +274,52 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         return KeyboardShortcuts.RecorderCocoa(for: .nightShift)
     }
 
-    /// "Open at login", in self-managed installs: its switch shows on or off, so its check
-    /// shows only when what the user chose stopped working.
+    /// "Open at login", in self-managed installs, with its check while it's a problem.
     private func openAtLogin(_ settings: Settings) -> [NSView] {
         guard let openAtLogin = settings.openAtLogin else { return [] }
         let toggle = NSSwitch()
         toggle.state = openAtLogin.on ? .on : .off
         Look.attach(toggle) { [choose] in choose(openAtLogin.command) }
-        let problem = settings.checks.first { $0.kind == .openAtLogin && $0.isProblem }
-        return [cell(row(title: "Open at login", detail: nil, accessory: toggle), problem)]
+        return [cell(row(title: words.openAtLogin, detail: nil, accessory: toggle), settings.check(.openAtLogin))]
     }
 
     private func rulesPane(_ settings: Settings) -> NSView {
-        let check = { (kind: CheckKind) in settings.checks.first { $0.kind == kind } }
         let path = (settings.configPath as NSString).abbreviatingWithTildeInPath
-        var files = [cell(row(title: "Config file", detail: path, accessory: nil), check(.configFile))]
-        // The ad-hoc rules file is mentioned only when something's wrong with it.
-        if let adHoc = check(.adHocRules), adHoc.isProblem {
-            files.append(cell(row(title: "Ad-hoc rules", detail: nil, accessory: nil), adHoc))
+        var files = [cell(row(title: words.configFile, detail: path, accessory: nil), settings.check(.configFile))]
+        if let adHoc = settings.check(.adHocRules) {
+            files.append(cell(row(title: words.adHocRules, detail: nil, accessory: nil), adHoc))
         }
         let rules =
             settings.rules.isEmpty
-            ? [Look.padded(Look.secondary("No rules yet.", width: Self.width - 28), top: 11, bottom: 11)]
+            ? [Look.padded(Look.secondary(words.noRulesYet, width: Self.width - 28), top: 11, bottom: 11)]
             : settings.rules.map(ruleRow)
         var blocks = [
             group(files),
-            note("Each keeps Night Shift off, or on, while its app or site is in front."),
+            note(words.eachRule),
             group(rules),
             rulesToolbar(),
-            note("Ad-hoc rules stay in Nightcap until you copy them into your config."),
+            note(words.adHocRulesStay),
         ]
         // What the menu set for an app or site with no rule, which ends by itself.
         if !settings.forNow.isEmpty {
-            blocks.append(block("For now", settings.forNow.map(forNowRow)))
+            blocks.append(block(words.forNow, settings.forNow.map(forNowRow)))
         }
         return pane(blocks)
     }
 
-    /// An app's or site's temporary on or off: its icon and name, until when, and ending it.
-    private func forNowRow(_ layers: SettingsForNow) -> NSView {
-        let identity: RuleIdentity
-        switch layers.place {
-        case .app(let bundleId): identity = .app(bundleId)
-        case .domain(let domain): identity = .domain(domain)
-        case .everywhere: preconditionFailure("For now lists only apps and sites")
-        }
-        let (name, _, icon) = describe(identity)
+    /// An app's or site's temporary rules: its icon and name, what they say until when, and
+    /// ending them.
+    private func forNowRow(_ temporary: Settings.ForNowRow) -> NSView {
+        let (name, _, icon) = describe(temporary.identity)
         let texts = NSStackView(views: [
             Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
-            Look.secondary(layers.label, width: 300),
+            Look.secondary(temporary.label, width: 300),
         ])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let end = Look.button(layers.action.title, .small) { [choose] in choose(layers.action.command) }
+        let end = Look.button(temporary.action.title, .small) { [choose] in choose(temporary.action.command) }
         let row = NSStackView(views: [icon, texts, end])
         row.orientation = .horizontal
         row.distribution = .fill
@@ -387,11 +330,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     /// A rule's icon, name, what it says and what it is, its label and what can be done about
     /// it: a config rule changes only in the config (ADR-0006).
-    private func ruleRow(_ rule: SettingsRule) -> NSView {
+    private func ruleRow(_ rule: Settings.RuleRow) -> NSView {
         let (name, detail, icon) = describe(rule.identity)
         let texts = NSStackView(views: [
             Look.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
-            Look.secondary("Night Shift \(rule.says == .on ? "on" : "off") · \(detail)", width: 260),
+            Look.secondary(words.rule(rule.says, detail), width: 260),
         ])
         texts.orientation = .vertical
         texts.alignment = .leading
@@ -415,7 +358,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         switch identity {
         case .app(let bundleId):
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
-                return (bundleId, "Not installed on this Mac", Tile(symbol: "app"))
+                return (bundleId, words.notInstalled, Tile(symbol: "app"))
             }
             let icon = NSImageView(image: Apps.icon(at: url, side: 26))
             icon.imageScaling = .scaleProportionallyUpOrDown
@@ -424,33 +367,33 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             return (Apps.name(at: url), bundleId, icon)
         case .domain(let domain):
             let icon = icons.icon(for: domain).map { Tile(image: $0) } ?? Tile(symbol: "globe")
-            return (domain, "Website, with its subdomains", icon)
+            return (domain, words.websiteWithSubdomains, icon)
         }
     }
 
     private func rulesToolbar() -> NSView {
-        let addApp = Look.button("Add App…", .regular) { [weak self] in self?.addApp() }
-        let addWebsite = Look.button("Add Website…", .regular) { [weak self] in self?.addWebsite() }
+        let addApp = Look.button(words.addApp, .regular) { [weak self] in self?.addApp() }
+        let addWebsite = Look.button(words.addWebsite, .regular) { [weak self] in self?.addWebsite() }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let label = NSTextField(labelWithString: "Copy for config as")
+        let label = NSTextField(labelWithString: words.copyForConfigAs)
         label.font = .systemFont(ofSize: 12)
         label.textColor = .nightcapSecondary
         let format = NSPopUpButton(frame: .zero, pullsDown: false)
-        format.addItems(withTitles: ["Nix", "TOML"])
+        format.addItems(withTitles: [words.name(of: .nix), words.name(of: .toml)])
         format.controlSize = .small
         format.font = .systemFont(ofSize: 12)
         format.selectItem(at: exportFormat == .nix ? 0 : 1)
         Look.attach(format) { [weak self, weak format] in
             self?.exportFormat = format?.indexOfSelectedItem == 1 ? .toml : .nix
         }
-        let copy = Look.button("Copy", .regular) {}
+        let copy = Look.button(words.copy, .regular) {}
         Look.attach(copy) { [weak self, weak copy] in
             guard let self else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(export(exportFormat), forType: .string)
-            copy?.title = "Copied"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copy?.title = "Copy" }
+            copy?.title = words.copied
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [words] in copy?.title = words.copy }
         }
         let toolbar = NSStackView(views: [addApp, addWebsite, spacer, label, format, copy])
         toolbar.orientation = .horizontal
@@ -464,9 +407,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// The Applications folder, for picking an app to add a rule for.
     private func addApp() {
         guard let window else { return }
-        let says = Self.saysPopup()
+        let says = saysPopup()
         Apps.pick(
-            on: window, prompt: "Add", message: "Choose an app for a rule.",
+            on: window, prompt: words.add, message: words.chooseAnAppForARule,
             accessory: Look.padded(says, top: 8, bottom: 8)
         ) { [weak self] bundleId in
             self?.choose(.addRule(identity: .app(bundleId), says: Self.says(says)))
@@ -474,9 +417,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// What a new rule says: Night Shift off, as most rules do, or on.
-    private static func saysPopup() -> NSPopUpButton {
+    private func saysPopup() -> NSPopUpButton {
         let popup = NSPopUpButton(frame: .zero, pullsDown: false)
-        popup.addItems(withTitles: ["Keep Night Shift off", "Keep Night Shift on"])
+        popup.addItems(withTitles: [words.keepNightShift(.off), words.keepNightShift(.on)])
         return popup
     }
 
@@ -489,12 +432,12 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     private func addWebsite() {
         guard let window else { return }
         let alert = NSAlert()
-        alert.messageText = "Add a Website"
-        let hint = "The rule covers it and its subdomains."
+        alert.messageText = words.addAWebsite
+        let hint = words.ruleCoversSubdomains
         alert.informativeText = hint
         let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-        field.placeholderString = "figma.com"
-        let says = Self.saysPopup()
+        field.placeholderString = words.domainExample
+        let says = saysPopup()
         let accessory = NSStackView(views: [field, says])
         accessory.orientation = .vertical
         accessory.alignment = .leading
@@ -502,16 +445,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         accessory.frame = NSRect(x: 0, y: 0, width: 280, height: 58)
         field.widthAnchor.constraint(equalToConstant: 280).isActive = true
         alert.accessoryView = accessory
-        let add = alert.addButton(withTitle: "Add")
-        alert.addButton(withTitle: "Cancel")
+        let add = alert.addButton(withTitle: words.add)
+        alert.addButton(withTitle: words.cancel)
         add.isEnabled = false
         let typing = NotificationCenter.default.addObserver(
             forName: NSControl.textDidChangeNotification, object: field, queue: .main
-        ) { [weak alert, weak add, weak field] _ in
+        ) { [weak alert, weak add, weak field, words] _ in
             MainActor.assumeIsolated {
                 let domain = field.flatMap { normalizeDomain(text: $0.stringValue) }
                 add?.isEnabled = domain != nil
-                alert?.informativeText = domain.map { "Adds \($0) and its subdomains." } ?? hint
+                alert?.informativeText = domain.map(words.adds) ?? hint
             }
         }
         alert.window.initialFirstResponder = field
@@ -577,7 +520,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 
     /// A setting's row with the status of its check, if it has one, right under it.
-    private func cell(_ row: NSView, _ check: SettingsCheck?) -> NSView {
+    private func cell(_ row: NSView, _ check: Settings.CheckStatus?) -> NSView {
         let cell = NSStackView(views: [row] + (check.map { [status($0)] } ?? []))
         cell.orientation = .vertical
         cell.alignment = .leading
@@ -615,7 +558,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// A check's symbol, its line of text and what can be done about it, under its setting.
     /// One fix sits at the end of the line; two get a line of their own, so the text can stay
     /// on one.
-    private func status(_ check: SettingsCheck) -> NSView {
+    private func status(_ check: Settings.CheckStatus) -> NSView {
         let fixes = [check.restore, check.accept].compactMap { $0 }.map { fix in
             Look.button(fix.title, .small) { [perform] in perform(fix.fix) }
         }
@@ -648,7 +591,13 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     }
 }
 
-extension SettingsCheck {
-    /// A check that needs the user: drift, or broken.
-    var isProblem: Bool { state == .drifted || state == .broken }
+extension Settings.Tab {
+    fileprivate var symbol: String {
+        switch self {
+        case .general: "gearshape"
+        case .rules: "list.bullet"
+        }
+    }
+
+    fileprivate var identifier: NSToolbarItem.Identifier { NSToolbarItem.Identifier(rawValue) }
 }

@@ -47,6 +47,9 @@
         }
       }
     },
+    "%@." : {
+
+    },
     "%@: %@" : {
       "localizations" : {
         "en" : {
@@ -89,6 +92,28 @@
         }
       }
     },
+    "%lld ad-hoc rules." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ad-hoc rule."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ad-hoc rules."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -99,6 +124,9 @@
         }
       }
     },
+    "A rule at work, the peek and the menu, in about a minute." : {
+
+    },
     "A rule can take a break." : {
 
     },
@@ -108,7 +136,52 @@
     "Accessibility" : {
 
     },
+    "Accessibility is allowed." : {
+
+    },
+    "Accessibility isn’t allowed, so website checking can’t read the front tab." : {
+
+    },
+    "Ad-hoc" : {
+
+    },
+    "Ad-hoc rules" : {
+
+    },
     "Ad-hoc rules are off" : {
+
+    },
+    "Ad-hoc rules are off: %@." : {
+
+    },
+    "Ad-hoc rules stay in Nightcap until you copy them into your config." : {
+
+    },
+    "Add" : {
+
+    },
+    "Add App…" : {
+
+    },
+    "Add Website…" : {
+
+    },
+    "Add a Website" : {
+
+    },
+    "Adds %@ and its subdomains." : {
+
+    },
+    "Allow Notifications…" : {
+
+    },
+    "Allowed." : {
+
+    },
+    "Allow…" : {
+
+    },
+    "Also keep Night Shift off, or on, on the websites you choose, in Safari, Chrome, Firefox, Edge, Arc, Brave, Dia, Zen and Orion." : {
 
     },
     "Always" : {
@@ -135,6 +208,25 @@
     "At sunset" : {
 
     },
+    "Available, following its schedule: %@ to %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Available, following its schedule: %1$@ to %2$@."
+          }
+        }
+      }
+    },
+    "Available, following its schedule: sunset to sunrise." : {
+
+    },
+    "Available, with no schedule." : {
+
+    },
+    "Available." : {
+
+    },
     "Back to the Schedule" : {
 
     },
@@ -157,10 +249,25 @@
     "Bring %@ to the front: click its window, or its icon in the Dock." : {
 
     },
+    "Broken" : {
+
+    },
     "Cancel" : {
 
     },
+    "Check for Updates…" : {
+
+    },
+    "Check websites" : {
+
+    },
+    "Checks for updates once a day and installs them when you quit." : {
+
+    },
     "Choose %@ to give the sample its rule again." : {
+
+    },
+    "Choose an app for a rule." : {
 
     },
     "Click the moon to open the menu, then choose %@." : {
@@ -172,16 +279,43 @@
     "Click to see what’s new." : {
 
     },
+    "Config file" : {
+
+    },
     "Continue" : {
 
     },
+    "Copied" : {
+
+    },
+    "Copy" : {
+
+    },
+    "Copy for config as" : {
+
+    },
+    "Couldn't read it: %@." : {
+
+    },
     "Custom hours in Night Shift’s settings work without them." : {
+
+    },
+    "Custom hours work without them." : {
 
     },
     "Custom…" : {
 
     },
     "Done" : {
+
+    },
+    "Don’t Open at Login" : {
+
+    },
+    "Each keeps Night Shift off, or on, while its app or site is in front." : {
+
+    },
+    "End" : {
 
     },
     "End Tour" : {
@@ -301,7 +435,16 @@
         }
       }
     },
+    "For now" : {
+
+    },
     "Forced off" : {
+
+    },
+    "From your config" : {
+
+    },
+    "General" : {
 
     },
     "Give it a rule" : {
@@ -310,10 +453,16 @@
     "Hold %@ in any app to see true colour for as long as you hold it." : {
 
     },
+    "Hold it to see true colour until you let go." : {
+
+    },
     "Hold the keys on your keyboard, or here." : {
 
     },
     "Hold to see true colour, tap to turn Night Shift off or on" : {
+
+    },
+    "If it helps you, you can sponsor it on GitHub." : {
 
     },
     "In %@" : {
@@ -335,6 +484,27 @@
     "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose, and changes its strength: click OK, then the moon." : {
 
     },
+    "It’s free and open source." : {
+
+    },
+    "It’s version %lld, from a newer Nightcap than this one." : {
+
+    },
+    "Keep Night Shift off" : {
+
+    },
+    "Keep Night Shift on" : {
+
+    },
+    "Keep Notifications Off" : {
+
+    },
+    "Keep the Schedule Off" : {
+
+    },
+    "Kept by macOS." : {
+
+    },
     "Leave the sample and Night Shift returns, as warm as before." : {
 
     },
@@ -349,6 +519,16 @@
     },
     "Like the Rest of %@" : {
 
+    },
+    "Line %lld: %@." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Line %1$lld: %2$@."
+          }
+        }
+      }
     },
     "Needs attention" : {
 
@@ -383,10 +563,31 @@
     "Night Shift is warming the screen." : {
 
     },
+    "Night Shift isn’t available on this Mac." : {
+
+    },
     "Night Shift off" : {
 
     },
+    "Night Shift off until %@" : {
+
+    },
+    "Night Shift off until you turn it on" : {
+
+    },
+    "Night Shift off · %@" : {
+
+    },
     "Night Shift on" : {
+
+    },
+    "Night Shift on until %@" : {
+
+    },
+    "Night Shift on until you turn it off" : {
+
+    },
+    "Night Shift on · %@" : {
 
     },
     "Night Shift turned off outside Nightcap" : {
@@ -398,7 +599,13 @@
     "Night Shift unavailable" : {
 
     },
+    "Nightcap" : {
+
+    },
     "Nightcap can’t follow sunset to sunrise" : {
+
+    },
+    "Nightcap doesn’t open at login." : {
 
     },
     "Nightcap is holding it off for an app or a site." : {
@@ -410,16 +617,55 @@
     "Nightcap no longer opens at login" : {
 
     },
+    "Nightcap no longer opens at login: it was removed in System Settings." : {
+
+    },
+    "Nightcap opens when you log in." : {
+
+    },
+    "Nightcap reads the front tab’s address with Accessibility and keeps only the site’s name, and asks the site for its icon." : {
+
+    },
+    "Nightcap tells you when a change made outside it overrides one of your rules." : {
+
+    },
     "Nightcap updated to %@" : {
 
     },
     "Nightcap’s config is invalid" : {
 
     },
+    "Nix" : {
+
+    },
+    "No ad-hoc rules." : {
+
+    },
+    "No config file." : {
+
+    },
     "No room for Nightcap’s moon" : {
 
     },
+    "No rules yet." : {
+
+    },
     "No schedule" : {
+
+    },
+    "Not installed on this Mac" : {
+
+    },
+    "Not needed while website checking is off." : {
+
+    },
+    "Notifications" : {
+
+    },
+    "Notifications are off." : {
+
+    },
+    "Notifications were allowed, but they’re switched off in System Settings." : {
 
     },
     "Now a site" : {
@@ -550,6 +796,15 @@
     "On until you turn it off" : {
 
     },
+    "Open Location Services…" : {
+
+    },
+    "Open Login Items…" : {
+
+    },
+    "Open Night Shift Settings…" : {
+
+    },
     "Open Nightcap’s settings to allow it, or to stop checking websites." : {
 
     },
@@ -559,7 +814,16 @@
     "Open Nightcap’s settings to turn it back on, or to keep it off." : {
 
     },
+    "Open at Login" : {
+
+    },
+    "Open at login" : {
+
+    },
     "Peek at true colour" : {
+
+    },
+    "Put Back" : {
 
     },
     "Put the Rule Back" : {
@@ -574,7 +838,16 @@
     "Quit an app with an icon up there and the moon appears." : {
 
     },
+    "Reload" : {
+
+    },
+    "Remove" : {
+
+    },
     "Remove Your Rule" : {
+
+    },
+    "Rules" : {
 
     },
     "Rules work the other way too: while Night Shift is off, %@ keeps it on in %@." : {
@@ -587,7 +860,16 @@
         }
       }
     },
+    "Schedule and strength" : {
+
+    },
+    "Set in your config." : {
+
+    },
     "Settings…" : {
+
+    },
+    "Shortcut" : {
 
     },
     "Sites work the same way" : {
@@ -618,13 +900,37 @@
     "Snoozed the %@ rule until you turn it on." : {
 
     },
+    "Snoozed until %@" : {
+
+    },
+    "Snoozed until you turn it off" : {
+
+    },
+    "Snoozed until you turn it on" : {
+
+    },
     "Snoozing needs a rule" : {
+
+    },
+    "Sponsor…" : {
+
+    },
+    "Stop Checking Websites" : {
 
     },
     "Strength" : {
 
     },
     "Sunset to sunrise needs Location Services" : {
+
+    },
+    "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on." : {
+
+    },
+    "Support Nightcap" : {
+
+    },
+    "TOML" : {
 
     },
     "Take the Tour" : {
@@ -634,6 +940,9 @@
 
     },
     "Tap it to turn Night Shift off, and again to turn it back on." : {
+
+    },
+    "Tap it to turn Night Shift on or off." : {
 
     },
     "Tap the shortcut to turn it back on." : {
@@ -657,7 +966,13 @@
     "The menu bar is full, so macOS hides the moon, and with it Nightcap’s menu." : {
 
     },
+    "The menu’s slider sets the strength, and your config can set both." : {
+
+    },
     "The moon in the menu bar is Nightcap" : {
+
+    },
+    "The rule covers it and its subdomains." : {
 
     },
     "The rule keeps Night Shift off here." : {
@@ -726,7 +1041,44 @@
     "Until then, open Nightcap again for its Settings." : {
 
     },
+    "Updates come from your installer." : {
+
+    },
+    "Valid, with %lld rules." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Valid, with %lld rule."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Valid, with %lld rules."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Valid, with no rules." : {
+
+    },
+    "Version %@" : {
+
+    },
     "Website checking needs Accessibility" : {
+
+    },
+    "Website, with its subdomains" : {
+
+    },
+    "Websites" : {
 
     },
     "What you changed during it goes with it, and your own rules are as they were." : {
@@ -757,7 +1109,16 @@
         }
       }
     },
+    "figma.com" : {
+
+    },
+    "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule." : {
+
+    },
     "macOS hasn’t worked out sunrise and sunset." : {
+
+    },
+    "macOS is waiting for your approval in Login Items." : {
 
     },
     "macOS turned Night Shift’s schedule off." : {

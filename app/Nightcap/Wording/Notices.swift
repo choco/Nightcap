@@ -78,18 +78,4 @@ extension Wording {
     func adHocRulesOff(_ error: FileError) -> (title: String, body: String) {
         (text("Ad-hoc rules are off"), located(error))
     }
-
-    /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3: invalid type".
-    private func located(_ error: FileError) -> String {
-        switch error {
-        case .unreadable(let path, let message):
-            text("couldn't read \(path): \(message)")
-        case .malformed(let path, let line?, let message), .invalid(let path, let line?, let message):
-            text("\(path): line \(Int(line)): \(message)")
-        case .malformed(let path, nil, let message), .invalid(let path, nil, let message):
-            text("\(path): \(message)")
-        case .newer(let path, let version):
-            text("\(path) is version \(Int(version)), from a newer Nightcap than this one")
-        }
-    }
 }

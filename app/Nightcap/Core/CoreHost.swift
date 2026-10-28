@@ -95,6 +95,10 @@ final class CoreHost: NSObject {
     /// core starts.
     var notificationPermission: NotificationPermission { reportedPermissions?.notifications ?? .notRequested }
 
+    /// The login item as the core last heard of it, which Settings' "Open at login" mirrors
+    /// (ADR-0011); nil until the first read, as the core starts.
+    var loginItem: LoginItem? { reportedLoginItem }
+
     // MARK: Subscriptions
 
     /// Calls `handler` with each event the core tells, as its outcome is carried out.

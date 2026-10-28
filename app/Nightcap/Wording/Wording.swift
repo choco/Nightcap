@@ -1,10 +1,10 @@
 import Foundation
 import NightcapCore
 
-/// The sentences the menu, the tour and the notifications show, from the String Catalog beside
-/// this file: in the user's language, with its plural rules, and times in the user's clock. Each
-/// takes what its sentence is about, such as a place by its name, on or off, a length or a time,
-/// never a snapshot of the core.
+/// The sentences the menu, the tour, the notifications, Settings and onboarding show, from the
+/// String Catalog beside this file: in the user's language, with its plural rules, and times in
+/// the user's clock. Each takes what its sentence is about, such as a place by its name, on or
+/// off, a length or a time, never a snapshot of the core.
 struct Wording {
     /// Formats times and numbers, and picks a plural's form.
     let locale: Locale
@@ -42,6 +42,15 @@ struct Wording {
     /// A time of day, in the user's clock: "07:00", or "7:00 AM".
     func time(_ date: Date) -> String {
         date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, timeZone: timeZone))
+    }
+
+    /// A time of day, in the user's clock: "22:00", or "10:00 PM".
+    func time(_ time: TimeOfDay) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .gmt
+        let date = calendar.date(
+            from: DateComponents(year: 2001, month: 1, day: 1, hour: Int(time.hour), minute: Int(time.minute)))!
+        return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, timeZone: .gmt))
     }
 
     /// Whose rule decides, as a line names it: "your config’s rule".
