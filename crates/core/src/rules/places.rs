@@ -1753,7 +1753,7 @@ mod tests {
     }
 
     #[test]
-    fn the_rules_the_switch_would_leave_are_the_ones_it_leaves() {
+    fn the_switch_keeps_everywheres_rules_that_say_its_way() {
         let soon = "2026-10-16T23:30:00+02:00";
         let everywhere = |says: OnOff, length: Length| yours(Place::Everywhere, says, length);
         let cases = [
@@ -1802,21 +1802,22 @@ mod tests {
                     places.begin_trial(true);
                     places.switch(OnOff::Off, &world);
                 }
-                let look = places.look(&world);
-                let (to, foreseen) = (look.everywhere.gives.other(), look.after_switch);
+                let before = places.look(&world).everywhere;
+                let to = before.gives.other();
 
                 places.switch(to, &world);
 
-                let everywhere = places.look(&world).everywhere;
-                assert_eq!(everywhere.rules, foreseen, "{rules:?}");
-                assert!(
-                    !everywhere
-                        .rules
-                        .iter()
-                        .any(|rule| matches!(rule.length, Length::Until { .. })),
-                    "{rules:?}"
-                );
-                assert_eq!(everywhere.gives, to, "{rules:?}");
+                // It takes off those that say otherwise, shortest first, up to the first that
+                // says its way, else sets its own where the stand-in or the schedule still
+                // says otherwise.
+                let left: Vec<Rule> = match before.rules.iter().position(|rule| rule.says == to) {
+                    Some(first) => before.rules[first..].to_vec(),
+                    None if before.base.as_ref().map(says) == Some(to) => Vec::new(),
+                    None => vec![yours(Place::Everywhere, to, Length::Indefinite)],
+                };
+                let after = places.look(&world).everywhere;
+                assert_eq!(after.rules, left, "{rules:?}");
+                assert_eq!(after.gives, to, "{rules:?}");
             }
         }
     }

@@ -228,6 +228,66 @@ fn a_new_rule_until_a_time_replaces_the_places_and_keeps_its_longer_one() {
 }
 
 #[test]
+fn a_new_rule_takes_off_its_places_rules_of_its_length_and_shorter() {
+    let staged = forced();
+    let soon = "2026-10-16T23:30:00+02:00";
+    let turn = |says| match says {
+        OnOff::On => until_turn("2026-10-17T07:00:00+02:00"),
+        OnOff::Off => until_turn("2026-10-17T22:00:00+02:00"),
+    };
+    for place in [figma_app(), Place::Everywhere] {
+        let rules_at = |staged| -> Vec<Rule> {
+            resettable(staged)
+                .into_iter()
+                .filter(|rule| rule.place == place)
+                .collect()
+        };
+        send(
+            &staged,
+            set(place.clone(), OnOff::On, Lasting::UntilScheduleTurns),
+        );
+        send(&staged, set(place.clone(), OnOff::Off, minutes(30)));
+
+        send(
+            &staged,
+            set(place.clone(), OnOff::On, Lasting::Until(at(soon))),
+        );
+        assert_eq!(
+            rules_at(&staged),
+            vec![
+                yours(place.clone(), OnOff::On, until(soon)),
+                yours(place.clone(), OnOff::On, turn(OnOff::On)),
+            ],
+            "{place}"
+        );
+
+        send(
+            &staged,
+            set(place.clone(), OnOff::Off, Lasting::UntilScheduleTurns),
+        );
+        assert_eq!(
+            rules_at(&staged),
+            vec![yours(place.clone(), OnOff::Off, turn(OnOff::Off))],
+            "{place}"
+        );
+    }
+    send(&staged, set(Place::Everywhere, OnOff::Off, minutes(30)));
+
+    send(
+        &staged,
+        set(Place::Everywhere, OnOff::On, Lasting::Indefinite),
+    );
+
+    assert_eq!(
+        resettable(&staged),
+        vec![
+            yours(figma_app(), OnOff::Off, turn(OnOff::Off)),
+            yours(Place::Everywhere, OnOff::On, Length::Indefinite),
+        ]
+    );
+}
+
+#[test]
 fn until_the_schedule_turns_ends_at_sunrise_for_on_and_at_sunset_for_off() {
     let staged = off_by_the_schedule().stage().unwrap();
 

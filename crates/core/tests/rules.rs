@@ -11,9 +11,10 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, activate_event, ad_hoc, add_rule, app_rule, at, books, custom_hours, domain_rule,
-    figma, figma_app, forced, in_books_at_noon, kept_ad_hoc, late, launch, mail, minutes, noon,
-    on_by_the_schedule, refusal, reported, resettable, rules, send, set, until_turn, yours,
+    accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
+    app_rule, at, books, custom_hours, domain_rule, figma, figma_app, forced, host_event,
+    in_books_at_noon, kept_ad_hoc, late, launch, mail, minutes, noon, on_by_the_schedule, refusal,
+    reported, resettable, rules, send, set, standing, until_turn, yours,
 };
 
 #[test]
@@ -214,6 +215,55 @@ fn reset_puts_a_snoozed_rule_back_early() {
         }))
     );
     assert_eq!(resettable(&staged), Vec::new());
+}
+
+#[test]
+fn a_reset_leaves_the_places_rule_else_what_it_inherits() {
+    let staged = on_by_the_schedule()
+        .config(
+            "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
+        )
+        .then(accessibility_granted())
+        .then(activate_browser_event("com.apple.Safari"))
+        .then(host_event(1, "www.example.com"))
+        .stage()
+        .unwrap();
+    let safari = Place::App("com.apple.Safari".parse().unwrap());
+    let example = Place::Domain("example.com".parse().unwrap());
+    let mail_app = Place::App("com.apple.mail".parse().unwrap());
+    // Each place's rule, else what it inherits, then for everywhere the schedule: Safari's
+    // config rule, which the site inherits, then everywhere's on, which Mail inherits. A site
+    // that could say on has Safari watched.
+    let left = [
+        (&safari, OnOff::Off, None),
+        (&example, OnOff::Off, None),
+        (&mail_app, OnOff::On, Some("com.apple.mail")),
+        (&Place::Everywhere, OnOff::On, None),
+    ];
+
+    for (place, leaves, comes_to_front) in left {
+        if let Some(bundle_id) = comes_to_front {
+            activate(&staged, bundle_id);
+        }
+        send(
+            &staged,
+            set(place.clone(), leaves, Lasting::UntilScheduleTurns),
+        );
+        send(&staged, set(place.clone(), leaves.other(), minutes(30)));
+        assert_eq!(standing(&staged, place).gives, leaves.other(), "{place}");
+
+        send(&staged, Command::Reset(place.clone()));
+
+        let reset = standing(&staged, place);
+        assert_eq!((reset.gives, reset.rules), (leaves, Vec::new()), "{place}");
+    }
+    assert_eq!(
+        staged.core().snapshot().front().everywhere.base,
+        Some(Reason::Schedule {
+            state: OnOff::On,
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+        })
+    );
 }
 
 #[test]

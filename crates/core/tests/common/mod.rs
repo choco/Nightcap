@@ -15,7 +15,8 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
 use nightcap_protocol::{
     Answer, Check, CheckKind, Command, Lasting, Length, NotificationPermission, OnOff, Payload,
-    Place, Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule, SetBy, TimeOfDay,
+    Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity, Schedule, SetBy,
+    TimeOfDay,
 };
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
@@ -123,6 +124,17 @@ pub(crate) fn every_rule(staged: &Staged) -> Vec<Rule> {
         panic!("expected rules");
     };
     rules
+}
+
+/// How `place` stands while in front.
+pub(crate) fn standing(staged: &Staged, place: &Place) -> PlaceInFront {
+    let front = staged.core().snapshot().front();
+    front
+        .places
+        .into_iter()
+        .chain([front.everywhere])
+        .find(|at| at.place == *place)
+        .unwrap()
 }
 
 /// Why the core refused a request, which it must have.

@@ -11,15 +11,15 @@ use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
     Length, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff, OnboardingAsks,
-    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rule, Schedule, TimeOfDay,
-    TrialState, WebsiteChecking,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Schedule, TrialState,
+    WebsiteChecking,
 };
 
 use common::{
     accessibility_granted, activate, activate_browser, activate_browser_event, activate_event,
     ad_hoc, add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma, figma_app,
     forced, host_event, mail, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
-    report_zurich_sun, reported, resettable, send, set, until_turn, yours,
+    report_zurich_sun, reported, send, set, until_turn, yours,
 };
 
 /// Every query's answer over the socket, all asked in one request, is the one the shell gets in
@@ -298,109 +298,6 @@ fn front_answers_that_a_reset_under_an_external_on_gives_back_the_rule_it_snooze
     );
     assert_eq!(figma.gives, OnOff::On);
     assert_eq!(figma.after_reset, Some(OnOff::Off));
-}
-
-#[test]
-fn front_answers_the_rules_the_switch_would_leave_everywhere() {
-    let soon = at("2026-10-16T23:30:00+02:00");
-    let everywhere = |state, length| set(Place::Everywhere, state, length);
-    let out_of_range = Schedule::Custom {
-        from: TimeOfDay {
-            hour: 25,
-            minute: 0,
-        },
-        to: TimeOfDay {
-            hour: 7,
-            minute: 60,
-        },
-    };
-    // On by the custom hours at night, off by them by day, and on with the schedule unknown.
-    let worlds = [
-        ("2026-10-16T23:00:00+02:00", custom_hours(), true),
-        ("2026-10-16T12:00:00+02:00", custom_hours(), false),
-        ("2026-10-16T23:00:00+02:00", out_of_range, true),
-    ];
-    for (now, schedule, night_shift) in worlds {
-        let mut cases: Vec<(Vec<Command>, bool)> = vec![
-            (Vec::new(), false),
-            (vec![everywhere(OnOff::Off, Lasting::Indefinite)], false),
-            (vec![everywhere(OnOff::On, Lasting::Indefinite)], false),
-            (vec![everywhere(OnOff::Off, Lasting::Until(soon))], false),
-            (
-                vec![
-                    everywhere(OnOff::Off, Lasting::Indefinite),
-                    everywhere(OnOff::On, Lasting::Until(soon)),
-                ],
-                false,
-            ),
-            (
-                vec![
-                    everywhere(OnOff::On, Lasting::Indefinite),
-                    everywhere(OnOff::Off, Lasting::Until(soon)),
-                ],
-                false,
-            ),
-            (Vec::new(), true),
-            (vec![everywhere(OnOff::Off, Lasting::Indefinite)], true),
-        ];
-        // Without a schedule there's no turn to wait for.
-        if schedule == custom_hours() {
-            cases.extend([
-                (
-                    vec![
-                        everywhere(OnOff::Off, Lasting::Indefinite),
-                        everywhere(OnOff::On, Lasting::UntilScheduleTurns),
-                    ],
-                    false,
-                ),
-                (
-                    vec![
-                        everywhere(OnOff::Off, Lasting::Indefinite),
-                        everywhere(OnOff::On, Lasting::UntilScheduleTurns),
-                        everywhere(OnOff::Off, Lasting::Until(soon)),
-                    ],
-                    false,
-                ),
-            ]);
-        }
-        for (commands, stand_in) in cases {
-            let mut scenario = Scenario::at(at(now)).then(reported(night_shift, schedule));
-            for command in &commands {
-                scenario = scenario.then(command.clone());
-            }
-            // The app asks for the stand-in when it finds Night Shift off.
-            if stand_in {
-                scenario = scenario
-                    .then(reported(false, schedule))
-                    .then(AppCommand::BeginTrial { stands_in: true })
-                    .then(reported(true, schedule))
-                    .then(Command::Off);
-            }
-            let staged = scenario.stage().unwrap();
-            let front = staged.core().snapshot().front();
-            let to = front.everywhere.gives.other();
-
-            _ = staged.send(if to == OnOff::On {
-                Command::On
-            } else {
-                Command::Off
-            });
-
-            let left: Vec<Rule> = resettable(&staged)
-                .into_iter()
-                .filter(|rule| rule.place == Place::Everywhere)
-                .collect();
-            assert_eq!(
-                left, front.after_switch,
-                "{commands:?}, stand-in: {stand_in}"
-            );
-            assert_eq!(
-                staged.core().snapshot().front().everywhere.gives,
-                to,
-                "{commands:?}, stand-in: {stand_in}"
-            );
-        }
-    }
 }
 
 #[test]

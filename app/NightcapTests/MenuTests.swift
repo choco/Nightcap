@@ -215,6 +215,112 @@ struct MenuTests {
         #expect(core.appRow?.titles == ["Like Everywhere Else", "—", "Always"])
     }
 
+    @Test func aRuleUntilATimeOverWhatSaysTheSameKeepsTheLengths() throws {
+        let core = try onByTheSchedule(
+            front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(120))), .command(.off))
+
+        #expect(
+            core.appRow?.titles
+                == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…", "Until 07:00", "—", "Always"])
+    }
+
+    @Test func backToTheScheduleIsOfferedOnlyWhereTheSwitchWouldKeepARuleOfEverywheres() throws {
+        // The switch takes the hour off, as Back to the Schedule would.
+        let offForAnHour = try onByTheSchedule(.command(.set(place: .everywhere, state: .off, length: minutes(60))))
+        #expect(offForAnHour.everywhereRow == nil)
+
+        let core = try onByTheSchedule(
+            .command(.set(place: .everywhere, state: .on, length: .indefinite)),
+            .command(.set(place: .everywhere, state: .off, length: minutes(60))))
+        let row = try #require(core.everywhereRow)
+        #expect(row.titles == ["Back to the Schedule"])
+        core.send(command: try row.choice(titled: "Back to the Schedule").command)
+        #expect(core.snapshot().front().everywhere.rules.isEmpty)
+    }
+
+    /// Each item that resets a place, in the situations the menu's tests stage, does what its
+    /// title says: Put the Rule Back leaves the place giving its rule's say, Like Everywhere Else
+    /// or Like the Rest of Safari what it inherits, and Back to the Schedule the schedule deciding
+    /// everywhere, each the way its row turns the place.
+    @Test func theItemsThatUndoDoWhatTheirTitlesSay() throws {
+        let safariAndYouTube =
+            "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n"
+        let situations: [() throws -> Core] = [
+            { try forced() },
+            { try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns))) },
+            { try forced(.command(.set(place: figmaApp, state: .on, length: minutes(30)))) },
+            { try forced(.command(.set(place: .everywhere, state: .off, length: minutes(30)))) },
+            { try forced(front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(30)))) },
+            { try onFigma() },
+            { try onFigma(.command(.set(place: .domain("figma.com"), state: .on, length: .untilScheduleTurns))) },
+            {
+                try onByTheSchedule(
+                    config: safariAndYouTube, front("com.apple.Safari", browser: true), host("example.com"),
+                    .command(.set(place: .domain("example.com"), state: .on, length: minutes(30))))
+            },
+            {
+                try onByTheSchedule(
+                    .command(.set(place: .everywhere, state: .on, length: .indefinite)),
+                    .command(.set(place: .everywhere, state: .off, length: minutes(60))))
+            },
+            {
+                try onByTheSchedule(
+                    front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(120))),
+                    .command(.off))
+            },
+            {
+                try offByTheSchedule(
+                    tourBegunStandingIn, reported(true),
+                    .command(.set(place: .everywhere, state: .on, length: .untilScheduleTurns)),
+                    .command(.set(place: .everywhere, state: .off, length: minutes(30))))
+            },
+            // An outside change snoozes Figma's rule by day, and sets everywhere's on beside it.
+            {
+                try staged(
+                    "2026-10-16T12:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
+                    reported(false), front("com.figma.Desktop"), reported(true))
+            },
+        ]
+        var offered: Set<String> = []
+
+        for situation in situations {
+            for row in try situation().rows {
+                for case .choice(let choice) in row.items {
+                    guard case .reset(let place) = choice.command else { continue }
+                    let core = try situation()
+                    let standing = { () throws -> PlaceInFront in
+                        let front = core.snapshot().front()
+                        return try #require((front.places + [front.everywhere]).first { $0.place == place })
+                    }
+                    let before = try standing()
+                    let state = before.gives.other
+                    core.send(command: choice.command)
+                    let after = try standing()
+                    #expect(after.gives == state, "\(choice.title) at \(place)")
+                    #expect(after.rules.isEmpty, "\(choice.title) at \(place)")
+                    switch choice.title {
+                    case "Put the Rule Back":
+                        let rule: Rule? = if case .rule(let rule) = before.base { rule } else { nil }
+                        #expect(rule?.says == state)
+                    case "Like Everywhere Else", "Like the Rest of Safari":
+                        #expect(before.inherits?.says == state)
+                    case "Back to the Schedule":
+                        guard case .schedule(let scheduled, _) = after.base else {
+                            Issue.record("no schedule under everywhere")
+                            continue
+                        }
+                        #expect(scheduled == state)
+                    default:
+                        Issue.record("\(choice.title) resets \(place)")
+                    }
+                    offered.insert(choice.title)
+                }
+            }
+        }
+        #expect(
+            offered == ["Put the Rule Back", "Like Everywhere Else", "Like the Rest of Safari", "Back to the Schedule"])
+    }
+
     @Test func aConfigRulesAlwaysIsGreyed() throws {
         let row = try #require(try forced().menu(names: [:]).rows.last)
 
