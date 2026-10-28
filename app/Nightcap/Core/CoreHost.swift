@@ -120,9 +120,9 @@ final class CoreHost: NSObject {
         core.send(command: command)
     }
 
-    /// A command only the UI has.
-    func send(_ command: UiCommand) {
-        core.sendUi(command: command)
+    /// A command only the app has.
+    func send(_ command: AppCommand) {
+        core.sendApp(command: command)
     }
 
     /// The shell carries out its own fixes and hands the core's to it, each named, so a new fix

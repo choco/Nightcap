@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Event, Fact, Fix, Outcome, Staged, UiCommand};
+use nightcap_core::{AppCommand, Effect, Event, Fact, Fix, Outcome, Staged};
 use nightcap_protocol::{
     Check, CheckDetail, CheckKind, CheckState, Command, ErrorCode, Install, Instance, LoginItem,
     OnOff, OpenAtLoginDetail, Payload, Request, Response,
@@ -187,11 +187,11 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
     );
     assert!(
         staged
-            .send_ui(UiCommand::Fix(Fix::OpenAtLogin))
+            .send_app(AppCommand::Fix(Fix::OpenAtLogin))
             .effects
             .contains(&Effect::RegisterLoginItem)
     );
-    staged.send_ui(UiCommand::Fix(Fix::DontOpenAtLogin));
+    staged.send_app(AppCommand::Fix(Fix::DontOpenAtLogin));
     assert_eq!(login_check(&staged), off);
 
     let staged = staged.restart();
@@ -214,7 +214,7 @@ fn opening_at_login_waiting_for_approval_is_a_problem_the_user_can_accept() {
     );
     assert!(
         staged
-            .send_ui(UiCommand::Fix(Fix::DontOpenAtLogin))
+            .send_app(AppCommand::Fix(Fix::DontOpenAtLogin))
             .effects
             .contains(&Effect::UnregisterLoginItem)
     );

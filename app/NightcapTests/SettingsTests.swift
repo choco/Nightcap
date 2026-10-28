@@ -43,7 +43,7 @@ struct SettingsTests {
                     text: "Accessibility isn’t allowed, so website checking can’t read the front tab.",
                     restore: fix("Allow…", .askForAccessibility),
                     accept: fix("Stop Checking Websites", .stopCheckingWebsites)))
-        core.sendUi(command: .fix(.stopCheckingWebsites))
+        core.sendApp(command: .fix(.stopCheckingWebsites))
         #expect(!settings(core).websiteChecking.on)
         #expect(settings(core).check(.accessibility) == nil)
     }
@@ -66,7 +66,7 @@ struct SettingsTests {
                     text: "Notifications were allowed, but they’re switched off in System Settings.",
                     restore: fix("Allow Notifications…", .allowNotifications),
                     accept: fix("Keep Notifications Off", .keepNotificationsOff)))
-        core.sendUi(command: .fix(.keepNotificationsOff))
+        core.sendApp(command: .fix(.keepNotificationsOff))
         #expect(
             settings(core).check(.notifications)
                 == Settings.CheckStatus(
@@ -111,7 +111,7 @@ struct SettingsTests {
         let core = try Core.staged(
             scenario: Scenario(
                 now: at("2026-10-16T01:40:00+02:00"),
-                steps: [reportedSetAside(false, .off), .uiCommand(.fix(.keepScheduleOff))]))
+                steps: [reportedSetAside(false, .off), .appCommand(.fix(.keepScheduleOff))]))
 
         #expect(
             settings(core).check(.nightShift)
@@ -141,7 +141,7 @@ struct SettingsTests {
         #expect(check.accept == nil)
 
         let reloaded = try atNoon(
-            config: broken, .config("[rules.off]\ndomain = [\"figma.com\"]\n"), .uiCommand(.fix(.reload)))
+            config: broken, .config("[rules.off]\ndomain = [\"figma.com\"]\n"), .appCommand(.fix(.reload)))
         #expect(
             settings(reloaded).check(.configFile)
                 == Settings.CheckStatus(

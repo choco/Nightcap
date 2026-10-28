@@ -48,7 +48,7 @@ let zurichSun = Step.fact(
         sunrises: ["2026-10-15T05:49:20Z", "2026-10-16T05:50:47Z", "2026-10-17T05:52:14Z"].map(at),
         sunsets: ["2026-10-15T16:33:25Z", "2026-10-16T16:31:32Z", "2026-10-17T16:29:41Z"].map(at)))
 
-let tourStarted = Step.uiCommand(.startTour)
+let tourStarted = Step.appCommand(.startTour)
 
 nonisolated let tourSample = "io.github.choco.nightcap.tour-sample"
 

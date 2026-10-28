@@ -4,7 +4,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Fact, Staged, UiCommand};
+use nightcap_core::{AppCommand, Effect, Fact, Staged};
 use nightcap_protocol::{Install, Instance, OnOff, Request, Schedule};
 
 use common::{at, noon, report_night_shift};
@@ -19,7 +19,7 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
             .effects
             .contains(&Effect::ShowOnboarding { completed: 0 })
     );
-    staged.send_ui(UiCommand::FinishOnboarding { websites: true });
+    staged.send_app(AppCommand::FinishOnboarding { websites: true });
     assert_eq!(
         staged.core().preferences().website_checking.state,
         OnOff::On
@@ -39,7 +39,7 @@ fn onboarding_runs_at_the_first_launch_and_not_again() {
 fn finishing_onboarding_leaves_website_checking_to_a_config_that_sets_it() {
     let staged = noon().config("websites = false\n").stage().unwrap();
 
-    staged.send_ui(UiCommand::FinishOnboarding { websites: true });
+    staged.send_app(AppCommand::FinishOnboarding { websites: true });
 
     let checking = staged.core().preferences().website_checking;
     assert_eq!(checking.state, OnOff::Off);
@@ -58,7 +58,7 @@ fn onboarding_is_finished_once_the_user_goes_through_it_or_the_config_answers_it
     let staged = noon().stage().unwrap();
     let finished = |staged: &Staged| staged.core().preferences().onboarding_finished;
     assert!(!finished(&staged));
-    staged.send_ui(UiCommand::FinishOnboarding { websites: false });
+    staged.send_app(AppCommand::FinishOnboarding { websites: false });
     assert!(finished(&staged));
     assert_eq!(staged.core().preferences().onboarding_completed, 1);
 

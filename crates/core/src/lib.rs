@@ -17,7 +17,7 @@ mod storage;
 mod tour;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use server::messages::{Effect, Event, Fact, Listener, Outcome, UiCommand};
+pub use server::messages::{AppCommand, Effect, Event, Fact, Listener, Outcome};
 pub use setup::checks::Fix;
 
 #[cfg(any(test, debug_assertions))]
@@ -120,8 +120,8 @@ impl Core {
     }
 
     /// A command only the app sends.
-    pub fn send_ui(&self, command: UiCommand) {
-        self.post(Input::UiCommand(command));
+    pub fn send_app(&self, command: AppCommand) {
+        self.post(Input::AppCommand(command));
     }
 
     /// Releases every force as the app quits (ADR-0008), once everything before it is decided,

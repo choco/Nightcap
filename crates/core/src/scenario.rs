@@ -18,7 +18,7 @@ use crate::server::snapshot::{Published, Snapshot};
 use crate::server::start::{Setup, install_of, instance_of, zone_of};
 use crate::server::state::Inner;
 use crate::storage::file::{File, Memory, Paths};
-use crate::{Core, Fact, Outcome, Runs, UiCommand};
+use crate::{AppCommand, Core, Fact, Outcome, Runs};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in
 /// their own formats, then what happens, in order.
@@ -56,7 +56,7 @@ pub enum Step {
     /// The app sends a command. One the core refuses fails the staging.
     Command(Command),
     /// The app sends a command of its own.
-    UiCommand(UiCommand),
+    AppCommand(AppCommand),
     /// The config changes to this text, or goes: a reload reads it.
     Config(Option<String>),
 }
@@ -73,9 +73,9 @@ impl From<Command> for Step {
     }
 }
 
-impl From<UiCommand> for Step {
-    fn from(command: UiCommand) -> Self {
-        Self::UiCommand(command)
+impl From<AppCommand> for Step {
+    fn from(command: AppCommand) -> Self {
+        Self::AppCommand(command)
     }
 }
 
@@ -194,7 +194,7 @@ impl Scenario {
                         });
                     }
                 }
-                Step::UiCommand(command) => _ = staged.send_ui(command),
+                Step::AppCommand(command) => _ = staged.send_app(command),
                 Step::Config(text) => staged.write_config(text.as_deref()),
             }
         }
@@ -295,9 +295,9 @@ impl Staged {
     }
 
     /// Sends a command only the app has, and returns its outcome.
-    pub fn send_ui(&self, command: UiCommand) -> Outcome {
+    pub fn send_app(&self, command: AppCommand) -> Outcome {
         self.inline
-            .decide(|inner| react(inner, Input::UiCommand(command)))
+            .decide(|inner| react(inner, Input::AppCommand(command)))
     }
 
     /// Quits as the shell does, and returns what it must carry out before it exits.

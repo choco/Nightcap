@@ -8,7 +8,7 @@ use nightcap_protocol::Command;
 
 use crate::rules::schedule::SunTimes;
 use crate::server::state::Inner;
-use crate::{Fact, Outcome, UiCommand};
+use crate::{AppCommand, Fact, Outcome};
 
 /// Something that changes the core: a fact the platform reports, a command from the app, or the
 /// app quitting. The CLI's requests are answered apart, since their response goes back over the
@@ -18,7 +18,7 @@ pub(crate) enum Input {
     Fact(Fact),
     /// A command the app sent, which hears of a refusal as an event.
     Command(Command),
-    UiCommand(UiCommand),
+    AppCommand(AppCommand),
     /// The app is quitting, which releases every force (ADR-0008).
     Terminating,
 }
@@ -33,9 +33,9 @@ pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
                 .0
         }
         Input::Command(command) => inner.choose(command).0,
-        Input::UiCommand(command) => {
+        Input::AppCommand(command) => {
             inner
-                .turn(false, |inner, outcome| inner.ui_command(command, outcome))
+                .turn(false, |inner, outcome| inner.app_command(command, outcome))
                 .0
         }
         Input::Terminating => inner.turn(false, |inner, _| inner.terminating()).0,
@@ -101,12 +101,12 @@ impl Inner {
         }
     }
 
-    fn ui_command(&mut self, command: UiCommand, outcome: &mut Outcome) {
+    fn app_command(&mut self, command: AppCommand, outcome: &mut Outcome) {
         match command {
-            UiCommand::StartTour => self.tour_started(),
-            UiCommand::EndTour => self.tour_ended(self.clock.now()),
-            UiCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
-            UiCommand::Fix(fix) => self.run_fix(fix, outcome),
+            AppCommand::StartTour => self.tour_started(),
+            AppCommand::EndTour => self.tour_ended(self.clock.now()),
+            AppCommand::FinishOnboarding { websites } => self.onboarding_finished(websites),
+            AppCommand::Fix(fix) => self.run_fix(fix, outcome),
         }
     }
 

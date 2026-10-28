@@ -93,7 +93,7 @@ final class Tour {
     private let current: () -> TourFacts.Answers
     private let press: () -> Void
     private let release: () -> Void
-    private let begin: (_ start: UiCommand) -> Void
+    private let begin: (_ start: AppCommand) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
     /// `current` gives the core's answers to the queries the steps follow; `press` and `release`
@@ -106,7 +106,7 @@ final class Tour {
         current: @escaping () -> TourFacts.Answers,
         press: @escaping () -> Void,
         release: @escaping () -> Void,
-        begin: @escaping (_ start: UiCommand) -> Void,
+        begin: @escaping (_ start: AppCommand) -> Void,
         onEnd: @escaping (_ begun: Bool) -> Void
     ) {
         self.shortcut = shortcut

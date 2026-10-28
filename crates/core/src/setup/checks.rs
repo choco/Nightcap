@@ -34,7 +34,7 @@ pub enum Fix {
     OpenLoginItems,
     /// The shell's: Location Services in System Settings.
     OpenLocationServices,
-    /// The core's, like the rest: sent back as `UiCommand::Fix`.
+    /// The core's, like the rest: sent back as `AppCommand::Fix`.
     StopCheckingWebsites,
     KeepNotificationsOff,
     KeepScheduleOff,

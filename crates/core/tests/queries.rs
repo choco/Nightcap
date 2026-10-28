@@ -6,7 +6,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{Fact, Scenario, Staged, UiCommand};
+use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Check, CheckDetail, CheckState, Checks, Command, ConfigState,
     Decision, FileError, Front, Inherited, Install, Instance, Lasting, Length, LoginItem,
@@ -354,7 +354,7 @@ fn front_answers_the_rules_the_switch_would_leave_everywhere() {
             if tour {
                 scenario = scenario
                     .then(reported(false, schedule))
-                    .then(UiCommand::StartTour)
+                    .then(AppCommand::StartTour)
                     .then(reported(true, schedule))
                     .then(Command::Off);
             }
@@ -469,7 +469,7 @@ fn config_answers_why_it_or_rules_toml_cant_be_used() {
 fn preferences_answer_the_users_choices() {
     let staged = noon()
         .then(permissions(true, NotificationPermission::Granted))
-        .then(UiCommand::FinishOnboarding { websites: true })
+        .then(AppCommand::FinishOnboarding { websites: true })
         .stage()
         .unwrap();
 
@@ -568,7 +568,7 @@ fn checks_answer_the_grants_and_the_login_item_once_reported() {
 }
 
 fn start_tour(staged: &Staged) {
-    staged.send_ui(UiCommand::StartTour);
+    staged.send_app(AppCommand::StartTour);
 }
 
 #[test]
@@ -580,7 +580,7 @@ fn tour_answers_whether_one_runs_and_stands_in_for_the_schedule() {
 
     assert_eq!(off.core().tour(), Some(TourState { stands_in: true }));
     answers_alike(&off);
-    off.send_ui(UiCommand::EndTour);
+    off.send_app(AppCommand::EndTour);
     assert_eq!(off.core().tour(), None);
     let on = on_by_the_schedule().stage().unwrap();
     start_tour(&on);

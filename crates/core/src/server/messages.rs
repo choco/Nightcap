@@ -73,7 +73,7 @@ pub enum Fact {
 /// A command only the app sends, which never goes on the wire: the CLI has no tour
 /// (ADR-0016), no onboarding and no fixes.
 #[derive(Debug, uniffi::Enum)]
-pub enum UiCommand {
+pub enum AppCommand {
     /// Starts the tour (ADR-0016).
     StartTour,
     /// Ends the tour, as it finishes or the user leaves it.

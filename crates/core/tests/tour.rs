@@ -8,7 +8,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Fact, File, Scenario, Staged, UiCommand};
+use nightcap_core::{AppCommand, Effect, Fact, File, Scenario, Staged};
 use nightcap_protocol::{
     Command, Decision, ErrorCode, ExportFormat, Lasting, Length, OnOff, Payload, Place, Reason,
     Request, Response, Rule, RuleIdentity, SetBy, TourState,
@@ -38,7 +38,7 @@ fn sample_rule() -> Rule {
 const SITE: &str = "nightcap.choco.me";
 
 fn start_tour(staged: &Staged) -> Vec<Effect> {
-    staged.send_ui(UiCommand::StartTour).effects
+    staged.send_app(AppCommand::StartTour).effects
 }
 
 /// Night Shift on for the tour, over the custom hours' off until 22:00.
@@ -77,7 +77,7 @@ fn the_tours_end_turns_night_shift_back_off_following_the_schedule() {
     report(&staged, true);
 
     assert_eq!(
-        staged.send_ui(UiCommand::EndTour).effects,
+        staged.send_app(AppCommand::EndTour).effects,
         vec![Effect::SetNightShift { enabled: false }]
     );
     assert_eq!(report(&staged, false), Vec::new());
@@ -104,7 +104,7 @@ fn the_tour_sets_aside_everywheres_indefinite_rule_and_puts_it_back() {
     );
     report(&staged, true);
     assert_eq!(
-        staged.send_ui(UiCommand::EndTour).effects,
+        staged.send_app(AppCommand::EndTour).effects,
         vec![Effect::SetNightShift { enabled: false }]
     );
 
@@ -131,7 +131,7 @@ fn the_tour_sets_aside_everywheres_rule_until_a_time_and_puts_it_back_with_its_e
     );
     report(&staged, true);
     assert_eq!(
-        staged.send_ui(UiCommand::EndTour).effects,
+        staged.send_app(AppCommand::EndTour).effects,
         vec![
             Effect::SetNightShift { enabled: false },
             Effect::ScheduleWakeup {
@@ -175,7 +175,7 @@ fn a_tour_started_with_night_shift_on_changes_nothing() {
         staged.core().front().decision.reasons[..],
         [Reason::Schedule { .. }]
     ));
-    assert_eq!(staged.send_ui(UiCommand::EndTour).effects, Vec::new());
+    assert_eq!(staged.send_app(AppCommand::EndTour).effects, Vec::new());
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn outside_a_tour_the_sample_matches_no_rule() {
     start_tour(&staged);
     send(&staged, add_rule(sample()));
     activate(&staged, "com.apple.mail");
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(activate(&staged, SAMPLE), Vec::new());
 }
@@ -266,7 +266,7 @@ fn rules_added_mid_tour_stay_out_of_exports_and_files_and_go_with_their_snoozes(
     let saved = staged.file(File::State).unwrap();
     assert!(!saved.contains(SAMPLE), "{saved}");
 
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(resettable(&staged), Vec::new());
 }
@@ -283,7 +283,7 @@ fn adding_a_rule_that_exists_mid_tour_leaves_it_as_it_is() {
     send(&staged, add_rule(figma()));
 
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
 }
 
@@ -299,7 +299,7 @@ fn adding_the_rule_a_snoozed_app_has_mid_tour_ends_the_snooze_only_while_it_runs
 
     send(&staged, add_rule(figma()));
     assert_eq!(resettable(&staged), Vec::new());
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(
         resettable(&staged),
@@ -340,7 +340,7 @@ fn removing_your_own_rule_mid_tour_lasts_only_while_it_runs() {
     send(&staged, Command::RemoveRule(mail.clone()));
     assert_eq!(rules(&staged), Vec::new());
     assert_eq!(kept_ad_hoc(&staged), vec![ad_hoc(mail.clone())]);
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
 }
@@ -372,7 +372,7 @@ fn turning_your_own_rule_the_other_way_mid_tour_lasts_only_while_it_runs() {
             .export(ExportFormat::Toml)
             .contains("[rules.off]")
     );
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
 }
@@ -390,7 +390,7 @@ fn snoozes_and_the_switch_mid_tour_last_only_while_it_runs() {
     send(&staged, set(figma, OnOff::On, minutes(30)));
     send(&staged, Command::Off);
     assert_eq!(resettable(&staged).len(), 2);
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(resettable(&staged), Vec::new());
 }
@@ -442,7 +442,7 @@ fn starting_the_tour_again_keeps_what_the_first_start_set_aside() {
     report(&staged, true);
 
     assert_eq!(start_tour(&staged), Vec::new());
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
 
     assert_eq!(
         resettable(&staged),
@@ -463,7 +463,7 @@ fn no_tour_runs_before_it_starts_or_once_it_ends() {
 
     start_tour(&staged);
     assert!(staged.core().tour().is_some());
-    staged.send_ui(UiCommand::EndTour);
+    staged.send_app(AppCommand::EndTour);
     assert_eq!(staged.core().tour(), None);
 
     start_tour(&staged);
@@ -526,7 +526,7 @@ fn a_rule_and_a_snooze_for_the_sample_from_the_cli_are_the_tours_to_follow() {
 fn tour_in_safari() -> Scenario {
     on_by_the_schedule()
         .config("websites = true\n")
-        .then(UiCommand::StartTour)
+        .then(AppCommand::StartTour)
         .then(activate_browser_event("com.apple.Safari"))
 }
 

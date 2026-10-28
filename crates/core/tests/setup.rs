@@ -5,7 +5,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{Event, Fact, Fix, Scenario, Staged, UiCommand, normalize_domain};
+use nightcap_core::{AppCommand, Event, Fact, Fix, Scenario, Staged, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotificationPermission,
@@ -241,7 +241,7 @@ fn stopping_website_checking_settles_missing_accessibility() {
         found(&staged, CheckKind::Accessibility),
         accessibility(AccessibilityDetail::NotAllowed, CheckState::Drifted)
     );
-    staged.send_ui(UiCommand::Fix(Fix::StopCheckingWebsites));
+    staged.send_app(AppCommand::Fix(Fix::StopCheckingWebsites));
     assert_eq!(
         staged.core().preferences().website_checking.state,
         OnOff::Off
@@ -258,8 +258,8 @@ fn a_fix_whose_command_is_refused_comes_back_as_a_refusal() {
     set_in_config.report(permissions(false, NotificationPermission::Granted));
     let managed = noon().stage().unwrap();
 
-    let stopped = set_in_config.send_ui(UiCommand::Fix(Fix::StopCheckingWebsites));
-    let not_opened = managed.send_ui(UiCommand::Fix(Fix::DontOpenAtLogin));
+    let stopped = set_in_config.send_app(AppCommand::Fix(Fix::StopCheckingWebsites));
+    let not_opened = managed.send_app(AppCommand::Fix(Fix::DontOpenAtLogin));
 
     assert!(matches!(
         stopped.events.as_slice(),
@@ -287,7 +287,7 @@ fn keeping_notifications_off_settles_them_switched_off() {
         found(&staged, CheckKind::Notifications),
         notifications(NotificationsDetail::SwitchedOff, CheckState::Drifted)
     );
-    staged.send_ui(UiCommand::Fix(Fix::KeepNotificationsOff));
+    staged.send_app(AppCommand::Fix(Fix::KeepNotificationsOff));
     let kept_off = notifications(NotificationsDetail::Off, CheckState::Off);
     assert_eq!(found(&staged, CheckKind::Notifications), kept_off);
     assert!(!staged.core().preferences().notifications_wanted);
@@ -350,7 +350,7 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
         .unwrap();
     staged.report(reported_set_aside(false, Schedule::Off));
 
-    staged.send_ui(UiCommand::Fix(Fix::KeepScheduleOff));
+    staged.send_app(AppCommand::Fix(Fix::KeepScheduleOff));
 
     assert_eq!(
         found(&staged, CheckKind::NightShift),
@@ -435,7 +435,7 @@ fn reloading_mends_a_broken_config_once_it_is_fixed() {
     let broken = check(&staged, CheckKind::ConfigFile).unwrap();
     assert_eq!(broken.state, CheckState::Broken);
     staged.write_config(Some("[rules.off]\ndomain = [\"figma.com\"]\n"));
-    staged.send_ui(UiCommand::Fix(Fix::Reload));
+    staged.send_app(AppCommand::Fix(Fix::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         stands(

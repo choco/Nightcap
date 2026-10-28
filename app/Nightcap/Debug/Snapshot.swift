@@ -31,13 +31,13 @@ enum Snapshot {
                     .fact(.permissionsChanged(accessibility: false, notifications: .granted)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .denied)),
                     .fact(.loginItemChanged(item: .enabled)),
-                    .uiCommand(.finishOnboarding(websites: true)),
+                    .appCommand(.finishOnboarding(websites: true)),
                     .command(.addRule(identity: .app("com.apple.Photos"), says: .off)),
                     .command(.addRule(identity: .app("com.apple.iBooksX"), says: .on)),
                     .command(.set(place: .domain("figma.com"), state: .on, length: .until(sunrise))),
                     .command(.set(place: .app("com.apple.mail"), state: .off, length: .until(today(22, 0)))),
                     .config(rules + "\ndomian = [\"figma.com\"]"),
-                    .uiCommand(.fix(.reload)),
+                    .appCommand(.fix(.reload)),
                 ]))
         // An empty folder, never filled, so sites show the globe whatever this Mac has fetched.
         let icons = SiteIcons(
