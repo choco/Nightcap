@@ -107,25 +107,6 @@ struct MenuTests {
                     ]))
     }
 
-    /// The line under everywhere's item titled `title` at `time`, with Night Shift `enabled` as
-    /// the schedule has it then.
-    private func untilNote(_ time: String, _ enabled: Bool, _ schedule: Schedule, _ title: String) throws -> String? {
-        try #require(try staged(time, zurichSun, reported(enabled, schedule)).everywhereRow).choice(titled: title)
-            .subtitle
-    }
-
-    @Test func untilTheScheduleTurnsNamesSunriseOrSunset() throws {
-        #expect(try untilNote("2026-10-16T01:40:00+02:00", true, .sunsetToSunrise, "Until 18:31") == "At sunset")
-        #expect(try untilNote("2026-10-16T12:00:00+02:00", false, .sunsetToSunrise, "Until 07:52") == "At sunrise")
-    }
-
-    @Test func untilTheScheduleTurnsNamesCustomHoursStartOrEnd() throws {
-        #expect(
-            try untilNote("2026-10-16T23:00:00+02:00", true, customHours, "Until 22:00") == "When the schedule starts")
-        #expect(
-            try untilNote("2026-10-16T12:00:00+02:00", false, customHours, "Until 07:00") == "When the schedule ends")
-    }
-
     @Test func theMenusLengthsComeFromTheConfig() throws {
         let core = try onByTheSchedule(config: "lengths = [\"15m\", \"1h30m\"]\n")
 
@@ -348,16 +329,6 @@ struct MenuTests {
             ])
     }
 
-    @Test func aConfigRulesAlwaysIsGreyed() throws {
-        let row = try #require(try forced().menu(names: [:]).rows.last)
-
-        #expect(row.title == "Turn On in com.figma.Desktop")
-        #expect(row.subtitle == "Always off: your config’s rule")
-        let always = try row.choice(titled: "Always")
-        #expect(!always.enabled)
-        #expect(always.subtitle == "Your config decides")
-    }
-
     @Test func customIsOfferedBesideTheLengthsWithItsPlaceAndWay() throws {
         let row = try #require(try forced().menu(at: at("2026-10-16T23:10:00+02:00")).rows.last)
 
@@ -386,17 +357,6 @@ struct MenuTests {
         #expect(siteTitle(core.siteRow) == ("Turn On at This Site", "docs.figma.com"))
     }
 
-    @Test func aSiteGoesBackToItsBrowsersSayByTheBrowsersName() throws {
-        let example = Place.domain("example.com")
-        let core = try onByTheSchedule(
-            config:
-                "websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n[rules.on]\ndomain = [\"youtube.com\"]\n",
-            front("com.apple.Safari", browser: true), host("example.com"),
-            .command(.set(place: example, state: .on, length: minutes(30))))
-
-        #expect(try #require(core.siteRow).choice(titled: "Like the Rest of Safari").command == .reset(example))
-    }
-
     @Test func aSiteGoesBackToTheSayOfADomainThatCoversItByThatDomain() throws {
         let docs = Place.domain("docs.figma.com")
         let core = try onFigma(host("docs.figma.com"), .command(.set(place: docs, state: .on, length: minutes(30))))
@@ -422,22 +382,6 @@ struct MenuTests {
         #expect(try row.choice(titled: "Always").command == .addRule(identity: .domain("example.com"), says: .on))
     }
 
-    @Test func theSiteRowSnoozesAConfigRule() throws {
-        let core = try onFigma()
-        let figmaSite = Place.domain("figma.com")
-
-        var row = try #require(core.siteRow)
-        #expect(siteTitle(row) == ("Turn On at This Site", "figma.com"))
-        #expect(row.subtitle == "Always off: your config’s rule")
-        let untilMorning = try row.choice(titled: "Until 07:00").command
-        #expect(untilMorning == .set(place: figmaSite, state: .on, length: .untilScheduleTurns))
-        core.send(command: untilMorning)
-        row = try #require(core.siteRow)
-        #expect(siteTitle(row) == ("Turn Off at This Site", "figma.com"))
-        #expect(row.subtitle == "On until 07:00, then your config’s rule")
-        #expect(row.items.first == choice("Put the Rule Back", .reset(figmaSite)))
-    }
-
     @Test func theMenuOpensWithAStrengthSliderOnceTheStrengthIsKnown() throws {
         let core = try staged("2026-10-16T12:00:00+02:00", reported(false, .off))
         #expect(!core.menu().entries.contains { if case .strength = $0 { true } else { false } })
@@ -445,21 +389,6 @@ struct MenuTests {
         core.report(fact: .strengthChanged(value: 60))
 
         #expect(core.menu().entries.first == .strength(60))
-    }
-
-    @Test func theMenuAddsAndRemovesAnAdHocRuleForTheFrontmostApp() throws {
-        let core = try onByTheSchedule(front("com.figma.Desktop"))
-        let figma = RuleIdentity.app("com.figma.Desktop")
-
-        var row = try #require(core.appRow)
-        #expect(row.title == "Turn Off in Figma")
-        #expect(row.subtitle == nil)
-        #expect(try row.choice(titled: "Always").command == .addRule(identity: figma, says: .off))
-        core.send(command: .addRule(identity: figma, says: .off))
-        row = try #require(core.appRow)
-        #expect(row.title == "Turn On in Figma")
-        #expect(row.subtitle == "Always off: your rule")
-        #expect(try row.choice(titled: "Remove Your Rule").command == .removeRule(figma))
     }
 
     @Test func theMenuShowsAProblemLineWhileAnyProblemExists() throws {

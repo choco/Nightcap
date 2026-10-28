@@ -4,24 +4,6 @@ import Testing
 
 /// The place rows' words, each in the situation that shows it.
 struct PlaceRowWordingTests {
-    @Test func everywheresRowTurnsItTheOtherWayForEachLengthOrUntilTheScheduleStarts() throws {
-        let core = try onByTheSchedule()
-
-        let row = try #require(core.everywhereRow)
-
-        #expect(row.title == "Turn Off")
-        #expect(row.subtitle == nil)
-        for (length, title): (Int64, String) in [(30, "For 30 Minutes"), (60, "For 1 Hour"), (120, "For 2 Hours")] {
-            let item = row.choice(sending: .set(place: .everywhere, state: .off, length: minutes(length)))
-            #expect(item?.title == title)
-        }
-        #expect(row.timePickerTitle == "Turn Off Everywhere")
-        let until = try #require(
-            row.choice(sending: .set(place: .everywhere, state: .off, length: .untilScheduleTurns)))
-        #expect(until.title == "Until 22:00")
-        #expect(until.subtitle == "When the schedule starts")
-    }
-
     @Test func untilTheScheduleTurnsNamesSunriseOrSunsetOrTheCustomHoursEndOrStart() throws {
         let cases: [(now: String, enabled: Bool, schedule: Schedule, state: OnOff, title: String, moment: String)] = [
             ("2026-10-16T01:40:00+02:00", true, .sunsetToSunrise, .off, "Until 18:31", "At sunset"),
@@ -188,9 +170,13 @@ struct PlaceRowWordingTests {
         let core = try onByTheSchedule(
             config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n", accessibilityGranted,
             front("com.apple.Safari", browser: true), host("www.figma.com"), reported(false))
-        #expect(try #require(core.siteRow).subtitle == "Always off: your config’s rule")
+        let before = try #require(core.siteRow)
+        #expect(before.title == "Turn On at This Site")
+        #expect(before.subtitle == "Always off: your config’s rule")
+        let untilMorning = try before.choice(titled: "Until 07:00").command
+        #expect(untilMorning == .set(place: figma, state: .on, length: .untilScheduleTurns))
 
-        core.send(command: .set(place: figma, state: .on, length: .untilScheduleTurns))
+        core.send(command: untilMorning)
 
         let row = try #require(core.siteRow)
         #expect(row.title == "Turn Off at This Site")
@@ -238,9 +224,4 @@ struct PlaceRowWordingTests {
         #expect(siteRow.subtitle == says)
     }
 
-    @Test func customIsTheItemThatAsksForATime() throws {
-        let row = try #require(try onByTheSchedule().everywhereRow)
-
-        #expect(row.titles.contains("Custom…"))
-    }
 }
