@@ -13,7 +13,7 @@ use nightcap_protocol::{BundleId, Domain, Place, RuleIdentity};
     about = "Control Nightcap from the command line"
 )]
 pub(crate) struct Cli {
-    /// Talk to the dev build's daemon instead of the installed one.
+    /// Talk to the dev build instead of the installed app.
     #[arg(long, global = true)]
     pub(crate) dev: bool,
 

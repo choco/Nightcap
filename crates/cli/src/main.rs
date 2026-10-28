@@ -65,9 +65,9 @@ fn next_occurrence(time: jiff::civil::Time, now: &Zoned) -> Result<Timestamp, St
 
 /// Why a command failed, which decides the exit code.
 enum Failure {
-    /// The daemon couldn't be reached or didn't answer: exit 1.
+    /// The server couldn't be reached or didn't answer: exit 1.
     Unreachable(anyhow::Error),
-    /// The daemon answered and refused the request: exit 2.
+    /// The server answered and refused the request: exit 2.
     Rejected(ErrorReply),
 }
 

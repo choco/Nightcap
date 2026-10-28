@@ -1,4 +1,4 @@
-//! What the CLI and the daemon share: the IPC messages and where an instance's socket lives.
+//! What the CLI and the server share: the IPC messages and where an instance's socket lives.
 //!
 //! Every message is one JSON object per line (ADR-0010). A connection opens with a
 //! [`HelloMessage`] from the client, answered by a [`HelloReply`]; then the client sends one

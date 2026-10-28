@@ -98,7 +98,7 @@ Whether Nightcap reads the front browser's host, which domain rules need. Off un
 _Avoid_: website monitoring, site tracking
 
 **Watch**:
-Nightcap reading one browser's host while it's in front, which website checking allows unless the browser's own place says off and no site in it could say on.
+Nightcap reading one browser's host while it's in front, which website checking allows unless the browser's own place says off and no site in it could say on. Nothing is watched once Nightcap has released its forces on the way out.
 
 **Browser list**:
 The browsers Nightcap knows how to watch.
@@ -144,9 +144,9 @@ _Avoid_: desired state
 
 ### Talking to Nightcap
 
-**Daemon**:
-The running Nightcap app, as the CLI sees it: the only writer of Night Shift, reached over its socket.
-_Avoid_: server, service
+**Server**:
+Nightcap's core as it runs, with the app and the CLI as its clients: the only writer of Night Shift, which decides what macOS reports and what its clients send one at a time, in the order it arrives. The CLI reaches it over its socket.
+_Avoid_: daemon, service
 
 **Command**:
 A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The app and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the app's alone.

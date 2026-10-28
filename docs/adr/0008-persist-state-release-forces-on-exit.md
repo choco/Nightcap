@@ -14,4 +14,4 @@ Nightcap restarts at every update and at login, and, under a LaunchAgent, after 
 ## Rejected alternatives
 
 - **Persist nothing, or only the rules until a time**: updates and reboots lose the user's intent.
-- **Skip the release on exit**: the daemon can't tell a restart from being removed.
+- **Skip the release on exit**: Nightcap can't tell a restart from being removed.

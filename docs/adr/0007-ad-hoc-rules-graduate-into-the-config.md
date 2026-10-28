@@ -31,7 +31,7 @@ This combines three established patterns: a writable layer over a read-only one 
 
 - **No ad-hoc rules**: every new rule would need a rebuild.
 - **Session-only ad-hoc rules**: forgotten at every reboot.
-- **The ad-hoc file inside the nix-config checkout**: the daemon would write into the repo, the path differs per machine, and the file stays a permanent second source of truth.
-- **Re-applying the config at activation and reverting runtime changes**: the daemon would undo the user's own clicks.
+- **The ad-hoc file inside the nix-config checkout**: Nightcap would write into the repo, the path differs per machine, and the file stays a permanent second source of truth.
+- **Re-applying the config at activation and reverting runtime changes**: Nightcap would undo the user's own clicks.
 - **Changing or switching off a config rule for good from the menu**: the ad-hoc layer would quietly override the config.
 - **An explicit `rules prune` step**: an extra command for no benefit.

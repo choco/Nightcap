@@ -1,6 +1,6 @@
 # CLI and core talk over a per-user Unix socket with a versioned handshake
 
-The CLI talks to the daemon (ADR-0005). The channel needs a transport, framing, a version check (the CLI and the daemon can briefly differ between activation and the agent restarting), a location macOS won't clean up, and an answer on authentication.
+The CLI talks to the server (ADR-0002, ADR-0005). The channel needs a transport, framing, a version check (the CLI and the server can briefly differ between activation and the agent restarting), a location macOS won't clean up, and an answer on authentication.
 
 ## Decision
 

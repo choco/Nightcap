@@ -9,7 +9,7 @@ At launch, Nightcap tells which kind of install it is:
 - **Managed install**: the user can't write the bundle's location. The installer owns updates and launching, so Nightcap starts no updater and registers no login item.
 - **Self-managed install**: everything else. Nightcap updates itself through Sparkle 2, and opens at login if the user chooses to.
 
-Dev builds never start the updater or register a login item. A second instance that finds a live daemon on the socket exits, so a login item and a LaunchAgent can never run Nightcap twice.
+Dev builds never start the updater or register a login item. A second instance that finds a live server on the socket exits, so a login item and a LaunchAgent can never run Nightcap twice.
 
 The project's site is the repo's GitHub Pages site, at the custom domain `nightcap.choco.me`: a CNAME record to `choco.github.io` on Cloudflare, DNS only, with HTTPS enforced by Pages. `choco.me` is verified on the GitHub account, so no other account's Pages site can claim the subdomain. Moving the site off GitHub means pointing the record elsewhere; the feed address stays.
 

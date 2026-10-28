@@ -1,4 +1,4 @@
-//! The connection to the daemon: its socket, the Hello before each request, and the queries
+//! The connection to the server: its socket, the Hello before each request, and the queries
 //! `nightcap status` asks.
 
 use std::io::{BufRead, BufReader, Write};
@@ -16,7 +16,7 @@ use serde::Serialize;
 
 use crate::{Failure, unexpected_reply};
 
-/// How long the daemon may take to answer, including the core's turn at a command.
+/// How long the server may take to answer, including the core's turn at a command.
 const TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn request(
@@ -63,7 +63,7 @@ pub(crate) struct Report {
     pub(crate) checks: Checks,
 }
 
-/// Asks the daemon what `nightcap status` shows.
+/// Asks the server what `nightcap status` shows.
 pub(crate) fn report(instance: Instance) -> Result<Report, Failure> {
     let ask = |query| request(instance, &Request::Query(query), None);
     let Payload::About(about) = ask(Query::About)? else {
@@ -98,7 +98,7 @@ pub(crate) fn report(instance: Instance) -> Result<Report, Failure> {
     })
 }
 
-/// Connects to the daemon, retrying for up to `wait` while it starts.
+/// Connects to the server, retrying for up to `wait` while it starts.
 fn connect(socket: &Path, wait: Option<Duration>) -> anyhow::Result<UnixStream> {
     let wait = wait.unwrap_or_default();
     let deadline = Instant::now()
