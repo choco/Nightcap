@@ -4,11 +4,11 @@
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, Checks, ConfigFileDetail,
-    ConfigState, Decision, FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length,
-    ListedRule, NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission,
-    NotificationsDetail, OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason,
-    Refusal, Rule, RuleAdded, RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, ValueType,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, Checks, ConfigFileDetail, ConfigState,
+    Decision, FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length, ListedRule,
+    NightShift, NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail,
+    OnOff, OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
+    RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, ValueType,
 };
 
 use crate::client::Report;
@@ -117,89 +117,45 @@ fn source(set_by: SetBy) -> &'static str {
     }
 }
 
-/// What a check found, in a sentence.
+/// What a check that needs attention found, in a sentence.
 pub(crate) fn check(detail: &CheckDetail) -> String {
     match detail {
-        CheckDetail::NightShift(found) => night_shift(found),
-        CheckDetail::Accessibility(found) => match found {
-            AccessibilityDetail::Allowed => "Accessibility is allowed.",
-            AccessibilityDetail::NotAllowed => {
-                "Accessibility isn’t allowed, so website checking can’t read the front tab."
-            }
-            AccessibilityDetail::NotNeeded => {
-                "Accessibility isn’t needed while website checking is off."
-            }
+        CheckDetail::NightShift(NightShiftDetail::Unavailable) => {
+            "Night Shift isn’t available on this Mac.".to_owned()
         }
-        .to_owned(),
-        CheckDetail::Notifications(found) => match found {
-            NotificationsDetail::Allowed => "Notifications are allowed.",
-            NotificationsDetail::SwitchedOff => {
-                "Notifications were allowed, but they’re switched off in System Settings."
-            }
-            NotificationsDetail::Off => "Notifications are off.",
-        }
-        .to_owned(),
-        CheckDetail::OpenAtLogin(found) => match found {
-            OpenAtLoginDetail::Opens => "Nightcap opens when you log in.",
-            OpenAtLoginDetail::AwaitingApproval => {
-                "macOS is waiting for your approval in Login Items."
-            }
-            OpenAtLoginDetail::Removed => {
-                "Nightcap no longer opens at login: it was removed in System Settings."
-            }
-            OpenAtLoginDetail::Off => "Nightcap doesn’t open at login.",
-        }
-        .to_owned(),
-        CheckDetail::ConfigFile(found) => match found {
-            ConfigFileDetail::Valid { rules: 0 } => {
-                "The config file is valid, with no rules.".to_owned()
-            }
-            ConfigFileDetail::Valid { rules: 1 } => {
-                "The config file is valid, with 1 rule.".to_owned()
-            }
-            ConfigFileDetail::Valid { rules } => {
-                format!("The config file is valid, with {rules} rules.")
-            }
-            ConfigFileDetail::Missing => "There’s no config file.".to_owned(),
-            ConfigFileDetail::Error(error) => {
-                format!("The config file is invalid: {}", file_error(error))
-            }
-        },
-        CheckDetail::AdHocRules(found) => match found {
-            AdHocRulesDetail::On { rules: 0 } => "No ad-hoc rules.".to_owned(),
-            AdHocRulesDetail::On { rules: 1 } => "1 ad-hoc rule.".to_owned(),
-            AdHocRulesDetail::On { rules } => format!("{rules} ad-hoc rules."),
-            AdHocRulesDetail::Off(error) => {
-                format!("Ad-hoc rules are off: {}.", file_error(error))
-            }
-        },
-    }
-}
-
-/// Night Shift's check, in a sentence.
-fn night_shift(found: &NightShiftDetail) -> String {
-    match found {
-        NightShiftDetail::Available { schedule } => match schedule {
-            None => "Night Shift is available.".to_owned(),
-            Some(Schedule::Off) => "Night Shift is available, with no schedule.".to_owned(),
-            Some(Schedule::SunsetToSunrise) => {
-                "Night Shift is available, following its schedule: sunset to sunrise.".to_owned()
-            }
-            Some(Schedule::Custom { from, to }) => format!(
-                "Night Shift is available, following its schedule: {} to {}.",
-                time_of_day(*from),
-                time_of_day(*to)
-            ),
-        },
-        NightShiftDetail::Unavailable => "Night Shift isn’t available on this Mac.".to_owned(),
-        NightShiftDetail::SetAside => {
+        CheckDetail::NightShift(NightShiftDetail::SetAside) => {
             "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on."
                 .to_owned()
         }
-        NightShiftDetail::NoSunTimes { .. } => {
+        CheckDetail::NightShift(NightShiftDetail::NoSunTimes { .. }) => {
             "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them."
                 .to_owned()
         }
+        CheckDetail::Accessibility(AccessibilityDetail::NotAllowed) => {
+            "Accessibility isn’t allowed, so website checking can’t read the front tab.".to_owned()
+        }
+        CheckDetail::Notifications(NotificationsDetail::SwitchedOff) => {
+            "Notifications were allowed, but they’re switched off in System Settings.".to_owned()
+        }
+        CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval) => {
+            "macOS is waiting for your approval in Login Items.".to_owned()
+        }
+        CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed) => {
+            "Nightcap no longer opens at login: it was removed in System Settings.".to_owned()
+        }
+        CheckDetail::ConfigFile(ConfigFileDetail::Error(error)) => {
+            format!("The config file is invalid: {}", file_error(error))
+        }
+        CheckDetail::AdHocRules(AdHocRulesDetail::Off(error)) => {
+            format!("Ad-hoc rules are off: {}.", file_error(error))
+        }
+        // The core finds these with their check ok or off, which needs no attention.
+        CheckDetail::NightShift(NightShiftDetail::Available { .. })
+        | CheckDetail::Accessibility(AccessibilityDetail::Allowed | AccessibilityDetail::NotNeeded)
+        | CheckDetail::Notifications(NotificationsDetail::Allowed | NotificationsDetail::Off)
+        | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens | OpenAtLoginDetail::Off)
+        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. } | ConfigFileDetail::Missing)
+        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => unexpected_reply(),
     }
 }
 
@@ -326,21 +282,9 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         Refusal::StrengthUnavailable => {
             "Night Shift's strength can't be read on this Mac".to_owned()
         }
-        Refusal::StrengthOutOfRange { strength } => {
-            format!("a strength is 0 to 100, not {strength}")
-        }
-        Refusal::NotATimeOfDay(time) => format!(
-            "custom hours are times of day, from 00:00 to 23:59, not {}",
-            time_of_day(*time)
-        ),
-        Refusal::TooShort => "a length is longer than zero".to_owned(),
         Refusal::TooLong { length } => format!("{length:#} is too long"),
         Refusal::Passed => "that time has passed".to_owned(),
         Refusal::NoSchedule => "there's no schedule to wait for".to_owned(),
-        Refusal::IndefiniteIsAdded => {
-            "only everywhere's indefinite rule is set: an app's or a site's is added as a rule"
-                .to_owned()
-        }
         Refusal::ConfigSays { identity, says } => {
             format!("{identity} comes from the config, which says {says}; change it there")
         }
@@ -363,29 +307,15 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         Refusal::NoUpdater(NotSelfManaged::ManagedInstall) => {
             "this install is managed by its installer, which keeps it up to date".to_owned()
         }
-        Refusal::NoLoginItem(NotSelfManaged::DevBuild) => {
-            "dev builds don't open themselves at login".to_owned()
-        }
-        Refusal::NoLoginItem(NotSelfManaged::ManagedInstall) => {
-            "this install doesn't open itself at login: its installer starts it".to_owned()
-        }
-        Refusal::NothingToAccept { check } => match check {
-            CheckKind::NightShift => {
-                "Night Shift's schedule is as you set it up, so there's nothing to accept"
-            }
-            CheckKind::Accessibility => {
-                "Accessibility is as you set it up, so there's nothing to accept"
-            }
-            CheckKind::Notifications => {
-                "notifications are as you set them up, so there's nothing to accept"
-            }
-            CheckKind::OpenAtLogin => {
-                "opening at login is as you set it up, so there's nothing to accept"
-            }
-            CheckKind::ConfigFile => "problems with the config can only be fixed, not accepted",
-            CheckKind::AdHocRules => "problems with rules.toml can only be fixed, not accepted",
-        }
-        .to_owned(),
+        // The CLI never sends what these refuse: clap keeps its strengths 0 to 100 and its
+        // lengths longer than zero, it sets no indefinite rule, schedule or login item, and it
+        // accepts no drift.
+        Refusal::StrengthOutOfRange { .. }
+        | Refusal::NotATimeOfDay(_)
+        | Refusal::TooShort
+        | Refusal::IndefiniteIsAdded
+        | Refusal::NoLoginItem(_)
+        | Refusal::NothingToAccept { .. } => unexpected_reply(),
     }
 }
 
@@ -406,6 +336,10 @@ pub(crate) fn mismatch(server: Option<&Hello>) -> String {
 /// Nightcap couldn't read what this CLI sent, for serde's reason.
 pub(crate) fn malformed(message: &str) -> String {
     format!("Nightcap couldn't read the request: {message}")
+}
+
+pub(crate) fn unexpected_reply() -> String {
+    "Nightcap sent a reply this CLI doesn't expect".to_owned()
 }
 
 fn schedule_text(schedule: Schedule) -> String {
@@ -752,17 +686,9 @@ fn moment(moment: Timestamp, zone: &TimeZone) -> String {
     clock(moment.to_zoned(zone.clone()).time())
 }
 
-/// One end of custom hours, which the core answers on the clock; a refused one can be past it,
-/// and then its numbers are written as they are.
+/// One end of custom hours, as the clock reads it: "07:00".
 fn time_of_day(time: TimeOfDay) -> String {
-    let on_the_clock = i8::try_from(time.hour)
-        .ok()
-        .zip(i8::try_from(time.minute).ok())
-        .and_then(|(hour, minute)| civil::Time::new(hour, minute, 0, 0).ok());
-    match on_the_clock {
-        Some(time) => clock(time),
-        None => format!("{:02}:{:02}", time.hour, time.minute),
-    }
+    format!("{:02}:{:02}", time.hour, time.minute)
 }
 
 #[cfg(test)]
@@ -959,113 +885,50 @@ mod tests {
     }
 
     #[test]
-    fn night_shifts_check_says_whether_it_works_and_why_the_schedule_cant_run() {
-        let worded = |found| check(&CheckDetail::NightShift(found));
-        let available = |schedule| worded(NightShiftDetail::Available { schedule });
-
-        assert_eq!(available(None), "Night Shift is available.");
-        assert_eq!(
-            available(Some(Schedule::Off)),
-            "Night Shift is available, with no schedule."
-        );
-        assert_eq!(
-            available(Some(Schedule::SunsetToSunrise)),
-            "Night Shift is available, following its schedule: sunset to sunrise."
-        );
-        assert_eq!(
-            available(Some(Schedule::Custom {
-                from: TimeOfDay {
-                    hour: 22,
-                    minute: 0
-                },
-                to: TimeOfDay { hour: 7, minute: 5 },
-            })),
-            "Night Shift is available, following its schedule: 22:00 to 07:05."
-        );
-        assert_eq!(
-            worded(NightShiftDetail::Unavailable),
-            "Night Shift isn’t available on this Mac."
-        );
-        assert_eq!(
-            worded(NightShiftDetail::SetAside),
-            "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on."
-        );
-        assert_eq!(
-            worded(NightShiftDetail::NoSunTimes {
-                waited: jiff::SignedDuration::from_mins(12)
-            }),
-            "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them."
-        );
+    fn a_problem_says_what_stopped_working_or_cant_work() {
+        for (found, said) in [
+            (
+                CheckDetail::NightShift(NightShiftDetail::Unavailable),
+                "Night Shift isn’t available on this Mac.",
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::SetAside),
+                "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
+            ),
+            (
+                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
+                    waited: jiff::SignedDuration::from_mins(12),
+                }),
+                "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
+            ),
+            (
+                CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
+                "Accessibility isn’t allowed, so website checking can’t read the front tab.",
+            ),
+            (
+                CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
+                "Notifications were allowed, but they’re switched off in System Settings.",
+            ),
+            (
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval),
+                "macOS is waiting for your approval in Login Items.",
+            ),
+            (
+                CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed),
+                "Nightcap no longer opens at login: it was removed in System Settings.",
+            ),
+        ] {
+            assert_eq!(check(&found), said, "{found:?}");
+        }
     }
 
     #[test]
-    fn the_grants_checks_say_whether_each_is_allowed_and_wanted() {
-        assert_eq!(
-            check(&CheckDetail::Accessibility(AccessibilityDetail::Allowed)),
-            "Accessibility is allowed."
-        );
-        assert_eq!(
-            check(&CheckDetail::Accessibility(AccessibilityDetail::NotAllowed)),
-            "Accessibility isn’t allowed, so website checking can’t read the front tab."
-        );
-        assert_eq!(
-            check(&CheckDetail::Accessibility(AccessibilityDetail::NotNeeded)),
-            "Accessibility isn’t needed while website checking is off."
-        );
-        assert_eq!(
-            check(&CheckDetail::Notifications(NotificationsDetail::Allowed)),
-            "Notifications are allowed."
-        );
-        assert_eq!(
-            check(&CheckDetail::Notifications(
-                NotificationsDetail::SwitchedOff
-            )),
-            "Notifications were allowed, but they’re switched off in System Settings."
-        );
-        assert_eq!(
-            check(&CheckDetail::Notifications(NotificationsDetail::Off)),
-            "Notifications are off."
-        );
-        assert_eq!(
-            check(&CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens)),
-            "Nightcap opens when you log in."
-        );
-        assert_eq!(
-            check(&CheckDetail::OpenAtLogin(
-                OpenAtLoginDetail::AwaitingApproval
-            )),
-            "macOS is waiting for your approval in Login Items."
-        );
-        assert_eq!(
-            check(&CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed)),
-            "Nightcap no longer opens at login: it was removed in System Settings."
-        );
-        assert_eq!(
-            check(&CheckDetail::OpenAtLogin(OpenAtLoginDetail::Off)),
-            "Nightcap doesn’t open at login."
-        );
-    }
-
-    #[test]
-    fn the_files_checks_count_the_rules_or_say_what_is_wrong_and_where() {
+    fn the_files_checks_say_what_is_wrong_and_where() {
         let config = |found| check(&CheckDetail::ConfigFile(found));
         let ad_hoc = |found| check(&CheckDetail::AdHocRules(found));
         let path = || "/Users/me/.config/nightcap/config.toml".to_owned();
         let invalid = |error| config(ConfigFileDetail::Error(error));
 
-        assert_eq!(
-            config(ConfigFileDetail::Valid { rules: 0 }),
-            "The config file is valid, with no rules."
-        );
-        assert_eq!(
-            config(ConfigFileDetail::Valid { rules: 1 }),
-            "The config file is valid, with 1 rule."
-        );
-        assert_eq!(
-            config(ConfigFileDetail::Valid { rules: 3 }),
-            "The config file is valid, with 3 rules."
-        );
-        assert_eq!(config(ConfigFileDetail::Missing), "There’s no config file.");
         for (failure, said) in [
             (
                 IoFailure::NotFound,
@@ -1138,12 +1001,6 @@ mod tests {
             }),
             "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 2: night_shift.strength is 0 to 100, not 101"
         );
-        assert_eq!(
-            ad_hoc(AdHocRulesDetail::On { rules: 0 }),
-            "No ad-hoc rules."
-        );
-        assert_eq!(ad_hoc(AdHocRulesDetail::On { rules: 1 }), "1 ad-hoc rule.");
-        assert_eq!(ad_hoc(AdHocRulesDetail::On { rules: 2 }), "2 ad-hoc rules.");
         assert_eq!(
             ad_hoc(AdHocRulesDetail::Off(FileError::Newer {
                 path: "/Users/me/.local/share/nightcap/rules.toml".to_owned(),
@@ -1383,18 +1240,6 @@ mod tests {
                 "Night Shift's strength can't be read on this Mac",
             ),
             (
-                Refusal::StrengthOutOfRange { strength: 101 },
-                "a strength is 0 to 100, not 101",
-            ),
-            (
-                Refusal::NotATimeOfDay(TimeOfDay {
-                    hour: 24,
-                    minute: 5,
-                }),
-                "custom hours are times of day, from 00:00 to 23:59, not 24:05",
-            ),
-            (Refusal::TooShort, "a length is longer than zero"),
-            (
                 Refusal::TooLong {
                     length: jiff::SignedDuration::from_mins(90),
                 },
@@ -1402,10 +1247,6 @@ mod tests {
             ),
             (Refusal::Passed, "that time has passed"),
             (Refusal::NoSchedule, "there's no schedule to wait for"),
-            (
-                Refusal::IndefiniteIsAdded,
-                "only everywhere's indefinite rule is set: an app's or a site's is added as a rule",
-            ),
             (
                 Refusal::ConfigSays {
                     identity: figma.clone(),
@@ -1477,26 +1318,6 @@ mod tests {
             (
                 Refusal::NoUpdater(NotSelfManaged::ManagedInstall),
                 "this install is managed by its installer, which keeps it up to date",
-            ),
-            (
-                Refusal::NoLoginItem(NotSelfManaged::DevBuild),
-                "dev builds don't open themselves at login",
-            ),
-            (
-                Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
-                "this install doesn't open itself at login: its installer starts it",
-            ),
-            (
-                Refusal::NothingToAccept {
-                    check: CheckKind::Notifications,
-                },
-                "notifications are as you set them up, so there's nothing to accept",
-            ),
-            (
-                Refusal::NothingToAccept {
-                    check: CheckKind::NightShift,
-                },
-                "Night Shift's schedule is as you set it up, so there's nothing to accept",
             ),
         ] {
             assert_eq!(refusal(&why), said, "{why:?}");

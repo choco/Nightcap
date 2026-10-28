@@ -293,9 +293,7 @@ fn set_elsewhere(
 }
 
 pub(crate) fn unexpected_reply() -> Failure {
-    Failure::Unreachable(anyhow::anyhow!(
-        "Nightcap sent a reply this CLI doesn't expect"
-    ))
+    Failure::Unreachable(anyhow::Error::msg(wording::unexpected_reply()))
 }
 
 #[cfg(test)]
