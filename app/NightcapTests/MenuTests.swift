@@ -224,6 +224,24 @@ struct MenuTests {
                 == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…", "Until 07:00", "—", "Always"])
     }
 
+    /// Only the CLI stacks a rule until a time over a longer one at its place that says the same,
+    /// with the other way under both. The menu decides from what the place's rules and what's
+    /// under them say, not from what the place would give once its rule until a time ends, so it
+    /// leaves the lengths out there, though one would turn the place the row's way for a while
+    /// before the longer rule came back.
+    @Test func overTwoRulesThatSayTheSameOverTheOtherWayTheMenuLeavesTheLengthsOut() throws {
+        // `nightcap on --app com.figma.Desktop --until-schedule`, then `--for 30m`, over the
+        // config's rule.
+        let figma = try forced(
+            .command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)),
+            .command(.set(place: figmaApp, state: .on, length: minutes(30))))
+        #expect(figma.appRow?.titles == ["Put the Rule Back"])
+        // `nightcap off`, then `nightcap off --for 1h`, at 23:00 over the schedule's on.
+        let everywhere = try onByTheSchedule(
+            .command(.off), .command(.set(place: .everywhere, state: .off, length: minutes(60))))
+        #expect(everywhere.everywhereRow == nil)
+    }
+
     @Test func backToTheScheduleIsOfferedOnlyWhereTheSwitchWouldKeepARuleOfEverywheres() throws {
         // The switch takes the hour off, as Back to the Schedule would.
         let offForAnHour = try onByTheSchedule(.command(.set(place: .everywhere, state: .off, length: minutes(60))))

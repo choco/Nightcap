@@ -159,18 +159,22 @@ private struct Rows {
         let everywhere = front.everywhere
         let state = everywhere.gives.other
         var items: [Menu.Item] = []
-        // While a trial stands in, what's under everywhere's rules is the stand-in's on, which
-        // the switch gives back; the schedule isn't there to go back to.
-        if case .schedule(let scheduled, .some) = everywhere.base, scheduled == state, !everywhere.rules.isEmpty,
-            !front.afterSwitch.isEmpty
+        // The switch keeps everywhere's rules that say its way, so only where one does would going
+        // back to the schedule differ from it. While a trial stands in, the schedule isn't there
+        // to go back to.
+        if case .schedule(let scheduled, .some) = everywhere.base, scheduled == state,
+            everywhere.hasRule(saying: state)
         {
             items.append(.choice(Menu.Choice(title: words.backToTheSchedule, command: .reset(.everywhere))))
         }
         var lengths: [Menu.Item] = []
-        if everywhere.afterUntil != state {
+        // A new rule takes off its place's rules of its length and shorter, so over a rule until a
+        // time with the row's way under it, a length would come to the same as the switch.
+        let held = everywhere.baseSays == state || everywhere.hasRule(saying: state)
+        if !(everywhere.changedForATime && held) {
             lengths += picks(at: .everywhere, state, window: words.timePickerTitle(state))
         }
-        if everywhere.afterReset != state, let until = untilTurn(at: .everywhere, state) {
+        if everywhere.baseSays != state, let until = untilTurn(at: .everywhere, state) {
             lengths.append(until)
         }
         if !items.isEmpty, !lengths.isEmpty { items.append(.separator) }
@@ -198,22 +202,28 @@ private struct Rows {
     }
 
     /// The row for an app or site in front (ADR-0018): that place alone, with undoing first:
-    /// putting its indefinite rule back where that goes the right way, and removing a rule of the
-    /// user's; then its lengths, then indefinitely, which is a rule.
+    /// a reset, which leaves its indefinite rule, else what it inherits, where that goes the
+    /// row's way, and removing a rule of the user's; then its lengths, short of those that would
+    /// come to the same as undoing, then indefinitely, which is a rule.
     private func row(_ at: PlaceInFront, named: Wording.Place, identity: RuleIdentity) -> Menu.PlaceRow {
         let place = at.place
         let state = at.gives.other
-        let rule: Rule? = if case .rule(let rule) = at.base { rule } else { nil }
+        let rule = at.rule
         var items: [Menu.Item] = []
-        if !at.rules.isEmpty, at.afterReset == state {
-            // A site follows its browser where the browser has its own say.
-            let title =
-                switch (rule, at.inherits?.from) {
-                case (.some, _): words.putTheRuleBack
-                case (nil, .app(let browser)): words.likeTheRest(of: name(of: browser))
-                case (nil, _): words.likeEverywhereElse
+        let undo: String? =
+            switch (rule, at.inherits) {
+            case _ where at.rules.isEmpty: nil
+            case (let rule?, _) where rule.says == state: words.putTheRuleBack
+            case (nil, let inherits?) where inherits.says == state:
+                // A site follows its browser where the browser has its own say.
+                switch inherits.from {
+                case .app(let browser): words.likeTheRest(of: name(of: browser))
+                case .everywhere, .domain: words.likeEverywhereElse
                 }
-            items.append(.choice(Menu.Choice(title: title, command: .reset(place))))
+            default: nil
+            }
+        if let undo {
+            items.append(.choice(Menu.Choice(title: undo, command: .reset(place))))
         }
         // Removing a rule is the user's to do whenever they like, even where nothing on screen
         // would change.
@@ -221,10 +231,12 @@ private struct Rows {
             items.append(.choice(Menu.Choice(title: words.removeYourRule, command: .removeRule(identity))))
         }
         var lengths: [Menu.Item] = []
-        if at.afterUntil != state {
+        // A new rule takes off its place's rules of its length and shorter, so over a rule until a
+        // time with the row's way under it, a length would come to the same as taking that off.
+        if !(at.changedForATime && (undo != nil || at.hasRule(saying: state))) {
             lengths += picks(at: place, state, window: words.timePickerTitle(state, at: named))
         }
-        if at.afterReset != state, let until = untilTurn(at: place, state) {
+        if undo == nil, let until = untilTurn(at: place, state) {
             lengths.append(until)
         }
         let always: Menu.Choice? =
