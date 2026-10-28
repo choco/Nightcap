@@ -93,7 +93,6 @@ impl Answers {
             about: About {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 install: inner.install,
-                manages_itself: inner.manages_itself,
             },
         }
     }

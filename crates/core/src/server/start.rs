@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
+use nightcap_protocol::{Install, Instance, NightShift, NotSelfManaged, NotificationPermission};
 
 use crate::clock::Clock;
 use crate::commands::Loaded;
@@ -22,7 +22,6 @@ use crate::{CoreError, Effect};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
-    pub(crate) instance: Instance,
     pub(crate) install: Install,
     /// The socket the IPC thread serves, which the core removes on the way out.
     pub(crate) socket: Option<PathBuf>,
@@ -60,15 +59,12 @@ impl Inner {
             }
         };
         let mut inner = Self {
-            instance: setup.instance,
             install: setup.install,
             socket: setup.socket,
             files: setup.files,
             store,
             ad_hoc_store,
             clock: setup.clock.clone(),
-            manages_itself: setup.install == Install::SelfManaged
-                && setup.instance == Instance::Release,
             facts: Facts {
                 night_shift: NightShift::Unavailable,
                 timeline: Timeline {
@@ -115,7 +111,7 @@ impl Inner {
     /// The shell's launch: starts the updater where this install updates itself, and applies the
     /// config's `[night_shift]`.
     pub(crate) fn launched(&mut self, effects: &mut Vec<Effect>) {
-        if self.manages_itself {
+        if self.install == Install::SelfManaged {
             effects.push(Effect::StartUpdater);
         }
         self.apply_config_night_shift(effects);
@@ -129,12 +125,13 @@ pub(crate) fn instance_of(bundle_id: &str) -> Result<Instance, CoreError> {
     })
 }
 
-/// A bundle the user can replace makes a self-managed install (ADR-0011).
-pub(crate) fn install_of(bundle_writable: bool) -> Install {
-    if bundle_writable {
-        Install::SelfManaged
-    } else {
-        Install::Managed
+/// The install an instance's bundle makes (ADR-0011): a release the user can replace is
+/// self-managed, and any bundle the user can't replace a managed install, a dev build's too.
+pub(crate) fn install_of(instance: Instance, bundle_writable: bool) -> Install {
+    match (instance, bundle_writable) {
+        (Instance::Release, true) => Install::SelfManaged,
+        (_, false) => Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
+        (Instance::Dev, true) => Install::NotSelfManaged(NotSelfManaged::DevBuild),
     }
 }
 

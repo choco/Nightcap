@@ -93,7 +93,7 @@ impl From<&protocol::About> for Nightcap {
     fn from(about: &protocol::About) -> Self {
         Self {
             version: about.version.clone(),
-            install: Install::from(about),
+            install: Install::from(about.install),
         }
     }
 }
@@ -110,13 +110,14 @@ enum Install {
     DevBuild,
 }
 
-impl From<&protocol::About> for Install {
-    fn from(about: &protocol::About) -> Self {
-        // A self-managed install that doesn't manage itself is a dev build.
-        match (about.manages_itself, about.install) {
-            (true, _) => Self::SelfManaged,
-            (false, protocol::Install::Managed) => Self::Managed,
-            (false, protocol::Install::SelfManaged) => Self::DevBuild,
+impl From<protocol::Install> for Install {
+    fn from(install: protocol::Install) -> Self {
+        match install {
+            protocol::Install::SelfManaged => Self::SelfManaged,
+            protocol::Install::NotSelfManaged(protocol::NotSelfManaged::ManagedInstall) => {
+                Self::Managed
+            }
+            protocol::Install::NotSelfManaged(protocol::NotSelfManaged::DevBuild) => Self::DevBuild,
         }
     }
 }

@@ -35,7 +35,7 @@ uniffi::custom_type!(Timestamp, SystemTime, {
 });
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -444,10 +444,6 @@ pub struct TrialState {
 pub struct About {
     pub version: String,
     pub install: Install,
-    /// A self-managed release, which updates itself and opens itself at login if the user
-    /// wants: an installer owns a managed install, and a dev build would shadow the installed
-    /// app (ADR-0011).
-    pub manages_itself: bool,
 }
 
 /// What the core makes of everything it knows: what Night Shift should be, the place that
@@ -1066,8 +1062,10 @@ pub struct TimeOfDay {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum Install {
-    Managed,
+    /// A release the user can replace, which updates itself and opens itself at login if the
+    /// user wants.
     SelfManaged,
+    NotSelfManaged(NotSelfManaged),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
@@ -1144,14 +1142,14 @@ pub enum Refusal {
     NothingToAccept { check: CheckKind },
 }
 
-/// What runs where it isn't a self-managed release, which updates itself and opens itself at
-/// login (ADR-0011).
+/// What runs where it isn't a self-managed release (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NotSelfManaged {
-    /// A dev build, which would shadow the installed app: it's rebuilt, and started by hand.
+    /// A dev build the user can replace, which would shadow the installed app: it's rebuilt,
+    /// and started by hand.
     DevBuild,
-    /// A managed install, whose installer updates and starts it.
+    /// A managed install, which the user can't replace: its installer updates and starts it.
     ManagedInstall,
 }
 
@@ -1478,7 +1476,10 @@ mod tests {
             Answer::About(About {
                 version: "1.2.0".to_owned(),
                 install: Install::SelfManaged,
-                manages_itself: true,
+            }),
+            Answer::About(About {
+                version: "1.2.0".to_owned(),
+                install: Install::NotSelfManaged(NotSelfManaged::DevBuild),
             }),
             Answer::Export("{ }".to_owned()),
         ])));

@@ -9,10 +9,10 @@ use jiff::SignedDuration;
 use nightcap_core::{AppCommand, Fact, Scenario, Staged};
 use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
-    ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Instance, Lasting,
-    Length, ListedRule, LoginItem, NightShift, NightShiftState, NotificationPermission, OnOff,
-    Permissions, Place, PlaceInFront, Preferences, Problem, Query, Reason, Schedule, TrialState,
-    WebsiteChecking,
+    ConfigState, Decision, ExportFormat, FileError, Front, Inherited, Install, Lasting, Length,
+    ListedRule, LoginItem, NightShift, NightShiftState, NotSelfManaged, NotificationPermission,
+    OnOff, Permissions, Place, PlaceInFront, Preferences, Problem, Query, Reason, Schedule,
+    TrialState, WebsiteChecking,
 };
 
 use common::{
@@ -533,17 +533,13 @@ fn trial_answers_whether_one_runs_and_stands_in_for_the_schedule() {
 #[test]
 fn about_answers_the_version_and_the_install() {
     let managed = noon().stage().unwrap();
-    let self_managed = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let self_managed = noon().installed(Install::SelfManaged).stage().unwrap();
 
     assert_eq!(
         managed.core().snapshot().about(),
         About {
             version: env!("CARGO_PKG_VERSION").to_owned(),
-            install: Install::Managed,
-            manages_itself: false,
+            install: Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
         }
     );
     assert_eq!(

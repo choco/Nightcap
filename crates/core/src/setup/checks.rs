@@ -5,7 +5,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, ConfigFileDetail,
-    FileError, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
+    FileError, Install, LoginItem, NightShift, NightShiftDetail, NotificationPermission,
     NotificationsDetail, OpenAtLoginDetail, Schedule, SetBy,
 };
 
@@ -70,7 +70,11 @@ impl Inner {
                 },
             ));
         }
-        if let Some(item) = self.grants.login_item.filter(|_| self.manages_itself) {
+        if let Some(item) = self
+            .grants
+            .login_item
+            .filter(|_| self.install == Install::SelfManaged)
+        {
             found.push(CheckDetail::OpenAtLogin(
                 match (item, self.grants.open_at_login) {
                     (LoginItem::Enabled, _) => OpenAtLoginDetail::Opens,

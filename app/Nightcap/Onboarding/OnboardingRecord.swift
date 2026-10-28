@@ -36,7 +36,7 @@ struct OnboardingRecord {
         let answered =
             setup.websitesFromConfig != nil && !setup.askStrength && !setup.askSchedule
             && snapshot.rules().contains { $0.rule.setBy == .config }
-            && !snapshot.about().managesItself
+            && snapshot.about().install != .selfManaged
         if answered { finish() }
         return !answered
     }

@@ -107,7 +107,7 @@ struct Settings: Equatable {
         websiteChecking = Switch(on: on, locked: websites.fromConfig, command: .websites(on ? .off : .on))
         // Registered but waiting for approval counts as on; its check explains the rest.
         openAtLogin =
-            snapshot.about().managesItself
+            snapshot.about().install == .selfManaged
             ? answered.permissions.loginItem.map { item in
                 let on = item != .notRegistered
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))

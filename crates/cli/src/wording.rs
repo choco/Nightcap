@@ -497,11 +497,10 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
         checks,
         trial,
     } = report;
-    // A self-managed install that doesn't manage itself is a dev build (ADR-0011).
-    let install = match (about.manages_itself, about.install) {
-        (true, _) => "self-managed",
-        (false, Install::Managed) => "managed by its installer",
-        (false, Install::SelfManaged) => "a dev build",
+    let install = match about.install {
+        Install::SelfManaged => "self-managed",
+        Install::NotSelfManaged(NotSelfManaged::ManagedInstall) => "managed by its installer",
+        Install::NotSelfManaged(NotSelfManaged::DevBuild) => "a dev build",
     };
     let state = match night_shift.state {
         NightShift::Unavailable => "unavailable",
@@ -1175,7 +1174,7 @@ mod tests {
     mod status {
         use jiff::SignedDuration;
         use nightcap_core::{AppCommand, Fact, Scenario};
-        use nightcap_protocol::{Command, Instance};
+        use nightcap_protocol::Command;
 
         use super::*;
         use crate::client::tests::staged_report;
@@ -1186,7 +1185,7 @@ mod tests {
         /// notifications switched off after being allowed.
         fn on_figma() -> Scenario {
             Scenario::at("2026-10-16T23:00:00+02:00".parse().unwrap())
-                .installed(Instance::Release, Install::SelfManaged)
+                .installed(Install::SelfManaged)
                 .config(
                     "websites = true\n[night_shift]\nstrength = 40\n[rules.off]\ndomain = [\"figma.com\"]\n",
                 )
@@ -1301,19 +1300,18 @@ mod tests {
 
         #[test]
         fn status_says_whether_the_install_manages_itself() {
-            let first_line =
-                |instance, install| shown(on_figma().installed(instance, install)).swap_remove(0);
+            let first_line = |install| shown(on_figma().installed(install)).swap_remove(0);
 
             assert_eq!(
-                first_line(Instance::Release, Install::SelfManaged),
+                first_line(Install::SelfManaged),
                 "Nightcap 1.2.0, self-managed"
             );
             assert_eq!(
-                first_line(Instance::Release, Install::Managed),
+                first_line(Install::NotSelfManaged(NotSelfManaged::ManagedInstall)),
                 "Nightcap 1.2.0, managed by its installer"
             );
             assert_eq!(
-                first_line(Instance::Dev, Install::SelfManaged),
+                first_line(Install::NotSelfManaged(NotSelfManaged::DevBuild)),
                 "Nightcap 1.2.0, a dev build"
             );
         }

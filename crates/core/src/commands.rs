@@ -4,8 +4,8 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    CheckKind, CheckState, Command, FileError, Instance, LoginItem, NightShift, NotSelfManaged,
-    OnOff, Payload, Refusal, RuleAdded, RuleIdentity,
+    CheckKind, CheckState, Command, FileError, Install, LoginItem, NightShift, OnOff, Payload,
+    Refusal, RuleAdded, RuleIdentity,
 };
 
 use crate::rules::places::Places;
@@ -96,8 +96,8 @@ impl Inner {
                 .add_rule(identity, *says)
                 .map(|rule| added = Some(rule)),
             Command::RemoveRule(identity) => self.remove_rule(identity),
-            Command::OpenAtLogin(chosen) => {
-                if self.manages_itself {
+            Command::OpenAtLogin(chosen) => match self.install {
+                Install::SelfManaged => {
                     self.grants.open_at_login = *chosen == OnOff::On;
                     match chosen {
                         OnOff::On => effects.push(Effect::RegisterLoginItem),
@@ -108,10 +108,9 @@ impl Inner {
                         OnOff::Off => {}
                     }
                     Ok(())
-                } else {
-                    Err(Refusal::NoLoginItem(self.not_self_managed()))
                 }
-            }
+                Install::NotSelfManaged(why) => Err(Refusal::NoLoginItem(why)),
+            },
             Command::KeepNotificationsOff => {
                 self.to_accept(CheckKind::Notifications, now).map(|()| {
                     tracing::info!("notifications kept off");
@@ -159,8 +158,8 @@ impl Inner {
                     .map(|()| Payload::Rules(self.every_rule(now)));
             }
             Command::CheckForUpdates => {
-                if !self.manages_itself {
-                    return Err(Refusal::NoUpdater(self.not_self_managed()));
+                if let Install::NotSelfManaged(why) = self.install {
+                    return Err(Refusal::NoUpdater(why));
                 }
                 tracing::info!("checking for updates");
                 effects.push(Effect::CheckForUpdates);
@@ -275,14 +274,6 @@ impl Inner {
         match &self.loaded.ad_hoc_error {
             None => Ok(()),
             Some(error) => Err(Refusal::AdHocRulesOff(error.into())),
-        }
-    }
-
-    /// What runs, where it isn't a self-managed release (ADR-0011).
-    pub(crate) fn not_self_managed(&self) -> NotSelfManaged {
-        match self.instance {
-            Instance::Dev => NotSelfManaged::DevBuild,
-            Instance::Release => NotSelfManaged::ManagedInstall,
         }
     }
 

@@ -460,7 +460,7 @@ extension OnboardingFlow.Setup {
         let checks = snapshot.checks()
         let askStrength = nightShift.strength != nil && config.strength == nil
         let askSchedule = nightShift.state != .unavailable && config.schedule == nil
-        let opensItself = snapshot.about().managesItself
+        let opensItself = snapshot.about().install == .selfManaged
         self.init(
             askStrength: askStrength,
             askSchedule: askSchedule,

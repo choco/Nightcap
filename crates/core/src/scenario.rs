@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, Install, Instance, Payload, Refusal, Request, Response};
+use nightcap_protocol::{Command, Install, NotSelfManaged, Payload, Refusal, Request, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -32,7 +32,8 @@ pub struct Scenario {
     /// The app's bundle ID, which picks the instance.
     #[uniffi(default = "io.github.choco.nightcap")]
     pub bundle_id: String,
-    /// Whether the user can replace the app bundle, which makes it a self-managed install.
+    /// Whether the user can replace the app bundle, which makes a release a self-managed
+    /// install.
     #[uniffi(default = false)]
     pub bundle_writable: bool,
     /// `config.toml`, or None for no such file.
@@ -115,15 +116,21 @@ impl Scenario {
         }
     }
 
-    /// The scenario run as this instance, in this kind of install.
-    pub fn installed(self, instance: Instance, install: Install) -> Self {
-        Self {
-            bundle_id: match instance {
-                Instance::Release => "io.github.choco.nightcap",
-                Instance::Dev => "io.github.choco.nightcap.dev",
+    /// The scenario run as this kind of install: a release or a dev build, from a bundle only a
+    /// managed install's user can't replace.
+    pub fn installed(self, install: Install) -> Self {
+        let (bundle_id, bundle_writable) = match install {
+            Install::SelfManaged => ("io.github.choco.nightcap", true),
+            Install::NotSelfManaged(NotSelfManaged::ManagedInstall) => {
+                ("io.github.choco.nightcap", false)
             }
-            .to_owned(),
-            bundle_writable: install == Install::SelfManaged,
+            Install::NotSelfManaged(NotSelfManaged::DevBuild) => {
+                ("io.github.choco.nightcap.dev", true)
+            }
+        };
+        Self {
+            bundle_id: bundle_id.to_owned(),
+            bundle_writable,
             ..self
         }
     }
@@ -177,8 +184,7 @@ impl Scenario {
             }
         }
         let staged = Staged::start(
-            instance,
-            install_of(self.bundle_writable),
+            install_of(instance, self.bundle_writable),
             zone,
             files,
             self.now,
@@ -207,7 +213,6 @@ pub struct Staged {
     inline: Arc<Inline>,
     files: Arc<Memory>,
     clock: Arc<ManualClock>,
-    instance: Instance,
     install: Install,
     zone: TimeZone,
 }
@@ -240,16 +245,9 @@ impl Inline {
 }
 
 impl Staged {
-    fn start(
-        instance: Instance,
-        install: Install,
-        zone: TimeZone,
-        files: Arc<Memory>,
-        now: Timestamp,
-    ) -> Self {
+    fn start(install: Install, zone: TimeZone, files: Arc<Memory>, now: Timestamp) -> Self {
         let clock = Arc::new(ManualClock::new(now));
         let inner = Inner::start(Setup {
-            instance,
             install,
             socket: None,
             files: files.clone(),
@@ -269,7 +267,6 @@ impl Staged {
             inline,
             files,
             clock,
-            instance,
             install,
             zone,
         }
@@ -340,13 +337,7 @@ impl Staged {
 
     /// As `restart`, with the clock at `now`.
     pub fn restart_at(&self, now: Timestamp) -> Self {
-        Self::start(
-            self.instance,
-            self.install,
-            self.zone.clone(),
-            self.files.clone(),
-            now,
-        )
+        Self::start(self.install, self.zone.clone(), self.files.clone(), now)
     }
 }
 

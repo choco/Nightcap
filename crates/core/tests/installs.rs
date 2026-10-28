@@ -3,20 +3,17 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Staged};
+use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{
-    CheckDetail, CheckKind, CheckState, Command, Install, Instance, LoginItem, NotSelfManaged,
-    OnOff, OpenAtLoginDetail, Payload, Refusal, Response,
+    CheckDetail, CheckKind, CheckState, Command, Install, LoginItem, NotSelfManaged, OnOff,
+    OpenAtLoginDetail, Payload, Refusal, Response,
 };
 
 use common::{check, launch, noon, refusal, send};
 
 #[test]
 fn update_in_a_self_managed_release_starts_sparkles_check() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
 
     let (effects, response) = send(&staged, Command::CheckForUpdates);
 
@@ -26,34 +23,22 @@ fn update_in_a_self_managed_release_starts_sparkles_check() {
 
 #[test]
 fn update_is_refused_where_nightcap_doesnt_update_itself() {
-    for (instance, install, not_self_managed) in [
-        (
-            Instance::Release,
-            Install::Managed,
-            NotSelfManaged::ManagedInstall,
-        ),
-        (
-            Instance::Dev,
-            Install::SelfManaged,
-            NotSelfManaged::DevBuild,
-        ),
-        (Instance::Dev, Install::Managed, NotSelfManaged::DevBuild),
-    ] {
-        let staged = noon().installed(instance, install).stage().unwrap();
+    for why in [NotSelfManaged::ManagedInstall, NotSelfManaged::DevBuild] {
+        let staged = noon()
+            .installed(Install::NotSelfManaged(why))
+            .stage()
+            .unwrap();
 
         let (effects, response) = send(&staged, Command::CheckForUpdates);
 
         assert_eq!(effects, Vec::new());
-        assert_eq!(refusal(response), Refusal::NoUpdater(not_self_managed));
+        assert_eq!(refusal(response), Refusal::NoUpdater(why));
     }
 }
 
 #[test]
 fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
-    let self_managed = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let self_managed = noon().installed(Install::SelfManaged).stage().unwrap();
     let managed = noon().stage().unwrap();
 
     let (started, _) = self_managed.send(Command::CheckForUpdates);
@@ -82,10 +67,7 @@ fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
 
 #[test]
 fn a_self_managed_release_starts_its_updater_at_launch_and_registers_nothing() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
 
     assert_eq!(launch(&staged).effects, vec![Effect::StartUpdater]);
 }
@@ -93,7 +75,7 @@ fn a_self_managed_release_starts_its_updater_at_launch_and_registers_nothing() {
 #[test]
 fn a_managed_install_leaves_starting_at_login_to_its_installer() {
     let staged = noon()
-        .installed(Instance::Release, Install::Managed)
+        .installed(Install::NotSelfManaged(NotSelfManaged::ManagedInstall))
         .stage()
         .unwrap();
 
@@ -103,7 +85,7 @@ fn a_managed_install_leaves_starting_at_login_to_its_installer() {
 #[test]
 fn a_dev_build_never_registers_a_login_item() {
     let staged = noon()
-        .installed(Instance::Dev, Install::SelfManaged)
+        .installed(Install::NotSelfManaged(NotSelfManaged::DevBuild))
         .stage()
         .unwrap();
 
@@ -112,24 +94,29 @@ fn a_dev_build_never_registers_a_login_item() {
 
 #[test]
 fn only_an_install_that_updates_itself_opens_itself_at_login() {
-    for (instance, install, manages_itself) in [
-        (Instance::Release, Install::SelfManaged, true),
-        (Instance::Release, Install::Managed, false),
-        (Instance::Dev, Install::SelfManaged, false),
-        (Instance::Dev, Install::Managed, false),
+    let managed = Install::NotSelfManaged(NotSelfManaged::ManagedInstall);
+    let dev = Install::NotSelfManaged(NotSelfManaged::DevBuild);
+    for (bundle_id, bundle_writable, install) in [
+        ("io.github.choco.nightcap", true, Install::SelfManaged),
+        ("io.github.choco.nightcap", false, managed),
+        ("io.github.choco.nightcap.dev", true, dev),
+        ("io.github.choco.nightcap.dev", false, managed),
     ] {
-        let staged = noon().installed(instance, install).stage().unwrap();
+        let staged = Scenario {
+            bundle_id: bundle_id.to_owned(),
+            bundle_writable,
+            ..noon()
+        }
+        .stage()
+        .unwrap();
         staged.report(login_item(LoginItem::NotRegistered));
 
         let (_, update) = send(&staged, Command::CheckForUpdates);
         let (_, login) = send(&staged, Command::OpenAtLogin(OnOff::On));
 
-        let case = format!("{instance:?}, {install:?}");
-        assert_eq!(
-            staged.core().snapshot().about().manages_itself,
-            manages_itself,
-            "{case}"
-        );
+        let case = format!("{bundle_id}, writable: {bundle_writable}");
+        let manages_itself = install == Install::SelfManaged;
+        assert_eq!(staged.core().snapshot().about().install, install, "{case}");
         assert_eq!(matches!(update, Response::Ok(_)), manages_itself, "{case}");
         assert_eq!(matches!(login, Response::Ok(_)), manages_itself, "{case}");
         assert_eq!(
@@ -146,10 +133,7 @@ fn login_item(item: LoginItem) -> Fact {
 
 #[test]
 fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_install() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
     staged.report(login_item(LoginItem::NotRegistered));
 
     assert_eq!(
@@ -182,7 +166,7 @@ fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_i
 #[test]
 fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
     let managed = noon()
-        .installed(Instance::Release, Install::Managed)
+        .installed(Install::NotSelfManaged(NotSelfManaged::ManagedInstall))
         .stage()
         .unwrap();
     managed.report(login_item(LoginItem::NotRegistered));
@@ -194,7 +178,7 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
     );
 
     let dev = noon()
-        .installed(Instance::Dev, Install::SelfManaged)
+        .installed(Install::NotSelfManaged(NotSelfManaged::DevBuild))
         .stage()
         .unwrap();
     dev.report(login_item(LoginItem::NotRegistered));
@@ -217,10 +201,7 @@ fn opening(found: OpenAtLoginDetail, state: CheckState) -> Option<(CheckDetail, 
 
 #[test]
 fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
     let off = opening(OpenAtLoginDetail::Off, CheckState::Off);
     staged.report(login_item(LoginItem::NotRegistered));
 
@@ -253,10 +234,7 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
 
 #[test]
 fn opening_at_login_waiting_for_approval_is_a_problem_the_user_can_accept() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
     _ = staged.send(Command::OpenAtLogin(OnOff::On));
     staged.report(login_item(LoginItem::RequiresApproval));
 
@@ -275,10 +253,7 @@ fn opening_at_login_waiting_for_approval_is_a_problem_the_user_can_accept() {
 
 #[test]
 fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
     _ = staged.send(Command::OpenAtLogin(OnOff::On));
     staged.report(login_item(LoginItem::NotRegistered));
 
@@ -294,10 +269,7 @@ fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
 
 #[test]
 fn a_login_item_added_in_system_settings_becomes_the_users_choice() {
-    let staged = noon()
-        .installed(Instance::Release, Install::SelfManaged)
-        .stage()
-        .unwrap();
+    let staged = noon().installed(Install::SelfManaged).stage().unwrap();
 
     staged.report(login_item(LoginItem::Enabled));
     staged.report(login_item(LoginItem::NotRegistered));

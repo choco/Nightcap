@@ -68,8 +68,8 @@ impl fmt::Debug for Core {
 impl Core {
     /// Starts the core for the app with this bundle ID, which picks the instance: its
     /// subsystem for logging and its socket. Fails if that instance is already running.
-    /// `bundle_writable` says whether the user can replace the app bundle, which makes it a
-    /// self-managed install. `time_zone` is the system's IANA time zone ID. `listener` hears
+    /// `bundle_writable` says whether the user can replace the app bundle, which makes a
+    /// release a self-managed install. `time_zone` is the system's IANA time zone ID. `listener` hears
     /// the outcome of every fact and command, with the snapshot its input left, on the core's
     /// thread.
     #[uniffi::constructor]
@@ -84,11 +84,10 @@ impl Core {
         let path = instance.socket_path()?;
         let files = Disk(Paths::xdg(instance)?);
         let zone = zone_of(&time_zone)?;
-        let install = install_of(bundle_writable);
+        let install = install_of(instance, bundle_writable);
         // Before any file is read, so a second instance stops here.
         let socket = ipc::bind(&path)?;
         let inner = Inner::start(Setup {
-            instance,
             install,
             socket: Some(path),
             files: Arc::new(files),

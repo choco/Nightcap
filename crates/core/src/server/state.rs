@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use nightcap_protocol::{Install, Instance, NightShift, OnOff};
+use nightcap_protocol::{Install, NightShift, OnOff};
 
 use crate::clock::Clock;
 use crate::commands::Loaded;
@@ -21,7 +21,8 @@ use crate::storage::saved_state::{Persisted, Store};
 /// the system, as last reported by the shell, what it keeps across restarts, and the files and
 /// the clock it keeps them by.
 pub(crate) struct Inner {
-    pub(crate) instance: Instance,
+    /// Whether Nightcap updates itself through Sparkle and opens itself at login if the user
+    /// wants (ADR-0011).
     pub(crate) install: Install,
     /// The socket the IPC thread serves, which the core removes on the way out.
     pub(crate) socket: Option<PathBuf>,
@@ -29,10 +30,6 @@ pub(crate) struct Inner {
     pub(crate) store: Store,
     pub(crate) ad_hoc_store: ad_hoc_rules::Store,
     pub(crate) clock: Arc<dyn Clock>,
-    /// A self-managed release, which updates itself through Sparkle and opens itself at login
-    /// if the user wants: an installer owns a managed one, and a dev build would shadow the
-    /// installed app (ADR-0011).
-    pub(crate) manages_itself: bool,
     pub(crate) facts: Facts,
     pub(crate) places: Places,
     pub(crate) strength: Option<u8>,

@@ -85,7 +85,7 @@ pub(crate) mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, Install, Instance, NightShift, OnOff, RuleIdentity, Schedule, TimeOfDay,
+        Command, Install, NightShift, NotSelfManaged, OnOff, RuleIdentity, Schedule, TimeOfDay,
     };
 
     use super::Listener;
@@ -119,8 +119,7 @@ pub(crate) mod tests {
     /// A managed release in Zurich at `now`, on files in memory, serving `socket` if given.
     fn inner_at(now: &str, socket: Option<&Path>) -> Inner {
         Inner::start(Setup {
-            instance: Instance::Release,
-            install: Install::Managed,
+            install: Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
             socket: socket.map(Path::to_owned),
             files: Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap")))),
             clock: Arc::new(ManualClock::new(now.parse().unwrap())),

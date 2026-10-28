@@ -204,7 +204,7 @@ mod tests {
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
         AdHocRulesDetail, CheckDetail, CheckKind, Command, ConfigFileDetail, FileError, Install,
-        Instance, IoFailure, Lasting, Length, ListedRule, OnOff, Place, Refusal, Rule,
+        IoFailure, Lasting, Length, ListedRule, NotSelfManaged, OnOff, Place, Refusal, Rule,
         RuleIdentity, Schedule, SetBy, TimeOfDay,
     };
 
@@ -222,8 +222,7 @@ mod tests {
     /// A core started at 23:00 in Zurich on the files in `folder`.
     fn started(folder: &Path) -> Inner {
         Inner::start(Setup {
-            instance: Instance::Release,
-            install: Install::Managed,
+            install: Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
             socket: None,
             files: Arc::new(disk(folder)),
             clock: Arc::new(ManualClock::new(
