@@ -5,64 +5,72 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use nightcap_protocol::{
     About, Answer, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload,
-    Preferences, Query, Response, RuleIdentity, Rules, TrialState,
+    Permissions, Preferences, Query, Response, RuleIdentity, Rules, Schedule, TrialState,
+    WebsiteChecking,
 };
 
-use crate::queries::Answers;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
+use crate::storage::file::File;
 
-/// The core as it stood after one input, which a read takes whole (ADR-0002): every query and
-/// the export answer from it as of that input, whatever the core decides after.
+/// The core as it stood after one input, which a read takes whole (ADR-0002): every query, in
+/// process and over the socket, and the export answer from it as of that input, whatever the
+/// core decides after.
 #[derive(Debug, uniffi::Object)]
 pub struct Snapshot {
-    /// What the queries answer, in process and over the socket.
-    pub(crate) answers: Answers,
+    night_shift: NightShiftState,
+    front: Front,
+    rules: Rules,
+    config: ConfigState,
+    preferences: Preferences,
+    checks: Checks,
+    trial: Option<TrialState>,
+    about: About,
     /// The ad-hoc rules, for an export (ADR-0007).
-    pub(crate) ad_hoc: Vec<(RuleIdentity, OnOff)>,
+    ad_hoc: Vec<(RuleIdentity, OnOff)>,
 }
 
 #[uniffi::export]
 impl Snapshot {
     /// Night Shift as the shell last reported it, and its schedule.
     pub fn night_shift(&self) -> NightShiftState {
-        self.answers.night_shift
+        self.night_shift
     }
 
     /// What's in front, and what decides Night Shift there (ADR-0018).
     pub fn front(&self) -> Front {
-        self.answers.front.clone()
+        self.front.clone()
     }
 
     /// The apps' and sites' indefinite rules, each with its snooze, apart from every place's
     /// temporary rule (ADR-0018).
     pub fn rules(&self) -> Rules {
-        self.answers.rules.clone()
+        self.rules.clone()
     }
 
     /// The config as Nightcap last read it, and why it or `rules.toml` can't be used.
     pub fn config(&self) -> ConfigState {
-        self.answers.config.clone()
+        self.config.clone()
     }
 
     /// The user's choices about how Nightcap runs.
     pub fn preferences(&self) -> Preferences {
-        self.answers.preferences
+        self.preferences
     }
 
     /// The checks, and the grants behind them.
     pub fn checks(&self) -> Checks {
-        self.answers.checks.clone()
+        self.checks.clone()
     }
 
     /// The trial, while one runs (ADR-0016).
     pub fn trial(&self) -> Option<TrialState> {
-        self.answers.trial
+        self.trial
     }
 
     /// The Nightcap that answers: its version and its install (ADR-0011).
     pub fn about(&self) -> About {
-        self.answers.about.clone()
+        self.about.clone()
     }
 
     /// The ad-hoc rules, written for the config (ADR-0007).
@@ -74,8 +82,51 @@ impl Snapshot {
 impl Snapshot {
     pub(crate) fn of(inner: &Inner) -> Self {
         let now = inner.clock.now();
+        let facts = &inner.facts;
+        let timeline = &facts.timeline;
         Self {
-            answers: Answers::new(inner, now),
+            night_shift: NightShiftState {
+                state: facts.night_shift,
+                strength: inner.strength,
+                schedule: timeline.schedule.map(Schedule::from),
+                set_aside: inner.grants.schedule_set_aside,
+                scheduled: timeline
+                    .scheduled_state(facts.applied_until)
+                    .map(OnOff::from),
+                // A turn on is what ends an off, and a turn off what ends an on.
+                next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
+                next_off: timeline.next_turn(facts.applied_until, OnOff::On),
+            },
+            front: (inner.places).front(&facts.world(now), inner.watching.is_watching()),
+            rules: inner.places.rules(),
+            config: ConfigState {
+                path: inner.files.path(File::Config).display().to_string(),
+                strength: inner.loaded.config_night_shift.strength,
+                schedule: inner.loaded.config_night_shift.schedule,
+                websites: facts.config_websites.map(OnOff::from),
+                lengths: inner.loaded.lengths.clone(),
+            },
+            preferences: Preferences {
+                website_checking: WebsiteChecking {
+                    state: OnOff::from(facts.website_checking()),
+                    from_config: facts.config_websites.is_some(),
+                },
+                notifications_wanted: inner.grants.notifications_wanted,
+                open_at_login: inner.grants.open_at_login,
+            },
+            checks: Checks {
+                checks: inner.checks(now),
+                permissions: Permissions {
+                    accessibility: inner.grants.accessibility == Some(true),
+                    notifications: inner.grants.notifications,
+                    login_item: inner.grants.login_item,
+                },
+            },
+            trial: inner.places.trial(),
+            about: About {
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+                install: inner.install,
+            },
             ad_hoc: inner.places.ad_hoc(),
         }
     }

@@ -7,7 +7,6 @@ mod commands;
 mod ffi;
 mod ipc;
 mod logging;
-mod queries;
 mod rules;
 #[cfg(any(test, debug_assertions))]
 mod scenario;
