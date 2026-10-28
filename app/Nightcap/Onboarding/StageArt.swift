@@ -287,28 +287,29 @@ enum StageArt {
         return side(by: left, bar)
     }
 
-    /// The menu at 21:42, from what the core answers with Mail in front and Night Shift on by
-    /// sunset to sunrise until 07:00. The stage leaves each row's submenu closed.
+    /// The menu at 21:42, as it shows with Mail in front and Night Shift on by sunset to sunrise
+    /// until 07:00: the strength, then everywhere's row and Mail's, each turning it off. The stage
+    /// leaves each row's submenu closed, so a row holds only its first item, which marks it as
+    /// having one.
     private static var readyMenu: Menu {
         let calendar = Calendar.current
         let evening = calendar.date(bySettingHour: 21, minute: 42, second: 0, of: Date())!
         let tomorrow = calendar.date(byAdding: .day, value: 1, to: evening)!
         let sunrise = calendar.date(bySettingHour: 7, minute: 0, second: 0, of: tomorrow)!
-        let schedule = Reason.schedule(state: .on, until: sunrise)
-        let mail = PlaceInFront(
-            place: .app("com.apple.mail"), gives: .on, rules: [], base: nil,
-            inherits: Inherited(from: .everywhere, says: .on))
-        let everywhere = PlaceInFront(place: .everywhere, gives: .on, rules: [], base: schedule, inherits: nil)
+        let length: SignedDuration = 30 * 60
+        let row = { (place: Place, title: String) in
+            let first = Menu.Choice(
+                title: words.forLength(length), command: .set(place: place, state: .off, length: .for(length)))
+            return Menu.Entry.row(
+                Menu.PlaceRow(place: place, title: title, site: nil, subtitle: nil, items: [.choice(first)]))
+        }
         return Menu(
-            nightShift: NightShiftState(
-                state: .on, strength: 60, schedule: .sunsetToSunrise, setAside: false, scheduled: .on, nextOn: nil,
-                nextOff: sunrise),
-            front: Front(
-                app: "com.apple.mail", watching: false, host: nil, site: nil,
-                decision: Decision(state: .on, place: .everywhere, reasons: [schedule]), places: [mail],
-                everywhere: everywhere),
-            lengths: [30 * 60, 60 * 60, 120 * 60], checks: [], now: evening, appName: { _ in "Mail" },
-            words: .system)
+            moon: .on, problemLine: nil,
+            nightShift: Menu.NightShiftItem(on: true, line: words.followingTheSchedule(until: sunrise), command: .off),
+            entries: [
+                .strength(60), row(.everywhere, words.turn(.off)), .separator,
+                row(.app("com.apple.mail"), words.turn(.off, at: .app(name: "Mail"))),
+            ])
     }
 
     /// Nightcap's menu, open under the moon, as the app draws it on macOS 27: the Night Shift

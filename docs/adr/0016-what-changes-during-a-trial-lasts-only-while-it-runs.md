@@ -15,7 +15,7 @@ The tour, offered at the end of onboarding and from Settings, walks through the 
 - The tour is the app's use of a trial:
   - When Night Shift is off, the tour's first step says it will turn it on. The app begins the trial only once the user continues, asking for the stand-in when it finds Night Shift off, and ends it as the tour finishes, as the user leaves it, or as Nightcap quits.
   - While the tour runs, its steps follow the core's answers to the queries, whichever way the user made a change: `front()` says whether the sample and the site are in front, `rules()` what their rules say and whether they're snoozed, and `trial()` whether the trial stands in. The switch's side is the Night Shift item's.
-  - The steps quote the menu's items from the menu-bar UI's own model of the menu, the one the menu draws, in the situation each step describes, so a step quotes what the menu shows.
+  - The steps quote the menu's items in the words the menu-bar UI's own model of the menu gives them in the situation each step describes, and a test checks them against the menu a core in that situation leads to, so a step quotes what the menu shows.
   - The app knows its trial is the tour: the Night Shift item says "On for the tour" for the stand-in, and the menu calls a trial rule the tour's.
 - Tour Sample is an app in Nightcap's bundle, beside the CLI. A window of Nightcap's own would make Nightcap the front app, and on macOS 27, opening a status item's menu while its own app is in front hands the focus to another app, so the menu would offer a rule for that one.
 
