@@ -727,7 +727,7 @@ pub enum OpenAtLoginDetail {
 #[serde(rename_all = "snake_case")]
 pub enum ConfigFileDetail {
     /// Valid, with this many rules.
-    Valid { rules: usize },
+    Valid { rules: u32 },
     /// There's no config file, which is an empty config.
     Missing,
     /// It can't be used; the rules are the ones loaded before, or none.
@@ -738,7 +738,7 @@ pub enum ConfigFileDetail {
 #[serde(rename_all = "snake_case")]
 pub enum AdHocRulesDetail {
     /// In use, with this many rules.
-    On { rules: usize },
+    On { rules: u32 },
     /// Off, because `rules.toml` can't be used.
     Off(FileError),
 }
@@ -753,13 +753,13 @@ pub enum FileError {
     /// it.
     Malformed {
         path: String,
-        line: Option<usize>,
+        line: Option<u32>,
         message: String,
     },
     /// Well-formed, but an entry or a value can't be: why, and its line where Nightcap knows it.
     Invalid {
         path: String,
-        line: Option<usize>,
+        line: Option<u32>,
         message: String,
     },
     /// It's from a newer Nightcap, which wrote this version of it.

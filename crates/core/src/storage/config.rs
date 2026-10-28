@@ -97,7 +97,7 @@ pub(crate) enum ConfigError {
     #[error("{}: line {line}: {problem}", .path.display())]
     Invalid {
         path: PathBuf,
-        line: usize,
+        line: u32,
         problem: Problem,
     },
 }
@@ -117,7 +117,7 @@ impl ConfigError {
 /// then what.
 #[derive(Debug, thiserror::Error)]
 pub(crate) struct Malformed {
-    pub(crate) line: Option<usize>,
+    pub(crate) line: Option<u32>,
     /// toml's message.
     pub(crate) message: String,
 }
@@ -141,13 +141,15 @@ impl fmt::Display for Malformed {
     }
 }
 
-/// The line, counted from 1, that the byte at `offset` in `contents` is on.
-fn line_at(contents: &[u8], offset: usize) -> usize {
-    1 + contents
+/// The line, counted from 1, that the byte at `offset` in `contents` is on. A file past
+/// `u32::MAX` lines is past any the core reads, so its last lines all count as that one.
+fn line_at(contents: &[u8], offset: usize) -> u32 {
+    let breaks = contents
         .iter()
         .take(offset)
         .filter(|&&byte| byte == b'\n')
-        .count()
+        .count();
+    u32::try_from(breaks).map_or(u32::MAX, |breaks| breaks.saturating_add(1))
 }
 
 /// What makes a well-formed config invalid.

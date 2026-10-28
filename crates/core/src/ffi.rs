@@ -114,14 +114,14 @@ pub enum OpenAtLoginDetail {
 
 #[uniffi::remote(Enum)]
 pub enum ConfigFileDetail {
-    Valid { rules: usize },
+    Valid { rules: u32 },
     Missing,
     Error(FileError),
 }
 
 #[uniffi::remote(Enum)]
 pub enum AdHocRulesDetail {
-    On { rules: usize },
+    On { rules: u32 },
     Off(FileError),
 }
 
@@ -133,12 +133,12 @@ pub enum FileError {
     },
     Malformed {
         path: String,
-        line: Option<usize>,
+        line: Option<u32>,
         message: String,
     },
     Invalid {
         path: String,
-        line: Option<usize>,
+        line: Option<u32>,
         message: String,
     },
     Newer {
@@ -146,14 +146,6 @@ pub enum FileError {
         version: u32,
     },
 }
-
-// A check's counts and lines cross as u64, which holds any usize on the 64-bit Macs Nightcap runs
-// on (ADR-0013).
-uniffi::custom_type!(usize, u64, {
-    remote,
-    lower: |count| u64::try_from(count).unwrap_or(u64::MAX),
-    try_lift: |count| Ok(usize::try_from(count)?),
-});
 
 #[uniffi::remote(Enum)]
 pub enum ExportFormat {
