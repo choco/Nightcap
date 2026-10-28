@@ -7,7 +7,7 @@ import NightcapCore
 /// window's tabs, onboarding's steps, the tour's panel and the pointer to the moon, light and
 /// dark, from the mockups' scenarios into that folder, then quits. Settings and onboarding draw
 /// cores staged in memory, brought to each scenario by their own code.
-enum Snapshot {
+enum SnapshotRenderer {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
         let today = { (hour: Int, minute: Int) in
