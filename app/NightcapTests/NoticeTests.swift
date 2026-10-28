@@ -45,6 +45,24 @@ struct NoticeTests {
         #expect(Notice(off, frontApp: figma, words: .staged)?.title == "Night Shift turned off outside Nightcap")
     }
 
+    @Test func everyTimeReadsWithTwoDigitHoursOnA24HourClockAndAmOrPmOnA12HourOne() {
+        let zurich = TimeZone(identifier: "Europe/Zurich")!
+        let swiss = Wording(locale: Locale(identifier: "en_CH"), timeZone: zurich)
+        let american = Wording(locale: Locale(identifier: "en_US"), timeZone: zurich)
+        let adopted = Event.adopted(
+            place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: morning)
+
+        #expect(Notice(adopted, frontApp: figma, words: swiss)?.body == "Snoozed the Figma rule until 07:00.")
+        #expect(
+            Notice(adopted, frontApp: figma, words: american)?.body == "Snoozed the Figma rule until 7:00\u{202F}AM.")
+        #expect(swiss.time(TimeOfDay(hour: 6, minute: 5)) == "06:05")
+        #expect(american.time(TimeOfDay(hour: 22, minute: 0)) == "10:00\u{202F}PM")
+        #expect(swiss.eveningClock == "21:42")
+        #expect(american.eveningClock == "9:42\u{202F}PM")
+        #expect(swiss.loginClock == "Tue 08:30")
+        #expect(american.loginClock == "Tue 8:30\u{202F}AM")
+    }
+
     @Test func anOutsideChangeThatSnoozedNoRuleTellsNothing() {
         let adopted = Event.adopted(place: .everywhere, snoozed: nil, state: .on, until: morning)
 

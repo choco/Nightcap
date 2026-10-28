@@ -65,8 +65,7 @@ extension Wording {
     }
 
     /// The mocks' menu-bar clocks: the evening they show, an afternoon, and a Tuesday morning at
-    /// login. They follow the user's clock without AM or PM, as the menu bar can show it, which
-    /// the mocks' widths leave room for.
+    /// login, in the user's clock as every time reads, AM or PM and all.
     var eveningClock: String { menuBarClock(hour: 21, minute: 42) }
     var afternoonClock: String { menuBarClock(hour: 14, minute: 0) }
     var loginClock: String { menuBarClock(hour: 8, minute: 30, weekday: true) }
@@ -76,7 +75,7 @@ extension Wording {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = .gmt
         let tuesday = calendar.date(from: DateComponents(year: 2026, month: 10, day: 27, hour: hour, minute: minute))!
-        let style = Date.FormatStyle(locale: locale, timeZone: .gmt).hour(.defaultDigits(amPM: .omitted)).minute()
+        let style = clock(in: .gmt)
         return tuesday.formatted(weekday ? style.weekday(.abbreviated) : style)
     }
 }

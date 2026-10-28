@@ -41,7 +41,7 @@ struct Wording {
 
     /// A time of day, in the user's clock: "07:00", or "7:00 AM".
     func time(_ date: Date) -> String {
-        date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, timeZone: timeZone))
+        date.formatted(clock(in: timeZone))
     }
 
     /// A time of day, in the user's clock: "22:00", or "10:00 PM".
@@ -50,7 +50,15 @@ struct Wording {
         calendar.timeZone = .gmt
         let date = calendar.date(
             from: DateComponents(year: 2001, month: 1, day: 1, hour: Int(time.hour), minute: Int(time.minute)))!
-        return date.formatted(Date.FormatStyle(date: .omitted, time: .shortened, locale: locale, timeZone: .gmt))
+        return date.formatted(clock(in: .gmt))
+    }
+
+    /// How every time reads, in `zone`: two-digit hours on a 24-hour clock, "07:00", and AM or PM
+    /// on a 12-hour one, "7:00 AM", as the Custom… window's picker and the weekday formats write
+    /// them. The short time style writes "7:00" on some 24-hour clocks, such as English
+    /// (Switzerland)'s.
+    func clock(in zone: TimeZone) -> Date.FormatStyle {
+        Date.FormatStyle(locale: locale, timeZone: zone).hour(.defaultDigits(amPM: .abbreviated)).minute()
     }
 
     /// Whose rule decides, as a line names it: "your config’s rule".

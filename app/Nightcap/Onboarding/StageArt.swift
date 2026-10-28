@@ -268,15 +268,18 @@ enum StageArt {
         screen.add(banner, at: NSPoint(x: 66, y: 22))
         Loop.fades(banner, values: [0, 0, 1, 1, 0, 0], times: [0, 0.12, 0.22, 0.8, 0.92, 1], duration: 5)
         let left = captioned(screen, words.overruleARule, nil)
-        let moon = NSRect(x: 214, y: 4, width: 26, height: 22)
+        let font = NSFont.systemFont(ofSize: 12)
+        // The clock ends inside the bar, as far from its edge as Finder is, whatever the user's
+        // clock makes its width, and the moon sits just left of it.
+        let clock = min(246, 300 - 14 - Paint.width(words.loginClock, font))
+        let moon = NSRect(x: clock - 6 - 26, y: 4, width: 26, height: 22)
         let bar = Drawn(NSSize(width: 300, height: 56)) { _ in
             Paint.lifted { Paint.rounded(NSRect(x: 0, y: 0, width: 300, height: 30), 8, Paint.bar) }
-            let font = NSFont.systemFont(ofSize: 12)
             Paint.text("Finder", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 14, y: 7))
             Paint.text(words.file, font, .labelColor, at: NSPoint(x: 66, y: 7))
             Paint.text(words.edit, font, .labelColor, at: NSPoint(x: 98, y: 7))
             Paint.moon(.off, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
-            Paint.text(words.loginClock, font, .labelColor, at: NSPoint(x: moon.maxX + 6, y: 7))
+            Paint.text(words.loginClock, font, .labelColor, at: NSPoint(x: clock, y: 7))
             Paint.text(
                 words.loginCaption, .systemFont(ofSize: 11), .nightcapSecondary, centredAt: NSPoint(x: 150, y: 48))
         }
@@ -323,16 +326,19 @@ enum StageArt {
         // A status item's menu opens under it, to the right, unless that would leave the screen,
         // as it would this close to the edge: then it stays inside.
         let box = NSRect(x: 460 - 4 - 212, y: 36, width: 212, height: top + heights.reduce(0, +) + 2.5)
+        let font = NSFont.systemFont(ofSize: 12)
+        // The clock ends inside the bar, as far from its edge as Mail is, whatever the user's clock
+        // makes its width, and the moon sits left of it.
+        let clock = min(410, 460 - 16 - Paint.width(words.eveningClock, font))
         return Drawn(NSSize(width: 460, height: box.maxY + 6)) { _ in
-            let font = NSFont.systemFont(ofSize: 12)
             Paint.lifted { Paint.rounded(NSRect(x: 0, y: 0, width: 460, height: 30), 8, Paint.bar) }
             Paint.text("Mail", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 16, y: 7))
             Paint.text(words.file, font, .labelColor, at: NSPoint(x: 56, y: 7))
             Paint.text(words.edit, font, .labelColor, at: NSPoint(x: 88, y: 7))
-            let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
+            let moon = NSRect(x: clock - 38, y: 5, width: 26, height: 20)
             Paint.rounded(moon, 10, Paint.highlight)
             Paint.moon(menu.moon, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
-            Paint.text(words.eveningClock, font, .labelColor, at: NSPoint(x: 410, y: 7))
+            Paint.text(words.eveningClock, font, .labelColor, at: NSPoint(x: clock, y: 7))
             Paint.lifted { Paint.rounded(box, 10, Paint.menu) }
             let item = NSFont.systemFont(ofSize: 11)
             // The menu's columns: the checkmark, the item's image, and the title.
@@ -553,17 +559,19 @@ final class MiniScreen: NSView {
             Loop.middle(second)
             Loop.ends(first)
         }
+        let words = Wording.system
+        let clock = daytime ? words.afternoonClock : words.eveningClock
+        let clockFont = NSFont.systemFont(ofSize: 8)
+        // The moon, then the clock, as wide as the user's clock makes it, with room for 21:42.
+        let width = max(40, 13 + Paint.width(clock, clockFont).rounded(.up) + 4)
         let status = { (icon: Menu.Moon) in
-            Drawn(NSSize(width: 40, height: 15)) { _ in
+            Drawn(NSSize(width: width, height: 15)) { _ in
                 Paint.moon(icon, ink, in: NSRect(x: 0, y: 3, width: 9, height: 9))
-                let words = Wording.system
-                Paint.text(
-                    daytime ? words.afternoonClock : words.eveningClock, .systemFont(ofSize: 8), ink,
-                    at: NSPoint(x: 13, y: 3))
+                Paint.text(clock, clockFont, ink, at: NSPoint(x: 13, y: 3))
             }
         }
         let on = status(daytime ? .off : .on)
-        on.frame.origin = NSPoint(x: size.width - 44, y: 0)
+        on.frame.origin = NSPoint(x: size.width - 4 - width, y: 0)
         addSubview(on)
         if forcesOff {
             let forced = status(.forcedOff)
