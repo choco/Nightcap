@@ -113,7 +113,7 @@ struct Settings: Equatable {
                 restore: button(fixes.restore), accept: button(fixes.accept))
         }
         configPath = core.config().path
-        self.rules = rules.filter(Self.isAppOrSiteRule).compactMap { rule in Self.row(rule, among: rules, words) }
+        self.rules = Self.rows(of: rules, words: words)
         forNow = Self.forNow(rules).compactMap { place, rules in
             Self.identity(of: place).map { identity in
                 ForNowRow(
@@ -133,6 +133,13 @@ struct Settings: Equatable {
     /// Whether `tab` shows a problem, which marks it.
     func hasProblem(in tab: Tab) -> Bool {
         checks.contains { tab.checks.contains($0.kind) && $0.isProblem }
+    }
+
+    /// The Rules tab's rows for `rules`, every rule at every place: the apps' and sites'
+    /// indefinite rules, the config's then the user's, each with its label and what can be done
+    /// about it. Onboarding's suggestions say where their rules come from in the same words.
+    static func rows(of rules: [Rule], words: Wording) -> [RuleRow] {
+        rules.filter(isAppOrSiteRule).compactMap { rule in row(rule, among: rules, words) }
     }
 
     /// The tab with the problem the menu points at: General's first, then Rules'.

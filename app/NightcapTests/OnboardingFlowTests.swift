@@ -28,6 +28,11 @@ private func core(
             ]))
 }
 
+/// What onboarding asks on `core`, whose login item isn't registered.
+private func setup(_ core: Core) -> OnboardingFlow.Setup {
+    OnboardingFlow.Setup(core, loginItem: .notRegistered)
+}
+
 /// The flow over `core`, with iMovie and Photos to suggest and figma.com among the sites. What it
 /// chooses reaches the core, as the menu's commands do, and `sent` too.
 private func onboarding(
@@ -36,8 +41,8 @@ private func onboarding(
     onFinish: @escaping (Bool) -> Void = { _ in }
 ) -> OnboardingFlow {
     OnboardingFlow(
-        steps: core.onboarding(), apps: [imovie, photos], sites: ["figma.com"],
-        rules: { core.settings().rules }, accessibilityGranted: { true }, askForAccessibility: {},
+        setup: setup(core), apps: [imovie, photos], sites: ["figma.com"],
+        rules: { core.rules() }, words: .staged, accessibilityGranted: { true }, askForAccessibility: {},
         choose: { command in
             sent.commands.append(command)
             core.send(command: command)
@@ -47,6 +52,45 @@ private func onboarding(
 
 /// Onboarding's flow on a staged core: what each user is asked, and what reaches the core when.
 struct OnboardingFlowTests {
+    @Test func onboardingAsksAboutNightShiftStartingFromTheMacsValues() throws {
+        let core = try Core.staged(
+            scenario: Scenario(
+                now: at("2026-10-16T12:00:00+02:00"),
+                steps: [
+                    .fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false)),
+                    .fact(.strengthChanged(value: 60)),
+                ]))
+
+        #expect(
+            setup(core)
+                == OnboardingFlow.Setup(
+                    askStrength: true, askSchedule: true, alreadySetUp: false, strength: 60, schedule: .off,
+                    websitesFromConfig: nil, opensAtLogin: nil))
+        let flow = onboarding(core)
+        #expect(flow.strength == 60)
+        #expect(flow.schedule == .sunsetToSunrise)
+    }
+
+    @Test func onboardingOffersToSkipNightShiftOnceItsOnASchedule() throws {
+        #expect(setup(try core(schedule: .sunsetToSunrise)).alreadySetUp)
+        #expect(!setup(try core(schedule: .off)).alreadySetUp)
+    }
+
+    @Test func onboardingLeavesOutWhatTheConfigSets() throws {
+        let staged = try core(config: "websites = true\n[night_shift]\nstrength = 40\n")
+
+        let asked = setup(staged)
+        #expect(!asked.askStrength)
+        #expect(asked.askSchedule)
+        #expect(asked.websitesFromConfig == true)
+        #expect(onboarding(staged).steps == [.schedule, .apps, .websites, .lastThings, .ready])
+    }
+
+    @Test func onlyAnInstallThatOpensItselfAtLoginAsksToOpenAtLogin() throws {
+        #expect(setup(try core()).opensAtLogin == false)
+        #expect(setup(try core(bundleWritable: false)).opensAtLogin == nil)
+    }
+
     @Test func aNewUserIsAskedAboutNightShiftThenNightcap() throws {
         let flow = onboarding(try core())
 
@@ -140,9 +184,27 @@ struct OnboardingFlowTests {
         #expect(flow.footer.primary == .addRules(count: 0))
         flow.perform(.addRules(count: 0))
         #expect(sent.commands == [])
-        let rules = staged.settings().rules
-        #expect(rules.first { $0.identity == .app(books) }?.says == .on)
-        #expect(rules.first { $0.identity == .app(tv) }?.says == .on)
+        let rules = staged.rules()
+        #expect(rules.first { $0.place == .app(books) }?.says == .on)
+        #expect(rules.first { $0.place == .app(tv) }?.says == .on)
+    }
+
+    @Test func aSuggestionGivenARuleElsewhereMeanwhileShowsItAndAddLeavesItBe() throws {
+        let sent = Sent()
+        let staged = try core()
+        let flow = onboarding(staged, sent: sent)
+        flow.go(to: try #require(flow.steps.firstIndex(of: .apps)))
+        flow.toggle(flow.apps[0])
+
+        staged.send(command: .addRule(identity: .app(imovie), says: .on))
+
+        #expect(flow.apps[0] == OnboardingFlow.Suggestion(identity: .app(imovie), ruled: "Ad-hoc"))
+        #expect(flow.isTicked(flow.apps[0]))
+        #expect(flow.footer.primary == .addRules(count: 0))
+        flow.perform(.addRules(count: 0))
+        #expect(sent.commands == [])
+        #expect(flow.addedApps == [])
+        #expect(staged.rules().contains { $0.place == .app(imovie) && $0.says == .on })
     }
 
     @Test func theScheduleIsSentOnlyWhenItChanges() throws {

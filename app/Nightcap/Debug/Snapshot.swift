@@ -70,8 +70,8 @@ enum Snapshot {
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))
             return Onboarding(
-                steps: core.onboarding(),
-                rules: { core.settings().rules },
+                setup: OnboardingFlow.Setup(core, loginItem: .notRegistered),
+                rules: { core.rules() },
                 icons: icons,
                 sun: Sun(sunset: today(18, 41), sunrise: today(7, 52)),
                 now: { evening },

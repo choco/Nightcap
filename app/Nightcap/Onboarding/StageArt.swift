@@ -23,6 +23,8 @@ struct Sun: Equatable {
 }
 
 enum StageArt {
+    private static var words: Wording { .system }
+
     /// The scene's view, sized to its content. `strength` warms the mocks of a screen, the timeline
     /// marks `now`, and the menu shows `shortcut`.
     static func view(
@@ -56,17 +58,22 @@ enum StageArt {
             }
         let now = time(of: date)
         let on = covers(start, end, now)
-        let (from, to) = (Onboarding.clock(start), Onboarding.clock(end))
-        let caption =
-            (on ? "On now, until \(to)." : "Comes on at \(from), and goes off at \(to).")
-            + (sunset ? " The times follow your location." : "")
+        let (from, to) = (words.time(start), words.time(end))
+        let caption = words.timeline(onNow: on, from: start, to: end, followsLocation: sunset)
+        let hours = [0, 6, 12, 18].map { words.time(TimeOfDay(hour: $0, minute: 0)) }
+        let nowLabel = words.timelineNow
         return Drawn(NSSize(width: 600, height: 112)) { bounds in
             let width = bounds.width
             let x = { (time: TimeOfDay) in width * CGFloat(Int(time.hour) * 60 + Int(time.minute)) / 1440 }
             let label = NSFont.systemFont(ofSize: 11)
-            Paint.glyph("moon.fill", 9, .labelColor, centredAt: NSPoint(x: x(start) - 18, y: 8))
+            // Each time sits just right of its mark, with its glyph just left of it, whatever
+            // the clock makes its width.
+            let glyph = { (time: TimeOfDay, text: String) in
+                NSPoint(x: x(time) + 6 - Paint.width(text, label) / 2 - 9, y: 8)
+            }
+            Paint.glyph("moon.fill", 9, .labelColor, centredAt: glyph(start, from))
             Paint.text(from, label, .labelColor, centredAt: NSPoint(x: x(start) + 6, y: 8))
-            Paint.glyph("sun.max.fill", 9, .labelColor, centredAt: NSPoint(x: x(end) - 18, y: 8))
+            Paint.glyph("sun.max.fill", 9, .labelColor, centredAt: glyph(end, to))
             Paint.text(to, label, .labelColor, centredAt: NSPoint(x: x(end) + 6, y: 8))
             let bar = NSRect(x: 0, y: 24, width: width, height: 40)
             Paint.lifted { Paint.rounded(bar, 9, .nightcapGroup) }
@@ -90,16 +97,16 @@ enum StageArt {
             NSGraphicsContext.restoreGraphicsState()
             let small = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
             let nowFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
-            let nowHalf = ("Now" as NSString).size(withAttributes: [.font: nowFont]).width / 2 + 4
+            let nowHalf = (nowLabel as NSString).size(withAttributes: [.font: nowFont]).width / 2 + 4
             // An hour's label gives way to "Now" where the two would overlap.
-            for (index, hour) in ["00:00", "06:00", "12:00", "18:00"].enumerated() {
+            for (index, hour) in hours.enumerated() {
                 let half = (hour as NSString).size(withAttributes: [.font: small]).width / 2
                 // 00:00 sits at the bar's left edge rather than centred on it.
                 let centre = index == 0 ? half : width * CGFloat(index) / 4
                 guard abs(centre - x(now)) > half + nowHalf else { continue }
                 Paint.text(hour, small, .nightcapSecondary, centredAt: NSPoint(x: centre, y: 79))
             }
-            Paint.text("Now", nowFont, .controlAccentColor, centredAt: NSPoint(x: x(now), y: 79))
+            Paint.text(nowLabel, nowFont, .controlAccentColor, centredAt: NSPoint(x: x(now), y: 79))
             Paint.text(caption, .systemFont(ofSize: 12), .labelColor, centredAt: NSPoint(x: width / 2, y: 104))
         }
     }
@@ -110,7 +117,8 @@ enum StageArt {
         let pill = NSRect(x: 14, y: 66, width: 104, height: 24)
         let view = Drawn(NSSize(width: 320, height: 132)) { _ in
             Paint.lifted { Paint.rounded(card, 16, Paint.menu) }
-            Paint.text("Display", .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 14, y: 12))
+            Paint.text(
+                words.display, .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 14, y: 12))
             let slider = NSRect(x: 14, y: 34, width: 292, height: 20)
             Paint.rounded(slider, 10, .nightcapTile)
             Paint.rounded(
@@ -118,16 +126,16 @@ enum StageArt {
                 .nightcapControl)
             Paint.rounded(pill, 12, .controlAccentColor)
             Paint.glyph("moon.fill", 10, .white, centredAt: NSPoint(x: pill.minX + 16, y: pill.midY))
-            Paint.text("Night Shift", .systemFont(ofSize: 12), .white, at: NSPoint(x: pill.minX + 26, y: pill.minY + 4))
-            for (index, name) in ["True Tone", "Dark Mode"].enumerated() {
+            Paint.text(
+                words.nightShift, .systemFont(ofSize: 12), .white, at: NSPoint(x: pill.minX + 26, y: pill.minY + 4))
+            for (index, name) in [words.trueTone, words.darkMode].enumerated() {
                 let other = NSRect(x: 128 + CGFloat(index) * 92, y: pill.minY, width: 84, height: 24)
                 Paint.rounded(other, 12, .nightcapTile)
                 Paint.text(
                     name, .systemFont(ofSize: 12), .nightcapSecondary, centredAt: NSPoint(x: other.midX, y: other.midY))
             }
             Paint.text(
-                "Control Center › Display, or the top of Nightcap’s menu", .systemFont(ofSize: 12), .labelColor,
-                centredAt: NSPoint(x: card.midX, y: 124))
+                words.byHandCaption, .systemFont(ofSize: 12), .labelColor, centredAt: NSPoint(x: card.midX, y: 124))
         }
         view.addSubview(Ring(around: pill.insetBy(dx: -3, dy: -3), radius: 15))
         return view
@@ -141,8 +149,7 @@ enum StageArt {
         screen.add(figma, at: NSPoint(x: 128, y: 30))
         Loop.middle(figma)
         screen.warm(strength)
-        return captioned(
-            screen, "Mail in front: Night Shift on", "Figma in front: true colour, and the moon gets a “z”")
+        return captioned(screen, words.mailInFront, words.figmaInFront)
     }
 
     /// The address bar, fading to the one part Nightcap keeps.
@@ -171,8 +178,7 @@ enum StageArt {
                 Paint.rounded(NSRect(x: 180, y: y, width: width, height: 6), 3, .nightcapTile)
             }
             Paint.text(
-                "Of the whole address, Nightcap keeps only the site’s name.", .systemFont(ofSize: 12), .labelColor,
-                centredAt: NSPoint(x: 240, y: 148))
+                words.addressCaption, .systemFont(ofSize: 12), .labelColor, centredAt: NSPoint(x: 240, y: 148))
         }
         let highlight = Drawn(NSSize(width: widths[1] + 6, height: 16)) { bounds in
             Paint.rounded(bounds, 4, NSColor.controlAccentColor.withAlphaComponent(0.18))
@@ -210,10 +216,11 @@ enum StageArt {
             }
             let selected = NSRect(x: 10, y: 58, width: 116, height: 18)
             Paint.rounded(selected, 5, .controlAccentColor)
-            Paint.text("Privacy & Security", .systemFont(ofSize: 10), .white, at: NSPoint(x: 16, y: 60))
+            Paint.text(words.privacyAndSecurity, .systemFont(ofSize: 10), .white, at: NSPoint(x: 16, y: 60))
             Paint.rounded(NSRect(x: 16, y: 84, width: 74, height: 8), 4, .nightcapTile)
             Paint.text(
-                "‹ Accessibility", .systemFont(ofSize: 12, weight: .semibold), .labelColor, at: NSPoint(x: 152, y: 12))
+                words.backToAccessibility, .systemFont(ofSize: 12, weight: .semibold), .labelColor,
+                at: NSPoint(x: 152, y: 12))
             let list = NSRect(x: 152, y: 38, width: 312, height: 74)
             Paint.rounded(list, 7, .clear, stroke: .nightcapSeparator)
             NSApp.applicationIconImage.draw(in: NSRect(x: list.minX + 6, y: list.minY + 6, width: 26, height: 26))
@@ -232,7 +239,7 @@ enum StageArt {
     private static func sites(strength: UInt8) -> NSView {
         let screen = MiniScreen(NSSize(width: 360, height: 150), app: "Safari", otherApp: nil, forcesOff: true)
         let browser = Drawn(NSSize(width: 320, height: 120)) { bounds in
-            Paint.browser(bounds, tab: "Inbox", address: "mail.example.com", video: false)
+            Paint.browser(bounds, tab: words.inbox, address: "mail.example.com", video: false)
         }
         let youtube = Drawn(NSSize(width: 320, height: 120)) { bounds in
             Paint.browser(bounds, tab: "YouTube", address: "youtube.com", video: true)
@@ -241,7 +248,7 @@ enum StageArt {
         screen.add(youtube, at: NSPoint(x: 20, y: 22))
         Loop.middle(youtube)
         screen.warm(strength)
-        return captioned(screen, "Any other site: Night Shift on", "youtube.com in front: true colour")
+        return captioned(screen, words.anyOtherSite, words.youtubeInFront)
     }
 
     /// The notification after overruling a rule, and the moon in the menu bar at login.
@@ -249,31 +256,29 @@ enum StageArt {
         let screen = MiniScreen(NSSize(width: 300, height: 140), app: app, otherApp: nil, forcesOff: false)
         screen.add(Drawn(NSSize(width: 160, height: 102)) { Paint.figma($0) }, at: NSPoint(x: 16, y: 26))
         screen.warm(strength, loops: false)
+        let notice = words.snoozedNotice(app)
         let banner = Drawn(NSSize(width: 226, height: 46)) { bounds in
             Paint.lifted { Paint.rounded(bounds, 12, NSColor(white: 0.97, alpha: 0.97)) }
             NSApp.applicationIconImage.draw(in: NSRect(x: 6, y: 9, width: 28, height: 28))
             Paint.text(
-                "Night Shift turned on outside Nightcap", .systemFont(ofSize: 9, weight: .semibold),
-                NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 9))
-            Paint.text(
-                "Snoozed the \(app) rule until 07:00.", .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1),
-                at: NSPoint(x: 38, y: 23))
+                notice.title, .systemFont(ofSize: 9, weight: .semibold), NSColor(white: 0.11, alpha: 1),
+                at: NSPoint(x: 38, y: 9))
+            Paint.text(notice.body, .systemFont(ofSize: 9), NSColor(white: 0.11, alpha: 1), at: NSPoint(x: 38, y: 23))
         }
         screen.add(banner, at: NSPoint(x: 66, y: 22))
         Loop.fades(banner, values: [0, 0, 1, 1, 0, 0], times: [0, 0.12, 0.22, 0.8, 0.92, 1], duration: 5)
-        let left = captioned(screen, "Overrule a rule in Control Center, and Nightcap says so.", nil)
+        let left = captioned(screen, words.overruleARule, nil)
         let moon = NSRect(x: 214, y: 4, width: 26, height: 22)
         let bar = Drawn(NSSize(width: 300, height: 56)) { _ in
             Paint.lifted { Paint.rounded(NSRect(x: 0, y: 0, width: 300, height: 30), 8, Paint.bar) }
             let font = NSFont.systemFont(ofSize: 12)
             Paint.text("Finder", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 14, y: 7))
-            Paint.text("File", font, .labelColor, at: NSPoint(x: 66, y: 7))
-            Paint.text("Edit", font, .labelColor, at: NSPoint(x: 98, y: 7))
+            Paint.text(words.file, font, .labelColor, at: NSPoint(x: 66, y: 7))
+            Paint.text(words.edit, font, .labelColor, at: NSPoint(x: 98, y: 7))
             Paint.moon(.off, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
-            Paint.text("Tue 08:30", font, .labelColor, at: NSPoint(x: moon.maxX + 6, y: 7))
+            Paint.text(words.loginClock, font, .labelColor, at: NSPoint(x: moon.maxX + 6, y: 7))
             Paint.text(
-                "Log in, and the moon is already there.", .systemFont(ofSize: 11), .nightcapSecondary,
-                centredAt: NSPoint(x: 150, y: 48))
+                words.loginCaption, .systemFont(ofSize: 11), .nightcapSecondary, centredAt: NSPoint(x: 150, y: 48))
         }
         bar.addSubview(Ring(around: moon, radius: 5))
         return side(by: left, bar)
@@ -322,12 +327,12 @@ enum StageArt {
             let font = NSFont.systemFont(ofSize: 12)
             Paint.lifted { Paint.rounded(NSRect(x: 0, y: 0, width: 460, height: 30), 8, Paint.bar) }
             Paint.text("Mail", .systemFont(ofSize: 12, weight: .bold), .labelColor, at: NSPoint(x: 16, y: 7))
-            Paint.text("File", font, .labelColor, at: NSPoint(x: 56, y: 7))
-            Paint.text("Edit", font, .labelColor, at: NSPoint(x: 88, y: 7))
+            Paint.text(words.file, font, .labelColor, at: NSPoint(x: 56, y: 7))
+            Paint.text(words.edit, font, .labelColor, at: NSPoint(x: 88, y: 7))
             let moon = NSRect(x: 372, y: 5, width: 26, height: 20)
             Paint.rounded(moon, 10, Paint.highlight)
             Paint.moon(menu.moon, .labelColor, in: NSRect(x: moon.midX - 7, y: moon.midY - 7, width: 14, height: 14))
-            Paint.text("21:42", font, .labelColor, at: NSPoint(x: 410, y: 7))
+            Paint.text(words.eveningClock, font, .labelColor, at: NSPoint(x: 410, y: 7))
             Paint.lifted { Paint.rounded(box, 10, Paint.menu) }
             let item = NSFont.systemFont(ofSize: 11)
             // The menu's columns: the checkmark, the item's image, and the title.
@@ -470,8 +475,8 @@ final class StrengthArt: NSView {
         }
         caption = Drawn(NSSize(width: screen.width, height: 16)) { bounds in
             Paint.text(
-                "Evening: Night Shift, \(Onboarding.warmth(warmth()).lowercased())", .systemFont(ofSize: 11),
-                .nightcapSecondary, centredAt: NSPoint(x: bounds.midX, y: 8))
+                Wording.system.evening(warmth()), .systemFont(ofSize: 11), .nightcapSecondary,
+                centredAt: NSPoint(x: bounds.midX, y: 8))
         }
         super.init(frame: NSRect(x: 0, y: 0, width: screen.width * 2 + 78, height: 162))
         warmth = { [weak self] in self?.strength ?? strength }
@@ -491,7 +496,7 @@ final class StrengthArt: NSView {
         addSubview(arrow)
         let dayCaption = Drawn(NSSize(width: screen.width, height: 16)) { bounds in
             Paint.text(
-                "Daytime: true colour", .systemFont(ofSize: 11), .nightcapSecondary,
+                Wording.system.daytime, .systemFont(ofSize: 11), .nightcapSecondary,
                 centredAt: NSPoint(x: bounds.midX, y: 8))
         }
         dayCaption.frame.origin = NSPoint(x: 0, y: 146)
@@ -551,7 +556,10 @@ final class MiniScreen: NSView {
         let status = { (icon: Menu.Moon) in
             Drawn(NSSize(width: 40, height: 15)) { _ in
                 Paint.moon(icon, ink, in: NSRect(x: 0, y: 3, width: 9, height: 9))
-                Paint.text(daytime ? "14:00" : "21:42", .systemFont(ofSize: 8), ink, at: NSPoint(x: 13, y: 3))
+                let words = Wording.system
+                Paint.text(
+                    daytime ? words.afternoonClock : words.eveningClock, .systemFont(ofSize: 8), ink,
+                    at: NSPoint(x: 13, y: 3))
             }
         }
         let on = status(daytime ? .off : .on)

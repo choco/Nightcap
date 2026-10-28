@@ -9,22 +9,22 @@ import NightcapCore
 final class Onboarding: NSObject, NSWindowDelegate {
     /// Apps that need true colour, suggested when they're installed, each with a word for what
     /// it's for.
-    private static let suggestedApps: [(bundleId: String, kind: String)] = [
-        ("com.figma.Desktop", "Design"),
-        ("com.bohemiancoding.sketch3", "Design"),
-        ("com.adobe.illustrator", "Design"),
-        ("com.adobe.Photoshop", "Photo"),
-        ("com.adobe.LightroomClassicCC7", "Photo"),
-        ("com.pixelmatorteam.pixelmator.x", "Photo"),
-        ("com.apple.Photos", "Photo"),
-        ("com.apple.FinalCut", "Video editing"),
-        ("com.blackmagic-design.DaVinciResolve", "Video editing"),
-        ("com.apple.iMovieApp", "Video editing"),
-        ("com.apple.TV", "Video"),
-        ("com.apple.QuickTimePlayerX", "Video"),
-        ("com.colliderli.iina", "Video"),
-        ("org.videolan.vlc", "Video"),
-        ("com.firecore.infuse", "Video"),
+    private static let suggestedApps: [(bundleId: String, kind: KeyPath<Wording, String>)] = [
+        ("com.figma.Desktop", \.design),
+        ("com.bohemiancoding.sketch3", \.design),
+        ("com.adobe.illustrator", \.design),
+        ("com.adobe.Photoshop", \.photo),
+        ("com.adobe.LightroomClassicCC7", \.photo),
+        ("com.pixelmatorteam.pixelmator.x", \.photo),
+        ("com.apple.Photos", \.photo),
+        ("com.apple.FinalCut", \.videoEditing),
+        ("com.blackmagic-design.DaVinciResolve", \.videoEditing),
+        ("com.apple.iMovieApp", \.videoEditing),
+        ("com.apple.TV", \.video),
+        ("com.apple.QuickTimePlayerX", \.video),
+        ("com.colliderli.iina", \.video),
+        ("org.videolan.vlc", \.video),
+        ("com.firecore.infuse", \.video),
     ]
     /// Websites that need true colour, mostly video streaming, none ticked.
     private static let suggestedSites: [(name: String, host: String)] = [
@@ -49,6 +49,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         defer: false
     )
     private let flow: OnboardingFlow
+    private let words = Wording.system
     private let icons: SiteIcons
     private let sun: Sun?
     private let now: () -> Date
@@ -63,18 +64,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
     private var redrawing = false
     /// The sites page was drawn last, so redrawing it asks for no icons.
     private var showingSites = false
+    /// The suggestions as the page last drew them, with where their rules come from.
+    private var drawnSuggestions: [OnboardingFlow.Suggestion] = []
     private var closedByUser = false
     private weak var previewNote: NSTextField?
     private var radios: [(button: NSButton, schedule: () -> Schedule)] = []
 
-    /// `rules` are the core's rules as they stand; `now` is the time the stage's timeline marks;
-    /// `shortcut` is the one Ready's menu shows; `choose` sends a command to the core, as the menu
-    /// does; `notifications` says whether
-    /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
-    /// onboarding ends, by Done or the close button.
+    /// `setup` is what onboarding asks this user; `rules` are the core's rules as they stand; `now`
+    /// is the time the stage's timeline marks; `shortcut` is the one Ready's menu shows; `choose`
+    /// sends a command to the core, as the menu does; `notifications` says whether notifications
+    /// are allowed, denied or not asked for yet, as last read; `onFinish` runs once onboarding
+    /// ends, by Done or the close button.
     init(
-        steps setup: OnboardingSteps,
-        rules: @escaping () -> [SettingsRule],
+        setup: OnboardingFlow.Setup,
+        rules: @escaping () -> [Rule],
         icons: SiteIcons,
         sun: Sun?,
         now: @escaping () -> Date,
@@ -87,11 +90,12 @@ final class Onboarding: NSObject, NSWindowDelegate {
         onFinish: @escaping (_ websites: Bool) -> Void
     ) {
         // One place is kept for an app the user chooses.
-        let apps = Self.suggestedApps.compactMap { GridItem(app: $0.bundleId, kind: $0.kind) }
+        let words = self.words
+        let apps = Self.suggestedApps.compactMap { GridItem(app: $0.bundleId, kind: words[keyPath: $0.kind]) }
             .prefix(OnboardingFlow.gridSize - 1)
         appItems = Dictionary(uniqueKeysWithValues: apps.map { (RuleIdentity.app($0.id), $0) })
         flow = OnboardingFlow(
-            steps: setup, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), rules: rules,
+            setup: setup, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), rules: rules, words: words,
             accessibilityGranted: accessibilityGranted, askForAccessibility: askForAccessibility, choose: choose,
             notifications: notifications, askForNotifications: askForNotifications, onFinish: onFinish)
         self.icons = icons
@@ -99,7 +103,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         self.now = now
         self.shortcut = shortcut
         super.init()
-        window.title = "Welcome to Nightcap"
+        window.title = words.welcomeToNightcap
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
@@ -117,6 +121,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// Only the last steps' rows depend on notifications; redrawing elsewhere could end a drag.
     func notificationsChanged() {
         if flow.step == .lastThings || flow.step == .ready { draw() }
+    }
+
+    /// Redraws a grid whose suggestions' rules came or went, as from the CLI, so each shows where
+    /// its rule comes from as the core has it.
+    func refresh() {
+        let grid = flow.step == .apps || (flow.step == .websites && flow.page == .sites)
+        if grid, flow.apps + flow.sites != drawnSuggestions { draw() }
     }
 
     /// Opening a menu-bar-only app doesn't activate it, and macOS refuses the app's own request
@@ -201,6 +212,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let sites = flow.step == .websites && flow.page == .sites
         if sites && !showingSites { icons.ask(Self.suggestedSites.map(\.host)) }
         showingSites = sites
+        drawnSuggestions = flow.apps + flow.sites
         stage.strength = flow.strength
         stage.show(scene)
         pageArea.subviews.forEach { $0.removeFromSuperview() }
@@ -242,7 +254,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// The step's illustration.
     private var scene: Scene {
         switch flow.step {
-        case .alreadySetUp: .timeline(flow.setup.nightShift.schedule ?? .sunsetToSunrise)
+        case .alreadySetUp: .timeline(flow.setup.schedule ?? .sunsetToSunrise)
         case .strength: .strength
         case .schedule: flow.schedule == .off ? .byHand : .timeline(flow.schedule)
         case .apps: .apps
@@ -273,11 +285,13 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// The step's words and controls, over its footer.
     private func pageView() -> NSView {
-        let words = self.words
+        let page = words.page(flow.step, flow.page, reviewing: flow.reviewing, foundApps: !flow.apps.isEmpty)
         var column: [NSView] = [
-            Look.label(words.eyebrow, size: 12, weight: .semibold, color: .nightcapMoon, width: Self.textWidth),
-            Look.label(words.heading, size: 20, weight: .semibold, color: .labelColor, width: Self.textWidth),
-            Look.label(words.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
+            Look.label(
+                words.eyebrow(flow.placeInPart), size: 12, weight: .semibold, color: .nightcapMoon,
+                width: Self.textWidth),
+            Look.label(page.heading, size: 20, weight: .semibold, color: .labelColor, width: Self.textWidth),
+            Look.label(page.lede, size: 13, weight: .regular, color: .nightcapSecondary, width: Self.textWidth),
         ]
         column += controls
         let stack = NSStackView(views: column)
@@ -288,21 +302,21 @@ final class Onboarding: NSObject, NSWindowDelegate {
         stack.setCustomSpacing(6, after: column[1])
         stack.setCustomSpacing(14, after: column[2])
         let footer = footerView()
-        let page = NSView()
-        for view in [stack, footer] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            page.addSubview(view)
+        let view = NSView()
+        for part in [stack, footer] {
+            part.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(part)
         }
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: Self.margin),
-            stack.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -Self.margin),
-            stack.topAnchor.constraint(equalTo: page.topAnchor, constant: 20),
-            footer.leadingAnchor.constraint(equalTo: page.leadingAnchor, constant: Self.margin),
-            footer.trailingAnchor.constraint(equalTo: page.trailingAnchor, constant: -Self.margin),
-            footer.bottomAnchor.constraint(equalTo: page.bottomAnchor, constant: -16),
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.margin),
+            stack.topAnchor.constraint(equalTo: view.topAnchor, constant: 20),
+            footer.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: Self.margin),
+            footer.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -Self.margin),
+            footer.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -16),
             stack.bottomAnchor.constraint(lessThanOrEqualTo: footer.topAnchor, constant: -12),
         ])
-        return page
+        return view
     }
 
     /// The step's controls between its words and its footer.
@@ -311,27 +325,20 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .alreadySetUp:
             return [
                 rows([
-                    summary("Strength", Self.warmth(flow.strength)),
-                    summary("Schedule", Self.describe(flow.schedule)),
+                    summary(words.strength, words.warmth(flow.strength)),
+                    summary(words.schedule, words.schedule(flow.schedule)),
                 ]),
-                Look.secondary(
-                    "Skipping leaves them exactly as they are. "
-                        + "You can change them any time in System Settings › Displays.",
-                    width: Self.textWidth),
+                Look.secondary(words.skippingLeavesThem, width: Self.textWidth),
             ]
         case .strength:
             return strengthControls()
         case .schedule:
             return scheduleControls()
         case .apps where flow.apps.isEmpty:
-            let note = Look.secondary(
-                "Nightcap looks for apps like Figma, Photoshop, Final Cut Pro and DaVinci Resolve, "
-                    + "and found none on this Mac. "
-                    + "Choose one yourself, or add one later from the menu while it’s in front.",
-                width: Self.textWidth - 150)
+            let note = Look.secondary(words.foundNoApps, width: Self.textWidth - 150)
             note.setContentHuggingPriority(.defaultLow, for: .horizontal)
             let line = NSStackView(views: [
-                note, Look.button("Choose App…", .regular) { [weak self] in self?.chooseApp() },
+                note, Look.button(words.chooseApp, .regular) { [weak self] in self?.chooseApp() },
             ])
             line.orientation = .horizontal
             line.distribution = .fill
@@ -344,29 +351,24 @@ final class Onboarding: NSObject, NSWindowDelegate {
         case .lastThings:
             var options: [NSView] = []
             if flow.notifications != .granted {
-                let title = "Tell me when a rule is snoozed"
-                let detail =
-                    "If you turn Night Shift on in Control Center while a rule holds it off, "
-                    + "Nightcap snoozes the rule until the schedule’s next change, and says so in a notification."
+                let title = words.tellMeWhenARuleIsSnoozed
                 // macOS shows its prompt only once, so after a refusal only System Settings can.
                 options.append(
                     flow.notifications == .denied
                         ? option(
-                            title, detail + " Notifications are switched off for Nightcap in System Settings.",
-                            button: Look.button("Open Notification Settings…", .regular) {
+                            title, words.whatNotificationsTell(switchedOff: true),
+                            button: Look.button(words.openNotificationSettings, .regular) {
                                 NSWorkspace.shared.open(CoreHost.notificationSettings)
                             })
-                        : option(title, detail, ticked: flow.wantsNotifications) { [weak self] in
-                            self?.flow.wantsNotifications = $0
-                        })
+                        : option(
+                            title, words.whatNotificationsTell(switchedOff: false), ticked: flow.wantsNotifications,
+                            toggle: { [weak self] in self?.flow.wantsNotifications = $0 }))
             }
             if let opensAtLogin = flow.opensAtLogin {
                 options.append(
-                    option(
-                        "Open at login",
-                        "So your rules apply from the start. Nightcap lives in the menu bar, with no Dock icon.",
-                        ticked: opensAtLogin
-                    ) { [weak self] in self?.flow.opensAtLogin = $0 })
+                    option(words.openAtLogin, words.openAtLoginDetail, ticked: opensAtLogin) { [weak self] in
+                        self?.flow.opensAtLogin = $0
+                    })
             }
             return [rows(options)]
         case .ready:
@@ -407,23 +409,22 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// What onboarding set up, two to a row.
     private func summaryGrid() -> NSView {
         let granted = flow.accessibilityGranted
-        let nightShift = flow.setup.nightShift
         var lines: [(String, String, Bool)] = []
-        if nightShift.strength != nil { lines.append(("Strength", Self.warmth(flow.strength), true)) }
-        if nightShift.schedule != nil { lines.append(("Schedule", Self.describe(flow.schedule), true)) }
+        if flow.setup.strength != nil { lines.append((words.strength, words.warmth(flow.strength), true)) }
+        if flow.setup.schedule != nil { lines.append((words.schedule, words.schedule(flow.schedule), true)) }
         let apps = flow.addedApps.count
-        lines.append(("Apps", Self.rules(apps, "rule"), apps > 0))
+        lines.append((words.apps, words.appRules(apps), apps > 0))
         switch flow.websites {
-        case true? where !granted: lines.append(("Websites", "Needs Accessibility", false))
+        case true? where !granted: lines.append((words.websites, words.needsAccessibility, false))
         case true?:
             let sites = flow.addedSites.count
-            lines.append(("Websites", sites > 0 ? Self.rules(sites, "site") : "On", true))
-        default: lines.append(("Websites", "Off", false))
+            lines.append((words.websites, sites > 0 ? words.siteRules(sites) : words.onOrOff(true), true))
+        default: lines.append((words.websites, words.onOrOff(false), false))
         }
         let notificationsOn = flow.notifications == .granted
-        lines.append(("Notifications", notificationsOn ? "On" : "Off", notificationsOn))
+        lines.append((words.notifications, words.onOrOff(notificationsOn), notificationsOn))
         if let opensAtLogin = flow.opensAtLogin {
-            lines.append(("Open at login", opensAtLogin ? "On" : "Off", opensAtLogin))
+            lines.append((words.openAtLogin, words.onOrOff(opensAtLogin), opensAtLogin))
         }
         var rowViews: [NSView] = []
         for start in stride(from: 0, to: lines.count, by: 2) {
@@ -439,40 +440,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return rows(rowViews)
     }
 
-    private static func rules(_ count: Int, _ noun: String) -> String {
-        count == 0 ? "None" : count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
-    }
-
     private func websitesControls() -> [NSView] {
         switch flow.page {
         case .ask:
-            return [
-                rows([
-                    fact(
-                        symbol: "globe", "Safari, Chrome, Firefox and more.",
-                        "Also Edge, Arc, Brave, Dia, Zen and Orion, in the front tab."),
-                    fact(symbol: "accessibility", "Through Accessibility.", "macOS asks you to allow it, once."),
-                    fact(
-                        symbol: "lock", "Only the site’s name.",
-                        "Like youtube.com; the rest of the address is dropped, and the icon comes from the site."),
-                ])
-            ]
+            return [rows(words.websiteFacts.map { fact(symbol: $0.symbol, $0.lead, $0.rest) })]
         case .accessibility:
             let granted = flow.accessibilityGranted
             let asked = flow.waitingForAccessibility || granted
-            return [
-                rows([
-                    progress(
-                        asked ? .ok : .current,
-                        "Click Allow Accessibility, then Open System Settings when macOS asks."),
-                    progress(
-                        granted ? .ok : asked ? .current : .todo,
-                        "Switch Nightcap on under Privacy & Security › Accessibility."),
-                    progress(
-                        granted ? .ok : .todo,
-                        "That’s all. This step moves on by itself the moment Nightcap is allowed."),
-                ])
+            let marks: [Look.Mark] = [
+                asked ? .ok : .current,
+                granted ? .ok : asked ? .current : .todo,
+                granted ? .ok : .todo,
             ]
+            return [rows(zip(marks, words.accessibilitySteps).map { progress($0, $1) })]
         case .sites:
             return [grid(flow.sites, siteItems)]
         }
@@ -541,11 +521,11 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// An app from Applications, like Settings' "Add App…", added to the grid ticked.
     private func chooseApp() {
-        Apps.pick(on: window, prompt: "Choose", message: "Choose an app that needs true colour.") {
+        Apps.pick(on: window, prompt: words.choose, message: words.chooseAnAppThatNeedsTrueColour) {
             [weak self] bundleId in
             guard let self else { return }
             let identity = RuleIdentity.app(bundleId)
-            guard let item = appItems[identity] ?? GridItem(app: bundleId, kind: "Chosen by you") else { return }
+            guard let item = appItems[identity] ?? GridItem(app: bundleId, kind: words.chosenByYou) else { return }
             appItems[identity] = item
             flow.add(app: bundleId)
             draw()
@@ -558,7 +538,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         let slider = StrengthSlider(
             value: Double(flow.strength), minValue: 0, maxValue: 100, target: nil, action: nil)
         slider.isContinuous = true
-        slider.setAccessibilityLabel("Strength")
+        slider.setAccessibilityLabel(words.strength)
         Look.attach(slider) { [weak self, weak slider] in
             guard let self, let slider else { return }
             flow.moveStrength(to: UInt8(slider.doubleValue.rounded()), previewing: slider.dragging)
@@ -570,18 +550,14 @@ final class Onboarding: NSObject, NSWindowDelegate {
             flow.moveStrength(to: UInt8(slider.doubleValue.rounded()), previewing: false)
             showPreview(false)
         }
-        let less = Look.secondary("Less Warm", width: 80)
-        let more = Look.secondary("More Warm", width: 80)
+        let less = Look.secondary(words.lessWarm, width: 80)
+        let more = Look.secondary(words.moreWarm, width: 80)
         let line = NSStackView(views: [less, slider, more])
         line.orientation = .horizontal
         line.spacing = 12
-        let note = Look.secondary("Drag the slider to try it on your screen.", width: Self.textWidth)
+        let note = Look.secondary(words.strengthPreview(showing: false), width: Self.textWidth)
         previewNote = note
-        let facts = NSStackView(views: [
-            fact("Part of macOS", "In System Settings › Displays, and in Control Center."),
-            fact("Colour, not brightness", "It warms the colours. Brightness stays where it is."),
-            fact("By hand or on a schedule", "You choose which on the next step."),
-        ])
+        let facts = NSStackView(views: words.nightShiftFacts.map { fact($0.title, $0.text) })
         facts.orientation = .horizontal
         facts.alignment = .top
         facts.distribution = .fillEqually
@@ -593,11 +569,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
     /// Says so while the screen shows the strength, which it does only during a drag.
     private func showPreview(_ previewing: Bool) {
         guard let previewNote else { return }
-        let text =
-            previewing ? "Your screen is showing this strength now." : "Drag the slider to try it on your screen."
         let replacement = Look.label(
-            text, size: 12, weight: .regular, color: previewing ? .nightcapMoon : .nightcapSecondary,
-            width: Self.textWidth)
+            words.strengthPreview(showing: previewing), size: 12, weight: .regular,
+            color: previewing ? .nightcapMoon : .nightcapSecondary, width: Self.textWidth)
         previewNote.attributedStringValue = replacement.attributedStringValue
     }
 
@@ -623,23 +597,19 @@ final class Onboarding: NSObject, NSWindowDelegate {
         }
         let hours = NSStackView(views: [
             timeField(flow.customHours.from) { [weak self] in self?.flow.customHours.from = $0 },
-            Look.secondary("to", width: 20),
+            Look.secondary(words.customHoursTo, width: 20),
             timeField(flow.customHours.to) { [weak self] in self?.flow.customHours.to = $0 },
         ])
         hours.spacing = 6
         return [
             rows([
-                radioRow(
-                    "On a schedule: sunset to sunrise", detail: Look.secondary("Follows your location", width: 200)
-                ) {
+                radioRow(words.sunsetToSunriseChoice, detail: Look.secondary(words.followsYourLocation, width: 200)) {
                     .sunsetToSunrise
                 },
-                radioRow("On a schedule: custom hours", detail: hours, custom),
-                radioRow("By hand", detail: Look.secondary("Only when you turn it on", width: 200)) { .off },
+                radioRow(words.customHoursChoice, detail: hours, custom),
+                radioRow(words.byHandChoice, detail: Look.secondary(words.onlyWhenYouTurnItOn, width: 200)) { .off },
             ]),
-            Look.secondary(
-                "Either way, you can turn it on or off any time from Control Center or Nightcap’s menu.",
-                width: Self.textWidth),
+            Look.secondary(words.eitherWay, width: Self.textWidth),
         ]
     }
 
@@ -719,117 +689,25 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return Look.padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
-    /// The strength in words, since System Settings shows no number either.
-    static func warmth(_ strength: UInt8) -> String {
-        strength < 34 ? "A little warm" : strength < 67 ? "Warm" : "Very warm"
-    }
-
-    private static func describe(_ schedule: Schedule) -> String {
-        switch schedule {
-        case .off: "By hand"
-        case .sunsetToSunrise: "Sunset to sunrise"
-        case .custom(let from, let to): "\(clock(from)) to \(clock(to))"
-        }
-    }
-
-    /// A time of day on the 24-hour clock, such as 07:52.
-    static func clock(_ time: TimeOfDay) -> String {
-        String(format: "%02d:%02d", time.hour, time.minute)
-    }
-
-    private var words: (eyebrow: String, heading: String, lede: String) {
-        let eyebrow = self.eyebrow
-        switch flow.step {
-        case .alreadySetUp:
-            return (
-                eyebrow, "You already use Night Shift",
-                "Nightcap found your Night Shift settings. "
-                    + "Keep them as they are and go straight to Nightcap, or look over them first."
-            )
-        case .strength:
-            return flow.reviewing
-                ? (eyebrow, "How warm Night Shift gets", "This is your current strength. Drag to change it.")
-                : (
-                    eyebrow, "This is Night Shift",
-                    "Night Shift is part of macOS. "
-                        + "It shifts your screen toward warmer colours, which many people prefer in the evening. "
-                        + "Choose how warm it gets."
-                )
-        case .schedule:
-            return (
-                eyebrow, "When should it come on?",
-                "Night Shift can come on by itself on a schedule, or only when you turn it on."
-            )
-        case .apps:
-            return (
-                eyebrow, "Night Shift, with exceptions",
-                flow.apps.isEmpty
-                    ? "Warm is wrong for photos, video and design. "
-                        + "Nightcap turns Night Shift off while an app you choose is in front, "
-                        + "and gives it back when you leave."
-                    : "Warm is wrong for photos, video and design. "
-                        + "Nightcap turns Night Shift off while an app you tick is in front, "
-                        + "and gives it back when you leave. These are on your Mac."
-            )
-        case .websites:
-            switch flow.page {
-            case .ask:
-                return (
-                    eyebrow, "Websites too?",
-                    "Nightcap can do the same for websites: "
-                        + "Night Shift goes off while a site you choose is in the front tab."
-                )
-            case .accessibility:
-                return (
-                    eyebrow, "Allow Accessibility",
-                    "Nightcap reads the front tab’s address through Accessibility, which macOS asks you to allow once."
-                )
-            case .sites:
-                return (
-                    eyebrow, "Which websites need true colour?",
-                    "Tick any that do. You can add any other site later from the menu while it’s open."
-                )
-            }
-        case .lastThings:
-            return (eyebrow, "Two last things", "Both are up to you, and you can change either later in Settings.")
-        case .ready:
-            return (
-                eyebrow, "Nightcap is ready",
-                "It lives in the menu bar, under the moon. "
-                    + "Its menu turns Night Shift on or off, everywhere or just in the app in front, "
-                    + "for as long as you choose. "
-                    + "You can change any of this later in Settings, along with the shortcut."
-            )
-        }
-    }
-
-    /// The step's group and place in it, in the current step's gold: "Nightcap · 2 of 3".
-    private var eyebrow: String {
-        guard let place = flow.placeInPart else { return "Done" }
-        let name = place.part == .nightShift ? "Night Shift" : "Nightcap"
-        guard place.count > 1 else { return name }
-        return "\(name) · \(place.place + 1) of \(place.count)"
-    }
-
     /// Back and a link at the left, the dots in the middle, and the step's buttons at the right.
     private func footerView() -> NSView {
         let buttons = flow.footer
         var leading: [NSView] = []
         if flow.canGoBack {
             leading.append(
-                Look.button("Back", .regular) { [weak self] in
+                Look.button(words.back, .regular) { [weak self] in
                     self?.flow.goBack()
                     self?.draw()
                 })
         }
         if let link = buttons.link {
-            leading.append(Look.link(Self.title(of: link)) { [weak self] in self?.run(link) })
+            leading.append(Look.link(words.title(of: link)) { [weak self] in self?.run(link) })
         }
         var trailing: [NSView] = []
         if let secondary = buttons.secondary {
-            trailing.append(Look.button(Self.title(of: secondary), .regular) { [weak self] in self?.run(secondary) })
+            trailing.append(Look.button(words.title(of: secondary), .regular) { [weak self] in self?.run(secondary) })
         }
-        let primary = Look.button(Self.title(of: buttons.primary), .primary) { [weak self] in
+        let primary = Look.button(words.title(of: buttons.primary), .primary) { [weak self] in
             self?.run(buttons.primary)
         }
         primary.isEnabled = buttons.primary.enabled
@@ -857,7 +735,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 groups: flow.dots.map { group in
                     group.map { dot in
                         StepDots.Dot(
-                            state: dot.state, label: Self.name(of: dot.step),
+                            state: dot.state, label: words.name(of: dot.step),
                             go: dot.go.map { index in { [weak self] in self?.go(to: index) } })
                     }
                 })
@@ -871,32 +749,6 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return footer
     }
 
-    private static func title(of action: OnboardingFlow.Action) -> String {
-        switch action {
-        case .continue: "Continue"
-        case .notNow: "Not Now"
-        case .reviewSettings: "Review Settings"
-        case .skipToNightcap: "Skip to Nightcap"
-        case .addRules(let count): count == 0 ? "Add Rules" : count == 1 ? "Add 1 Rule" : "Add \(count) Rules"
-        case .chooseApp: "Choose Another App…"
-        case .turnOnWebsites: "Turn On"
-        case .allowAccessibility: "Allow Accessibility…"
-        case .waiting: "Waiting…"
-        case .done: "Done"
-        }
-    }
-
-    private static func name(of step: OnboardingFlow.Step) -> String {
-        switch step {
-        case .alreadySetUp: "Night Shift"
-        case .strength: "Strength"
-        case .schedule: "Schedule"
-        case .apps: "Apps"
-        case .websites: "Websites"
-        case .lastThings: "Notifications and login"
-        case .ready: "Ready"
-        }
-    }
 }
 
 /// Onboarding's stage: a soft gradient behind the step's illustration, under the title band

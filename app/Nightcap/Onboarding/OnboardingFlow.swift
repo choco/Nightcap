@@ -6,6 +6,24 @@ import NightcapCore
 /// opening at login on the last things' Continue (ADR-0011), and website checking only as
 /// onboarding finishes (ADR-0012).
 final class OnboardingFlow {
+    /// What onboarding asks this user, from the core's queries as it opens: its Night Shift steps
+    /// (ADR-0014), and what the config or the install already answers.
+    struct Setup: Equatable {
+        /// How warm, unless the config sets it or the strength can't be read.
+        let askStrength: Bool
+        /// When it comes on, unless the config sets it or Night Shift is unavailable.
+        let askSchedule: Bool
+        /// On a schedule already, so onboarding offers to skip to Nightcap's part.
+        let alreadySetUp: Bool
+        /// The Mac's values, which the steps start from.
+        let strength: UInt8?
+        let schedule: Schedule?
+        /// Website checking as the config sets it, which answers its step for good.
+        let websitesFromConfig: Bool?
+        /// Whether Nightcap opens at login now, or nil where it never opens itself.
+        let opensAtLogin: Bool?
+    }
+
     enum Step: Equatable {
         /// Night Shift is on a schedule already: the user keeps it, or reviews it.
         case alreadySetUp
@@ -84,13 +102,13 @@ final class OnboardingFlow {
     /// Three rows of three fit the apps step.
     static let gridSize = 9
 
-    let setup: OnboardingSteps
-    /// The suggested apps on this Mac, then any the user chose; the ones with a rule already come
-    /// ticked and can't be changed.
-    private(set) var apps: [Suggestion]
-    /// The suggested sites, the ones with a rule already likewise.
-    let sites: [Suggestion]
+    let setup: Setup
+    /// The bundle IDs of the suggested apps on this Mac, then of any the user chose.
+    private var appIds: [String]
+    private let domains: [String]
     private var ticked: Set<RuleIdentity> = []
+    /// What onboarding gave a rule, whose suggestions stay as the user ticked them.
+    private var given: Set<RuleIdentity> = []
     private(set) var reviewing = false
     private(set) var page = WebsitesPage.ask
     private(set) var waitingForAccessibility = false
@@ -109,7 +127,8 @@ final class OnboardingFlow {
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
 
-    private let rules: () -> [SettingsRule]
+    private let rules: () -> [Rule]
+    private let words: Wording
     private let granted: () -> Bool
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
@@ -118,14 +137,16 @@ final class OnboardingFlow {
     private let onFinish: (_ websites: Bool) -> Void
 
     /// `apps` are the bundle IDs of the suggested apps the grid shows, and `sites` the suggested
-    /// sites' domains. `rules` are the core's rules as they stand; `choose` sends a command to the
-    /// core, as the menu does; `notifications` says whether notifications are allowed, denied or
-    /// not asked for yet, as last read; `onFinish` runs once onboarding finishes.
+    /// sites' domains. `rules` are the core's rules as they stand, and `words` say where one comes
+    /// from; `choose` sends a command to the core, as the menu does; `notifications` says whether
+    /// notifications are allowed, denied or not asked for yet, as last read; `onFinish` runs once
+    /// onboarding finishes.
     init(
-        steps setup: OnboardingSteps,
+        setup: Setup,
         apps: [String],
         sites: [String],
-        rules: @escaping () -> [SettingsRule],
+        rules: @escaping () -> [Rule],
+        words: Wording,
         accessibilityGranted: @escaping () -> Bool,
         askForAccessibility: @escaping () -> Void,
         choose: @escaping (Command) -> Void,
@@ -135,18 +156,18 @@ final class OnboardingFlow {
     ) {
         self.setup = setup
         self.rules = rules
+        self.words = words
         granted = accessibilityGranted
         self.askForAccessibility = askForAccessibility
         self.choose = choose
         readNotifications = notifications
         self.askForNotifications = askForNotifications
         self.onFinish = onFinish
-        let ruled = Dictionary(rules().map { ($0.identity, $0.label) }, uniquingKeysWith: { first, _ in first })
-        self.apps = apps.map { Suggestion(identity: .app($0), ruled: ruled[.app($0)]) }
-        self.sites = sites.map { Suggestion(identity: .domain($0), ruled: ruled[.domain($0)]) }
+        appIds = apps
+        domains = sites
         opensAtLogin = setup.opensAtLogin
-        strength = setup.nightShift.strength ?? 50
-        let current = setup.nightShift.schedule ?? .off
+        strength = setup.strength ?? 50
+        let current = setup.schedule ?? .off
         if case .custom(let from, let to) = current {
             customHours = (from, to)
         } else {
@@ -168,13 +189,12 @@ final class OnboardingFlow {
     /// The steps this user takes, in order: Night Shift's unless the config sets it, then
     /// Nightcap's.
     var steps: [Step] {
-        let nightShift = setup.nightShift
         var steps: [Step] = []
-        if nightShift.alreadySetUp && !reviewing {
+        if setup.alreadySetUp && !reviewing {
             steps.append(.alreadySetUp)
         } else {
-            if nightShift.askStrength { steps.append(.strength) }
-            if nightShift.askSchedule { steps.append(.schedule) }
+            if setup.askStrength { steps.append(.strength) }
+            if setup.askSchedule { steps.append(.schedule) }
         }
         steps.append(.apps)
         if setup.websitesFromConfig != false { steps.append(.websites) }
@@ -271,7 +291,7 @@ final class OnboardingFlow {
         switch action {
         case .continue:
             switch step {
-            case .schedule where schedule != setup.nightShift.schedule:
+            case .schedule where schedule != setup.schedule:
                 choose(.setSchedule(schedule))
             case .lastThings:
                 if let opensAtLogin { choose(.openAtLogin(opensAtLogin ? .on : .off)) }
@@ -289,7 +309,10 @@ final class OnboardingFlow {
         case .skipToNightcap:
             go(to: steps.firstIndex(where: Part.nightcap.steps.contains)!)
         case .addRules:
-            for suggestion in adding { choose(.addRule(identity: suggestion.identity, says: .off)) }
+            for suggestion in adding {
+                choose(.addRule(identity: suggestion.identity, says: .off))
+                given.insert(suggestion.identity)
+            }
             advance()
         case .turnOnWebsites:
             websites = true
@@ -308,6 +331,28 @@ final class OnboardingFlow {
     }
 
     // MARK: The steps' choices
+
+    /// The suggested apps on this Mac, then any the user chose. One with a rule, short of a rule
+    /// given here, comes ticked and can't be changed, as the core has the rules now.
+    var apps: [Suggestion] {
+        let ruled = self.ruled
+        return appIds.map { Suggestion(identity: .app($0), ruled: ruled[.app($0)]) }
+    }
+
+    /// The suggested sites, the ones with a rule likewise.
+    var sites: [Suggestion] {
+        let ruled = self.ruled
+        return domains.map { Suggestion(identity: .domain($0), ruled: ruled[.domain($0)]) }
+    }
+
+    /// Where each app's or site's rule comes from, as the Rules tab says it, short of those given
+    /// here.
+    private var ruled: [RuleIdentity: String] {
+        Dictionary(
+            Settings.rows(of: rules(), words: words).filter { !given.contains($0.identity) }.map {
+                ($0.identity, $0.label)
+            }, uniquingKeysWith: { first, _ in first })
+    }
 
     /// The slider's strength: a preview while it's dragged, saved otherwise, as the menu's does.
     func moveStrength(to value: UInt8, previewing: Bool) {
@@ -330,11 +375,8 @@ final class OnboardingFlow {
     /// An app the user chose, added to the grid ticked. One with a rule already shows where its rule
     /// comes from and can't be changed, as a suggestion with one does.
     func add(app bundleId: String) {
-        let identity = RuleIdentity.app(bundleId)
-        if !apps.contains(where: { $0.identity == identity }) {
-            apps.append(Suggestion(identity: identity, ruled: rules().first { $0.identity == identity }?.label))
-        }
-        ticked.insert(identity)
+        if !appIds.contains(bundleId) { appIds.append(bundleId) }
+        ticked.insert(.app(bundleId))
     }
 
     /// The ticked suggestions without a rule on the step's grid.
@@ -353,8 +395,8 @@ final class OnboardingFlow {
     var addedSites: [Suggestion] { added(sites) }
 
     private func added(_ suggestions: [Suggestion]) -> [Suggestion] {
-        let rules = Set(rules().map(\.identity))
-        return suggestions.filter { $0.ruled == nil && rules.contains($0.identity) }
+        let rules = Set(Settings.rows(of: rules(), words: words).map(\.identity))
+        return suggestions.filter { given.contains($0.identity) && rules.contains($0.identity) }
     }
 
     // MARK: The Accessibility grant
@@ -385,4 +427,27 @@ final class OnboardingFlow {
         return true
     }
     #endif
+}
+
+extension OnboardingFlow.Setup {
+    /// What onboarding asks, as `core` answers its queries now, with the login item as the shell
+    /// last read it.
+    init(_ core: Core, loginItem: LoginItem?) {
+        let nightShift = core.nightShift()
+        let config = core.config()
+        let askStrength = nightShift.strength != nil && config.strength == nil
+        let askSchedule = nightShift.state != .unavailable && config.schedule == nil
+        // Only an install that opens itself at login has the check.
+        let opensItself = core.checks().checks.contains { check in
+            if case .openAtLogin = check.detail { true } else { false }
+        }
+        self.init(
+            askStrength: askStrength,
+            askSchedule: askSchedule,
+            alreadySetUp: (askStrength || askSchedule) && nightShift.schedule.map { $0 != .off } == true,
+            strength: nightShift.strength,
+            schedule: nightShift.schedule,
+            websitesFromConfig: config.websites.map { $0 == .on },
+            opensAtLogin: opensItself ? loginItem.map { $0 != .notRegistered } : nil)
+    }
 }

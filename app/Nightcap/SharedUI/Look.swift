@@ -230,7 +230,7 @@ final class StepRing: NSView {
         }
         setAccessibilityElement(true)
         setAccessibilityRole(.image)
-        setAccessibilityLabel(current ? "Current step" : "To do")
+        setAccessibilityLabel(Wording.system.step(current: current))
     }
 
     required init?(coder: NSCoder) {
@@ -518,7 +518,7 @@ final class StepDots: NSView {
             heightAnchor.constraint(equalToConstant: 22).isActive = true
             setAccessibilityElement(true)
             setAccessibilityRole(dot.go == nil ? .staticText : .button)
-            setAccessibilityLabel(dot.state == .current ? "\(dot.label), current step" : dot.label)
+            setAccessibilityLabel(dot.state == .current ? Wording.system.current(dot.label) : dot.label)
         }
 
         required init?(coder: NSCoder) {

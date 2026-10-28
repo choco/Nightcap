@@ -152,8 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let host, let accessibility = host.accessibility else { return }
         let core = host.core
         let onboarding = Onboarding(
-            steps: core.onboarding(),
-            rules: { core.settings().rules },
+            setup: OnboardingFlow.Setup(core, loginItem: host.loginItem),
+            rules: { core.rules() },
             icons: siteIcons,
             sun: host.nightShift?.sunTimes.flatMap { times in
                 guard let sunset = times.sunsets.first, let sunrise = times.sunrises.first else { return nil }
@@ -252,12 +252,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// item appears once onboarding is finished; onboarding asks for notifications itself, and
     /// without it they're asked for as the item first appears.
     private func refresh() {
-        if statusMenu == nil, onboarding == nil, let host, host.core.onboarding().finished {
+        if statusMenu == nil, onboarding == nil, let host, host.core.preferences().onboardingFinished {
             showStatusMenu()
             host.askForNotifications()
         }
         statusMenu?.refresh()
         settingsWindow?.refresh()
+        onboarding?.refresh()
         tour?.refresh()
     }
 }
