@@ -2,6 +2,7 @@
 
 uniffi::setup_scaffolding!();
 
+mod clock;
 mod commands;
 mod ffi;
 mod ipc;
@@ -33,10 +34,11 @@ use nightcap_protocol::{
     TourState,
 };
 
+use clock::SystemClock;
 use server::react::Input;
 #[cfg(any(test, debug_assertions))]
 use server::react::react;
-use server::start::{Setup, SystemClock, install_of, instance_of, zone_of};
+use server::start::{Setup, install_of, instance_of, zone_of};
 use server::state::Inner;
 use server::{Mail, Mailbox, Published, Snapshot};
 use storage::ad_hoc_rules;

@@ -87,7 +87,7 @@ pub(crate) mod tests {
     };
 
     use super::Listener;
-    use crate::scenario::ManualClock;
+    use crate::clock::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};

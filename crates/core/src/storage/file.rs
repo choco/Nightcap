@@ -212,7 +212,7 @@ mod tests {
 
     use super::{Disk, File, Files, Owned, Paths};
     use crate::Fact;
-    use crate::scenario::ManualClock;
+    use crate::clock::ManualClock;
     use crate::server::react::{Input, react};
     use crate::server::start::Setup;
     use crate::server::state::Inner;

@@ -4,10 +4,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{Install, Instance, NightShift, NotificationPermission};
 
+use crate::clock::Clock;
 use crate::commands::Loaded;
 use crate::rules::places::{Context, Kept, Places};
 use crate::rules::schedule::{SunTimes, Timeline};
@@ -29,19 +29,6 @@ pub(crate) struct Setup {
     pub(crate) files: Arc<dyn Files>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) zone: TimeZone,
-}
-
-/// Where the core reads the time, so that tests control it completely.
-pub(crate) trait Clock: Send + Sync {
-    fn now(&self) -> Timestamp;
-}
-
-pub(crate) struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Timestamp {
-        Timestamp::now()
-    }
 }
 
 impl Inner {

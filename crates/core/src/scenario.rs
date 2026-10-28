@@ -4,7 +4,7 @@
 //! builds have none of this, so the app there can't stage a core.
 
 use std::fmt;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -12,8 +12,9 @@ use nightcap_protocol::{Command, Decision, ErrorReply, Install, Instance, Reques
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::clock::{Clock, ManualClock};
 use crate::server::react::{Input, react};
-use crate::server::start::{Clock, Setup, install_of, instance_of, zone_of};
+use crate::server::start::{Setup, install_of, instance_of, zone_of};
 use crate::server::state::Inner;
 use crate::server::{Published, Snapshot};
 use crate::storage::file::{File, Memory, Paths};
@@ -369,32 +370,4 @@ fn over_the_wire<T: Serialize + DeserializeOwned>(message: &T) -> T {
     serde_json::to_vec(message)
         .and_then(|json| serde_json::from_slice(&json))
         .expect("a message crosses the wire format")
-}
-
-/// A clock that reads what it's set to.
-#[derive(Debug)]
-pub(crate) struct ManualClock(Mutex<Timestamp>);
-
-impl ManualClock {
-    pub(crate) fn new(now: Timestamp) -> Self {
-        Self(Mutex::new(now))
-    }
-
-    pub(crate) fn set(&self, now: Timestamp) {
-        *self.time() = now;
-    }
-
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    fn time(&self) -> MutexGuard<'_, Timestamp> {
-        self.0.lock().expect("no panic happens while it's held")
-    }
-}
-
-impl Clock for ManualClock {
-    fn now(&self) -> Timestamp {
-        *self.time()
-    }
 }
