@@ -130,7 +130,9 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
                     serde_json::to_string(&report).context("couldn't encode the status")?
                 );
             } else {
-                wording::print_status(&report);
+                for line in wording::status(&report, &TimeZone::system()) {
+                    println!("{line}");
+                }
             }
             return Ok(());
         }

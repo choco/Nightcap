@@ -1,8 +1,8 @@
 //! The CLI's own words for what Nightcap reports, which sends facts alone: its decisions, its
 //! rules, its checks, its refusals and the status its queries make up.
 
-use jiff::Timestamp;
 use jiff::tz::TimeZone;
+use jiff::{Timestamp, civil};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckState, Checks, ConfigFileDetail,
     Decision, FileError, Hello, Install, Lasting, Length, NightShift, NightShiftDetail,
@@ -16,7 +16,7 @@ use crate::client::Report;
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
 pub(crate) fn decision(decision: &Decision, zone: &TimeZone) -> String {
     let until = |end: Option<Timestamp>, state: OnOff| match end {
-        Some(end) => format!(" until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+        Some(end) => format!(" until {}", moment(end, zone)),
         None => format!(" until you turn it {}", state.other()),
     };
     let Some(top) = decision.reasons.first() else {
@@ -166,7 +166,6 @@ pub(crate) fn check(detail: &CheckDetail) -> String {
 
 /// Night Shift's check, in a sentence.
 fn night_shift(found: &NightShiftDetail) -> String {
-    let time = |at: TimeOfDay| format!("{:02}:{:02}", at.hour, at.minute);
     match found {
         NightShiftDetail::Available { schedule } => match schedule {
             None => "Night Shift is available.".to_owned(),
@@ -176,8 +175,8 @@ fn night_shift(found: &NightShiftDetail) -> String {
             }
             Some(Schedule::Custom { from, to }) => format!(
                 "Night Shift is available, following its schedule: {} to {}.",
-                time(*from),
-                time(*to)
+                time_of_day(*from),
+                time_of_day(*to)
             ),
         },
         NightShiftDetail::Unavailable => "Night Shift isn’t available on this Mac.".to_owned(),
@@ -258,10 +257,9 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         Refusal::StrengthOutOfRange { strength } => {
             format!("a strength is 0 to 100, not {strength}")
         }
-        // Not a time on the clock, so its numbers are written as they are.
         Refusal::NotATimeOfDay(time) => format!(
-            "custom hours are times of day, from 00:00 to 23:59, not {:02}:{:02}",
-            time.hour, time.minute
+            "custom hours are times of day, from 00:00 to 23:59, not {}",
+            time_of_day(*time)
         ),
         Refusal::TooShort => "a length is longer than zero".to_owned(),
         Refusal::TooLong { length } => format!("{length:#} is too long"),
@@ -344,13 +342,14 @@ fn from_config<T: PartialEq + Copy>(
 pub(crate) fn length_text(length: &Lasting, zone: &TimeZone) -> String {
     match length {
         Lasting::For(duration) => format!("for {duration:#}"),
-        Lasting::Until(end) => format!("until {}", end.to_zoned(zone.clone()).strftime("%H:%M")),
+        Lasting::Until(end) => format!("until {}", moment(*end, zone)),
         Lasting::UntilScheduleTurns => "until the schedule turns it back".to_owned(),
         Lasting::Indefinite => "until you turn it back".to_owned(),
     }
 }
 
-pub(crate) fn print_status(report: &Report) {
+/// What `nightcap status` shows, a line at a time, with times in `zone`.
+pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
     let Report {
         about,
         night_shift,
@@ -376,7 +375,11 @@ pub(crate) fn print_status(report: &Report) {
         (Some(Schedule::Off), _) | (None, _) => String::new(),
         (Some(_), None) => ", waiting for sun times".to_owned(),
         (Some(_), Some(scheduled)) => {
-            format!(", {}{}", scheduled, until(night_shift.next_transition()))
+            format!(
+                ", {}{}",
+                scheduled,
+                until(night_shift.next_transition(), zone)
+            )
         }
     };
     let accessibility = if checks.permissions.accessibility {
@@ -389,8 +392,8 @@ pub(crate) fn print_status(report: &Report) {
         NotificationPermission::Denied => "denied",
         NotificationPermission::Granted => "granted",
     };
-    println!("Nightcap {}, {install}", about.version);
-    let decided = decision(&front.decision, &TimeZone::system());
+    let mut lines = vec![format!("Nightcap {}, {install}", about.version)];
+    let decided = decision(&front.decision, zone);
     // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
@@ -408,33 +411,33 @@ pub(crate) fn print_status(report: &Report) {
             .state
             .is_some_and(|state| Some(state) == observed)
     {
-        println!("Night Shift: {decided}");
+        lines.push(format!("Night Shift: {decided}"));
     } else {
-        println!("Night Shift: {state}, {decided}");
+        lines.push(format!("Night Shift: {state}, {decided}"));
     }
-    println!(
+    lines.push(format!(
         "Schedule: {schedule}{scheduled}{}",
         from_config(config.schedule, night_shift.schedule, schedule_text)
-    );
+    ));
     if let Some(strength) = night_shift.strength {
-        println!(
+        lines.push(format!(
             "Strength: {strength}{}",
             from_config(config.strength, night_shift.strength, |value| value
                 .to_string())
-        );
+        ));
     }
     let host = match (&front.host, front.watching) {
         (Some(host), _) => format!(", on {host}"),
         (None, true) => ", host unknown".to_owned(),
         (None, false) => String::new(),
     };
-    println!(
+    lines.push(format!(
         "Frontmost app: {}{host}",
         front.app.as_ref().map_or("unknown", |app| app.as_str())
-    );
-    println!("Rules: {}", rules(&app_and_site_rules(every_rule)));
+    ));
+    lines.push(format!("Rules: {}", rules(&app_and_site_rules(every_rule))));
     let website_checking = preferences.website_checking;
-    println!(
+    lines.push(format!(
         "Website checking: {}{}",
         website_checking.state,
         if website_checking.from_config {
@@ -442,19 +445,16 @@ pub(crate) fn print_status(report: &Report) {
         } else {
             ""
         }
-    );
-    for line in places_rules(every_rule) {
-        println!("{line}");
-    }
-    println!("Accessibility: {accessibility}");
-    println!("Notifications: {notifications}");
+    ));
+    lines.extend(places_rules(every_rule, zone));
+    lines.push(format!("Accessibility: {accessibility}"));
+    lines.push(format!("Notifications: {notifications}"));
     let problems = needs_attention(checks);
     if !problems.is_empty() {
-        println!("Needs attention:");
-        for problem in problems {
-            println!("  {problem}");
-        }
+        lines.push("Needs attention:".to_owned());
+        lines.extend(problems.into_iter().map(|problem| format!("  {problem}")));
     }
+    lines
 }
 
 /// Each drifted or broken check's line.
@@ -474,13 +474,13 @@ pub(crate) fn rules(rules: &[Rule]) -> String {
     rules.iter().map(rule).collect::<Vec<_>>().join(", ")
 }
 
-/// Each place's rules but an app's or site's indefinite one, shortest first, a line per place:
-/// "app:com.figma.Desktop: on until 07:00".
-fn places_rules(rules: &[Rule]) -> Vec<String> {
+/// Each place's rules but an app's or site's indefinite one, shortest first, a line per place,
+/// with times in `zone`: "app:com.figma.Desktop: on until 07:00".
+fn places_rules(rules: &[Rule], zone: &TimeZone) -> Vec<String> {
     let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
     for rule in rules.iter().filter(|rule| !is_app_or_site_rule(rule)) {
         let part = match rule.length.end() {
-            Some(end) => format!("{}{}", rule.says, until(Some(end))),
+            Some(end) => format!("{}{}", rule.says, until(Some(end), zone)),
             None => format!("{} until you turn it {}", rule.says, rule.says.other()),
         };
         match places.iter_mut().find(|(place, _)| **place == rule.place) {
@@ -500,22 +500,44 @@ fn places_rules(rules: &[Rule]) -> Vec<String> {
         .collect()
 }
 
-/// " until 22:00" in local time, or nothing when no schedule transition is coming.
-fn until(transition: Option<Timestamp>) -> String {
+/// " until 22:00" in `zone`, or nothing when no schedule transition is coming.
+fn until(transition: Option<Timestamp>, zone: &TimeZone) -> String {
     transition.map_or_else(String::new, |transition| {
-        format!(
-            " until {}",
-            transition.to_zoned(TimeZone::system()).strftime("%H:%M")
-        )
+        format!(" until {}", moment(transition, zone))
     })
 }
 
+/// A time on the clock, as the CLI writes every time: two-digit hours on a 24-hour clock, then
+/// the minutes, "07:00".
+fn clock(time: civil::Time) -> String {
+    time.strftime("%H:%M").to_string()
+}
+
+/// A moment as the clock in `zone` reads it.
+fn moment(moment: Timestamp, zone: &TimeZone) -> String {
+    clock(moment.to_zoned(zone.clone()).time())
+}
+
+/// One end of custom hours, which the core answers on the clock; a refused one can be past it,
+/// and then its numbers are written as they are.
 fn time_of_day(time: TimeOfDay) -> String {
-    format!("{:02}:{:02}", time.hour, time.minute)
+    let on_the_clock = i8::try_from(time.hour)
+        .ok()
+        .zip(i8::try_from(time.minute).ok())
+        .and_then(|(hour, minute)| civil::Time::new(hour, minute, 0, 0).ok());
+    match on_the_clock {
+        Some(time) => clock(time),
+        None => format!("{:02}:{:02}", time.hour, time.minute),
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use nightcap_protocol::{
+        About, Check, ConfigState, Front, NightShiftState, OnboardingAsks, Permissions,
+        PlaceInFront, Preferences, WebsiteChecking,
+    };
+
     use super::*;
 
     fn indefinite(place: &str, says: OnOff, set_by: SetBy) -> Rule {
@@ -1060,6 +1082,123 @@ mod tests {
             [
                 "Accessibility isn’t allowed, so website checking can’t read the front tab.",
                 "The config file is invalid: /Users/me/.config/nightcap/config.toml: line 4: unknown field `domian`, expected `app` or `domain`",
+            ]
+        );
+    }
+
+    #[test]
+    fn status_reads_a_line_at_a_time_with_times_in_the_zone() {
+        let zone = TimeZone::get("Europe/Zurich").unwrap();
+        let at = |instant: &str| instant.parse::<Timestamp>().unwrap();
+        let figma = indefinite("domain:figma.com", OnOff::Off, SetBy::Config);
+        let late = Rule {
+            place: Place::Everywhere,
+            says: OnOff::On,
+            length: Length::Until {
+                until: at("2026-10-16T21:30:00Z"),
+            },
+            set_by: SetBy::You,
+        };
+        let in_front = |place: Place| PlaceInFront {
+            place,
+            gives: OnOff::On,
+            rules: Vec::new(),
+            base: None,
+            inherits: None,
+            after_until: None,
+            after_reset: None,
+        };
+        let report = Report {
+            about: About {
+                version: "1.2.0".to_owned(),
+                install: Install::SelfManaged,
+            },
+            night_shift: NightShiftState {
+                state: NightShift::On,
+                strength: Some(60),
+                schedule: Some(Schedule::Custom {
+                    from: TimeOfDay {
+                        hour: 22,
+                        minute: 0,
+                    },
+                    to: TimeOfDay { hour: 7, minute: 0 },
+                }),
+                set_aside: false,
+                scheduled: Some(OnOff::On),
+                next_on: None,
+                next_off: Some(at("2026-10-17T05:00:00Z")),
+            },
+            front: Front {
+                app: Some("com.apple.Safari".parse().unwrap()),
+                watching: true,
+                host: Some("www.figma.com".to_owned()),
+                site: Some("figma.com".parse().unwrap()),
+                decision: Decision {
+                    state: Some(OnOff::Off),
+                    place: figma.place.clone(),
+                    reasons: vec![Reason::Rule(figma.clone())],
+                },
+                places: Vec::new(),
+                everywhere: in_front(Place::Everywhere),
+                after_switch: Vec::new(),
+            },
+            rules: vec![
+                figma,
+                indefinite("app:com.apple.mail", OnOff::On, SetBy::You),
+                late,
+            ],
+            config: ConfigState {
+                path: "/Users/me/.config/nightcap/config.toml".to_owned(),
+                found: true,
+                error: None,
+                strength: Some(40),
+                schedule: None,
+                websites: Some(OnOff::On),
+                lengths: Vec::new(),
+                ad_hoc_error: None,
+            },
+            preferences: Preferences {
+                website_checking: WebsiteChecking {
+                    state: OnOff::On,
+                    from_config: true,
+                },
+                notifications_wanted: true,
+                open_at_login: false,
+                onboarding_completed: 1,
+                onboarding_finished: true,
+                onboarding_asks: OnboardingAsks {
+                    strength: true,
+                    schedule: true,
+                },
+            },
+            checks: Checks {
+                checks: vec![Check {
+                    detail: CheckDetail::Notifications(NotificationsDetail::SwitchedOff),
+                    state: CheckState::Drifted,
+                }],
+                permissions: Permissions {
+                    accessibility: true,
+                    notifications: NotificationPermission::Denied,
+                    login_item: None,
+                },
+            },
+        };
+
+        assert_eq!(
+            status(&report, &zone),
+            [
+                "Nightcap 1.2.0, self-managed",
+                "Night Shift: on, off by the config rule for domain:figma.com",
+                "Schedule: 22:00 to 07:00, on until 07:00",
+                "Strength: 60 (the config says 40)",
+                "Frontmost app: com.apple.Safari, on www.figma.com",
+                "Rules: domain:figma.com (config rule, off), app:com.apple.mail (ad-hoc rule, on)",
+                "Website checking: on (set in the config)",
+                "Everywhere: on until 23:30",
+                "Accessibility: granted",
+                "Notifications: denied",
+                "Needs attention:",
+                "  Notifications were allowed, but they’re switched off in System Settings.",
             ]
         );
     }
