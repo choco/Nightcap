@@ -78,9 +78,6 @@ pub(crate) struct Look<'a> {
     /// The site in front, while website checking knows the host: the most specific domain with
     /// a rule covering it, else the tab domain (ADR-0017).
     pub site: Option<PlaceLook>,
-    /// Everywhere's rules after the switch the other way from what it gives, by the switch
-    /// itself, run on a copy. The switch never leaves a rule until a time.
-    pub after_switch: Vec<Rule>,
     /// Whether a browser's host could change anything: not on the way out, where only
     /// everywhere's rules decide (ADR-0008), nor while the front app's own place says off and
     /// no site could say on (ADR-0012).
@@ -95,20 +92,16 @@ pub(crate) struct Look<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PlaceLook {
     pub place: Place,
-    /// What a reset takes off, shortest first: its temporary rules, and everywhere's indefinite
-    /// one.
+    /// Its rules over its base, shortest first: its temporary rules, and for everywhere its
+    /// indefinite one too.
     pub rules: Vec<Rule>,
-    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the stand-in,
-    /// else the schedule.
+    /// What its rules sit on: an app's or site's indefinite rule, or for everywhere the stand-in,
+    /// else the schedule once it's known.
     pub base: Option<Reason>,
     /// Its own say, else the one it inherits, else Night Shift as last reported.
     pub gives: OnOff,
     /// The first less specific place in front that says something, and what.
     pub inherits: Option<(Place, OnOff)>,
-    /// What it gives under its rule until a time, if anything says something there.
-    pub after_until: Option<OnOff>,
-    /// What it gives once reset: its base's say, else the one it inherits.
-    pub after_reset: Option<OnOff>,
 }
 
 /// What an outside change was adopted as (ADR-0018): the deciding place set to `state` until
@@ -160,16 +153,9 @@ impl Places {
     /// and if the stand-in or the schedule still says otherwise, sets an indefinite rule of the
     /// user's saying `to`.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
-        if self.switched(to, world) {
-            tracing::info!("switched {to} everywhere, indefinitely");
-        }
-    }
-
-    /// The switch, which `look` runs on a copy too: says whether it set a rule.
-    fn switched(&mut self, to: OnOff, world: &World<'_>) -> bool {
         self.peel_everywhere(to, world);
         if self.says(&Place::Everywhere, world) == Some(to) {
-            return false;
+            return;
         }
         self.put(Rule {
             place: Place::Everywhere,
@@ -177,7 +163,7 @@ impl Places {
             length: Length::Indefinite,
             set_by: SetBy::You,
         });
-        true
+        tracing::info!("switched {to} everywhere, indefinitely");
     }
 
     /// Sets a rule of the user's at a place, saying `state` for `length` (ADR-0018). It takes
@@ -454,12 +440,9 @@ impl Places {
     }
 
     pub(crate) fn look<'a>(&'a self, world: &World<'_>) -> Look<'a> {
-        let decision = self.decide(world);
-        let everywhere = self.place_look(Place::Everywhere, world);
-        let mut switched = self.clone();
-        switched.switched(everywhere.gives.other(), world);
         Look {
-            decision,
+            decision: self.decide(world),
+            everywhere: self.place_look(Place::Everywhere, world),
             app: world
                 .context
                 .app
@@ -468,8 +451,6 @@ impl Places {
             site: self
                 .site_in_front(world)
                 .map(|site| self.place_look(site, world)),
-            after_switch: switched.rules_at(&Place::Everywhere).cloned().collect(),
-            everywhere,
             host_matters: self.host_matters(world),
             rules: self
                 .indefinite
@@ -508,12 +489,6 @@ impl Places {
             .iter()
             .find_map(|(_, reasons)| reasons.first().map(says))
             .unwrap_or(world.observed);
-        let after_until = from.iter().enumerate().find_map(|(index, (_, reasons))| {
-            reasons
-                .iter()
-                .find(|reason| !(index == 0 && is_until(reason)))
-                .map(says)
-        });
         let base = match &place {
             Place::Everywhere if self.stands_in() => Some(Reason::StandIn),
             Place::Everywhere => inputs.scheduled_state.map(|state| Reason::Schedule {
@@ -524,18 +499,12 @@ impl Places {
                 self.indefinite_at(&place).cloned().map(Reason::Rule)
             }
         };
-        let after_reset = base
-            .as_ref()
-            .map(says)
-            .or(inherits.as_ref().map(|(_, says)| *says));
         PlaceLook {
             rules: self.rules_at(&place).cloned().collect(),
             place,
             base,
             gives,
             inherits,
-            after_until,
-            after_reset,
         }
     }
 
@@ -895,17 +864,6 @@ fn reasons_at(inputs: &Inputs<'_>, place: &Place) -> Vec<Reason> {
         }
     }
     reasons
-}
-
-/// Whether a reason is a rule until a time.
-fn is_until(reason: &Reason) -> bool {
-    matches!(
-        reason,
-        Reason::Rule(Rule {
-            length: Length::Until { .. },
-            ..
-        })
-    )
 }
 
 /// What a reason says.
@@ -1384,7 +1342,6 @@ mod tests {
             Some((place("app:com.apple.Safari"), OnOff::Off))
         );
         assert_eq!(site.gives, OnOff::Off);
-        assert_eq!(site.after_reset, Some(OnOff::Off));
     }
 
     #[test]
@@ -1423,7 +1380,13 @@ mod tests {
             figma.rules,
             vec![adopted(place("app:com.figma.Desktop"), OnOff::On, MORNING)]
         );
-        assert_eq!(figma.after_reset, Some(OnOff::Off));
+        assert_eq!(
+            figma.base,
+            Some(Reason::Rule(config_rule(
+                "app:com.figma.Desktop",
+                OnOff::Off
+            )))
+        );
         assert_sound(&places, &world);
     }
 

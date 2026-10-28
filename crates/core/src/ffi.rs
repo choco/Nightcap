@@ -301,7 +301,6 @@ pub struct Front {
     pub decision: Decision,
     pub places: Vec<PlaceInFront>,
     pub everywhere: PlaceInFront,
-    pub after_switch: Vec<Rule>,
 }
 
 #[uniffi::remote(Record)]
@@ -311,8 +310,6 @@ pub struct PlaceInFront {
     pub rules: Vec<Rule>,
     pub base: Option<Reason>,
     pub inherits: Option<Inherited>,
-    pub after_until: Option<OnOff>,
-    pub after_reset: Option<OnOff>,
 }
 
 #[uniffi::remote(Record)]

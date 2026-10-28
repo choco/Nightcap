@@ -160,9 +160,8 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, Length, NightShift,
-        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, Rule,
-        RuleIdentity, SetBy,
+        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, NightShift, OnOff,
+        PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response, RuleIdentity,
     };
 
     use super::{bind, serve};
@@ -400,15 +399,7 @@ mod tests {
                     rules: Vec::new(),
                     base: None,
                     inherits: None,
-                    after_until: None,
-                    after_reset: None,
                 },
-                after_switch: vec![Rule {
-                    place: Place::Everywhere,
-                    says: OnOff::On,
-                    length: Length::Indefinite,
-                    set_by: SetBy::You,
-                }],
             }
         );
         assert_eq!(night_shift.state, NightShift::Unavailable);

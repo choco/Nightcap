@@ -1108,8 +1108,6 @@ mod tests {
             rules: Vec::new(),
             base: None,
             inherits: None,
-            after_until: None,
-            after_reset: None,
         };
         let report = Report {
             about: About {
@@ -1143,7 +1141,6 @@ mod tests {
                 },
                 places: Vec::new(),
                 everywhere: in_front(Place::Everywhere),
-                after_switch: Vec::new(),
             },
             rules: vec![
                 figma,

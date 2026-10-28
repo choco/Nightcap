@@ -174,8 +174,6 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                         from: Place::Everywhere,
                         says: OnOff::On,
                     }),
-                    after_until: Some(OnOff::Off),
-                    after_reset: Some(OnOff::Off),
                 },
                 PlaceInFront {
                     place: Place::App("com.apple.Safari".parse().unwrap()),
@@ -186,8 +184,6 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                         from: Place::Everywhere,
                         says: OnOff::On,
                     }),
-                    after_until: Some(OnOff::On),
-                    after_reset: Some(OnOff::On),
                 },
             ],
             everywhere: PlaceInFront {
@@ -199,10 +195,7 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                     until: Some(at("2026-10-17T07:00:00+02:00")),
                 }),
                 inherits: None,
-                after_until: Some(OnOff::On),
-                after_reset: Some(OnOff::On),
             },
-            after_switch: vec![yours(Place::Everywhere, OnOff::Off, Length::Indefinite)],
         }
     );
     answers_alike(&staged);
@@ -272,11 +265,10 @@ fn front_answers_what_a_site_that_says_nothing_inherits_from_its_browser() {
         })
     );
     assert_eq!(site.gives, OnOff::Off);
-    assert_eq!(site.after_reset, Some(OnOff::Off));
 }
 
 #[test]
-fn front_answers_that_a_reset_under_an_external_on_gives_back_the_rule_it_snoozed() {
+fn front_answers_an_external_on_over_the_rule_it_snoozed() {
     let staged = noon()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .then(reported(false, custom_hours()))
@@ -297,7 +289,10 @@ fn front_answers_that_a_reset_under_an_external_on_gives_back_the_rule_it_snooze
         )]
     );
     assert_eq!(figma.gives, OnOff::On);
-    assert_eq!(figma.after_reset, Some(OnOff::Off));
+    assert_eq!(
+        figma.base,
+        Some(Reason::Rule(app_rule("com.figma.Desktop")))
+    );
 }
 
 #[test]

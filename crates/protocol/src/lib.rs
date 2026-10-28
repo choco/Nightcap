@@ -15,7 +15,7 @@ use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -333,31 +333,23 @@ pub struct Front {
     pub places: Vec<PlaceInFront>,
     /// Everywhere, the last place in front, as it stands under them.
     pub everywhere: PlaceInFront,
-    /// Everywhere's rules after the switch the other way from what it gives: the ones that say
-    /// that way, else the indefinite rule it sets where the stand-in or the schedule still says
-    /// otherwise (ADR-0018).
-    pub after_switch: Vec<Rule>,
 }
 
-/// A place in front as it stands (ADR-0018): what it gives, what a reset takes off there and
-/// leaves, and what it inherits from the places in front after it.
+/// A place in front as it stands (ADR-0018): what it gives, its rules and what they sit on, and
+/// what it inherits from the places in front after it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlaceInFront {
     pub place: Place,
     /// Its own say, else the one it inherits, else Night Shift as last reported.
     pub gives: OnOff,
-    /// What a reset takes off, shortest first: its temporary rules, and everywhere's
-    /// indefinite one.
+    /// Its rules over its base, shortest first: its temporary rules, and for everywhere its
+    /// indefinite one too.
     pub rules: Vec<Rule>,
-    /// What a reset leaves: an app's or site's indefinite rule, or for everywhere the stand-in,
-    /// else the schedule.
+    /// What its rules sit on: an app's or site's indefinite rule, or for everywhere the stand-in,
+    /// else the schedule once it's known.
     pub base: Option<Reason>,
     /// The first less specific place in front that says something, and what it says.
     pub inherits: Option<Inherited>,
-    /// What it gives under its rule until a time, if anything says something there or after it.
-    pub after_until: Option<OnOff>,
-    /// What it gives once reset: its base's say, else the one it inherits.
-    pub after_reset: Option<OnOff>,
 }
 
 /// What a place in front inherits: a less specific place's say.
@@ -1237,8 +1229,6 @@ mod tests {
                                 from: Place::Everywhere,
                                 says: OnOff::On,
                             }),
-                            after_until: Some(OnOff::Off),
-                            after_reset: Some(OnOff::Off),
                         },
                         PlaceInFront {
                             place: Place::App("com.apple.Safari".parse().unwrap()),
@@ -1249,8 +1239,6 @@ mod tests {
                                 from: Place::Everywhere,
                                 says: OnOff::On,
                             }),
-                            after_until: Some(OnOff::On),
-                            after_reset: Some(OnOff::On),
                         },
                     ],
                     everywhere: PlaceInFront {
@@ -1262,17 +1250,9 @@ mod tests {
                             until: Some("2026-10-17T05:00:00Z".parse().unwrap()),
                         }),
                         inherits: None,
-                        after_until: Some(OnOff::On),
-                        after_reset: Some(OnOff::On),
                     },
-                    after_switch: vec![Rule {
-                        place: Place::Everywhere,
-                        says: OnOff::Off,
-                        length: Length::Indefinite,
-                        set_by: SetBy::You,
-                    }],
                 })),
-                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"},"after_until":"off","after_reset":"off"},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"},"after_until":"on","after_reset":"on"}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null,"after_until":"on","after_reset":"on"},"after_switch":[{"place":"everywhere","says":"off","length":"indefinite","set_by":"you"}]}}"#,
+                r#"{"front":{"app":"com.apple.Safari","watching":true,"host":"www.figma.com","site":"figma.com","decision":{"state":"off","place":{"domain":"figma.com"},"reasons":[{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}}]},"places":[{"place":{"domain":"figma.com"},"gives":"off","rules":[],"base":{"rule":{"place":{"domain":"figma.com"},"says":"off","length":"indefinite","set_by":"config"}},"inherits":{"from":"everywhere","says":"on"}},{"place":{"app":"com.apple.Safari"},"gives":"on","rules":[],"base":null,"inherits":{"from":"everywhere","says":"on"}}],"everywhere":{"place":"everywhere","gives":"on","rules":[],"base":{"schedule":{"state":"on","until":"2026-10-17T05:00:00Z"}},"inherits":null}}}"#,
             ),
             (
                 Answer::Config(ConfigState {

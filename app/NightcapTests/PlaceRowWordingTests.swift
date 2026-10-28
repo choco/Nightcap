@@ -74,7 +74,8 @@ struct PlaceRowWordingTests {
         #expect(siteRow.subtitle == "Everywhere but at figma.com")
     }
 
-    /// The switch would leave everywhere's hold, which going back to the schedule takes off too.
+    /// The switch keeps everywhere's rule until the schedule turns, which says its way, and going
+    /// back to the schedule takes that off too.
     @Test func everywheresRowGoesBackToTheScheduleFromChangesOfItsOwn() throws {
         let core = try onByTheSchedule(
             .command(.set(place: .everywhere, state: .on, length: .untilScheduleTurns)),

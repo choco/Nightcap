@@ -24,42 +24,32 @@ struct TourQuotes: Equatable {
         let place = Place.app(sample.bundleId)
         let rule = Rule(place: place, says: .off, length: .indefinite, setBy: .trial)
         let snooze = Rule(place: place, says: .on, length: .until(until: Self.snoozeEnd), setBy: .you)
-        let fresh = PlaceInFront(
-            place: place, gives: .on, rules: [], base: nil, inherits: Self.tourOn, afterUntil: .on, afterReset: .on)
+        let fresh = PlaceInFront(place: place, gives: .on, rules: [], base: nil, inherits: Self.tourOn)
         addSampleRule = Self.quote(Self.row(in: sample, [fresh], words: words), \.addsRule)
-        let ruled = PlaceInFront(
-            place: place, gives: .off, rules: [], base: .rule(rule), inherits: Self.tourOn, afterUntil: .off,
-            afterReset: .off)
+        let ruled = PlaceInFront(place: place, gives: .off, rules: [], base: .rule(rule), inherits: Self.tourOn)
         snoozeSample =
             Self.row(
                 in: sample, [ruled], decision: Decision(state: .off, place: place, reasons: [.rule(rule)]),
                 words: words
             ).title
-        let snoozed = PlaceInFront(
-            place: place, gives: .on, rules: [snooze], base: .rule(rule), inherits: Self.tourOn, afterUntil: .off,
-            afterReset: .off)
+        let snoozed = PlaceInFront(place: place, gives: .on, rules: [snooze], base: .rule(rule), inherits: Self.tourOn)
         let putBack = Self.row(
             in: sample, [snoozed], decision: Decision(state: .on, place: place, reasons: [.rule(snooze), .rule(rule)]),
             words: words)
         putSampleRuleBack = Self.quote(putBack) { $0 == .reset(place) }
         addSiteRule = site.map { site in
-            let tab = PlaceInFront(
-                place: .domain(site.domain), gives: .on, rules: [], base: nil, inherits: Self.tourOn,
-                afterUntil: .on, afterReset: .on)
+            let tab = PlaceInFront(place: .domain(site.domain), gives: .on, rules: [], base: nil, inherits: Self.tourOn)
             let browser = PlaceInFront(
-                place: .app(site.browser), gives: .on, rules: [], base: nil, inherits: Self.tourOn, afterUntil: .on,
-                afterReset: .on)
+                place: .app(site.browser), gives: .on, rules: [], base: nil, inherits: Self.tourOn)
             let row = Self.row(
                 in: TourApp(bundleId: site.browser, name: ""), on: site.domain, [tab, browser], words: words)
             return Self.quote(row, \.addsRule)
         }
         let saysNothing = { (place: Place) in
-            PlaceInFront(
-                place: place, gives: .off, rules: [], base: nil, inherits: nil, afterUntil: nil, afterReset: nil)
+            PlaceInFront(place: place, gives: .off, rules: [], base: nil, inherits: nil)
         }
         let off = Self.row(
             in: example, [saysNothing(.app(example.bundleId))], everywhere: saysNothing(.everywhere),
-            afterSwitch: [Rule(place: .everywhere, says: .on, length: .indefinite, setBy: .you)],
             decision: Decision(state: nil, place: .everywhere, reasons: []), nightShift: .off, words: words)
         addExampleRule = Self.quote(off, \.addsRule)
     }
@@ -73,13 +63,12 @@ struct TourQuotes: Equatable {
 
     /// Everywhere while the tour stands in for the schedule with Night Shift on.
     private static let forTheTour = PlaceInFront(
-        place: .everywhere, gives: .on, rules: [], base: .standIn, inherits: nil, afterUntil: .on, afterReset: .on)
+        place: .everywhere, gives: .on, rules: [], base: .standIn, inherits: nil)
 
     /// The menu's row for the first of `places`, with `app` in front, on the site at `domain` if
     /// there's one: by default with the tour standing in, which decides.
     private static func row(
         in app: TourApp, on domain: String? = nil, _ places: [PlaceInFront], everywhere: PlaceInFront = forTheTour,
-        afterSwitch: [Rule] = [Rule(place: .everywhere, says: .off, length: .indefinite, setBy: .you)],
         decision: Decision = Decision(state: .on, place: .everywhere, reasons: [.standIn]),
         nightShift: NightShift = .on, words: Wording
     ) -> Menu.PlaceRow {
@@ -89,7 +78,7 @@ struct TourQuotes: Equatable {
                 nextOff: nil),
             front: Front(
                 app: app.bundleId, watching: domain != nil, host: domain, site: domain, decision: decision,
-                places: places, everywhere: everywhere, afterSwitch: afterSwitch),
+                places: places, everywhere: everywhere),
             lengths: [], checks: [], now: snoozeEnd, appName: { _ in app.name }, words: words)
         let place = places[0].place
         return menu.rows.first { $0.place == place }!

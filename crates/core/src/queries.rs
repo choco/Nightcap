@@ -59,7 +59,6 @@ impl Answers {
                 decision: look.decision.clone(),
                 places: look.site.iter().chain(&look.app).map(in_front).collect(),
                 everywhere: in_front(&look.everywhere),
-                after_switch: look.after_switch.clone(),
             },
             rules: inner.every_rule(now),
             config: ConfigState {
@@ -113,8 +112,6 @@ fn in_front(at: &PlaceLook) -> PlaceInFront {
             .inherits
             .clone()
             .map(|(from, says)| Inherited { from, says }),
-        after_until: at.after_until,
-        after_reset: at.after_reset,
     }
 }
 
