@@ -48,9 +48,6 @@ pub(crate) struct Persisted {
     /// The user accepted the schedule off while macOS has sunset to sunrise set aside, which
     /// the Night Shift check compares against. Cleared once it isn't set aside.
     pub(crate) schedule_off_accepted: bool,
-    /// The version that last ran: the first launch of another is an update, which a
-    /// notification announces.
-    pub(crate) last_version: Option<String>,
 }
 
 impl Persisted {
@@ -271,7 +268,6 @@ mod tests {
                 }),
             },
             schedule_off_accepted: true,
-            last_version: Some("1.0.0".to_owned()),
         };
 
         store.save(&state).unwrap();
@@ -366,6 +362,18 @@ mod tests {
         let files = holding(Some(r#"{"version":3,"login_item_registered":true}"#));
 
         assert_eq!(Store::new(files).load(), Persisted::default());
+    }
+
+    #[test]
+    fn state_from_a_build_that_kept_what_the_app_was_told_still_loads() {
+        let files = holding(Some(
+            r#"{"version":2,"websites":true,"onboarding":1,"announced":["accessibility"],"last_version":"1.2.0"}"#,
+        ));
+
+        let state = Store::new(files).load();
+
+        assert!(state.websites);
+        assert_eq!(state.onboarding, 1);
     }
 
     #[test]

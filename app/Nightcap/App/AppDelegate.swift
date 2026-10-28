@@ -82,7 +82,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.reporter = reporter
         self.executor = executor
         accessibilityAsk = AccessibilityAsk(core.snapshot())
+        let whatsNew = WhatsNew(defaults: .standard, words: .system)
         executor.onEvent { [notifications] event in notifications.tell(event) }
+        executor.onChange { [notifications] cause, snapshot in
+            guard cause == .launch,
+                let notice = whatsNew.launched(
+                    snapshot.about(), onboarded: snapshot.preferences().onboardingFinished)
+            else { return }
+            notifications.post(notice)
+        }
         executor.onChange { [weak self] _, snapshot in self?.refresh(snapshot) }
         reporter.launch()
         listenForShortcut()

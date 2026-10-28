@@ -48,7 +48,7 @@ pub(crate) fn react(inner: &mut Inner, input: Input) -> Outcome {
 impl Inner {
     fn fact(&mut self, fact: Fact, outcome: &mut Outcome) {
         match fact {
-            Fact::Launched => self.launched(outcome),
+            Fact::Launched => self.launched(&mut outcome.effects),
             Fact::AppActivated {
                 bundle_id,
                 is_browser,

@@ -1,5 +1,5 @@
 #![cfg(debug_assertions)]
-//! What Nightcap announces on its own: problems as they appear, and what's new after an update.
+//! What Nightcap announces on its own: problems as they appear.
 
 mod common;
 
@@ -109,50 +109,4 @@ fn a_config_broken_at_launch_is_announced() {
             state: CheckState::Broken,
         },
     }));
-}
-
-fn update_notice(from: Option<&str>) -> Event {
-    Event::Updated {
-        from: from.map(str::to_owned),
-        to: env!("CARGO_PKG_VERSION").to_owned(),
-    }
-}
-
-#[test]
-fn the_first_launch_of_a_new_version_says_whats_new_once() {
-    // An earlier version saved this after onboarding.
-    let staged = noon()
-        .state(r#"{"version":1,"onboarding":1,"last_version":"1.0.0"}"#)
-        .stage()
-        .unwrap();
-
-    assert!(
-        launch(&staged)
-            .events
-            .contains(&update_notice(Some("1.0.0")))
-    );
-    let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
-    assert!(
-        !launch(&staged)
-            .events
-            .iter()
-            .any(|event| matches!(event, Event::Updated { .. }))
-    );
-}
-
-#[test]
-fn a_run_from_before_versions_were_kept_counts_as_an_update() {
-    let staged = noon()
-        .state(r#"{"version":1,"onboarding":1}"#)
-        .stage()
-        .unwrap();
-
-    assert!(launch(&staged).events.contains(&update_notice(None)));
-}
-
-#[test]
-fn a_first_run_has_nothing_new_to_tell() {
-    let staged = noon().stage().unwrap();
-
-    assert!(!tells(&launch(&staged)));
 }

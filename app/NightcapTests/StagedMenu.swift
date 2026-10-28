@@ -16,6 +16,15 @@ nonisolated func at(_ instant: String) -> Date {
     try! Date(instant, strategy: .iso8601)
 }
 
+/// Runs `test` with user defaults of its own, never the app's, empty until it writes them and
+/// gone once it's done.
+func withScratchDefaults(_ test: (UserDefaults) throws -> Void) rethrows {
+    let suite = "NightcapTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    try test(defaults)
+}
+
 /// 22:00 to 07:00, local time.
 let customHours = Schedule.custom(from: TimeOfDay(hour: 22, minute: 0), to: TimeOfDay(hour: 7, minute: 0))
 

@@ -70,11 +70,11 @@ struct NoticeTests {
     }
 
     @Test func anUpdateOpensItsVersionInTheChangelog() {
-        let notice = Notice(.updated(from: "1.1.0", to: "1.2.0"), frontApp: nil, words: .staged)
+        let notice = Notice(updatedTo: "1.2.0", words: .staged)
 
-        #expect(notice?.title == "Nightcap updated to 1.2.0")
-        #expect(notice?.body == "Click to see what’s new.")
-        #expect(notice?.opens == URL(string: "https://nightcap.choco.me/changelog/#v1.2.0"))
+        #expect(notice.title == "Nightcap updated to 1.2.0")
+        #expect(notice.body == "Click to see what’s new.")
+        #expect(notice.opens == URL(string: "https://nightcap.choco.me/changelog/#v1.2.0"))
     }
 
     @Test func aProblemSaysWhatAppeared() {

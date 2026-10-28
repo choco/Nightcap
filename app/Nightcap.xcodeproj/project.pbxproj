@@ -57,6 +57,7 @@
 				Core/Inbox.swift,
 				Menu/Menu.swift,
 				Notifications/Notice.swift,
+				Notifications/WhatsNew.swift,
 				Onboarding/OnboardingFlow.swift,
 				Settings/Settings.swift,
 				Tour/TourFacts.swift,

@@ -42,8 +42,6 @@ pub(crate) struct Inner {
     pub(crate) loaded: Loaded,
     /// See `Persisted::onboarding`.
     pub(crate) onboarding: u32,
-    /// See `Persisted::last_version`.
-    pub(crate) last_version: Option<String>,
     /// What was last written to `state.json`.
     pub(crate) saved: Persisted,
 }
@@ -97,7 +95,6 @@ impl Inner {
                 .next_transition(self.facts.applied_until),
             applied_from_config: self.loaded.applied_from_config,
             schedule_off_accepted: self.grants.schedule_off_accepted,
-            last_version: self.last_version.clone(),
         }
     }
 

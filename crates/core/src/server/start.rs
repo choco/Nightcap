@@ -18,7 +18,7 @@ use crate::setup::grants::Grants;
 use crate::storage::config::{self, NightShiftConfig};
 use crate::storage::file::Files;
 use crate::storage::{ad_hoc_rules, saved_state};
-use crate::{CoreError, Effect, Event, Outcome};
+use crate::{CoreError, Effect};
 
 /// Where a core lives and what kind of install it serves.
 pub(crate) struct Setup {
@@ -114,37 +114,20 @@ impl Inner {
                 ad_hoc_error,
             },
             onboarding: persisted.onboarding,
-            last_version: persisted.last_version.clone(),
             saved: persisted,
         };
         inner.graduate(config.rules);
         inner
     }
 
-    /// The shell's first fact: says what's new after an update, offers onboarding, starts the
-    /// updater where this install updates itself, and applies the config's `[night_shift]`.
-    pub(crate) fn launched(&mut self, outcome: &mut Outcome) {
-        // Updates install silently, so the first launch of a new version says what's new.
-        // A first run has nothing to compare; one from before versions were kept has
-        // finished onboarding.
-        let version = env!("CARGO_PKG_VERSION");
-        let updated = match &self.last_version {
-            Some(last) => last != version,
-            None => self.onboarding > 0,
-        };
-        if updated {
-            tracing::info!("updated to {version}");
-            outcome.events.push(Event::Updated {
-                from: self.last_version.clone(),
-                to: version.to_owned(),
-            });
-        }
-        self.last_version = Some(version.to_owned());
-        self.offer_onboarding(&mut outcome.effects);
+    /// The shell's launch: offers onboarding, starts the updater where this install updates
+    /// itself, and applies the config's `[night_shift]`.
+    pub(crate) fn launched(&mut self, effects: &mut Vec<Effect>) {
+        self.offer_onboarding(effects);
         if self.manages_itself {
-            outcome.effects.push(Effect::StartUpdater);
+            effects.push(Effect::StartUpdater);
         }
-        self.apply_config_night_shift(&mut outcome.effects);
+        self.apply_config_night_shift(effects);
     }
 }
 

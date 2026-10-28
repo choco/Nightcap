@@ -1,9 +1,9 @@
 import Foundation
 import NightcapCore
 
-/// What a notification says about something the core told: an outside change adopted as a
-/// snooze, the first launch after an update, a problem that appeared on its own, or a command
-/// the core refused, which left what the user chose undone.
+/// What a notification says: about something the core told, an outside change adopted as a
+/// snooze, a problem that appeared on its own, or a command the core refused, which left what the
+/// user chose undone; or about the first launch after an update.
 struct Notice: Equatable {
     let title: String
     let body: String
@@ -35,10 +35,6 @@ struct Notice: Equatable {
             guard let snoozed else { return nil }
             self.init(
                 title: words.turnedOutsideNightcap(state), body: words.snoozed(rule(snoozed), state, until: until))
-        case .updated(_, let to):
-            self.init(
-                title: words.updated(to: to), body: words.whatsNew,
-                opens: URL(string: "https://nightcap.choco.me/changelog/#v\(to)"))
         case .problemAppeared(let check):
             self.init(problem: check.detail, words: words)
         case .refused(_, let why):
@@ -50,6 +46,13 @@ struct Notice: Equatable {
         self.title = title
         self.body = body
         self.opens = opens
+    }
+
+    /// The first launch of `version` after an update, which opens its changes in the changelog.
+    init(updatedTo version: String, words: Wording) {
+        self.init(
+            title: words.updated(to: version), body: words.whatsNew,
+            opens: URL(string: "https://nightcap.choco.me/changelog/#v\(version)"))
     }
 
     /// A problem as the core announces it: never Night Shift unavailable, notifications switched

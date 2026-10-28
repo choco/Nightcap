@@ -7,7 +7,7 @@ export function Privacy() {
 		<Legal
 			title="Privacy policy"
 			lead="Nightcap collects nothing about you. What it knows about your Mac stays on your Mac."
-			updated="2026-10-25"
+			updated="2026-10-28"
 		>
 			<h2>Who this covers</h2>
 			<p>
@@ -42,8 +42,9 @@ export function Privacy() {
 					the sites it shows.
 				</li>
 				<li>
-					<code>~/Library/Preferences/io.github.choco.nightcap.plist</code>,
-					where macOS keeps when it last checked for an update.
+					<code>~/Library/Preferences/io.github.choco.nightcap.plist</code>, its
+					preferences: your shortcut, the version that last ran, so it can tell
+					you what's new after an update, and when it last checked for one.
 				</li>
 			</ul>
 			<p>None of it leaves your Mac.</p>
