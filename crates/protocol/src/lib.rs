@@ -1042,6 +1042,8 @@ pub enum Refusal {
     NoUpdater(NotSelfManaged),
     /// The install doesn't open itself at login (ADR-0011).
     NoLoginItem(NotSelfManaged),
+    /// An accept while its check doesn't drift: there's no change to take as the user's choice.
+    NothingToAccept { check: CheckKind },
 }
 
 /// What runs where it isn't a self-managed release, which updates itself and opens itself at
@@ -1178,6 +1180,12 @@ mod tests {
             (
                 Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
                 r#"{"no_login_item":"managed_install"}"#,
+            ),
+            (
+                Refusal::NothingToAccept {
+                    check: CheckKind::Notifications,
+                },
+                r#"{"nothing_to_accept":{"check":"notifications"}}"#,
             ),
         ];
 

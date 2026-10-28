@@ -2,10 +2,10 @@
 //! a rule with what it did too, short of a reload and an update check; the rule commits they
 //! make; and reading the config again, which is how a change to it takes effect.
 
-use jiff::SignedDuration;
+use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    Command, FileError, Instance, LoginItem, NightShift, NotSelfManaged, OnOff, Payload, Refusal,
-    RuleAdded, RuleIdentity,
+    CheckKind, CheckState, Command, FileError, Instance, LoginItem, NightShift, NotSelfManaged,
+    OnOff, Payload, Refusal, RuleAdded, RuleIdentity,
 };
 
 use crate::rules::places::Places;
@@ -115,15 +115,15 @@ impl Inner {
                 }
             }
             Command::KeepNotificationsOff => {
-                tracing::info!("notifications kept off");
-                self.grants.notifications_wanted = false;
-                Ok(())
+                self.to_accept(CheckKind::Notifications, now).map(|()| {
+                    tracing::info!("notifications kept off");
+                    self.grants.notifications_wanted = false;
+                })
             }
-            Command::KeepScheduleOff => {
+            Command::KeepScheduleOff => self.to_accept(CheckKind::NightShift, now).map(|()| {
                 tracing::info!("the schedule kept off while sunset to sunrise is set aside");
                 self.grants.schedule_off_accepted = true;
-                Ok(())
-            }
+            }),
             Command::Strength(value) | Command::PreviewStrength(value) => {
                 if self.strength.is_none() {
                     Err(Refusal::StrengthUnavailable)
@@ -176,6 +176,20 @@ impl Inner {
                 None => Payload::Decision(decision),
             }
         })
+    }
+
+    /// Refuses an accept while `check` doesn't drift at `now`: there's no change to take as the
+    /// user's choice.
+    fn to_accept(&self, check: CheckKind, now: Timestamp) -> Result<(), Refusal> {
+        let drifts = self
+            .checks(now)
+            .iter()
+            .any(|found| found.detail.kind() == check && found.state == CheckState::Drifted);
+        if drifts {
+            Ok(())
+        } else {
+            Err(Refusal::NothingToAccept { check })
+        }
     }
 
     fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<RuleAdded, Refusal> {
@@ -338,5 +352,6 @@ pub(crate) fn kind(refusal: &Refusal) -> &'static str {
         Refusal::WebsiteCheckingInConfig => "website checking in the config",
         Refusal::NoUpdater(_) => "no updater",
         Refusal::NoLoginItem(_) => "no login item",
+        Refusal::NothingToAccept { .. } => "nothing to accept",
     }
 }

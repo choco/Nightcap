@@ -267,6 +267,7 @@ pub enum Refusal {
     WebsiteCheckingInConfig,
     NoUpdater(NotSelfManaged),
     NoLoginItem(NotSelfManaged),
+    NothingToAccept { check: CheckKind },
 }
 
 #[uniffi::remote(Enum)]

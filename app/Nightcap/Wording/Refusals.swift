@@ -41,6 +41,15 @@ extension Wording {
         case .noUpdater(.managedInstall): text("This install is kept up to date by its installer.")
         case .noLoginItem(.devBuild): text("Dev builds don’t open themselves at login.")
         case .noLoginItem(.managedInstall): text("This install doesn’t open itself at login: its installer starts it.")
+        case .nothingToAccept(.nightShift):
+            text("Night Shift’s schedule is as you set it up, so there’s nothing to accept.")
+        case .nothingToAccept(.accessibility): text("Accessibility is as you set it up, so there’s nothing to accept.")
+        case .nothingToAccept(.notifications):
+            text("Notifications are as you set them up, so there’s nothing to accept.")
+        case .nothingToAccept(.openAtLogin):
+            text("Opening at login is as you set it up, so there’s nothing to accept.")
+        case .nothingToAccept(.configFile): text("Problems with your config can only be fixed, not accepted.")
+        case .nothingToAccept(.adHocRules): text("Problems with ad-hoc rules can only be fixed, not accepted.")
         }
     }
 }

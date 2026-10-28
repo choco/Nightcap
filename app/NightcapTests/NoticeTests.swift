@@ -186,5 +186,11 @@ struct NoticeTests {
         #expect(
             refused(.noLoginItem(.managedInstall))
                 == "This install doesn’t open itself at login: its installer starts it.")
+        #expect(
+            refused(.nothingToAccept(check: .notifications))
+                == "Notifications are as you set them up, so there’s nothing to accept.")
+        #expect(
+            refused(.nothingToAccept(check: .nightShift))
+                == "Night Shift’s schedule is as you set it up, so there’s nothing to accept.")
     }
 }

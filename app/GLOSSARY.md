@@ -54,7 +54,7 @@ An action offered with a problem: a restore, an accept, or reloading a broken fi
 A fix that puts back what the user set up, such as registering the login item again, or opening Login Items for macOS's approval.
 
 **Accept**:
-A fix that takes the change as the user's new choice, such as keeping notifications off. Each is a command, which records the choice.
+A fix that takes the change as the user's new choice, such as keeping notifications off. Each is a command, which records the choice; keeping notifications off and keeping the schedule off are refused while their check doesn't drift.
 _Avoid_: dismiss, ignore
 
 **Announce**:

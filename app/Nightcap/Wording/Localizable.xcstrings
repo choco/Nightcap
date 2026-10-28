@@ -211,6 +211,9 @@
     "Accessibility is allowed." : {
 
     },
+    "Accessibility is as you set it up, so there’s nothing to accept." : {
+
+    },
     "Accessibility isn’t allowed, so website checking can’t read the front tab." : {
 
     },
@@ -910,6 +913,9 @@
     "Night Shift, with exceptions" : {
 
     },
+    "Night Shift’s schedule is as you set it up, so there’s nothing to accept." : {
+
+    },
     "Night Shift’s strength can’t be read on this Mac." : {
 
     },
@@ -1020,6 +1026,9 @@
 
     },
     "Notifications and login" : {
+
+    },
+    "Notifications are as you set them up, so there’s nothing to accept." : {
 
     },
     "Notifications are off." : {
@@ -1210,6 +1219,9 @@
     "Open at login" : {
 
     },
+    "Opening at login is as you set it up, so there’s nothing to accept." : {
+
+    },
     "Overrule a rule in Control Center, and Nightcap says so." : {
 
     },
@@ -1223,6 +1235,12 @@
 
     },
     "Privacy & Security" : {
+
+    },
+    "Problems with ad-hoc rules can only be fixed, not accepted." : {
+
+    },
+    "Problems with your config can only be fixed, not accepted." : {
 
     },
     "Put Back" : {

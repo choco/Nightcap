@@ -15,7 +15,7 @@ use nightcap_protocol::{
 
 use common::{
     add_rule, at, check, custom_hours, domain, figma, noon, on_by_the_schedule, permissions,
-    report_zurich_sun, reported, send, tells,
+    refusal, report_zurich_sun, reported, send, tells,
 };
 
 #[test]
@@ -303,6 +303,27 @@ fn keeping_notifications_off_settles_them_switched_off() {
     assert_eq!(found(&staged, CheckKind::Notifications), kept_off);
 }
 
+#[test]
+fn notifications_that_arent_switched_off_cant_be_kept_off() {
+    let staged = noon().stage().unwrap();
+    staged.report(permissions(true, NotificationPermission::Granted));
+
+    let (_, response) = send(&staged, Command::KeepNotificationsOff);
+
+    assert_eq!(
+        refusal(response),
+        Refusal::NothingToAccept {
+            check: CheckKind::Notifications
+        }
+    );
+    assert!(staged.core().snapshot().preferences().notifications_wanted);
+    staged.report(permissions(true, NotificationPermission::Denied));
+    assert_eq!(
+        found(&staged, CheckKind::Notifications),
+        notifications(NotificationsDetail::SwitchedOff, CheckState::Drifted)
+    );
+}
+
 /// Night Shift as CoreBrightness reports it while macOS has sunset to sunrise set aside.
 fn reported_set_aside(enabled: bool, schedule: Schedule) -> Fact {
     Fact::StatusChanged {
@@ -375,6 +396,26 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
     assert!(tells(
         &staged.report(reported_set_aside(false, Schedule::Off))
     ));
+    assert_eq!(found(&staged, CheckKind::NightShift), set_aside());
+}
+
+#[test]
+fn a_schedule_that_isnt_set_aside_cant_be_kept_off() {
+    let staged = Scenario::at(at("2026-10-16T01:40:00+02:00"))
+        .stage()
+        .unwrap();
+    report_zurich_sun(&staged);
+    staged.report(reported(true, Schedule::SunsetToSunrise));
+
+    let (_, response) = send(&staged, Command::KeepScheduleOff);
+
+    assert_eq!(
+        refusal(response),
+        Refusal::NothingToAccept {
+            check: CheckKind::NightShift
+        }
+    );
+    staged.report(reported_set_aside(false, Schedule::Off));
     assert_eq!(found(&staged, CheckKind::NightShift), set_aside());
 }
 

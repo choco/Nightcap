@@ -4,8 +4,8 @@
 use jiff::tz::TimeZone;
 use jiff::{Timestamp, civil};
 use nightcap_protocol::{
-    AccessibilityDetail, AdHocRulesDetail, CheckDetail, Checks, ConfigFileDetail, Decision,
-    FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
+    AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, Checks, ConfigFileDetail,
+    Decision, FileError, Hello, Install, Lasting, Length, ListedRule, NightShift, NightShiftDetail,
     NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff, OpenAtLoginDetail,
     PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded, RuleIdentity, Schedule,
     SetBy, TimeOfDay,
@@ -306,6 +306,23 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         Refusal::NoLoginItem(NotSelfManaged::ManagedInstall) => {
             "this install doesn't open itself at login: its installer starts it".to_owned()
         }
+        Refusal::NothingToAccept { check } => match check {
+            CheckKind::NightShift => {
+                "Night Shift's schedule is as you set it up, so there's nothing to accept"
+            }
+            CheckKind::Accessibility => {
+                "Accessibility is as you set it up, so there's nothing to accept"
+            }
+            CheckKind::Notifications => {
+                "notifications are as you set them up, so there's nothing to accept"
+            }
+            CheckKind::OpenAtLogin => {
+                "opening at login is as you set it up, so there's nothing to accept"
+            }
+            CheckKind::ConfigFile => "problems with the config can only be fixed, not accepted",
+            CheckKind::AdHocRules => "problems with rules.toml can only be fixed, not accepted",
+        }
+        .to_owned(),
     }
 }
 
@@ -1102,6 +1119,18 @@ mod tests {
             (
                 Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
                 "this install doesn't open itself at login: its installer starts it",
+            ),
+            (
+                Refusal::NothingToAccept {
+                    check: CheckKind::Notifications,
+                },
+                "notifications are as you set them up, so there's nothing to accept",
+            ),
+            (
+                Refusal::NothingToAccept {
+                    check: CheckKind::NightShift,
+                },
+                "Night Shift's schedule is as you set it up, so there's nothing to accept",
             ),
         ] {
             assert_eq!(refusal(&why), said, "{why:?}");
