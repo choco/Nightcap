@@ -290,10 +290,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         if let adHoc = settings.check(.adHocRules) {
             files.append(cell(row(title: words.adHocRules, detail: nil, accessory: nil), adHoc))
         }
+        // A rule's row says what it says and what the app or site is; a config rule changes
+        // only in the config (ADR-0006).
         let rules =
             settings.rules.isEmpty
             ? [Padded(NSTextField.secondary(words.noRulesYet, width: Self.width - 28), top: 11, bottom: 11)]
-            : settings.rules.map(ruleRow)
+            : settings.rules.map { rule in
+                placeRow(
+                    rule.identity, textWidth: 260, chip: Chip(rule.label, tinted: rule.snoozed), button: rule.button
+                ) { words.rule(rule.says, $0) }
+            }
         var blocks: [NSView] = [
             Group(rows: files),
             note(words.eachRule),
@@ -301,46 +307,38 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             rulesToolbar(),
             note(words.adHocRulesStay),
         ]
-        // What the menu set for an app or site with no rule, which ends by itself.
+        // What the menu set for an app or site with no rule, which ends by itself: what it says
+        // until when, and ending it.
         if !settings.forNow.isEmpty {
-            blocks.append(block(words.forNow, settings.forNow.map(forNowRow)))
+            blocks.append(
+                block(
+                    words.forNow,
+                    settings.forNow.map { temporary in
+                        placeRow(temporary.identity, textWidth: 300, button: temporary.button) { _ in temporary.label }
+                    }))
         }
         return pane(blocks)
     }
 
-    /// An app's or site's temporary rules: its icon and name, what they say until when, and
-    /// ending them.
-    private func forNowRow(_ temporary: Settings.ForNowRow) -> NSView {
-        let (name, _, icon) = describe(temporary.identity)
+    /// An app's or site's row: its icon, its name over `detail`, given what the app or site is,
+    /// then its chip and its button, where it has them.
+    private func placeRow(
+        _ identity: RuleIdentity, textWidth: CGFloat, chip: Chip? = nil, button: Settings.CommandButton?,
+        detail: (_ described: String) -> String
+    ) -> NSView {
+        let (name, described, icon) = describe(identity)
         let texts = NSStackView(
             .vertical,
             [
-                NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 300),
-                NSTextField.secondary(temporary.label, width: 300),
+                NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: textWidth),
+                NSTextField.secondary(detail(described), width: textWidth),
             ], alignment: .leading, spacing: 2)
         texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let end = CapsuleButton(temporary.button.title, .small) { [choose] in choose(temporary.button.command) }
-        let row = NSStackView(.horizontal, [icon, texts, end], distribution: .fill, spacing: 14)
-        return Padded(row, top: 11, bottom: 11)
-    }
-
-    /// A rule's icon, name, what it says and what it is, its label and what can be done about
-    /// it: a config rule changes only in the config (ADR-0006).
-    private func ruleRow(_ rule: Settings.RuleRow) -> NSView {
-        let (name, detail, icon) = describe(rule.identity)
-        let texts = NSStackView(
-            .vertical,
-            [
-                NSTextField.label(name, size: 13, weight: .medium, color: .labelColor, width: 260),
-                NSTextField.secondary(words.rule(rule.says, detail), width: 260),
-            ], alignment: .leading, spacing: 2)
-        texts.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let button = rule.button.map { button in
+        let button = button.map { button in
             CapsuleButton(button.title, .small) { [choose] in choose(button.command) }
         }
         let row = NSStackView(
-            .horizontal, [icon, texts, Chip(rule.label, tinted: rule.snoozed)] + [button].compactMap { $0 },
-            distribution: .fill, spacing: 14)
+            .horizontal, [icon, texts] + [chip, button].compactMap { $0 }, distribution: .fill, spacing: 14)
         return Padded(row, top: 11, bottom: 11)
     }
 
