@@ -5,8 +5,16 @@ import NightcapCore
 /// the moon as VoiceOver reads it, the problem line, Custom…'s window, and "Nightcap is up here"
 /// under the moon.
 extension Wording {
-    /// The Night Shift item's title.
-    var nightShift: String { text("Night Shift") }
+    /// Night Shift's name as a title: the Night Shift item's, its block's in Settings, and
+    /// onboarding's for its part and for the step that keeps a schedule.
+    var nightShift: String {
+        String(
+            localized: "Night Shift", bundle: #bundle, locale: locale,
+            comment: """
+                Night Shift’s name standing alone, as a title: the menu’s first item, its block in Settings, \
+                and onboarding’s first part and its step for a Mac already on a schedule.
+                """)
+    }
 
     /// The strength's slider, as VoiceOver reads it.
     var strength: String { text("Strength") }
@@ -43,7 +51,14 @@ extension Wording {
     func needing(_ problems: [CheckDetail]) -> String {
         let names = problems.map { problem in
             switch problem {
-            case .nightShift: text("Night Shift")
+            case .nightShift:
+                String(
+                    localized: "Night Shift, among the problems", defaultValue: "Night Shift", bundle: #bundle,
+                    locale: locale,
+                    comment: """
+                        Night Shift’s check, as the line under the menu’s problem line lists it among the others, \
+                        mid-sentence, with only the line’s first word capitalized: “Night Shift and notifications”.
+                        """)
             case .accessibility: text("Accessibility")
             case .notifications: text("notifications")
             case .openAtLogin: text("opening at login")

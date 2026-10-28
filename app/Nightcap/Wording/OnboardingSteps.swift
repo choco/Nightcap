@@ -11,7 +11,7 @@ extension Wording {
     func eyebrow(_ place: (part: OnboardingFlow.Part, place: Int, count: Int)?) -> String {
         guard let place else { return text("Done") }
         switch (place.part, place.count > 1) {
-        case (.nightShift, false): return text("Night Shift")
+        case (.nightShift, false): return nightShift
         case (.nightcap, false): return text("Nightcap")
         case (.nightShift, true): return text("Night Shift · \(place.place + 1) of \(place.count)")
         case (.nightcap, true): return text("Nightcap · \(place.place + 1) of \(place.count)")
@@ -115,7 +115,7 @@ extension Wording {
     /// A step's dot, as VoiceOver names it.
     func name(of step: OnboardingFlow.Step) -> String {
         switch step {
-        case .alreadySetUp: text("Night Shift")
+        case .alreadySetUp: nightShift
         case .strength: text("Strength")
         case .schedule: text("Schedule")
         case .apps: text("Apps")

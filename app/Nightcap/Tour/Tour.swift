@@ -46,18 +46,12 @@ final class Tour {
     /// front app as the menu opens, which a window of Nightcap's wouldn't (macOS 27 hands the
     /// focus on as a status item's own app opens its menu).
     private static let sampleURL = Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/Tour Sample.app")
-    /// The sample, by the ID its rule names and the name the menu calls it by once it's in front:
-    /// the front app's `NSRunningApplication.localizedName`, which is the bundle's localized
-    /// display name. Finder's name, `FileManager.displayName`, comes from the bundle's file name
-    /// and Finder's settings, and can differ.
-    static let sample: TourApp = {
-        let bundle = Bundle(url: sampleURL)!
-        return TourApp(
-            bundleId: bundle.bundleIdentifier!,
-            name: bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as! String)
-    }()
-    /// The app the steps give as an example of a rule that says on.
-    static let example = TourApp(bundleId: "com.apple.mail", name: "Mail")
+    /// The sample, by the ID its rule names and the name the menu calls it by once it's in front.
+    static let sample = TourApp(Bundle(url: sampleURL)!)
+    /// The app the steps give as an example of a rule that says on. Mail is part of macOS, so its
+    /// bundle is always there.
+    static let example = TourApp(
+        Bundle(url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail")!)!)
     private static let siteURL = URL(string: "https://nightcap.choco.me")!
     private static let width: CGFloat = 330
     private static let padding: CGFloat = 16
@@ -642,3 +636,16 @@ final class SnapshotBackdrop: NSView {
     }
 }
 #endif
+
+extension TourApp {
+    /// The app in `bundle`, by the name the menu calls it once it's in front: the front app's
+    /// `NSRunningApplication.localizedName`, which is the bundle's localized display name, else its
+    /// localized name. Finder's name, `FileManager.displayName`, comes from the bundle's file name
+    /// and Finder's settings, and can differ.
+    fileprivate init(_ bundle: Bundle) {
+        let name =
+            bundle.object(forInfoDictionaryKey: "CFBundleDisplayName")
+            ?? bundle.object(forInfoDictionaryKey: "CFBundleName")
+        self.init(bundleId: bundle.bundleIdentifier!, name: name as! String)
+    }
+}

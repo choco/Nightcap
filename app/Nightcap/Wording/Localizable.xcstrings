@@ -817,7 +817,7 @@
 
     },
     "Night Shift" : {
-
+      "comment" : "Night Shift’s name standing alone, as a title: the menu’s first item, its block in Settings, and onboarding’s first part and its step for a Mac already on a schedule."
     },
     "Night Shift can come on by itself on a schedule, or only when you turn it on." : {
 
@@ -891,6 +891,18 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "Night Shift · %1$lld of %2$lld"
+          }
+        }
+      }
+    },
+    "Night Shift, among the problems" : {
+      "comment" : "Night Shift’s check, as the line under the menu’s problem line lists it among the others, mid-sentence, with only the line’s first word capitalized: “Night Shift and notifications”.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Night Shift"
           }
         }
       }
