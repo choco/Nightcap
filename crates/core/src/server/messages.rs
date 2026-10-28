@@ -1,5 +1,5 @@
 //! What crosses between the shell and the core (ADR-0002): the facts the shell reports, the
-//! commands only its UI sends, the outcome of each, with the effects it carries out and the
+//! commands only the app sends, the outcome of each, with the effects it carries out and the
 //! events it tells, and the listener that hears it.
 
 use std::time::SystemTime;
@@ -70,7 +70,7 @@ pub enum Fact {
     },
 }
 
-/// A command only the menu-bar UI sends, which never goes on the wire: the CLI has no tour
+/// A command only the app sends, which never goes on the wire: the CLI has no tour
 /// (ADR-0016), no onboarding and no fixes.
 #[derive(Debug, uniffi::Enum)]
 pub enum UiCommand {
@@ -80,7 +80,7 @@ pub enum UiCommand {
     EndTour,
     /// Finishes onboarding, with whether the user chose to check websites.
     FinishOnboarding { websites: bool },
-    /// Carries out one of the core's fixes, which the user chose in Settings.
+    /// Carries out one of the core's fixes, which the user chose in the app.
     Fix(Fix),
 }
 

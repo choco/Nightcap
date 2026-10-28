@@ -1,6 +1,6 @@
-//! Commands, from the menu, Settings and the CLI alike, each answering with the decision it
-//! leads to; the rule commits they make; and reading the config again, which is how a change to
-//! it takes effect.
+//! Commands, from the app and the CLI alike, each answering with the decision it leads to; the
+//! rule commits they make; and reading the config again, which is how a change to it takes
+//! effect.
 
 use jiff::SignedDuration;
 use nightcap_protocol::{
@@ -16,8 +16,8 @@ use crate::storage::config::{ConfigError, NightShiftConfig};
 use crate::{Effect, Event, Outcome};
 
 impl Inner {
-    /// Runs a command the menu-bar UI sent, which answers as the CLI's would, and tells of its
-    /// refusal as an event. A problem it causes isn't announced: the user is looking at what
+    /// Runs a command the app sent, which answers as the CLI's would, and tells of its refusal
+    /// as an event. A problem it causes isn't announced: the user is looking at what
     /// they chose.
     pub(crate) fn choose(&mut self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
         self.turn(false, |inner, outcome| inner.run_chosen(command, outcome))
@@ -33,7 +33,7 @@ impl Inner {
         let answer = self.run_command(&command, &mut outcome.effects);
         if let Err(why) = &answer {
             // The message can name a domain, so only the code is logged (ADR-0009).
-            tracing::warn!("a menu command was refused: {:?}", why.code);
+            tracing::warn!("a command from the app was refused: {:?}", why.code);
             outcome.events.push(Event::Refused {
                 command,
                 why: why.clone(),
@@ -42,7 +42,7 @@ impl Inner {
         answer
     }
 
-    /// Runs a command from the CLI or the menu, answering with the resulting decision.
+    /// Runs a command from the CLI or the app, answering with the resulting decision.
     pub(crate) fn run_command(
         &mut self,
         command: &Command,

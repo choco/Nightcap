@@ -20,7 +20,7 @@ use crate::{Effect, Event, Outcome};
 /// back on (macOS 27).
 const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(10);
 
-/// An action Settings offers with a problem: a restore, an accept, or reloading a broken file.
+/// An action the app offers with a problem: a restore, an accept, or reloading a broken file.
 /// Which one a check offers, and in what words, is the shell's; what it does is the core's,
 /// short of the four the shell carries out itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
@@ -105,7 +105,7 @@ impl Inner {
             .collect()
     }
 
-    /// Carries out a fix the user chose in Settings; the shell carries out its own. A fix that
+    /// Carries out a fix the user chose in the app; the shell carries out its own. A fix that
     /// runs a command tells of its refusal as the command would.
     pub(crate) fn run_fix(&mut self, fix: Fix, outcome: &mut Outcome) {
         match fix {

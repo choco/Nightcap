@@ -24,7 +24,7 @@ pub(crate) struct Persisted {
     /// The place an external change set a rule until the schedule turns at together with
     /// everywhere's, so taking off either takes off both.
     pub(crate) linked: Option<Place>,
-    /// Website checking as last chosen in onboarding, Settings or the CLI (ADR-0012).
+    /// Website checking as last chosen in the app or the CLI (ADR-0012).
     pub(crate) websites: bool,
     /// The last onboarding version completed; a later one shows only its new steps.
     pub(crate) onboarding: u32,

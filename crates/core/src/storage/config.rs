@@ -17,7 +17,7 @@ use crate::storage::file::{self, Files};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct File {
-    /// Website checking, which Settings and the CLI then can't change (ADR-0012).
+    /// Website checking, which the app and the CLI then can't change (ADR-0012).
     websites: Option<bool>,
     /// The lengths a change can be picked for, such as "30m", "1h" or "1h30m" (ADR-0018).
     lengths: Option<Spanned<Vec<String>>>,

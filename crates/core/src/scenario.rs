@@ -53,9 +53,9 @@ pub struct Scenario {
 pub enum Step {
     /// The shell reports a fact.
     Fact(Fact),
-    /// The menu-bar UI sends a command. One the core refuses fails the staging.
+    /// The app sends a command. One the core refuses fails the staging.
     Command(Command),
-    /// The menu-bar UI sends a command of its own.
+    /// The app sends a command of its own.
     UiCommand(UiCommand),
     /// The config changes to this text, or goes: a reload reads it.
     Config(Option<String>),
@@ -152,8 +152,7 @@ impl Scenario {
         }
     }
 
-    /// The scenario with `step` after its other steps: a fact, or a command from the menu-bar
-    /// UI.
+    /// The scenario with `step` after its other steps: a fact, or a command from the app.
     pub fn then(mut self, step: impl Into<Step>) -> Self {
         self.steps.push(step.into());
         self
@@ -289,13 +288,13 @@ impl Staged {
         self.inline.decide(|inner| react(inner, Input::Fact(fact)))
     }
 
-    /// Sends a command as the menu-bar UI does, and returns its outcome, which tells of a
-    /// refusal as an event, and what the core answers.
+    /// Sends a command as the app does, and returns its outcome, which tells of a refusal as an
+    /// event, and what the core answers.
     pub fn send(&self, command: Command) -> (Outcome, Result<Decision, ErrorReply>) {
         self.inline.decide(|inner| inner.choose(command))
     }
 
-    /// Sends a command only the menu-bar UI has, and returns its outcome.
+    /// Sends a command only the app has, and returns its outcome.
     pub fn send_ui(&self, command: UiCommand) -> Outcome {
         self.inline
             .decide(|inner| react(inner, Input::UiCommand(command)))

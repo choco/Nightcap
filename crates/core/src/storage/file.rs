@@ -55,7 +55,7 @@ pub(crate) trait Files: Send + Sync {
     fn read(&self, file: File) -> io::Result<Option<Vec<u8>>>;
     /// Replaces the file whole, or leaves it as it was.
     fn write(&self, file: Owned, contents: &[u8]) -> io::Result<()>;
-    /// Where the file is, for Settings and messages.
+    /// Where the file is, for the queries and messages.
     fn path(&self, file: File) -> PathBuf;
 }
 
@@ -149,7 +149,7 @@ pub(crate) struct Memory {
 
 #[cfg(any(test, debug_assertions))]
 impl Memory {
-    /// No files yet, at `paths`, which only Settings and messages show.
+    /// No files yet, at `paths`, which only the queries and messages show.
     pub(crate) fn new(paths: Paths) -> Self {
         Self {
             paths,

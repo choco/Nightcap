@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn a_malformed_request_is_answered_without_a_tick() {
+    fn a_malformed_request_is_refused_before_the_core() {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
         let inbox = served(&socket);

@@ -229,7 +229,7 @@ fn removing_the_samples_rule_mid_tour_drops_it() {
 }
 
 #[test]
-fn rules_added_mid_tour_stay_out_of_settings_and_files_and_go_with_their_snoozes() {
+fn rules_added_mid_tour_stay_out_of_exports_and_files_and_go_with_their_snoozes() {
     let staged = on_by_the_schedule().stage().unwrap();
     start_tour(&staged);
     let site = RuleIdentity::Domain("choco.me".parse().unwrap());

@@ -114,12 +114,12 @@ impl Core {
         self.post(Input::Fact(fact));
     }
 
-    /// A command from the menu-bar UI, which hears of a refusal as an event.
+    /// A command from the app, which hears of a refusal as an event.
     pub fn send(&self, command: Command) {
         self.post(Input::Command(command));
     }
 
-    /// A command only the menu-bar UI sends.
+    /// A command only the app sends.
     pub fn send_ui(&self, command: UiCommand) {
         self.post(Input::UiCommand(command));
     }

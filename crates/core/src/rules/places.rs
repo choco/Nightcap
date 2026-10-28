@@ -794,7 +794,7 @@ pub(crate) fn place_identity(place: &Place) -> Option<RuleIdentity> {
 }
 
 /// Whether a rule is an app's or a site's indefinite one: the config's, the user's or the
-/// tour's, as Settings' rule list and `nightcap rules` show them.
+/// tour's, as the app's rule list and `nightcap rules` show them.
 pub(crate) fn is_app_or_site_rule(rule: &Rule) -> bool {
     rule.place != Place::Everywhere && rule.length == Length::Indefinite
 }

@@ -34,7 +34,7 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
-// A length crosses as whole seconds: the config's lengths, and the commands the menu sends with
+// A length crosses as whole seconds: the config's lengths, and the commands the app sends with
 // them, the very ones the CLI would send (ADR-0002).
 uniffi::custom_type!(SignedDuration, i64, {
     remote,

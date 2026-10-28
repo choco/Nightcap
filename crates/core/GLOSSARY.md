@@ -148,7 +148,7 @@ The running Nightcap app, as the CLI sees it: the only writer of Night Shift, re
 _Avoid_: server, service
 
 **Command**:
-A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The menu, Settings and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the menu-bar UI's alone.
+A request to change something, such as the switch, a temporary rule at a place or adding a rule, which Nightcap may refuse. The app and the CLI send the same commands; starting and ending the tour, finishing onboarding and the fixes are the app's alone.
 
 **Query**:
 A question a client asks Nightcap, answered with facts, never words, and changing nothing: Night Shift and when its schedule next turns each way, what's in front, how each place in front stands and what decides there, what the switch would leave, every rule, the config, the user's preferences, the checks, the tour and the install. `nightcap status` asks most of them.

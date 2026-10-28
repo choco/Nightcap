@@ -285,7 +285,7 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
 }
 
 #[test]
-fn a_rule_the_menu_adds_applies_at_once() {
+fn a_rule_the_app_adds_applies_at_once() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
 
@@ -379,7 +379,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
 }
 
 #[test]
-fn removing_a_config_rule_from_the_menu_is_refused() {
+fn removing_a_config_rule_from_the_app_is_refused() {
     let staged = noon()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -393,7 +393,7 @@ fn removing_a_config_rule_from_the_menu_is_refused() {
 }
 
 #[test]
-fn always_from_the_menu_while_rules_toml_is_from_a_newer_nightcap_is_refused() {
+fn adding_a_rule_from_the_app_while_rules_toml_is_from_a_newer_nightcap_is_refused() {
     let newer = "version = 3\n[rules.off]\napp = [\"com.apple.mail\"]\n";
     let staged = late()
         .rules(newer)
@@ -410,7 +410,7 @@ fn always_from_the_menu_while_rules_toml_is_from_a_newer_nightcap_is_refused() {
 }
 
 #[test]
-fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() {
+fn adding_a_rule_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.apple.mail");
     send(&staged, add_rule(mail()));
@@ -435,7 +435,7 @@ fn always_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() 
 }
 
 #[test]
-fn adding_your_rule_again_from_settings_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
+fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
     let written = "version = 2\n[rules.off]\napp = [\"com.apple.mail\"]\n";
     let staged = on_by_the_schedule().rules(written).stage().unwrap();
     activate(&staged, "com.apple.mail");

@@ -1,6 +1,6 @@
 #![cfg(debug_assertions)]
-//! What Settings shows rests on: website checking, the checks and what their fixes do, and where
-//! the config is read from. What it shows for them, and in what words, is the shell's.
+//! What the user set up: website checking, the checks and what their fixes do, and where the
+//! config is read from. What the app shows for them, and in what words, is its own.
 
 mod common;
 

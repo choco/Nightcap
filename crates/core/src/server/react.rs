@@ -10,13 +10,13 @@ use crate::rules::schedule::SunTimes;
 use crate::server::state::Inner;
 use crate::{Fact, Outcome, UiCommand};
 
-/// Something that changes the core: a fact the platform reports, a command from the menu-bar
-/// UI, or the app quitting. The CLI's requests are answered apart, since their response goes
-/// back over the socket (ADR-0010).
+/// Something that changes the core: a fact the platform reports, a command from the app, or the
+/// app quitting. The CLI's requests are answered apart, since their response goes back over the
+/// socket (ADR-0010).
 #[derive(Debug)]
 pub(crate) enum Input {
     Fact(Fact),
-    /// A command the UI sent, which hears of a refusal as an event.
+    /// A command the app sent, which hears of a refusal as an event.
     Command(Command),
     UiCommand(UiCommand),
     /// The app is quitting, which releases every force (ADR-0008).

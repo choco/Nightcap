@@ -110,7 +110,7 @@ pub enum Request {
     Update,
 }
 
-/// What the CLI and the menu ask Nightcap to do; each one answers with the resulting decision.
+/// What the CLI and the app ask Nightcap to do; each one answers with the resulting decision.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
@@ -337,7 +337,7 @@ pub struct ConfigState {
     pub strength: Option<u8>,
     /// The schedule it sets, if it sets one (ADR-0014).
     pub schedule: Option<Schedule>,
-    /// Website checking, if it sets it, which Settings and the CLI then can't change
+    /// Website checking, if it sets it, which the app and the CLI then can't change
     /// (ADR-0012).
     pub websites: Option<OnOff>,
     /// The lengths a change can be picked for: its own, else 30 minutes, 1 hour and 2 hours.
@@ -447,7 +447,7 @@ impl Length {
 pub enum SetBy {
     /// The config, whose rules are indefinite, at an app or a site (ADR-0007).
     Config,
-    /// The user, from the menu, Settings or the CLI.
+    /// The user, from the app or the CLI.
     You,
     /// The user during the tour, kept only while it runs (ADR-0016).
     Tour,
@@ -794,7 +794,7 @@ pub enum CheckState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WebsiteChecking {
     pub state: OnOff,
-    /// Set by `websites` in the config, which wins over the menu and the CLI.
+    /// Set by `websites` in the config, which wins over the app and the CLI.
     pub from_config: bool,
 }
 
