@@ -8,7 +8,7 @@ use nightcap_protocol::{
     Place, PlaceInFront, Preferences, Rule, Schedule, TrialState, WebsiteChecking,
 };
 
-use crate::rules::places::PlaceLook;
+use crate::rules::places::look::PlaceLook;
 use crate::server::state::Inner;
 use crate::storage::file::File;
 
