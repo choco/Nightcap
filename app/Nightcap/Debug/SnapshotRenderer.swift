@@ -3,13 +3,14 @@ import AppKit
 import KeyboardShortcuts
 import NightcapCore
 
-/// Dev builds only: with `NIGHTCAP_SNAPSHOT` set to a folder, Nightcap renders the settings
-/// window's tabs, onboarding's steps, the tour's panel and the pointer to the moon, light and
-/// dark, from the mockups' scenarios into that folder, then quits. Settings and onboarding draw
+/// Dev builds only: with `NIGHTCAP_SNAPSHOT` set to a folder, which it makes if it's missing,
+/// Nightcap renders the settings window's tabs, onboarding's steps, the tour's panel and the
+/// pointer to the moon, light and dark, from the mockups' scenarios into that folder, then quits. Settings and onboarding draw
 /// cores staged in memory, brought to each scenario by their own code.
 enum SnapshotRenderer {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
+        try! FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
         let today = { (hour: Int, minute: Int) in
             Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date())!
         }
