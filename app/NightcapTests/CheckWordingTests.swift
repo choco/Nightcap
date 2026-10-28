@@ -255,7 +255,7 @@ struct CheckWordingTests {
     /// one check is worded from what the core reports after it has.
     @Test func sunsetToSunriseWithoutSunTimesSaysCustomHoursWork() {
         #expect(
-            Wording.staged.check(.nightShift(.noSunTimes(waited: 600)))
+            Wording.staged.check(.nightShift(.noSunTimes))
                 == "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. "
                 + "Custom hours work without them.")
     }

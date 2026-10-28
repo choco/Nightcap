@@ -32,18 +32,17 @@ impl Inner {
                 .count();
             u32::try_from(count).unwrap_or(u32::MAX)
         };
-        let sun_times_waited = self
+        let sun_times_overdue = self
             .reconciling
             .sun_times_awaited_since()
-            .map(|since| now.duration_since(since))
-            .filter(|waited| *waited >= SUN_TIMES_PATIENCE);
+            .is_some_and(|since| now.duration_since(since) >= SUN_TIMES_PATIENCE);
         let mut found = vec![CheckDetail::NightShift(
             if self.facts.night_shift == NightShift::Unavailable {
                 NightShiftDetail::Unavailable
             } else if self.grants.schedule_set_aside && !self.grants.schedule_off_accepted {
                 NightShiftDetail::SetAside
-            } else if let Some(waited) = sun_times_waited {
-                NightShiftDetail::NoSunTimes { waited }
+            } else if sun_times_overdue {
+                NightShiftDetail::NoSunTimes
             } else {
                 NightShiftDetail::Available {
                     schedule: self.facts.timeline.schedule.map(Schedule::from),
@@ -129,9 +128,7 @@ fn state(detail: &CheckDetail) -> CheckState {
         | CheckDetail::OpenAtLogin(
             OpenAtLoginDetail::AwaitingApproval | OpenAtLoginDetail::Removed,
         ) => CheckState::Drifted,
-        CheckDetail::NightShift(
-            NightShiftDetail::Unavailable | NightShiftDetail::NoSunTimes { .. },
-        )
+        CheckDetail::NightShift(NightShiftDetail::Unavailable | NightShiftDetail::NoSunTimes)
         | CheckDetail::ConfigFile(ConfigFileDetail::Error(_))
         | CheckDetail::AdHocRules(AdHocRulesDetail::Off(_)) => CheckState::Broken,
     }

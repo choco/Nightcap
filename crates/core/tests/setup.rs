@@ -4,7 +4,6 @@
 
 mod common;
 
-use jiff::SignedDuration;
 use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command,
@@ -408,9 +407,7 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
     assert_eq!(
         found(&staged, CheckKind::NightShift),
         Some((
-            CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-                waited: SignedDuration::from_mins(10),
-            }),
+            CheckDetail::NightShift(NightShiftDetail::NoSunTimes),
             CheckState::Broken
         ))
     );
@@ -448,9 +445,7 @@ fn nightcap_wakes_as_the_patience_for_sun_times_ends() {
     assert_eq!(
         found(&staged, CheckKind::NightShift),
         Some((
-            CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-                waited: SignedDuration::from_mins(10),
-            }),
+            CheckDetail::NightShift(NightShiftDetail::NoSunTimes),
             CheckState::Broken
         ))
     );

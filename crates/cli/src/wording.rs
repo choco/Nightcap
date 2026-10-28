@@ -127,7 +127,7 @@ pub(crate) fn check(detail: &CheckDetail) -> String {
             "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on."
                 .to_owned()
         }
-        CheckDetail::NightShift(NightShiftDetail::NoSunTimes { .. }) => {
+        CheckDetail::NightShift(NightShiftDetail::NoSunTimes) => {
             "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them."
                 .to_owned()
         }
@@ -895,9 +895,7 @@ mod tests {
                 "Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.",
             ),
             (
-                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-                    waited: jiff::SignedDuration::from_mins(12),
-                }),
+                CheckDetail::NightShift(NightShiftDetail::NoSunTimes),
                 "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. Custom hours work without them.",
             ),
             (

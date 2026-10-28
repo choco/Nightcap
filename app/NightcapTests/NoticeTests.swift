@@ -84,7 +84,7 @@ struct NoticeTests {
             night?.body
                 == "macOS turned Night Shift’s schedule off. Open Nightcap’s settings to turn Location Services "
                 + "back on, or to keep the schedule off.")
-        let sun = problem(.nightShift(.noSunTimes(waited: 600)))
+        let sun = problem(.nightShift(.noSunTimes))
         #expect(sun?.title == "Nightcap can’t follow sunset to sunrise")
         #expect(
             sun?.body

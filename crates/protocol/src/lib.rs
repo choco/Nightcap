@@ -778,8 +778,8 @@ pub enum NightShiftDetail {
     /// macOS has sunset to sunrise set aside, and the schedule off, while Location Services is
     /// off.
     SetAside,
-    /// Sunset to sunrise has gone this long without sun times, so Nightcap can't follow it.
-    NoSunTimes { waited: SignedDuration },
+    /// Sunset to sunrise has gone too long without sun times, so Nightcap can't follow it.
+    NoSunTimes,
 }
 
 /// Accessibility, which website checking needs to read the front tab.
@@ -1582,9 +1582,7 @@ mod tests {
                 CheckDetail::NightShift(NightShiftDetail::Available { schedule: None }),
                 CheckDetail::NightShift(NightShiftDetail::Unavailable),
                 CheckDetail::NightShift(NightShiftDetail::SetAside),
-                CheckDetail::NightShift(NightShiftDetail::NoSunTimes {
-                    waited: SignedDuration::from_mins(12),
-                }),
+                CheckDetail::NightShift(NightShiftDetail::NoSunTimes),
                 CheckDetail::Accessibility(AccessibilityDetail::Allowed),
                 CheckDetail::Accessibility(AccessibilityDetail::NotAllowed),
                 CheckDetail::Accessibility(AccessibilityDetail::NotNeeded),
