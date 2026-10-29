@@ -265,7 +265,8 @@ struct ExecutorTests {
             try staged(
                 "2026-10-16T23:00:00+02:00",
                 config: "websites = true\n[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-                accessibilityGranted, reported(true), front("com.figma.Desktop"), reported(false),
+                accessibilityGranted, reported(true), front("com.figma.Desktop"),
+                written(false, at: "2026-10-16T23:00:00+02:00"),
                 front("com.apple.Safari", browser: true)))
         shell.tell(outcome(.watchBrowser(bundleId: "com.apple.Safari", generation: 1)))
 

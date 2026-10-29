@@ -37,7 +37,8 @@ struct NightShiftItemWordingTests {
         let snoozedApp = try forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns)))
         let snoozedSite = try onByTheSchedule(
             config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n", accessibilityGranted,
-            front("com.apple.Safari", browser: true), host("www.figma.com"), reported(false),
+            front("com.apple.Safari", browser: true), host("www.figma.com"),
+            written(false, at: "2026-10-16T23:00:00+02:00"),
             .command(.set(place: .domain("figma.com"), state: .on, length: .untilScheduleTurns)))
 
         #expect(app.line == "Off in Mail until 23:30")
@@ -50,13 +51,14 @@ struct NightShiftItemWordingTests {
     @Test func anOutsideChangeWithNoEndAtAnAppOrSiteLastsUntilYouTurnItBack() throws {
         let app = try staged(
             "2026-10-16T23:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-            reported(true, .sunsetToSunrise), front("com.figma.Desktop"), reported(false, .sunsetToSunrise),
-            written(true, .sunsetToSunrise, at: "2026-10-16T23:00:00+02:00"))
+            reported(true, .sunsetToSunrise), front("com.figma.Desktop"),
+            written(false, .sunsetToSunrise, at: "2026-10-16T23:00:00+02:00"),
+            written(true, .sunsetToSunrise, at: "2026-10-16T23:00:30+02:00"))
         let site = try staged(
             "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.on]\ndomain = [\"figma.com\"]\n",
             accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
-            host("figma.com"), reported(true, .sunsetToSunrise),
-            written(false, .sunsetToSunrise, at: "2026-10-16T12:00:00+02:00"))
+            host("figma.com"), written(true, .sunsetToSunrise, at: "2026-10-16T12:00:00+02:00"),
+            written(false, .sunsetToSunrise, at: "2026-10-16T12:00:30+02:00"))
 
         #expect(app.line == "On in Figma until you turn it off")
         #expect(site.line == "Off at figma.com until you turn it on")

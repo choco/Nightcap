@@ -10,7 +10,7 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, adopted, app_rule, at, custom_hours, figma_app, forced, late, minutes, noon,
+    activate, adopted, app_rule, at, custom_hours, echo, figma_app, forced, late, minutes, noon,
     off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable, send, set,
     until, until_turn, written, yours,
 };
@@ -119,7 +119,7 @@ fn toggle_turns_everywhere_the_other_way() {
 fn two_flips_leave_nothing_behind() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Toggle);
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
 
     let (effects, response) = send(&staged, Command::Toggle);
 
@@ -143,7 +143,7 @@ fn on_while_the_schedule_says_on_sets_nothing() {
 fn an_indefinite_rule_outlasts_sunrise_and_sunset() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     staged.set_now(at("2026-10-17T07:00:00+02:00"));
     staged.report(Fact::TimerFired);
@@ -191,7 +191,7 @@ fn a_rule_until_a_time_gives_back_what_was_under_it() {
             },
         ]
     );
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
 
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
     assert_eq!(
@@ -343,12 +343,12 @@ fn until_the_schedule_turns_sits_over_everywheres_indefinite_rule_in_place_of_it
 fn everywheres_indefinite_rule_comes_back_when_a_temporary_one_over_it_ends() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
     send(
         &staged,
         set(Place::Everywhere, OnOff::On, Lasting::UntilScheduleTurns),
     );
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     assert_eq!(
         resettable(&staged),
@@ -484,7 +484,7 @@ fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
     });
     let figma = Place::App("com.figma.Desktop".parse().unwrap());
     send(&staged, set(figma.clone(), OnOff::On, minutes(30)));
-    report(&staged, true);
+    echo(&staged, true);
 
     let (effects, response) = send(&staged, Command::Off);
 

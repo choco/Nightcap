@@ -12,9 +12,10 @@ use nightcap_protocol::{
 
 use common::{
     accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
-    app_rule, at, books, check, custom_hours, domain_rule, figma, figma_app, forced, host_event,
-    in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon, on_by_the_schedule,
-    refusal, reported, resettable, rules, send, set, standing, until_turn, yours,
+    app_rule, at, books, check, custom_hours, domain_rule, echo, figma, figma_app, forced,
+    host_event, in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon,
+    on_by_the_schedule, refusal, reported, resettable, rules, send, set, standing, until_turn,
+    yours,
 };
 
 #[test]
@@ -48,7 +49,7 @@ fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
         .stage()
         .unwrap();
     activate(&staged, "com.figma.Desktop");
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
 
     let effects = activate(&staged, "com.apple.Terminal");
 
@@ -156,7 +157,7 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
 fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
     let staged = forced();
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
     let effects = staged.report(Fact::TimerFired).effects;
@@ -173,7 +174,7 @@ fn a_snooze_stays_with_its_rule_when_another_app_comes_to_the_front() {
         &staged,
         set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     assert_eq!(activate(&staged, "com.apple.Terminal"), Vec::new());
     assert_eq!(activate(&staged, "com.figma.Desktop"), Vec::new());
@@ -250,7 +251,7 @@ fn a_reset_leaves_the_places_rule_else_what_it_inherits() {
 fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
     let staged = forced();
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     let (effects, response) = send(&staged, add_rule(figma()));
 
@@ -335,7 +336,7 @@ fn removing_an_ad_hoc_rule_lifts_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
     send(&staged, add_rule(figma()));
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
 
     let (effects, _) = send(&staged, Command::RemoveRule(figma()));
 
@@ -517,12 +518,12 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
     let written = "version = 2\n[rules.off]\napp = [\"com.apple.mail\"]\n";
     let staged = on_by_the_schedule().rules(written).stage().unwrap();
     activate(&staged, "com.apple.mail");
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
     staged
         .send(set(Place::from(mail()), OnOff::On, minutes(30)))
         .1
         .unwrap();
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     let (outcome, answer) = staged.send(add_rule(mail()));
 
@@ -556,7 +557,7 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
             says: OnOff::On,
         },
     );
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(

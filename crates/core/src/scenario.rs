@@ -330,6 +330,11 @@ impl Staged {
         self.clock.set(now);
     }
 
+    /// The core's clock.
+    pub fn now(&self) -> Timestamp {
+        self.clock.now()
+    }
+
     /// Starts a second core on this one's files, as the same app, as launchd does after a
     /// restart or a crash.
     pub fn restart(&self) -> Self {

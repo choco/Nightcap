@@ -15,9 +15,9 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, figma, figma_app,
-    kept_ad_hoc, late, minutes, off_by_the_schedule, on_by_the_schedule, refusal, report,
-    report_host, resettable, rules, send, set, until, until_turn, yours,
+    activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, custom_hours, echo, figma,
+    figma_app, kept_ad_hoc, late, minutes, off_by_the_schedule, on_by_the_schedule, refusal,
+    report, report_host, resettable, rules, send, set, until, until_turn, written, yours,
 };
 
 /// The app the trials here give a rule.
@@ -76,7 +76,7 @@ fn a_trial_begun_with_the_stand_in_while_night_shift_is_off_turns_it_on() {
         begin_trial(&staged, true),
         vec![Effect::SetNightShift { enabled: true }]
     );
-    assert_eq!(report(&staged, true), Vec::new());
+    assert_eq!(echo(&staged, true), Vec::new());
 
     assert_eq!(
         staged.core().snapshot().front().decision,
@@ -109,13 +109,13 @@ fn a_trial_begun_without_the_stand_in_while_night_shift_is_off_leaves_it_off() {
 fn the_trials_end_turns_night_shift_back_off_following_the_schedule() {
     let staged = off_by_the_schedule().stage().unwrap();
     begin_trial(&staged, true);
-    report(&staged, true);
+    echo(&staged, true);
 
     assert_eq!(
         end_trial(&staged),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    assert_eq!(report(&staged, false), Vec::new());
+    assert_eq!(echo(&staged, false), Vec::new());
 
     assert_eq!(
         staged.core().snapshot().front().decision.reasons,
@@ -131,13 +131,13 @@ fn the_trials_end_turns_night_shift_back_off_following_the_schedule() {
 fn the_stand_in_sets_aside_everywheres_indefinite_rule_and_the_end_puts_it_back() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
-    report(&staged, false);
+    echo(&staged, false);
 
     assert_eq!(
         begin_trial(&staged, true),
         vec![Effect::SetNightShift { enabled: true }]
     );
-    report(&staged, true);
+    echo(&staged, true);
     assert_eq!(
         end_trial(&staged),
         vec![Effect::SetNightShift { enabled: false }]
@@ -153,7 +153,7 @@ fn the_stand_in_sets_aside_everywheres_indefinite_rule_and_the_end_puts_it_back(
 fn the_stand_in_sets_aside_everywheres_rule_until_a_time_and_the_end_puts_it_back_with_its_end() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
-    report(&staged, false);
+    echo(&staged, false);
 
     assert_eq!(
         begin_trial(&staged, true),
@@ -164,7 +164,7 @@ fn the_stand_in_sets_aside_everywheres_rule_until_a_time_and_the_end_puts_it_bac
             },
         ]
     );
-    report(&staged, true);
+    echo(&staged, true);
     assert_eq!(
         end_trial(&staged),
         vec![
@@ -189,11 +189,11 @@ fn the_stand_in_sets_aside_everywheres_rule_until_a_time_and_the_end_puts_it_bac
 fn while_a_trial_stands_in_a_tap_off_and_on_returns_to_its_on() {
     let staged = off_by_the_schedule().stage().unwrap();
     begin_trial(&staged, true);
-    report(&staged, true);
+    echo(&staged, true);
 
     let (effects, _) = send(&staged, Command::Toggle);
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    report(&staged, false);
+    echo(&staged, false);
     let (effects, response) = send(&staged, Command::Toggle);
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
@@ -238,7 +238,7 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
             },
         })
     );
-    report(&staged, false);
+    echo(&staged, false);
     assert_eq!(
         activate(&staged, "com.apple.mail"),
         vec![Effect::SetNightShift { enabled: true }]
@@ -290,7 +290,7 @@ fn removing_a_trial_rule_mid_trial_drops_it() {
     begin_trial(&staged, false);
     activate(&staged, NOTES);
     send(&staged, add_rule(notes()));
-    report(&staged, false);
+    echo(&staged, false);
 
     let (effects, response) = send(&staged, Command::RemoveRule(notes()));
 
@@ -472,12 +472,15 @@ fn snoozes_and_the_switch_mid_trial_last_only_while_it_runs() {
 fn a_restart_after_a_crash_mid_trial_puts_night_shift_back_where_the_trial_found_it() {
     let crashed = on_by_the_schedule().stage().unwrap();
     send(&crashed, Command::Off);
-    report(&crashed, false);
+    echo(&crashed, false);
     begin_trial(&crashed, true);
-    report(&crashed, true);
+    echo(&crashed, true);
 
     let staged = crashed.restart_at(at("2026-10-16T23:10:00+02:00"));
-    let effects = report(&staged, true);
+    // Still on, as the trial wrote it before the crash.
+    let effects = staged
+        .report(written(true, custom_hours(), "2026-10-16T23:00:00+02:00"))
+        .effects;
 
     assert_eq!(
         effects,
@@ -498,7 +501,7 @@ fn a_restart_after_a_crash_mid_trial_puts_night_shift_back_where_the_trial_found
 fn quitting_mid_trial_ends_it() {
     let staged = off_by_the_schedule().stage().unwrap();
     begin_trial(&staged, true);
-    report(&staged, true);
+    echo(&staged, true);
 
     assert_eq!(
         staged.stop().effects,
@@ -510,9 +513,9 @@ fn quitting_mid_trial_ends_it() {
 fn beginning_a_trial_while_one_runs_keeps_the_first_and_what_it_set_aside() {
     let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, Command::Off);
-    report(&staged, false);
+    echo(&staged, false);
     begin_trial(&staged, true);
-    report(&staged, true);
+    echo(&staged, true);
 
     assert_eq!(begin_trial(&staged, false), Vec::new());
     assert_eq!(
@@ -629,13 +632,13 @@ fn a_trial_stands_in_as_it_was_asked_whatever_the_switch_does() {
     };
     let staged = off_by_the_schedule().stage().unwrap();
     begin_trial(&staged, true);
-    report(&staged, true);
+    echo(&staged, true);
     assert_eq!(
         staged.core().snapshot().trial(),
         Some(TrialState { stands_in: true })
     );
     send(&staged, Command::Toggle);
-    report(&staged, false);
+    echo(&staged, false);
     assert_eq!(
         staged.core().snapshot().trial(),
         Some(TrialState { stands_in: true })
@@ -649,7 +652,7 @@ fn a_trial_stands_in_as_it_was_asked_whatever_the_switch_does() {
         Some(TrialState { stands_in: false })
     );
     send(&staged, Command::Toggle);
-    report(&staged, false);
+    echo(&staged, false);
     assert_eq!(
         staged.core().snapshot().trial(),
         Some(TrialState { stands_in: false })

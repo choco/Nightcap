@@ -147,8 +147,9 @@ pub(crate) mod tests {
         outcomes.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 
-    /// Night Shift as CoreBrightness reports it, on custom hours from 22:00 to 07:00.
-    fn reported(enabled: bool) -> Fact {
+    /// Night Shift as CoreBrightness reports it, on custom hours from 22:00 to 07:00, with the
+    /// write standing, if any.
+    fn status(enabled: bool, written_at: Option<&str>) -> Fact {
         Fact::StatusChanged {
             enabled,
             schedule: Schedule::Custom {
@@ -159,8 +160,13 @@ pub(crate) mod tests {
                 to: TimeOfDay { hour: 7, minute: 0 },
             },
             sun_schedule_set_aside: false,
-            written_at: None,
+            written_at: written_at.map(|at| at.parse::<jiff::Timestamp>().unwrap().into()),
         }
+    }
+
+    /// Night Shift as the schedule leaves it.
+    fn reported(enabled: bool) -> Fact {
+        status(enabled, None)
     }
 
     fn figma() -> Fact {
@@ -260,7 +266,8 @@ pub(crate) mod tests {
             identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
             says: OnOff::Off,
         });
-        core.report(reported(false));
+        // Nightcap's own write, landing.
+        core.report(status(false, Some("2026-10-16T23:00:00+02:00")));
 
         let released = core.stop();
 

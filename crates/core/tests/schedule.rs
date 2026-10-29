@@ -9,7 +9,8 @@ use nightcap_core::{Effect, Fact, Scenario};
 use nightcap_protocol::{NightShift, OnOff, Schedule, TimeOfDay};
 
 use common::{
-    at, custom_hours, late, off_by_the_schedule, report_zurich_sun, reported, resettable,
+    at, custom_hours, late, off_by_the_schedule, on_by_the_schedule, report_zurich_sun, reported,
+    resettable, written,
 };
 
 #[test]
@@ -70,6 +71,57 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
             at: at("2026-10-16T22:00:00+02:00").into()
         }]
     );
+}
+
+#[test]
+fn a_transition_only_the_schedule_decides_is_left_to_macos() {
+    let staged = off_by_the_schedule().stage().unwrap();
+
+    staged.set_now(at("2026-10-16T22:00:01+02:00"));
+    let at_the_transition = staged.report(Fact::TimerFired).effects;
+    let once_macos_performs_it = staged.report(reported(true, custom_hours())).effects;
+
+    assert_eq!(
+        at_the_transition,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T07:00:00+02:00").into()
+        }]
+    );
+    assert_eq!(once_macos_performs_it, Vec::new());
+    assert_eq!(resettable(&staged), Vec::new());
+}
+
+#[test]
+fn a_transition_missed_asleep_is_left_to_macos_however_late() {
+    let staged = off_by_the_schedule().stage().unwrap();
+
+    staged.set_now(at("2026-10-16T23:00:00+02:00"));
+    let on_waking = staged.report(Fact::Woke).effects;
+
+    assert_eq!(
+        on_waking,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-17T07:00:00+02:00").into()
+        }]
+    );
+}
+
+#[test]
+fn a_rule_ending_at_a_transition_leaves_the_transition_to_macos() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    // Off from Control Center: a rule until the schedule turns Night Shift back on.
+    staged.report(written(false, custom_hours(), "2026-10-16T23:00:30+02:00"));
+
+    staged.set_now(at("2026-10-17T22:00:01+02:00"));
+    let at_the_transition = staged.report(Fact::TimerFired).effects;
+
+    assert_eq!(
+        at_the_transition,
+        vec![Effect::ScheduleWakeup {
+            at: at("2026-10-18T07:00:00+02:00").into()
+        }]
+    );
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

@@ -96,7 +96,8 @@ func forced(_ steps: Step...) throws -> Core {
     try Core.staged(
         scenario: Scenario(
             now: at("2026-10-16T23:00:00+02:00"), config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-            steps: [reported(true), front("com.figma.Desktop"), reported(false)] + steps))
+            steps: [reported(true), front("com.figma.Desktop"), written(false, at: "2026-10-16T23:00:00+02:00")]
+                + steps))
 }
 
 /// The config's lengths, as its `lengths` lists them.

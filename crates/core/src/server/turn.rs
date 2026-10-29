@@ -4,7 +4,7 @@
 //! (ADR-0004).
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_protocol::{Decision, NightShift, OnOff, Schedule};
+use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
 
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
@@ -178,7 +178,8 @@ impl Inner {
     }
 
     /// Writes Night Shift when what the core wants differs from what was last observed
-    /// (ADR-0004), once until a status callback reports the result.
+    /// (ADR-0004), once until a status callback reports the result, short of what's left to
+    /// macOS's schedule.
     fn enforce(&mut self, effects: &mut Vec<Effect>) {
         if self.facts.night_shift == NightShift::Unavailable
             || self.reconciling.session != Session::Active
@@ -193,12 +194,29 @@ impl Inner {
         let Some(wanted) = wanted(&decision) else {
             return;
         };
+        if self.left_to_macos(&decision) {
+            return;
+        }
         if wanted != (self.facts.night_shift == NightShift::On)
             && self.reconciling.pending_write != Some(wanted)
         {
             self.reconciling.pending_write = Some(wanted);
             effects.push(Effect::SetNightShift { enabled: wanted });
         }
+    }
+
+    /// Whether Nightcap leaves Night Shift to macOS's schedule, which performs its own
+    /// transitions, fading them over minutes where a write fades in two seconds. It does
+    /// wherever the schedule alone decides, unless a write since the schedule's last transition
+    /// stands: Nightcap's own, from a rule that no longer decides. Night Shift with no write
+    /// standing is as the schedule left it, or as its next transition will, and macOS performs
+    /// a transition over any write from before it (ADR-0004).
+    fn left_to_macos(&self, decision: &Decision) -> bool {
+        let last_transition = (self.facts.timeline).last_transition(self.facts.applied_until);
+        matches!(decision.reasons.first(), Some(Reason::Schedule { .. }))
+            && self.facts.written_at.is_none_or(|written| {
+                last_transition.is_some_and(|transition| written < transition)
+            })
     }
 }
 

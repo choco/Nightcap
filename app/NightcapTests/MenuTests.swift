@@ -203,8 +203,8 @@ struct MenuTests {
                 staged(
                     "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.on]\ndomain = [\"figma.com\"]\n",
                     accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
-                    host("figma.com"), reported(true, .sunsetToSunrise),
-                    written(false, .sunsetToSunrise, at: "2026-10-16T12:00:00+02:00")
+                    host("figma.com"), written(true, .sunsetToSunrise, at: "2026-10-16T12:00:00+02:00"),
+                    written(false, .sunsetToSunrise, at: "2026-10-16T12:00:30+02:00")
                 ).siteRow, "Off until you turn it on, then your config’s rule"
             ),
         ]

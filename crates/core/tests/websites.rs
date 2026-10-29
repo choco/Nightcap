@@ -7,9 +7,9 @@ use nightcap_core::{Effect, Fact, Staged};
 use nightcap_protocol::{Command, Lasting, OnOff, Place, Reason, Refusal, WebsiteChecking};
 
 use common::{
-    accessibility_granted, activate, activate_browser, custom_hours, domain_rule, late, minutes,
-    noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send, set,
-    until_turn, watch, with_figma_domain, yours,
+    accessibility_granted, activate, activate_browser, custom_hours, domain_rule, echo, late,
+    minutes, noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send,
+    set, until_turn, watch, with_figma_domain, yours,
 };
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
@@ -138,14 +138,14 @@ fn a_browser_its_own_rule_keeps_off_is_watched_and_a_site_in_it_can_turn_night_s
         report_host(&staged, 1, "www.example.com"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
     assert_eq!(
         staged.core().snapshot().front().site,
         Some("example.com".parse().unwrap())
     );
     let (effects, _) = send(&staged, set(example.clone(), OnOff::On, minutes(30)));
     assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
     let (effects, _) = send(&staged, Command::Reset(example));
     assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
     assert!(staged.core().snapshot().front().watching);

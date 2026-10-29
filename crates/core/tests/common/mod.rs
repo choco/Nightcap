@@ -56,7 +56,7 @@ pub(crate) fn forced() -> Staged {
         activate(&staged, "com.figma.Desktop"),
         vec![Effect::SetNightShift { enabled: false }]
     );
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
     staged
 }
 
@@ -74,7 +74,7 @@ pub(crate) fn on_figma() -> Scenario {
     with_figma_domain()
         .then(activate_browser_event("com.apple.Safari"))
         .then(host_event(1, "www.figma.com"))
-        .then(reported(false, custom_hours()))
+        .then(written(false, custom_hours(), "2026-10-16T23:00:00+02:00"))
 }
 
 /// At noon, off by the custom hours, with Books in front.
@@ -193,6 +193,18 @@ pub(crate) fn custom_hours() -> Schedule {
 
 pub(crate) fn report(staged: &Staged, enabled: bool) -> Vec<Effect> {
     staged.report(reported(enabled, custom_hours())).effects
+}
+
+/// Night Shift on the custom hours as CoreBrightness reports it once Nightcap's own write
+/// lands, marked as written now.
+pub(crate) fn echo(staged: &Staged, enabled: bool) -> Vec<Effect> {
+    let landed = Fact::StatusChanged {
+        enabled,
+        schedule: custom_hours(),
+        sun_schedule_set_aside: false,
+        written_at: Some(staged.now().into()),
+    };
+    staged.report(landed).effects
 }
 
 /// Night Shift off with no schedule, at a strength of 60, as the shell reports it before

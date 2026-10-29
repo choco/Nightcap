@@ -13,7 +13,7 @@ use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    activate, adopted, at, custom_hours, figma, figma_app, forced, late, minutes, noon,
+    activate, adopted, at, custom_hours, echo, figma, figma_app, forced, late, minutes, noon,
     off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, until,
     until_turn, written, yours,
 };
@@ -41,7 +41,7 @@ fn an_outside_change_sets_everywhere_until_the_schedule_turns_it_back() {
 fn an_outside_change_back_takes_off_what_the_switch_held() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     let effects = staged
         .report(written(false, custom_hours(), "2026-10-16T20:00:30+02:00"))
@@ -58,7 +58,7 @@ fn an_edited_schedule_ends_the_rules_waiting_on_its_turn() {
         &staged,
         set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
     );
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
 
     // Moving the start to 21:00 makes macOS apply the schedule again, so Night Shift comes on.
     let effects = staged
@@ -103,7 +103,7 @@ fn an_edited_schedule_keeps_rules_until_a_time_and_with_no_end() {
 fn a_change_against_the_coming_transition_is_still_an_outside_change() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
-    staged.report(reported(true, custom_hours()));
+    echo(&staged, true);
 
     staged.set_now(at("2026-10-16T21:59:00+02:00"));
     staged.report(written(false, custom_hours(), "2026-10-16T21:59:00+02:00"));
@@ -274,7 +274,7 @@ fn a_rule_set_over_a_linked_one_leaves_its_partner_unlinked() {
 fn disabled() -> Staged {
     let staged = late().then(reported(true, custom_hours())).stage().unwrap();
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
-    staged.report(reported(false, custom_hours()));
+    echo(&staged, false);
     staged
 }
 
@@ -316,7 +316,9 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
         Vec::new()
     );
     // The shell's fresh read: still off, as the rule until a time left it.
-    let effects = staged.report(reported(false, custom_hours())).effects;
+    let effects = staged
+        .report(written(false, custom_hours(), "2026-10-16T23:00:00+02:00"))
+        .effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
     assert_eq!(resettable(&staged), Vec::new());

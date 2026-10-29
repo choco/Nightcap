@@ -155,6 +155,41 @@ impl Timeline {
         }
     }
 
+    /// The last schedule transition at or before `at`.
+    #[expect(
+        clippy::expect_used,
+        reason = "schedules stay millennia from jiff's limits"
+    )]
+    pub(crate) fn last_transition(&self, at: Timestamp) -> Option<Timestamp> {
+        match self.schedule? {
+            CheckedSchedule::Off => None,
+            CheckedSchedule::SunsetToSunrise => self
+                .sun_times
+                .changes
+                .iter()
+                .rev()
+                .map(|&(change, _)| change)
+                .find(|&change| change <= at),
+            CheckedSchedule::Custom { from, to } => {
+                let today = self.zone.to_datetime(at).date();
+                // Yesterday's start and end both come before anything today, so two days suffice.
+                let yesterday = today
+                    .yesterday()
+                    .expect("schedules stay far from jiff's limits");
+                [yesterday, today]
+                    .into_iter()
+                    .flat_map(|day| [from, to].map(|moment| day.to_datetime(moment)))
+                    .map(|local| {
+                        self.zone
+                            .to_timestamp(local)
+                            .expect("schedules stay far from jiff's limits")
+                    })
+                    .filter(|&transition| transition <= at)
+                    .max()
+            }
+        }
+    }
+
     /// When the schedule next turns Night Shift away from `state` after `after`: sunrise ends
     /// an on, sunset an off. None without a schedule.
     pub(crate) fn next_turn(&self, after: Timestamp, state: OnOff) -> Option<Timestamp> {

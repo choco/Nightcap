@@ -74,7 +74,8 @@ struct TourFactsTests {
 
     @Test func anOutsideChangeSnoozesTheSamplesRuleInItsFacts() throws {
         let core = try onByTheSchedule(
-            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)), reported(false))
+            tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)),
+            written(false, at: "2026-10-16T23:00:00+02:00"))
 
         core.report(
             fact: .statusChanged(
