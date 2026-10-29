@@ -19,7 +19,7 @@ use common::{
     accessibility_granted, activate_browser, activate_browser_event, activate_event, ad_hoc,
     add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma_app, forced, host_event,
     listed, mail, minutes, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
-    report_zurich_sun, reported, send, set, until, until_turn, yours,
+    report_zurich_sun, reported, send, set, until, until_turn, written, yours,
 };
 
 /// Every query's answer over the socket, all asked in one request, in the order asked and however
@@ -141,6 +141,7 @@ fn night_shift_answers_sunset_to_sunrise_set_aside() {
             enabled: false,
             schedule: Schedule::Off,
             sun_schedule_set_aside: true,
+            written_at: None,
         })
         .stage()
         .unwrap();
@@ -280,7 +281,7 @@ fn front_answers_an_external_on_over_the_rule_it_snoozed() {
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .then(reported(false, custom_hours()))
         .then(activate_event("com.figma.Desktop"))
-        .then(reported(true, custom_hours()))
+        .then(written(true, custom_hours(), "2026-10-16T12:00:00+02:00"))
         .stage()
         .unwrap();
 

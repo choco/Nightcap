@@ -76,7 +76,10 @@ struct TourFactsTests {
         let core = try onByTheSchedule(
             tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)), reported(false))
 
-        core.report(fact: .statusChanged(enabled: true, schedule: customHours, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(
+                enabled: true, schedule: customHours, sunScheduleSetAside: false,
+                writtenAt: at("2026-10-16T23:00:30+02:00")))
 
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
     }

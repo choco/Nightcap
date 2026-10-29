@@ -83,7 +83,7 @@ struct SettingsTests {
             restore: nil, accept: nil)
         #expect(settings(core).check(.nightShift) == following)
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true))
+        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil))
         #expect(
             settings(core).check(.nightShift)
                 == Settings.CheckStatus(
@@ -93,7 +93,8 @@ struct SettingsTests {
                     restore: fix("Open Location Services…", .app(.openLocationServices)),
                     accept: fix("Keep the Schedule Off", .command(.keepScheduleOff))))
 
-        core.report(fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil))
         #expect(settings(core).check(.nightShift) == following)
     }
 
@@ -260,7 +261,7 @@ struct SettingsTests {
     @Test func aRuleSnoozedWithNoEndSaysUntilYouTurnItBack() throws {
         let core = try staged(
             "2026-10-16T12:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n", reported(false, .off),
-            front("com.figma.Desktop"), reported(true, .off))
+            front("com.figma.Desktop"), written(true, .off, at: "2026-10-16T12:00:00+02:00"))
 
         #expect(settings(core).rules.first?.label == "Snoozed until you turn it off")
     }

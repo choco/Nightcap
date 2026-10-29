@@ -12,7 +12,7 @@ use nightcap_protocol::{
 use common::{
     activate, adopted, app_rule, at, custom_hours, figma_app, forced, late, minutes, noon,
     off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable, send, set,
-    until, until_turn, yours,
+    until, until_turn, written, yours,
 };
 
 /// The answer to a command that leaves Night Shift on at 23:00 by the custom hours.
@@ -82,7 +82,7 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
 fn off_takes_off_everywheres_rule_where_that_is_enough() {
     let staged = noon().stage().unwrap();
     // Found on with no schedule, which the core adopts as an outside change.
-    staged.report(reported(true, Schedule::Off));
+    staged.report(written(true, Schedule::Off, "2026-10-16T11:00:00+02:00"));
 
     let (effects, response) = send(&staged, Command::Off);
 
@@ -93,7 +93,7 @@ fn off_takes_off_everywheres_rule_where_that_is_enough() {
 #[test]
 fn on_while_everywhere_says_on_writes_nothing() {
     let staged = noon().stage().unwrap();
-    staged.report(reported(true, Schedule::Off));
+    staged.report(written(true, Schedule::Off, "2026-10-16T11:00:00+02:00"));
 
     let (effects, response) = send(&staged, Command::On);
 
@@ -107,7 +107,7 @@ fn on_while_everywhere_says_on_writes_nothing() {
 #[test]
 fn toggle_turns_everywhere_the_other_way() {
     let staged = noon().stage().unwrap();
-    staged.report(reported(true, Schedule::Off));
+    staged.report(written(true, Schedule::Off, "2026-10-16T11:00:00+02:00"));
 
     let (effects, response) = send(&staged, Command::Toggle);
 

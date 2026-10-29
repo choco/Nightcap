@@ -298,6 +298,7 @@ fn reported_set_aside(enabled: bool, schedule: Schedule) -> Fact {
         enabled,
         schedule,
         sun_schedule_set_aside: true,
+        written_at: None,
     }
 }
 

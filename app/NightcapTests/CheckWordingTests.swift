@@ -24,7 +24,7 @@ func permissions(_ accessibility: Bool, _ notifications: NotificationPermission)
 
 /// Night Shift as CoreBrightness reports it while macOS has sunset to sunrise set aside.
 func reportedSetAside(_ enabled: Bool, _ schedule: Schedule) -> Step {
-    .fact(.statusChanged(enabled: enabled, schedule: schedule, sunScheduleSetAside: true))
+    .fact(.statusChanged(enabled: enabled, schedule: schedule, sunScheduleSetAside: true, writtenAt: nil))
 }
 
 extension Core {
@@ -218,13 +218,16 @@ struct CheckWordingTests {
         let core = try atNoon()
         #expect(check(core, .nightShift)! == (.broken, "Night Shift isn’t available on this Mac."))
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false))
+        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil))
         #expect(check(core, .nightShift)! == (.ok, "Available, with no schedule."))
 
-        core.report(fact: .statusChanged(enabled: false, schedule: customHours, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(enabled: false, schedule: customHours, sunScheduleSetAside: false, writtenAt: nil))
         #expect(check(core, .nightShift)! == (.ok, "Available, following its schedule: 22:00 to 07:00."))
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil)
+        )
         #expect(check(core, .nightShift)! == (.ok, "Available, following its schedule: sunset to sunrise."))
     }
 

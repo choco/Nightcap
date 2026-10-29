@@ -12,6 +12,9 @@ final class NightShiftAdapter: NightShiftWriting {
         var schedule: Schedule
         /// Whether macOS has sunset to sunrise set aside, to put back once Location Services is on.
         var sunScheduleSetAside: Bool
+        /// When Night Shift was last written, by Nightcap or another app such as Control Center:
+        /// nil once the schedule has switched it since, or the schedule's mode changed (ADR-0004).
+        var writtenAt: Date?
     }
 
     struct SunTimes {
@@ -195,26 +198,46 @@ final class NightShiftAdapter: NightShiftWriting {
             log.error("CoreBrightness reported an unknown schedule mode \(mode)")
             return nil
         }
+        guard let marks else { return nil }
         return Status(
             enabled: raw.load(fromByteOffset: Self.enabledOffset, as: Bool.self),
             schedule: schedule,
-            sunScheduleSetAside: sunScheduleSetAside
+            sunScheduleSetAside: marks.sunScheduleSetAside,
+            writtenAt: marks.writtenAt
         )
     }
 
-    /// The mark CoreBrightness keeps to go back to sunset to sunrise, set while Location Services
-    /// is off. The status struct leaves it out, so it comes from the dictionary behind it.
-    private var sunScheduleSetAside: Bool {
+    /// What the status struct leaves out, from the dictionary behind it.
+    private struct Marks {
+        /// The mark CoreBrightness keeps to go back to sunset to sunrise, set while Location
+        /// Services is off.
+        var sunScheduleSetAside: Bool
+        var writtenAt: Date?
+    }
+
+    /// Nil when CoreBrightness marks no writes, without which Nightcap can't tell the schedule's
+    /// switches from the user's (ADR-0004).
+    private var marks: Marks? {
         let selector = NSSelectorFromString("copyPropertyForKey:")
         guard
             let status = copyProperty(systemClient, selector, "CBBlueReductionStatus")?
                 .takeRetainedValue() as? [String: Any],
-            let setAside = status["BlueLightReductionRevertToSunriseSunset"] as? Bool
+            let written = status["BlueLightReductionAlgoOverride"] as? NSNumber
         else {
-            log.error("CoreBrightness reported no mark to go back to sunset to sunrise")
-            return false
+            log.fault("CoreBrightness reported no mark of writes, so Night Shift can't be reconciled")
+            return nil
         }
-        return setAside
+        let setAside = status["BlueLightReductionRevertToSunriseSunset"] as? Bool
+        if setAside == nil {
+            log.error("CoreBrightness reported no mark to go back to sunset to sunrise")
+        }
+        // 0 while no write stands; a write marks 3 for off or 4 for on, with its time.
+        guard written.intValue != 0 else { return Marks(sunScheduleSetAside: setAside ?? false) }
+        guard let writtenAt = status["BlueLightReductionAlgoOverrideTimestamp"] as? Date else {
+            log.error("CoreBrightness reported a write with no time")
+            return nil
+        }
+        return Marks(sunScheduleSetAside: setAside ?? false, writtenAt: writtenAt)
     }
 
     /// The sunrises and sunsets CoreBrightness schedules by, from the day before to the day

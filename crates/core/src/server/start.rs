@@ -67,6 +67,7 @@ impl Inner {
             clock: setup.clock.clone(),
             facts: Facts {
                 night_shift: NightShift::Unavailable,
+                written_at: None,
                 timeline: Timeline {
                     schedule: None,
                     sun_times: SunTimes::default(),

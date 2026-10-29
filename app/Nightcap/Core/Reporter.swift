@@ -107,7 +107,8 @@ final class Reporter {
     func reportNightShift(_ status: NightShiftAdapter.Status) {
         core.report(
             fact: .statusChanged(
-                enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside))
+                enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside,
+                writtenAt: status.writtenAt))
     }
 
     /// The watched browser's host, read under `generation`.

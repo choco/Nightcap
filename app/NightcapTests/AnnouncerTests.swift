@@ -142,7 +142,7 @@ struct AnnouncerTests {
             let core = try staged("2026-10-16T01:40:00+02:00")
 
             let unavailable = announcer.heard(.fact, core.snapshot())
-            core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true))
+            core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil))
             let setAside = announcer.heard(.fact, core.snapshot())
 
             #expect(unavailable.isEmpty)

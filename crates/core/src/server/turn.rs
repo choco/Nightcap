@@ -11,14 +11,6 @@ use crate::server::state::Inner;
 use crate::setup::checks::SUN_TIMES_PATIENCE;
 use crate::{Cause, Effect, Event, Outcome};
 
-/// How far from a computed schedule transition a status callback can arrive and still be macOS
-/// performing it: CoreBrightness's clock and the core's can differ slightly (ADR-0004).
-const TRANSITION_TOLERANCE: SignedDuration = SignedDuration::from_mins(2);
-
-/// How long after waking macOS may take to perform a schedule transition it missed during sleep.
-/// A guess until measured.
-const POST_WAKE_GRACE: SignedDuration = SignedDuration::from_mins(5);
-
 impl Inner {
     /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
     /// the schedule transitions and the ends that came due, lets `react` change the state, then
@@ -45,16 +37,20 @@ impl Inner {
         enabled: bool,
         schedule: Schedule,
         sun_schedule_set_aside: bool,
+        written_at: Option<Timestamp>,
     ) -> Option<Event> {
         if self.reconciling.session == Session::Away {
             tracing::debug!("ignored a status callback while dormant");
             return None;
         }
-        self.facts.night_shift = if enabled {
+        let written = written_at.is_some() && written_at != self.facts.written_at;
+        self.facts.written_at = written_at;
+        let observed = if enabled {
             NightShift::On
         } else {
             NightShift::Off
         };
+        let switched = std::mem::replace(&mut self.facts.night_shift, observed) != observed;
         self.reconciling.pending_write = None;
         let keep_on = std::mem::take(&mut self.reconciling.keep_on_with_schedule_off);
         // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
@@ -85,54 +81,30 @@ impl Inner {
             }
             None
         } else {
-            self.reconcile(enabled)
+            self.reconcile(enabled, written, switched)
         }
     }
 
-    /// Reconciles a status callback with what the core wants (ADR-0004). macOS catching up on a
-    /// transition the core already applied, or running just ahead of the next one, is that
-    /// transition; a match needs nothing; anything else is an outside change, handled like the
-    /// equivalent command (ADR-0018).
-    fn reconcile(&mut self, enabled: bool) -> Option<Event> {
+    /// Reconciles a status callback with what the core wants (ADR-0004). One with no new write
+    /// is macOS's own schedule. A write that matches needs nothing, Nightcap's own among them,
+    /// and any other is an outside change, handled like the equivalent command (ADR-0018).
+    fn reconcile(&mut self, enabled: bool, written: bool, switched: bool) -> Option<Event> {
         if self.reconciling.left_by_last_run.take() == Some(OnOff::from(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
             return None;
         }
-        let now = self.clock.now();
-        match self.reconciling.unreported.take() {
-            Some(unreported) if now <= unreported.until && enabled == unreported.scheduled => {
-                tracing::info!(
-                    "macOS performed the schedule transition at {}, {:#} late",
-                    unreported.transition,
-                    now.duration_since(unreported.transition)
-                );
-                return None;
+        let observed = OnOff::from(enabled);
+        if !written {
+            if switched {
+                tracing::info!("the schedule turned Night Shift {observed}");
             }
-            Some(unreported) if now <= unreported.until => {
-                self.reconciling.unreported = Some(unreported);
-            }
-            _ => {}
+            return None;
         }
+        let now = self.clock.now();
         let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
         if enabled == wanted {
             return None;
         }
-        if let Some(transition) = self
-            .facts
-            .timeline
-            .next_transition(self.facts.applied_until)
-            && transition.duration_since(now) <= TRANSITION_TOLERANCE
-            && self.facts.timeline.scheduled_state(transition) == Some(enabled)
-        {
-            tracing::info!(
-                "schedule transition at {transition}, reported {:#} early",
-                transition.duration_since(now)
-            );
-            self.places.expire(transition);
-            self.facts.applied_until = transition;
-            return None;
-        }
-        let observed = OnOff::from(enabled);
         tracing::info!("Night Shift turned {observed} outside Nightcap");
         self.places.adopt(observed, &self.facts.world(now))
     }
@@ -152,15 +124,6 @@ impl Inner {
             && transition <= now
         {
             tracing::info!("schedule transition at {transition}");
-            self.reconciling.unreported =
-                self.facts
-                    .timeline
-                    .scheduled_state(now)
-                    .map(|scheduled| Unreported {
-                        transition,
-                        scheduled,
-                        until: now + TRANSITION_TOLERANCE,
-                    });
         }
         self.facts.applied_until = now;
     }
@@ -243,7 +206,6 @@ impl Inner {
 pub(crate) struct Reconciling {
     /// The write the shell was last asked for, until a status callback reports the result.
     pending_write: Option<bool>,
-    unreported: Option<Unreported>,
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
     session: Session,
@@ -262,7 +224,6 @@ impl Reconciling {
     pub(crate) fn new(left_by_last_run: Option<OnOff>) -> Self {
         Self {
             pending_write: None,
-            unreported: None,
             left_by_last_run,
             session: Session::Active,
             keep_on_with_schedule_off: false,
@@ -290,23 +251,6 @@ impl Reconciling {
         tracing::info!("session active: {active}");
         self.session = if active { Session::Back } else { Session::Away };
     }
-
-    pub(crate) fn woke(&mut self, now: Timestamp) {
-        tracing::debug!("woke");
-        if let Some(unreported) = &mut self.unreported {
-            unreported.until = now + POST_WAKE_GRACE;
-        }
-    }
-}
-
-/// A schedule transition the core applied on its own clock that macOS hasn't reported
-/// performing yet. Until `until`, a callback matching it is macOS catching up, not an external
-/// change.
-struct Unreported {
-    transition: Timestamp,
-    /// Whether the schedule has Night Shift on after the transition.
-    scheduled: bool,
-    until: Timestamp,
 }
 
 /// Whether Night Shift is this user's to change: with fast user switching, another user's

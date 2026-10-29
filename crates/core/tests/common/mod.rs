@@ -158,12 +158,25 @@ pub(crate) fn kept_ad_hoc(staged: &Staged) -> Vec<Rule> {
     rules(&alone.stage().unwrap())
 }
 
-/// Night Shift as CoreBrightness reports it, with sunset to sunrise not set aside.
+/// Night Shift as CoreBrightness reports it with no write standing, as the schedule leaves it,
+/// with sunset to sunrise not set aside.
 pub(crate) fn reported(enabled: bool, schedule: Schedule) -> Fact {
     Fact::StatusChanged {
         enabled,
         schedule,
         sun_schedule_set_aside: false,
+        written_at: None,
+    }
+}
+
+/// Night Shift as CoreBrightness reports it after a write at `instant`, by another app such as
+/// Control Center, with sunset to sunrise not set aside.
+pub(crate) fn written(enabled: bool, schedule: Schedule, instant: &str) -> Fact {
+    Fact::StatusChanged {
+        enabled,
+        schedule,
+        sun_schedule_set_aside: false,
+        written_at: Some(at(instant).into()),
     }
 }
 

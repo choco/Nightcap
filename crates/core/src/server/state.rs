@@ -44,6 +44,8 @@ pub(crate) struct Inner {
 /// What the places read but don't own, lent to them as a `World` for each call.
 pub(crate) struct Facts {
     pub(crate) night_shift: NightShift,
+    /// The write CoreBrightness last marked, while it stands (ADR-0004).
+    pub(crate) written_at: Option<Timestamp>,
     pub(crate) timeline: Timeline,
     pub(crate) context: Context,
     /// Every schedule transition up to here has been applied.

@@ -15,14 +15,16 @@ use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOf
 use common::{
     activate, adopted, at, custom_hours, figma, figma_app, forced, late, minutes, noon,
     off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, until,
-    until_turn, yours,
+    until_turn, written, yours,
 };
 
 #[test]
 fn an_outside_change_sets_everywhere_until_the_schedule_turns_it_back() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    let effects = staged.report(reported(true, custom_hours())).effects;
+    let effects = staged
+        .report(written(true, custom_hours(), "2026-10-16T20:00:00+02:00"))
+        .effects;
 
     assert_eq!(effects, Vec::new());
     assert_eq!(
@@ -41,7 +43,9 @@ fn an_outside_change_back_takes_off_what_the_switch_held() {
     send(&staged, Command::On);
     staged.report(reported(true, custom_hours()));
 
-    let effects = staged.report(reported(false, custom_hours())).effects;
+    let effects = staged
+        .report(written(false, custom_hours(), "2026-10-16T20:00:30+02:00"))
+        .effects;
 
     assert_eq!(effects, Vec::new());
     assert_eq!(resettable(&staged), Vec::new());
@@ -96,38 +100,15 @@ fn an_edited_schedule_keeps_rules_until_a_time_and_with_no_end() {
 }
 
 #[test]
-fn a_change_just_before_a_schedule_transition_is_that_transition() {
-    let staged = off_by_the_schedule().stage().unwrap();
-    send(
-        &staged,
-        set(Place::Everywhere, OnOff::Off, Lasting::UntilScheduleTurns),
-    );
-
-    staged.set_now(at("2026-10-16T21:59:00+02:00"));
-    let effects = staged.report(reported(true, custom_hours())).effects;
-
-    assert_eq!(
-        effects,
-        vec![Effect::ScheduleWakeup {
-            at: at("2026-10-17T07:00:00+02:00").into()
-        }]
-    );
-    assert_eq!(resettable(&staged), Vec::new());
-    assert_eq!(
-        staged.core().snapshot().night_shift().scheduled,
-        Some(OnOff::On)
-    );
-}
-
-#[test]
 fn a_change_against_the_coming_transition_is_still_an_outside_change() {
     let staged = off_by_the_schedule().stage().unwrap();
     send(&staged, Command::On);
     staged.report(reported(true, custom_hours()));
 
     staged.set_now(at("2026-10-16T21:59:00+02:00"));
-    staged.report(reported(false, custom_hours()));
+    staged.report(written(false, custom_hours(), "2026-10-16T21:59:00+02:00"));
 
+    assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(
         staged.core().snapshot().night_shift().scheduled,
         Some(OnOff::Off)
@@ -139,7 +120,24 @@ fn a_change_against_the_coming_transition_is_still_an_outside_change() {
 }
 
 #[test]
-fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_outside_change() {
+fn a_write_just_before_a_schedule_transition_is_an_outside_change() {
+    let staged = off_by_the_schedule().stage().unwrap();
+
+    staged.set_now(at("2026-10-16T21:59:00+02:00"));
+    staged.report(written(true, custom_hours(), "2026-10-16T21:59:00+02:00"));
+
+    assert_eq!(
+        resettable(&staged),
+        vec![adopted(
+            Place::Everywhere,
+            OnOff::On,
+            Some("2026-10-17T07:00:00+02:00")
+        )]
+    );
+}
+
+#[test]
+fn a_transition_macos_performs_however_late_is_not_an_outside_change() {
     let staged = Scenario::at(at("2026-10-16T21:00:00+02:00"))
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
@@ -149,25 +147,7 @@ fn macos_performing_a_transition_just_after_the_core_applied_it_is_not_an_outsid
     staged.set_now(at("2026-10-16T22:00:00+02:00"));
     staged.report(Fact::TimerFired);
 
-    staged.set_now(at("2026-10-16T22:01:00+02:00"));
-    let effects = staged.report(reported(true, custom_hours())).effects;
-
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
-    assert_eq!(resettable(&staged), Vec::new());
-}
-
-#[test]
-fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_outside_change() {
-    let staged = Scenario::at(at("2026-10-16T21:00:00+02:00"))
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
-    staged.report(reported(false, custom_hours()));
-    activate(&staged, "com.figma.Desktop");
-    staged.set_now(at("2026-10-16T23:00:00+02:00"));
-    staged.report(Fact::Woke);
-
-    staged.set_now(at("2026-10-16T23:03:00+02:00"));
+    staged.set_now(at("2026-10-16T22:30:00+02:00"));
     let effects = staged.report(reported(true, custom_hours())).effects;
 
     assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
@@ -178,7 +158,7 @@ fn after_waking_macos_catching_up_on_a_missed_transition_is_not_an_outside_chang
 fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_says_so() {
     let staged = forced();
 
-    let outcome = staged.report(reported(true, custom_hours()));
+    let outcome = staged.report(written(true, custom_hours(), "2026-10-16T23:00:30+02:00"));
 
     assert_eq!(
         outcome,
@@ -208,7 +188,7 @@ fn with_no_schedule_an_outside_change_lasts_until_turned_back() {
     let staged = noon().stage().unwrap();
     staged.report(reported(false, Schedule::Off));
 
-    staged.report(reported(true, Schedule::Off));
+    staged.report(written(true, Schedule::Off, "2026-10-16T12:00:00+02:00"));
 
     assert_eq!(
         resettable(&staged),
@@ -225,7 +205,7 @@ fn flipping_back_from_outside_takes_off_both_linked_rules() {
     staged.report(reported(false, custom_hours()));
     activate(&staged, "com.figma.Desktop");
 
-    let outcome = staged.report(reported(true, custom_hours()));
+    let outcome = staged.report(written(true, custom_hours(), "2026-10-16T12:00:00+02:00"));
 
     assert_eq!(
         outcome,
@@ -249,7 +229,7 @@ fn flipping_back_from_outside_takes_off_both_linked_rules() {
         ]
     );
 
-    staged.report(reported(false, custom_hours()));
+    staged.report(written(false, custom_hours(), "2026-10-16T12:00:30+02:00"));
 
     assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(activate(&staged, "com.apple.mail"), Vec::new());
@@ -263,7 +243,7 @@ fn a_rule_set_over_a_linked_one_leaves_its_partner_unlinked() {
         .unwrap();
     report(&staged, false);
     activate(&staged, "com.figma.Desktop");
-    report(&staged, true);
+    staged.report(written(true, custom_hours(), "2026-10-16T12:00:00+02:00"));
 
     send(
         &staged,

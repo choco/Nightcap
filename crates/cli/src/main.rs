@@ -441,6 +441,7 @@ mod tests {
                     to: TimeOfDay { hour: 7, minute: 0 },
                 },
                 sun_schedule_set_aside: false,
+                written_at: None,
             })
             .then(Fact::AppActivated {
                 bundle_id: Some("com.figma.Desktop".to_owned()),

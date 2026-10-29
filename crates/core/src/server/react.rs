@@ -77,11 +77,23 @@ impl Inner {
                 enabled,
                 schedule,
                 sun_schedule_set_aside,
-            } => outcome.events.extend(self.status_changed(
-                enabled,
-                schedule,
-                sun_schedule_set_aside,
-            )),
+                written_at,
+            } => {
+                // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
+                let written_at = written_at.and_then(|at| {
+                    Timestamp::try_from(at)
+                        .inspect_err(|error| {
+                            tracing::error!("the shell reported a write out of range: {error}");
+                        })
+                        .ok()
+                });
+                outcome.events.extend(self.status_changed(
+                    enabled,
+                    schedule,
+                    sun_schedule_set_aside,
+                    written_at,
+                ));
+            }
             Fact::StrengthChanged { value } => self.strength = Some(value),
             Fact::TimerFired => self.reconciling.timer_fired(),
             Fact::SunTimesChanged { sunrises, sunsets } => {
@@ -112,7 +124,7 @@ impl Inner {
                 }
             },
             Fact::SessionChanged { active } => self.reconciling.session_changed(active),
-            Fact::Woke => self.reconciling.woke(self.clock.now()),
+            Fact::Woke => tracing::debug!("woke"),
         }
     }
 

@@ -203,7 +203,8 @@ struct MenuTests {
                 staged(
                     "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.on]\ndomain = [\"figma.com\"]\n",
                     accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
-                    host("figma.com"), reported(true, .sunsetToSunrise), reported(false, .sunsetToSunrise)
+                    host("figma.com"), reported(true, .sunsetToSunrise),
+                    written(false, .sunsetToSunrise, at: "2026-10-16T12:00:00+02:00")
                 ).siteRow, "Off until you turn it on, then your config’s rule"
             ),
         ]
@@ -224,9 +225,12 @@ struct MenuTests {
     @Test func withoutTheSunTimesAnAppsRowTurnsNightShiftTheOtherWayFromHowItIs() throws {
         let core = try staged("2026-10-16T23:00:00+02:00", front("com.googlecode.iterm2"))
 
-        core.report(fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil))
         #expect(core.appRow?.title == "Turn Off in iTerm2")
-        core.report(fact: .statusChanged(enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false))
+        core.report(
+            fact: .statusChanged(enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil)
+        )
         #expect(core.appRow?.title == "Turn On in iTerm2")
     }
 
@@ -351,7 +355,7 @@ struct MenuTests {
             {
                 try staged(
                     "2026-10-16T12:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n",
-                    reported(false), front("com.figma.Desktop"), reported(true))
+                    reported(false), front("com.figma.Desktop"), written(true, at: "2026-10-16T12:00:00+02:00"))
             },
         ]
         var offered: Set<String> = []
@@ -482,7 +486,7 @@ struct MenuTests {
     @Test func aScheduleSetAsideIsAProblemWithNightShift() throws {
         let core = try staged("2026-10-16T01:40:00+02:00", zurichSun, reported(true, .sunsetToSunrise))
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true))
+        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil))
 
         #expect(core.menu().problemLine == Menu.ProblemLine(title: "1 Thing Needs Attention…", subtitle: "Night Shift"))
     }

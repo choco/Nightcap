@@ -28,7 +28,9 @@ enum SnapshotRenderer {
             scenario: Scenario(
                 now: today(21, 0), timeZone: TimeZone.current.identifier, bundleWritable: true, config: rules,
                 steps: [
-                    .fact(.statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false)),
+                    .fact(
+                        .statusChanged(
+                            enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .granted)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .denied)),
                     .fact(.loginItemChanged(item: .enabled)),
@@ -67,7 +69,9 @@ enum SnapshotRenderer {
                     now: evening, timeZone: TimeZone.current.identifier, bundleWritable: true,
                     config: "[rules.off]\napp = [\"com.apple.Photos\"]",
                     steps: [
-                        .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
+                        .fact(
+                            .statusChanged(
+                                enabled: false, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil)),
                         .fact(.strengthChanged(value: 60)),
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))

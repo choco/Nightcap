@@ -351,6 +351,7 @@ mod tests {
                 enabled: true,
                 schedule: hours,
                 sun_schedule_set_aside: false,
+                written_at: None,
             }),
         );
         let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());

@@ -9,7 +9,7 @@ use nightcap_protocol::{Command, Lasting, OnOff, Place};
 use common::{
     accessibility_granted, activate, activate_browser, activate_event, adopted, at, books,
     custom_hours, figma_app, forced, in_books_at_noon, late, launch, minutes, on_by_the_schedule,
-    reported, resettable, send, set, until, until_turn, watch, yours,
+    reported, resettable, send, set, until, until_turn, watch, written, yours,
 };
 
 /// Snoozes the Figma rule until 07:00, then turns Night Shift off everywhere for an hour.
@@ -137,7 +137,7 @@ fn after_a_clean_exit_night_shift_found_off_is_an_outside_change() {
 
     let staged = stopped.restart_at(at("2026-10-16T23:10:00+02:00"));
     activate(&staged, "com.apple.Terminal");
-    staged.report(reported(false, custom_hours()));
+    staged.report(written(false, custom_hours(), "2026-10-16T23:05:00+02:00"));
 
     assert_eq!(
         resettable(&staged),

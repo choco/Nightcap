@@ -25,7 +25,7 @@ private func core(
         scenario: Scenario(
             now: Date(), bundleId: bundleId, bundleWritable: bundleWritable, config: config, rules: rules,
             steps: [
-                .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false)),
+                .fact(.statusChanged(enabled: false, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil)),
                 .fact(.strengthChanged(value: 60)),
                 .fact(.loginItemChanged(item: .notRegistered)),
                 permissions(accessibility, notifications),
@@ -63,7 +63,7 @@ struct OnboardingFlowTests {
             scenario: Scenario(
                 now: at("2026-10-16T12:00:00+02:00"),
                 steps: [
-                    .fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false)),
+                    .fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil)),
                     .fact(.strengthChanged(value: 60)),
                 ]))
 
@@ -86,7 +86,8 @@ struct OnboardingFlowTests {
                 .snapshot())
             return [setup.askStrength, setup.askSchedule]
         }
-        let status = Step.fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false))
+        let status = Step.fact(
+            .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil))
         let reported = [status, .fact(.strengthChanged(value: 60))]
 
         #expect(try asks(nil, []) == [false, false])

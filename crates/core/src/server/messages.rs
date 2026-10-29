@@ -44,6 +44,11 @@ pub enum Fact {
         /// Whether macOS has sunset to sunrise set aside, to put back once Location Services
         /// is on.
         sun_schedule_set_aside: bool,
+        /// When Night Shift was last written, by Nightcap or another app such as Control
+        /// Center, as CoreBrightness marks it: None once the schedule has switched it since, or
+        /// the schedule's mode changed. Every write marks a new time, so a switch with none is
+        /// the schedule's own (ADR-0004).
+        written_at: Option<SystemTime>,
     },
     /// The strength, 0 to 100, as the shell read it. CoreBrightness announces no strength
     /// change, so the shell reads it whenever something is about to show it.
