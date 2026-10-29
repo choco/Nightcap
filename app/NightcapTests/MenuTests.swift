@@ -23,8 +23,8 @@ private func siteTitle(_ row: Menu.PlaceRow?) -> (String?, String?) {
     (row?.title, row?.site)
 }
 
-/// What the menu shows and the commands its items send (ADR-0018): the moon, the Night Shift
-/// item, the problem line, the strength and the place rows.
+/// What the menu shows, in its words, and the commands its items send (ADR-0018): the moon, the
+/// Night Shift item, the problem line, the strength and the place rows.
 struct MenuTests {
     @Test func withNoScheduleTheNightShiftItemSaysSo() throws {
         let core = try staged("2026-10-16T12:00:00+02:00", reported(false, .off))
@@ -107,18 +107,48 @@ struct MenuTests {
                     ]))
     }
 
-    @Test func theMenusLengthsComeFromTheConfig() throws {
-        let core = try onByTheSchedule(config: "lengths = [\"15m\", \"1h30m\"]\n")
+    @Test func theMenusLengthsComeFromTheConfigWordedWithTheirPlurals() throws {
+        let preset: [(text: String, seconds: Int64, title: String)] = [
+            ("1m", 60, "For 1 Minute"), ("15m", 900, "For 15 Minutes"), ("1h", 3600, "For 1 Hour"),
+            ("1h1m", 3660, "For 1 Hour 1 Minute"), ("1h30m", 5400, "For 1 Hour 30 Minutes"),
+            ("2h", 7200, "For 2 Hours"), ("2h1m", 7260, "For 2 Hours 1 Minute"), ("24h", 86400, "For 24 Hours"),
+        ]
+        let core = try onByTheSchedule(config: lengths(preset.map(\.text)))
 
-        #expect(
-            try #require(core.everywhereRow).titles
-                == ["For 15 Minutes", "For 1 Hour 30 Minutes", "Custom…", "Until 22:00"])
+        let row = try #require(core.everywhereRow)
+
+        #expect(row.titles == preset.map(\.title) + ["Custom…", "Until 22:00"])
+        for (_, seconds, title) in preset {
+            let item = row.choice(sending: .set(place: .everywhere, state: .off, length: .for(seconds)))
+            #expect(item?.title == title)
+        }
+    }
+
+    @Test func untilTheScheduleTurnsNamesSunriseOrSunsetOrTheCustomHoursEnd() throws {
+        let cases: [(now: String, enabled: Bool, schedule: Schedule, state: OnOff, title: String, moment: String)] = [
+            ("2026-10-16T01:40:00+02:00", true, .sunsetToSunrise, .off, "Until 18:31", "At sunset"),
+            ("2026-10-16T12:00:00+02:00", false, .sunsetToSunrise, .on, "Until 07:52", "At sunrise"),
+            ("2026-10-16T12:00:00+02:00", false, customHours, .on, "Until 07:00", "When the schedule ends"),
+        ]
+        for (now, enabled, schedule, state, title, moment) in cases {
+            let core = try staged(now, zurichSun, reported(enabled, schedule))
+
+            let row = try #require(core.everywhereRow)
+
+            let until = try #require(
+                row.choice(sending: .set(place: .everywhere, state: state, length: .untilScheduleTurns)))
+            #expect(until.title == title)
+            #expect(until.subtitle == moment)
+        }
     }
 
     @Test func everywheresRowNamesThePlaceThatKeepsTheOtherWay() throws {
         let config = "[rules.off]\napp = [\"com.figma.Desktop\"]\n[rules.on]\napp = [\"com.apple.iBooksX\"]\n"
         let day = try staged("2026-10-16T12:00:00+02:00", config: config, reported(false))
         let night = try staged("2026-10-16T23:00:00+02:00", config: config, reported(true))
+        let site = try staged(
+            "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.off]\ndomain = [\"figma.com\"]\n",
+            accessibilityGranted, reported(false), front("com.apple.Safari", browser: true), host("www.figma.com"))
         let row = { (core: Core, bundleId: String) in
             core.bringToFront(bundleId)
             let row = core.everywhereRow
@@ -131,6 +161,7 @@ struct MenuTests {
         // At night, turning it off everywhere leaves Books on, and Figma off as it is.
         #expect(row(night, "com.apple.iBooksX") == ["Turn Off", "Everywhere but in Books"])
         #expect(row(night, "com.figma.Desktop") == ["Turn Off", nil])
+        #expect(site.everywhereRow?.subtitle == "Everywhere but at figma.com")
     }
 
     @Test func byDayTheRowsTurnOnAndByNightOff() throws {
@@ -138,7 +169,56 @@ struct MenuTests {
         let night = try staged("2026-10-16T23:00:00+02:00", reported(true), front("com.apple.mail"))
 
         #expect(day.rows.map(\.title) == ["Turn On", "Turn On in Mail"])
+        #expect(day.everywhereRow?.timePickerTitle == "Turn On Everywhere")
         #expect(night.rows.map(\.title) == ["Turn Off", "Turn Off in Mail"])
+    }
+
+    @Test func anAppWhoseNameIsntKnownGoesByItsBundleId() throws {
+        let core = try onByTheSchedule(front("com.figma.Desktop"))
+
+        #expect(core.menu(names: [:]).rows.last?.title == "Turn Off in com.figma.Desktop")
+    }
+
+    /// The line under an app's or site's row: its temporary rule, then its rule.
+    @Test func anAppsOrSitesRowSaysItsTemporaryRuleThenItsRule() throws {
+        let lines: [(row: Menu.PlaceRow?, line: String?)] = try [
+            (onByTheSchedule(front("com.figma.Desktop")).appRow, nil),
+            (
+                onByTheSchedule(
+                    front("com.figma.Desktop"), .command(.addRule(identity: .app("com.figma.Desktop"), says: .off))
+                ).appRow, "Always off: your rule"
+            ),
+            (forced().appRow, "Always off: your config’s rule"),
+            (
+                onByTheSchedule(
+                    front("com.apple.mail"), .command(.set(place: mailApp, state: .off, length: minutes(30)))
+                ).appRow, "Off until 23:30"
+            ),
+            (
+                forced(.command(.set(place: figmaApp, state: .on, length: .untilScheduleTurns))).appRow,
+                "On until 07:00, then your config’s rule"
+            ),
+            // Without the sun times, an outside change holds the site in front with no end.
+            (
+                staged(
+                    "2026-10-16T12:00:00+02:00", config: "websites = true\n[rules.on]\ndomain = [\"figma.com\"]\n",
+                    accessibilityGranted, reported(false, .sunsetToSunrise), front("com.apple.Safari", browser: true),
+                    host("figma.com"), reported(true, .sunsetToSunrise), reported(false, .sunsetToSunrise)
+                ).siteRow, "Off until you turn it on, then your config’s rule"
+            ),
+        ]
+        for (row, line) in lines {
+            #expect(try #require(row).subtitle == line)
+        }
+    }
+
+    @Test func aConfigRulesAlwaysIsGreyedBecauseTheConfigDecides() throws {
+        let always = try #require(
+            try forced().appRow?.choice(sending: .addRule(identity: .app("com.figma.Desktop"), says: .on)))
+
+        #expect(always.title == "Always")
+        #expect(always.subtitle == "Your config decides")
+        #expect(!always.enabled)
     }
 
     @Test func withoutTheSunTimesAnAppsRowTurnsNightShiftTheOtherWayFromHowItIs() throws {
@@ -333,6 +413,7 @@ struct MenuTests {
         let core = try onByTheSchedule(config: "websites = true\n", front("com.apple.Safari", browser: true))
         core.reportHost("docs.figma.com")
         #expect(siteTitle(core.siteRow) == ("Turn Off at This Site", "docs.figma.com"))
+        #expect(core.siteRow?.timePickerTitle == "Turn Off at docs.figma.com")
         #expect(
             try #require(core.siteRow).choice(titled: "Always").command
                 == .addRule(identity: .domain("docs.figma.com"), says: .off))
@@ -406,16 +487,6 @@ struct MenuTests {
         #expect(core.menu().problemLine == Menu.ProblemLine(title: "1 Thing Needs Attention…", subtitle: "Night Shift"))
     }
 
-    @Test func aRuleFromTheTabKeepsWwwWhereNothingButASuffixWouldBeLeft() throws {
-        let core = try onByTheSchedule(
-            config: "websites = true\n", front("com.apple.Safari", browser: true), host("www.com"))
-
-        let row = try #require(core.siteRow)
-
-        #expect(siteTitle(row) == ("Turn Off at This Site", "www.com"))
-        #expect(try row.choice(titled: "Always").command == .addRule(identity: .domain("www.com"), says: .off))
-    }
-
     @Test func whileTheTourStandsInEverywheresRowOffersNoWayBackToTheSchedule() throws {
         let core = try offByTheSchedule(
             tourBegunStandingIn, reported(true),
@@ -438,12 +509,6 @@ struct MenuTests {
         #expect(row.title == "Turn On in Tour Sample")
         #expect(row.subtitle == "Always off: the tour’s rule")
         #expect(try row.choice(titled: "Remove Your Rule").command == .removeRule(sample))
-    }
-
-    @Test func anAppWhoseBundleIdNoRuleCouldNameHasNoRow() throws {
-        let core = try onByTheSchedule(front("unity.Team Cherry.Hollow Knight"))
-
-        #expect(core.appRow == nil)
     }
 
     /// With nothing else deciding, the moon is Night Shift as last reported.

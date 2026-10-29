@@ -53,4 +53,11 @@ mod tests {
         assert!(!covered("notfigma.com"));
         assert!(!covered("figma.com.example.net"));
     }
+
+    #[test]
+    fn a_rule_from_the_tab_keeps_www_where_nothing_but_a_top_level_domain_would_be_left() {
+        let host = Host::new("www.com").unwrap();
+
+        assert_eq!(host.tab_domain().as_str(), "www.com");
+    }
 }
