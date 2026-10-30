@@ -60,6 +60,8 @@
 				Notifications/WhatsNew.swift,
 				Onboarding/OnboardingFlow.swift,
 				Onboarding/OnboardingRecord.swift,
+				Platform/LoginItemAdapter.swift,
+				Platform/NightShiftStrength.swift,
 				Platform/NightShiftWrites.swift,
 				Settings/Settings.swift,
 				Tour/TourFacts.swift,

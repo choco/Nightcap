@@ -127,7 +127,13 @@ final class Reporter {
     /// opening, Settings or onboarding open, an app switch, and every 30 seconds otherwise), and
     /// after each saved write. A read costs under a millisecond.
     private func reportStrength() {
-        guard let strength = nightShift?.strength, strength != reportedStrength else { return }
+        guard let strength = nightShift?.strength else { return }
+        reportStrength(strength)
+    }
+
+    /// A strength read by the adapter after a committed write, or by the periodic poll.
+    func reportStrength(_ strength: UInt8) {
+        guard strength != reportedStrength else { return }
         reportedStrength = strength
         core.report(fact: .strengthChanged(value: strength))
     }
@@ -146,7 +152,11 @@ final class Reporter {
     }
 
     private func reportLoginItem() {
-        let item = loginItem.item
+        reportLoginItem(loginItem.item)
+    }
+
+    /// A login-item status read by the adapter after a change, or by the periodic poll.
+    func reportLoginItem(_ item: LoginItem) {
         guard item != reportedLoginItem else { return }
         reportedLoginItem = item
         core.report(fact: .loginItemChanged(item: item))
@@ -220,16 +230,6 @@ final class Reporter {
         timer.tolerance = interval / 4
         RunLoop.main.add(timer, forMode: .common)
         permissionsPoll = timer
-    }
-}
-
-extension Reporter: Rereading {
-    func rereadLoginItem() {
-        reportLoginItem()
-    }
-
-    func rereadStrength() {
-        reportStrength()
     }
 }
 

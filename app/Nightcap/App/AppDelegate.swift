@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var accessibilityAsk: AccessibilityAsk?
     private let onboardingRecord = OnboardingRecord(defaults: .standard)
     private lazy var notifications = Notifications()
-    private lazy var nightShift = NightShiftAdapter { [weak self] status, switchedBy in
-        self?.reporter?.reportNightShift(status, switchedBy: switchedBy)
-    }
+    private lazy var nightShift = NightShiftAdapter(
+        onChange: { [weak self] status, switchedBy in
+            self?.reporter?.reportNightShift(status, switchedBy: switchedBy)
+        },
+        onStrength: { [weak self] value in self?.reporter?.reportStrength(value) })
     private lazy var accessibility = AccessibilityPermission { [weak self] _ in
         Task { await self?.reporter?.reportSystemState() }
     }
@@ -69,14 +71,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         log.info("Nightcap started")
-        let loginItem = LoginItemAdapter()
+        let loginItem = LoginItemAdapter { [weak self] item in self?.reporter?.reportLoginItem(item) }
         let reporter = Reporter(core: core, nightShift: nightShift, accessibility: accessibility, loginItem: loginItem)
         let executor = Executor(
             core: core, inbox: inbox, nightShift: nightShift, loginItem: loginItem, updater: updater,
             wakeups: WakeupTimer { reporter.wakeupCameDue() },
             browser: BrowserWatch { generation, host in reporter.reportHost(generation: generation, host: host) },
             accessibility: accessibility, notifications: reporter, systemSettings: SystemSettings(),
-            rereading: reporter, telling: notifications)
+            telling: notifications)
         self.core = core
         self.reporter = reporter
         self.executor = executor

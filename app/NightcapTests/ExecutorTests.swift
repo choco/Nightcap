@@ -9,8 +9,6 @@ private enum Call: Equatable {
     case setStrength(UInt8, commit: Bool)
     case registerLoginItem
     case unregisterLoginItem
-    case rereadLoginItem
-    case rereadStrength
     case startUpdater
     case checkForUpdates
     case scheduleWakeup(Date)
@@ -26,18 +24,14 @@ private enum Call: Equatable {
     case redraw
 }
 
-private struct Refused: Error {}
-
-/// macOS as the executor drives it, through every adapter and the reporter's rereads, recording
+/// macOS as the executor drives it through its adapters, recording
 /// each call and whether it came on the main thread.
 private final class Mac: NightShiftWriting, LoginItemRegistering, Updating, WakeupScheduling, BrowserWatching,
-    AccessibilityAsking, NotificationsAsking, SystemSettingsOpening, Rereading, Telling
+    AccessibilityAsking, NotificationsAsking, SystemSettingsOpening, Telling
 {
     private(set) var calls: [Call] = []
     private(set) var onMainThread: [Bool] = []
     var host: String?
-    /// Whether macOS refuses to register or unregister the login item.
-    var refusesLoginItem = false
 
     func record(_ call: Call) {
         calls.append(call)
@@ -48,18 +42,8 @@ private final class Mac: NightShiftWriting, LoginItemRegistering, Updating, Wake
     func setSchedule(_ schedule: Schedule) { record(.setSchedule(schedule)) }
     func setStrength(_ value: UInt8, commit: Bool) { record(.setStrength(value, commit: commit)) }
 
-    func register() throws {
-        record(.registerLoginItem)
-        if refusesLoginItem { throw Refused() }
-    }
-
-    func unregister() throws {
-        record(.unregisterLoginItem)
-        if refusesLoginItem { throw Refused() }
-    }
-
-    func rereadLoginItem() { record(.rereadLoginItem) }
-    func rereadStrength() { record(.rereadStrength) }
+    func register() { record(.registerLoginItem) }
+    func unregister() { record(.unregisterLoginItem) }
     func start() { record(.startUpdater) }
     func checkForUpdates() { record(.checkForUpdates) }
     func schedule(at date: Date) { record(.scheduleWakeup(date)) }
@@ -93,7 +77,7 @@ private struct FakeShell {
         self.inbox = inbox
         executor = Executor(
             core: core, inbox: inbox, nightShift: nightShift ? mac : nil, loginItem: mac, updater: mac, wakeups: mac,
-            browser: mac, accessibility: mac, notifications: mac, systemSettings: mac, rereading: mac, telling: mac)
+            browser: mac, accessibility: mac, notifications: mac, systemSettings: mac, telling: mac)
         executor.onChange { _, _ in mac.record(.redraw) }
     }
 
@@ -136,34 +120,8 @@ struct ExecutorTests {
             shell.mac.calls == [
                 .watch("com.apple.Safari", generation: 1), .setNightShift(false), .setSchedule(customHours),
                 .setStrength(40, commit: false), .scheduleWakeup(sunrise), .cancelWakeup, .stopWatching,
-                .registerLoginItem, .rereadLoginItem, .unregisterLoginItem, .rereadLoginItem, .startUpdater,
+                .registerLoginItem, .unregisterLoginItem, .startUpdater,
                 .checkForUpdates, .redraw,
-            ])
-    }
-
-    @Test func aSavedStrengthIsReadBackAndAPreviewIsnt() async throws {
-        let shell = FakeShell(try onByTheSchedule())
-
-        shell.tell(
-            outcome(.setStrength(value: 40, commit: false), .setStrength(value: 60, commit: true)))
-        await mainQueueTurns()
-
-        #expect(
-            shell.mac.calls == [
-                .setStrength(40, commit: false), .setStrength(60, commit: true), .rereadStrength, .redraw,
-            ])
-    }
-
-    @Test func theLoginItemIsReadBackEvenWhenMacOSRefusesTheChange() async throws {
-        let shell = FakeShell(try onByTheSchedule())
-        shell.mac.refusesLoginItem = true
-
-        shell.tell(outcome(.registerLoginItem, .unregisterLoginItem))
-        await mainQueueTurns()
-
-        #expect(
-            shell.mac.calls == [
-                .registerLoginItem, .rereadLoginItem, .unregisterLoginItem, .rereadLoginItem, .redraw,
             ])
     }
 

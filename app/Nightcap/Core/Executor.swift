@@ -20,7 +20,6 @@ final class Executor {
     private let accessibility: AccessibilityAsking
     private let notifications: NotificationsAsking
     private let systemSettings: SystemSettingsOpening
-    private let rereading: Rereading
     private let telling: Telling
     private var changeHandlers: [(Cause, Snapshot) -> Void] = []
     /// The ticket the last command the app sent went under.
@@ -43,7 +42,6 @@ final class Executor {
         accessibility: AccessibilityAsking,
         notifications: NotificationsAsking,
         systemSettings: SystemSettingsOpening,
-        rereading: Rereading,
         telling: Telling
     ) {
         self.core = core
@@ -56,7 +54,6 @@ final class Executor {
         self.accessibility = accessibility
         self.notifications = notifications
         self.systemSettings = systemSettings
-        self.rereading = rereading
         self.telling = telling
         inbox.receive = { [weak self] outcome, snapshot in self?.carryOut(outcome, snapshot) }
     }
@@ -124,9 +121,9 @@ final class Executor {
     private func carryOut(_ effect: Effect) {
         switch effect {
         case .registerLoginItem:
-            changeLoginItem { try $0.register() }
+            loginItem.register()
         case .unregisterLoginItem:
-            changeLoginItem { try $0.unregister() }
+            loginItem.unregister()
         case .startUpdater:
             updater.start()
         case .checkForUpdates:
@@ -152,8 +149,6 @@ final class Executor {
                 return
             }
             nightShift.setStrength(value, commit: commit)
-            // A preview isn't the strength, so only a saved one is read back.
-            if commit { rereading.rereadStrength() }
         case .scheduleWakeup(let at):
             wakeups.schedule(at: at)
         case .cancelWakeup:
@@ -167,16 +162,6 @@ final class Executor {
         }
     }
 
-    /// Registers or unregisters the login item, as the user chose (ADR-0011), then has where that
-    /// left it read back.
-    private func changeLoginItem(_ change: (LoginItemRegistering) throws -> Void) {
-        do {
-            try change(loginItem)
-        } catch {
-            log.error("couldn't change the login item: \(error, privacy: .public)")
-        }
-        rereading.rereadLoginItem()
-    }
 }
 
 // MARK: Adapters
@@ -186,14 +171,16 @@ protocol NightShiftWriting {
     func setEnabled(_ enabled: Bool)
     /// macOS applies a new schedule at once, so it can switch Night Shift on or off.
     func setSchedule(_ schedule: Schedule)
-    /// Uncommitted, macOS shows the strength, even with Night Shift off, but doesn't save it.
+    /// Uncommitted, macOS shows the strength without saving it. A committed write reports
+    /// the strength read back afterward, even when the write is refused.
     func setStrength(_ value: UInt8, commit: Bool)
 }
 
 /// The login item, which opens Nightcap at login as the user chose (ADR-0011).
 protocol LoginItemRegistering {
-    func register() throws
-    func unregister() throws
+    /// Reports the resulting status after the attempt, including a failed one.
+    func register()
+    func unregister()
 }
 
 /// Sparkle, which updates a self-managed install (ADR-0011).
@@ -257,12 +244,4 @@ protocol Telling {
     func tell(adoptedSnoozing snoozed: RuleIdentity?, state: OnOff, until: Date?)
     /// The core refused a command the app sent.
     func tell(refused command: Command, why: Refusal)
-}
-
-/// Reads again, for the core, what an effect changed that macOS doesn't announce.
-protocol Rereading {
-    /// The login item, once registered or unregistered.
-    func rereadLoginItem()
-    /// The strength, once a write is saved.
-    func rereadStrength()
 }

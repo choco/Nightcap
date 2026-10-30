@@ -78,8 +78,7 @@ final class NightShiftAdapter: NightShiftWriting {
     private let getStatus: GetStatus
     private let setEnabledImplementation: SetEnabled
     private let copyProperty: CopyProperty
-    private let getStrength: GetStrength?
-    private let setStrengthImplementation: SetStrength?
+    private let strengthControl: NightShiftStrength?
     private let setMode: SetMode?
     private let setScheduleImplementation: SetSchedule?
     private let setProperty: SetProperty?
@@ -90,8 +89,12 @@ final class NightShiftAdapter: NightShiftWriting {
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
     /// thread with the new status, and whose write it's the first to show, whenever
-    /// CoreBrightness reports a status change.
-    init?(onChange: @escaping @MainActor (Status, SwitchedBy) -> Void) {
+    /// CoreBrightness reports a status change. `onStrength` reports a fresh strength read
+    /// after each committed write.
+    init?(
+        onChange: @escaping @MainActor (Status, SwitchedBy) -> Void,
+        onStrength: @escaping (UInt8) -> Void
+    ) {
         let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "nightshift")
         guard dlopen(Self.frameworkPath, RTLD_NOW) != nil else {
             log.fault("CoreBrightness is missing")
@@ -142,12 +145,21 @@ final class NightShiftAdapter: NightShiftWriting {
         let strengthFound = found(Self.strengthEncodings, "the strength", "CBBlueLightClient")
         let scheduleFound = found(Self.scheduleEncodings, "the schedule", "CBBlueLightClient")
         let peekFound = found(Self.peekEncodings, "the peek", "BrightnessSystemClient")
-        getStrength =
-            strengthFound
-            ? unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self) : nil
-        setStrengthImplementation =
-            strengthFound
-            ? unsafeBitCast(client.method(for: NSSelectorFromString("setStrength:commit:")), to: SetStrength.self) : nil
+        if strengthFound {
+            let get = unsafeBitCast(client.method(for: NSSelectorFromString("getStrength:")), to: GetStrength.self)
+            let set = unsafeBitCast(
+                client.method(for: NSSelectorFromString("setStrength:commit:")), to: SetStrength.self)
+            let client = client
+            strengthControl = NightShiftStrength(
+                read: {
+                    var value: Float = -1
+                    return get(client, NSSelectorFromString("getStrength:"), &value) ? value : nil
+                },
+                write: { value, commit in set(client, NSSelectorFromString("setStrength:commit:"), value, commit) },
+                onStrength: onStrength)
+        } else {
+            strengthControl = nil
+        }
         setMode =
             scheduleFound
             ? unsafeBitCast(client.method(for: NSSelectorFromString("setMode:")), to: SetMode.self) : nil
@@ -272,27 +284,16 @@ final class NightShiftAdapter: NightShiftWriting {
 
     /// How warm Night Shift tints the display, 0 to 100, or nil when CoreBrightness can't say.
     /// macOS announces no change to it, so it's read whenever it's needed.
-    var strength: UInt8? {
-        guard let getStrength else { return nil }
-        var value: Float = -1
-        guard getStrength(client, NSSelectorFromString("getStrength:"), &value), (0...1).contains(value) else {
-            log.error("CoreBrightness didn't report a usable strength")
-            return nil
-        }
-        return UInt8((value * 100).rounded())
-    }
+    var strength: UInt8? { strengthControl?.value }
 
-    /// Uncommitted, macOS shows the strength, even with Night Shift off, but doesn't save it.
+    /// Uncommitted, macOS shows the strength without saving it. A committed write reads and
+    /// reports the resulting strength, including when CoreBrightness refuses the change.
     func setStrength(_ value: UInt8, commit: Bool) {
-        guard let setStrengthImplementation else {
+        guard let strengthControl else {
             log.error("the strength is unavailable; dropped setStrength(\(value))")
             return
         }
-        let selector = NSSelectorFromString("setStrength:commit:")
-        guard setStrengthImplementation(client, selector, Float(value) / 100, commit) else {
-            log.error("CoreBrightness refused setStrength(\(value), commit: \(commit))")
-            return
-        }
+        strengthControl.set(value, commit: commit)
     }
 
     /// Shows the other side of Night Shift at once, without switching it (ADR-0015): true colour
