@@ -6,11 +6,11 @@ mod common;
 use std::time::Duration;
 
 use nightcap_core::{Effect, Fact, Scenario};
-use nightcap_protocol::{NightShift, OnOff, Schedule, TimeOfDay};
+use nightcap_protocol::{NightShift, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    at, custom_hours, late, off_by_the_schedule, on_by_the_schedule, report_zurich_sun, reported,
-    resettable, written,
+    at, custom_hours, echo, late, minutes, off_by_the_schedule, on_by_the_schedule,
+    report_zurich_sun, reported, resettable, send, set, written,
 };
 
 #[test]
@@ -71,6 +71,29 @@ fn a_timer_that_fires_before_its_transition_is_set_again() {
             at: at("2026-10-16T22:00:00+02:00").into()
         }]
     );
+}
+
+#[test]
+fn a_rule_ends_on_time_after_the_clock_goes_back() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    // The Mac's clock is set back from 23:00 to 22:10, then Night Shift is switched off for 30
+    // minutes.
+    staged.set_now(at("2026-10-16T22:10:00+02:00"));
+    send(&staged, set(Place::Everywhere, OnOff::Off, minutes(30)));
+    echo(&staged, false);
+
+    staged.set_now(at("2026-10-16T22:41:00+02:00"));
+
+    assert_eq!(
+        staged.report(Fact::TimerFired).effects,
+        vec![
+            Effect::SetNightShift { enabled: true },
+            Effect::ScheduleWakeup {
+                at: at("2026-10-17T07:00:00+02:00").into()
+            }
+        ]
+    );
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

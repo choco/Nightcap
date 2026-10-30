@@ -104,14 +104,15 @@ impl Inner {
         self.places.adopt(observed, &self.facts.world(now))
     }
 
-    /// Applies every schedule transition that came due since the last turn, and ends the rules
-    /// that ran out.
+    /// Ends the rules that ran out, and applies every schedule transition that came due since the
+    /// last turn. Rules end by the clock as it reads; the schedule never runs backwards, though
+    /// the clock can.
     fn catch_up(&mut self) {
         let now = self.clock.now();
+        self.places.expire(now);
         if now <= self.facts.applied_until {
             return;
         }
-        self.places.expire(now);
         if let Some(transition) = self
             .facts
             .timeline
