@@ -32,13 +32,18 @@ let customHours = Schedule.custom(from: TimeOfDay(hour: 22, minute: 0), to: Time
 /// with sunset to sunrise not set aside. It stands in for the echo of Nightcap's own writes too,
 /// which match what the core wants, so need nothing either way.
 func reported(_ enabled: Bool, _ schedule: Schedule = customHours) -> Step {
-    .fact(.statusChanged(enabled: enabled, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil))
+    .fact(
+        .statusChanged(
+            enabled: enabled, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil, switchedBy: .schedule))
 }
 
 /// Night Shift as CoreBrightness reports it after a write at `instant`, by another app such as
 /// Control Center, with sunset to sunrise not set aside.
 func written(_ enabled: Bool, _ schedule: Schedule = customHours, at instant: String) -> Step {
-    .fact(.statusChanged(enabled: enabled, schedule: schedule, sunScheduleSetAside: false, writtenAt: at(instant)))
+    .fact(
+        .statusChanged(
+            enabled: enabled, schedule: schedule, sunScheduleSetAside: false, writtenAt: at(instant),
+            switchedBy: .outside))
 }
 
 /// The names of the apps the tests bring to the front, as macOS tells them to the menu.

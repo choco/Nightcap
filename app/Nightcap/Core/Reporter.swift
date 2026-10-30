@@ -43,8 +43,8 @@ final class Reporter {
         reportFrontmostApp(NSWorkspace.shared.frontmostApplication)
         // Sun times first, so the core can place the schedule the moment it learns it.
         reportSunTimes()
-        if let status = nightShift?.status {
-            reportNightShift(status)
+        if let reported = nightShift?.report() {
+            reportNightShift(reported.status, switchedBy: reported.switchedBy)
             reportStrength()
             nightShift?.repairPeek()
         } else {
@@ -103,12 +103,12 @@ final class Reporter {
                 accessibility: permissions.accessibility, notifications: permissions.notifications))
     }
 
-    /// Night Shift as CoreBrightness announces it.
-    func reportNightShift(_ status: NightShiftAdapter.Status) {
+    /// Night Shift as CoreBrightness announces it, and whose write the status is the first to show.
+    func reportNightShift(_ status: NightShiftAdapter.Status, switchedBy: SwitchedBy) {
         core.report(
             fact: .statusChanged(
                 enabled: status.enabled, schedule: status.schedule, sunScheduleSetAside: status.sunScheduleSetAside,
-                writtenAt: status.writtenAt))
+                writtenAt: status.writtenAt, switchedBy: switchedBy))
     }
 
     /// The watched browser's host, read under `generation`.
@@ -192,8 +192,8 @@ final class Reporter {
                     guard let self else { return }
                     self.reportSunTimes()
                     self.core.report(fact: .sessionChanged(active: true))
-                    if let status = self.nightShift?.status {
-                        self.reportNightShift(status)
+                    if let reported = self.nightShift?.report() {
+                        self.reportNightShift(reported.status, switchedBy: reported.switchedBy)
                     }
                 }
             })

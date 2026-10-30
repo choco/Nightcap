@@ -425,7 +425,7 @@ mod tests {
     #[cfg(debug_assertions)]
     #[test]
     fn a_command_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
-        use nightcap_core::{Fact, Scenario};
+        use nightcap_core::{Fact, Scenario, SwitchedBy};
         use protocol::{Schedule, TimeOfDay};
 
         let figma = || Place::App("com.figma.Desktop".parse().unwrap());
@@ -442,6 +442,7 @@ mod tests {
                 },
                 sun_schedule_set_aside: false,
                 written_at: None,
+                switched_by: SwitchedBy::Schedule,
             })
             .then(Fact::AppActivated {
                 bundle_id: Some("com.figma.Desktop".to_owned()),

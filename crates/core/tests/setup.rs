@@ -4,7 +4,7 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, normalize_domain};
+use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, SwitchedBy, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
@@ -299,6 +299,7 @@ fn reported_set_aside(enabled: bool, schedule: Schedule) -> Fact {
         schedule,
         sun_schedule_set_aside: true,
         written_at: None,
+        switched_by: SwitchedBy::Schedule,
     }
 }
 

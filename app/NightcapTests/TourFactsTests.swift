@@ -80,7 +80,7 @@ struct TourFactsTests {
         core.report(
             fact: .statusChanged(
                 enabled: true, schedule: customHours, sunScheduleSetAside: false,
-                writtenAt: at("2026-10-16T23:00:30+02:00")))
+                writtenAt: at("2026-10-16T23:00:30+02:00"), switchedBy: .outside))
 
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
     }

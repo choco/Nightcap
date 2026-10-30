@@ -1159,7 +1159,7 @@ mod tests {
     #[cfg(debug_assertions)]
     mod status {
         use jiff::SignedDuration;
-        use nightcap_core::{AppCommand, Fact, Scenario};
+        use nightcap_core::{AppCommand, Fact, Scenario, SwitchedBy};
         use nightcap_protocol::Command;
 
         use super::*;
@@ -1186,6 +1186,7 @@ mod tests {
                     },
                     sun_schedule_set_aside: false,
                     written_at: None,
+                    switched_by: SwitchedBy::Schedule,
                 })
                 .then(Fact::StrengthChanged { value: 60 })
                 .then(Fact::PermissionsChanged {

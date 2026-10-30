@@ -25,7 +25,9 @@ private let answersAll = answersAllButTheApps + aRule
 /// schedule at a strength of 60 where `reported`.
 private func launch(config: String? = nil, selfManaged: Bool = false, reported: Bool = true) throws -> Snapshot {
     let nightShift: [Step] = [
-        .fact(.statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil)),
+        .fact(
+            .statusChanged(
+                enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil, switchedBy: .schedule)),
         .fact(.strengthChanged(value: 60)),
     ]
     return try Core.staged(

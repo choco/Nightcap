@@ -30,7 +30,8 @@ enum SnapshotRenderer {
                 steps: [
                     .fact(
                         .statusChanged(
-                            enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil)),
+                            enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil,
+                            switchedBy: .schedule)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .granted)),
                     .fact(.permissionsChanged(accessibility: false, notifications: .denied)),
                     .fact(.loginItemChanged(item: .enabled)),
@@ -71,7 +72,8 @@ enum SnapshotRenderer {
                     steps: [
                         .fact(
                             .statusChanged(
-                                enabled: false, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil)),
+                                enabled: false, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil,
+                                switchedBy: .schedule)),
                         .fact(.strengthChanged(value: 60)),
                         .fact(.loginItemChanged(item: .notRegistered)),
                     ]))

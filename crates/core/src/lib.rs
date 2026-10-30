@@ -15,7 +15,7 @@ mod setup;
 mod storage;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use server::messages::{AppCommand, Cause, Effect, Event, Fact, Listener, Outcome};
+pub use server::messages::{AppCommand, Cause, Effect, Event, Fact, Listener, Outcome, SwitchedBy};
 pub use server::snapshot::Snapshot;
 
 #[cfg(any(test, debug_assertions))]

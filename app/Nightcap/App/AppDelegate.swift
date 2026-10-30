@@ -17,7 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var accessibilityAsk: AccessibilityAsk?
     private let onboardingRecord = OnboardingRecord(defaults: .standard)
     private lazy var notifications = Notifications()
-    private lazy var nightShift = NightShiftAdapter { [weak self] status in self?.reporter?.reportNightShift(status) }
+    private lazy var nightShift = NightShiftAdapter { [weak self] status, switchedBy in
+        self?.reporter?.reportNightShift(status, switchedBy: switchedBy)
+    }
     private lazy var accessibility = AccessibilityPermission { [weak self] _ in
         Task { await self?.reporter?.reportSystemState() }
     }

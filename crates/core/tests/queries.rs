@@ -6,7 +6,7 @@
 mod common;
 
 use jiff::SignedDuration;
-use nightcap_core::{AppCommand, Fact, Scenario, Staged};
+use nightcap_core::{AppCommand, Fact, Scenario, Staged, SwitchedBy};
 use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, Front, Inherited, Install, Lasting, Length, ListedRule,
@@ -142,6 +142,7 @@ fn night_shift_answers_sunset_to_sunrise_set_aside() {
             schedule: Schedule::Off,
             sun_schedule_set_aside: true,
             written_at: None,
+            switched_by: SwitchedBy::Schedule,
         })
         .stage()
         .unwrap();

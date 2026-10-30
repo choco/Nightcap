@@ -92,7 +92,7 @@ pub(crate) mod tests {
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};
-    use crate::{AppCommand, Cause, Core, Effect, Fact, Outcome, Runs, Snapshot};
+    use crate::{AppCommand, Cause, Core, Effect, Fact, Outcome, Runs, Snapshot, SwitchedBy};
 
     /// An outcome as the listener hears it, with the snapshot its input left.
     pub(crate) type Heard = (Outcome, Arc<Snapshot>);
@@ -147,8 +147,8 @@ pub(crate) mod tests {
         outcomes.recv_timeout(Duration::from_secs(5)).unwrap()
     }
 
-    /// Night Shift as CoreBrightness reports it, on custom hours from 22:00 to 07:00, with the
-    /// write standing, if any.
+    /// Night Shift as CoreBrightness reports it, on custom hours from 22:00 to 07:00, with
+    /// Nightcap's own write standing, if any.
     fn status(enabled: bool, written_at: Option<&str>) -> Fact {
         Fact::StatusChanged {
             enabled,
@@ -161,6 +161,11 @@ pub(crate) mod tests {
             },
             sun_schedule_set_aside: false,
             written_at: written_at.map(|at| at.parse::<jiff::Timestamp>().unwrap().into()),
+            switched_by: if written_at.is_some() {
+                SwitchedBy::Nightcap
+            } else {
+                SwitchedBy::Schedule
+            },
         }
     }
 

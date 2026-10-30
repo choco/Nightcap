@@ -4,11 +4,13 @@ CoreBrightness reports Night Shift status through one callback, and that callbac
 
 ## Decision
 
-The core is the only part that decides what Night Shift should be doing: the wanted state. It tells the callbacks apart by the mark CoreBrightness keeps of writes, `BlueLightReductionAlgoOverride` and its time in the `CBBlueReductionStatus` dictionary. Every `setEnabled:`, Nightcap's or Control Center's, marks a new time, even one that changes nothing. macOS's schedule leaves the mark alone, and clears it as it next switches Night Shift against it (checked on macOS 27). So:
+The core is the only part that decides what Night Shift should be doing: the wanted state. The callbacks are told apart by the mark CoreBrightness keeps of writes, `BlueLightReductionAlgoOverride` and its time in the `CBBlueReductionStatus` dictionary. Every `setEnabled:`, Nightcap's or Control Center's, marks a new time, even one that changes nothing. macOS's schedule leaves the mark alone, and clears it as it next switches Night Shift against it (checked on macOS 27). The mark doesn't say which app wrote, but the shell made Nightcap's writes, so its Night Shift adapter says whose write each status report is the first to show:
 
-- a callback with no new write is macOS's schedule, never an outside change;
-- a new write that matches the wanted state needs nothing, so the core never has to recognise the echo of its own writes;
-- any other new write is an outside change.
+- no new write: macOS's schedule, never an outside change;
+- a new write saying what Nightcap last wrote, before any other new write: Nightcap's own, landing, which needs nothing whatever the core wants by then;
+- any other new write: an outside change, adopted where it differs from the wanted state.
+
+The adapter writes only what the core asks for, once while the same write is on its way: the core asks again with each input until the status shows the write.
 
 A schedule transition is macOS's to perform. macOS fades its own over about two minutes, and a write in two seconds, as it does Control Center's. So where the schedule alone decides, the core leaves Night Shift to macOS: with no write standing, it's as the schedule left it, and a write from before the schedule's last transition is one macOS performs that transition over. The core writes there only where a write since that transition stands, its own from a rule that no longer decides. It never performs a transition itself, however late macOS performs it. Where a rule decides, the core writes at once, as for any other change.
 
@@ -22,6 +24,9 @@ The shell's Night Shift adapter looks up `CBBlueLightClient` and `BrightnessSyst
 - macOS performs a transition missed during sleep as the Mac fully wakes, with the fade where the clock puts it, but not in a dark wake, where Nightcap's own timers do fire (checked on macOS 27). Until then, Night Shift stays as it was where the schedule alone decides.
 
 ## Rejected alternatives
+
+- **The core telling its own writes by the wanted state**, a new write that matches it being Nightcap's: a write that lands after the wanted state changed, as with an app switch or `nightcap on` in the milliseconds before it lands, reads as an outside change and is adopted.
+- **The adapter reading its write's mark back as `setEnabled:` returns**: measured on macOS 27, the mark can come about 17 ms after the call returns, with the callback.
 
 - **A one-shot "my write" flag**: it misreads callbacks, as described above.
 - **Matching callbacks against computed transition times**: it misreads them too, as described above, and needs guessed windows around every transition.

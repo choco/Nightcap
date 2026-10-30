@@ -59,7 +59,9 @@ struct TourQuoteWordingTests {
 
         core.send(command: .off)
         core.report(
-            fact: .statusChanged(enabled: false, schedule: customHours, sunScheduleSetAside: false, writtenAt: nil))
+            fact: .statusChanged(
+                enabled: false, schedule: customHours, sunScheduleSetAside: false, writtenAt: nil, switchedBy: .schedule
+            ))
         core.bringToFront("com.apple.mail")
         #expect(try quoted(core.appRow, ruleFor(.app("com.apple.mail"))).0 == quotes.addExampleRule)
     }

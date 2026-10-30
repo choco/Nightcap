@@ -9,7 +9,7 @@ use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 use crate::setup::checks::SUN_TIMES_PATIENCE;
-use crate::{Cause, Effect, Event, Outcome};
+use crate::{Cause, Effect, Event, Outcome, SwitchedBy};
 
 impl Inner {
     /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
@@ -38,12 +38,12 @@ impl Inner {
         schedule: Schedule,
         sun_schedule_set_aside: bool,
         written_at: Option<Timestamp>,
+        switched_by: SwitchedBy,
     ) -> Option<Event> {
         if self.reconciling.session == Session::Away {
             tracing::debug!("ignored a status callback while dormant");
             return None;
         }
-        let written = written_at.is_some() && written_at != self.facts.written_at;
         self.facts.written_at = written_at;
         let observed = if enabled {
             NightShift::On
@@ -51,7 +51,6 @@ impl Inner {
             NightShift::Off
         };
         let switched = std::mem::replace(&mut self.facts.night_shift, observed) != observed;
-        self.reconciling.pending_write = None;
         // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
         let checked = CheckedSchedule::try_from(schedule)
             .inspect_err(|error| {
@@ -76,32 +75,43 @@ impl Inner {
             self.places.schedule_edited();
             None
         } else {
-            self.reconcile(enabled, written, switched)
+            self.reconcile(enabled, switched_by, switched)
         }
     }
 
-    /// Reconciles a status callback with what the core wants (ADR-0004). One with no new write
-    /// is macOS's own schedule. A write that matches needs nothing, Nightcap's own among them,
-    /// and any other is an outside change, handled like the equivalent command (ADR-0018).
-    fn reconcile(&mut self, enabled: bool, written: bool, switched: bool) -> Option<Event> {
+    /// Reconciles a status callback with what the core wants, by whose write it shows
+    /// (ADR-0004). The schedule's switch and Nightcap's own write need nothing. Another app's
+    /// write that differs from what the core wants is an outside change, handled like the
+    /// equivalent command (ADR-0018).
+    fn reconcile(
+        &mut self,
+        enabled: bool,
+        switched_by: SwitchedBy,
+        switched: bool,
+    ) -> Option<Event> {
         if self.reconciling.left_by_last_run.take() == Some(OnOff::from(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
             return None;
         }
         let observed = OnOff::from(enabled);
-        if !written {
-            if switched {
-                tracing::info!("the schedule turned Night Shift {observed}");
+        match switched_by {
+            SwitchedBy::Schedule => {
+                if switched {
+                    tracing::info!("the schedule turned Night Shift {observed}");
+                }
+                None
             }
-            return None;
+            SwitchedBy::Nightcap => None,
+            SwitchedBy::Outside => {
+                let now = self.clock.now();
+                let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
+                if enabled == wanted {
+                    return None;
+                }
+                tracing::info!("Night Shift turned {observed} outside Nightcap");
+                self.places.adopt(observed, &self.facts.world(now))
+            }
         }
-        let now = self.clock.now();
-        let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
-        if enabled == wanted {
-            return None;
-        }
-        tracing::info!("Night Shift turned {observed} outside Nightcap");
-        self.places.adopt(observed, &self.facts.world(now))
     }
 
     /// Ends the rules that ran out, and applies every schedule transition that came due since the
@@ -174,8 +184,8 @@ impl Inner {
     }
 
     /// Writes Night Shift when what the core wants differs from what was last observed
-    /// (ADR-0004), once until a status callback reports the result, short of what's left to
-    /// macOS's schedule.
+    /// (ADR-0004), short of what's left to macOS's schedule. The shell writes once while the
+    /// same write is on its way, so asking again before its status arrives changes nothing.
     fn enforce(&mut self, effects: &mut Vec<Effect>) {
         if self.facts.night_shift == NightShift::Unavailable
             || self.reconciling.session != Session::Active
@@ -193,10 +203,7 @@ impl Inner {
         if self.left_to_macos(&decision) {
             return;
         }
-        if wanted != (self.facts.night_shift == NightShift::On)
-            && self.reconciling.pending_write != Some(wanted)
-        {
-            self.reconciling.pending_write = Some(wanted);
+        if wanted != (self.facts.night_shift == NightShift::On) {
             effects.push(Effect::SetNightShift { enabled: wanted });
         }
     }
@@ -218,8 +225,6 @@ impl Inner {
 
 /// What reconciling Night Shift with macOS keeps from one turn to the next (ADR-0004).
 pub(crate) struct Reconciling {
-    /// The write the shell was last asked for, until a status callback reports the result.
-    pending_write: Option<bool>,
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
     session: Session,
@@ -234,7 +239,6 @@ impl Reconciling {
     /// run left it.
     pub(crate) fn new(left_by_last_run: Option<OnOff>) -> Self {
         Self {
-            pending_write: None,
             left_by_last_run,
             session: Session::Active,
             wakeup: None,

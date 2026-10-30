@@ -12,7 +12,7 @@
 )]
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged};
+use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged, SwitchedBy};
 use nightcap_protocol::{
     Answer, Check, CheckKind, Command, Front, Lasting, Length, ListedRule, NotificationPermission,
     OnOff, Payload, Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity,
@@ -166,6 +166,7 @@ pub(crate) fn reported(enabled: bool, schedule: Schedule) -> Fact {
         schedule,
         sun_schedule_set_aside: false,
         written_at: None,
+        switched_by: SwitchedBy::Schedule,
     }
 }
 
@@ -177,6 +178,7 @@ pub(crate) fn written(enabled: bool, schedule: Schedule, instant: &str) -> Fact 
         schedule,
         sun_schedule_set_aside: false,
         written_at: Some(at(instant).into()),
+        switched_by: SwitchedBy::Outside,
     }
 }
 
@@ -203,6 +205,7 @@ pub(crate) fn echo(staged: &Staged, enabled: bool) -> Vec<Effect> {
         schedule: custom_hours(),
         sun_schedule_set_aside: false,
         written_at: Some(staged.now().into()),
+        switched_by: SwitchedBy::Nightcap,
     };
     staged.report(landed).effects
 }

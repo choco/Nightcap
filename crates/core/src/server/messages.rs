@@ -46,9 +46,10 @@ pub enum Fact {
         sun_schedule_set_aside: bool,
         /// When Night Shift was last written, by Nightcap or another app such as Control
         /// Center, as CoreBrightness marks it: None once the schedule has switched it since, or
-        /// the schedule's mode changed. Every write marks a new time, so a switch with none is
-        /// the schedule's own (ADR-0004).
+        /// the schedule's mode changed (ADR-0004).
         written_at: Option<SystemTime>,
+        /// Whose write, if any, this status is the first to show (ADR-0004).
+        switched_by: SwitchedBy,
     },
     /// The strength, 0 to 100, as the shell read it. CoreBrightness announces no strength
     /// change, so the shell reads it whenever something is about to show it.
@@ -74,6 +75,19 @@ pub enum Fact {
     SessionChanged {
         active: bool,
     },
+}
+
+/// Whose write a status report is the first to show (ADR-0004). CoreBrightness marks every
+/// write, Nightcap's and Control Center's alike, and none of the schedule's switches; the shell
+/// knows which writes it made itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum SwitchedBy {
+    /// No new write: the schedule's own switch, or a report that shows nothing new.
+    Schedule,
+    /// Nightcap's own write, landing.
+    Nightcap,
+    /// A write by another app, such as Control Center.
+    Outside,
 }
 
 /// A command only the app sends, which never goes on the wire: the CLI begins no trial

@@ -83,7 +83,9 @@ struct SettingsTests {
             restore: nil, accept: nil)
         #expect(settings(core).check(.nightShift) == following)
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil))
+        core.report(
+            fact: .statusChanged(
+                enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil, switchedBy: .schedule))
         #expect(
             settings(core).check(.nightShift)
                 == Settings.CheckStatus(
@@ -94,7 +96,9 @@ struct SettingsTests {
                     accept: fix("Keep the Schedule Off", .command(.keepScheduleOff))))
 
         core.report(
-            fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil))
+            fact: .statusChanged(
+                enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil,
+                switchedBy: .schedule))
         #expect(settings(core).check(.nightShift) == following)
     }
 

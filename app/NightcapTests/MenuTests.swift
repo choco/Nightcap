@@ -226,10 +226,14 @@ struct MenuTests {
         let core = try staged("2026-10-16T23:00:00+02:00", front("com.googlecode.iterm2"))
 
         core.report(
-            fact: .statusChanged(enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil))
+            fact: .statusChanged(
+                enabled: true, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil,
+                switchedBy: .schedule))
         #expect(core.appRow?.title == "Turn Off in iTerm2")
         core.report(
-            fact: .statusChanged(enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil)
+            fact: .statusChanged(
+                enabled: false, schedule: .sunsetToSunrise, sunScheduleSetAside: false, writtenAt: nil,
+                switchedBy: .schedule)
         )
         #expect(core.appRow?.title == "Turn On in iTerm2")
     }
@@ -486,7 +490,9 @@ struct MenuTests {
     @Test func aScheduleSetAsideIsAProblemWithNightShift() throws {
         let core = try staged("2026-10-16T01:40:00+02:00", zurichSun, reported(true, .sunsetToSunrise))
 
-        core.report(fact: .statusChanged(enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil))
+        core.report(
+            fact: .statusChanged(
+                enabled: false, schedule: .off, sunScheduleSetAside: true, writtenAt: nil, switchedBy: .schedule))
 
         #expect(core.menu().problemLine == Menu.ProblemLine(title: "1 Thing Needs Attention…", subtitle: "Night Shift"))
     }

@@ -84,10 +84,12 @@ final class NightShiftAdapter: NightShiftWriting {
     private let setScheduleImplementation: SetSchedule?
     private let setProperty: SetProperty?
     private var peeking = false
+    private var writes = NightShiftWrites()
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
-    /// thread with the new status whenever CoreBrightness reports a status change.
-    init?(onChange: @escaping @MainActor (Status) -> Void) {
+    /// thread with the new status, and whose write it's the first to show, whenever
+    /// CoreBrightness reports a status change.
+    init?(onChange: @escaping @MainActor (Status, SwitchedBy) -> Void) {
         let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "nightshift")
         guard dlopen(Self.frameworkPath, RTLD_NOW) != nil else {
             log.fault("CoreBrightness is missing")
@@ -161,15 +163,23 @@ final class NightShiftAdapter: NightShiftWriting {
         setBlock(client, NSSelectorFromString("setStatusNotificationBlock:")) { [weak self] in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let status = self?.status else { return }
-                    onChange(status)
+                    guard let reported = self?.report() else { return }
+                    onChange(reported.status, reported.switchedBy)
                 }
             }
         }
     }
 
+    /// Night Shift's status to report to the core, and whose write it's the first to show, or nil
+    /// when CoreBrightness can't say. Every status Nightcap reports comes from here, so each
+    /// write is told once.
+    func report() -> (status: Status, switchedBy: SwitchedBy)? {
+        guard let status else { return nil }
+        return (status, writes.report(enabled: status.enabled, writtenAt: status.writtenAt))
+    }
+
     /// Night Shift's state and schedule, or nil when CoreBrightness can't say.
-    var status: Status? {
+    private var status: Status? {
         let raw = UnsafeMutableRawPointer.allocate(byteCount: Self.statusSize, alignment: 8)
         defer { raw.deallocate() }
         raw.initializeMemory(as: UInt8.self, repeating: 0, count: Self.statusSize)
@@ -356,12 +366,15 @@ final class NightShiftAdapter: NightShiftWriting {
     }
 
     /// Ends any peek: switching Night Shift on puts the tint back by itself, and switching it off
-    /// needs the factor left at 0.
+    /// needs the factor left at 0. Writes nothing while Night Shift is already so, or the same
+    /// write is on its way: the core asks again with each input until a report shows it.
     func setEnabled(_ enabled: Bool) {
+        guard writes.needs(enabled, current: status?.enabled) else { return }
         guard setEnabledImplementation(client, NSSelectorFromString("setEnabled:"), enabled) else {
             log.error("CoreBrightness refused setEnabled(\(enabled))")
             return
         }
+        writes.wrote(enabled)
         peeking = false
     }
 

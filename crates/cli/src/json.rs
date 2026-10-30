@@ -312,7 +312,7 @@ impl Problem {
 #[cfg(test)]
 #[cfg(debug_assertions)]
 mod tests {
-    use nightcap_core::{AppCommand, Fact, Scenario};
+    use nightcap_core::{AppCommand, Fact, Scenario, SwitchedBy};
     use nightcap_protocol::{
         BundleId, CheckKind, CheckState, Command, Domain, Lasting, NotificationPermission, Place,
         Schedule, TimeOfDay, TrialState, WebsiteChecking,
@@ -338,6 +338,7 @@ mod tests {
             },
             sun_schedule_set_aside: false,
             written_at: None,
+            switched_by: SwitchedBy::Schedule,
         }
     }
 

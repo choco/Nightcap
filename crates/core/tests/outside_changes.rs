@@ -155,6 +155,42 @@ fn a_transition_macos_performs_however_late_is_not_an_outside_change() {
 }
 
 #[test]
+fn nightcaps_own_write_landing_after_the_front_app_moved_on_is_not_an_outside_change() {
+    let staged = late()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .then(reported(true, custom_hours()))
+        .stage()
+        .unwrap();
+    assert_eq!(
+        activate(&staged, "com.figma.Desktop"),
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+    // Mail comes to the front before Nightcap's write for Figma lands.
+    assert_eq!(activate(&staged, "com.apple.mail"), Vec::new());
+
+    let landed = echo(&staged, false);
+
+    assert_eq!(landed, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(resettable(&staged), Vec::new());
+}
+
+#[test]
+fn a_command_that_changes_what_nightcap_wants_before_its_write_lands_is_not_undone() {
+    let staged = on_by_the_schedule().stage().unwrap();
+    assert_eq!(
+        staged.send(Command::Toggle).0.effects,
+        vec![Effect::SetNightShift { enabled: false }]
+    );
+    // `nightcap on`, before the shortcut's write lands.
+    assert_eq!(send(&staged, Command::On).0, Vec::new());
+
+    let landed = echo(&staged, false);
+
+    assert_eq!(landed, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(resettable(&staged), Vec::new());
+}
+
+#[test]
 fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_says_so() {
     let staged = forced();
 

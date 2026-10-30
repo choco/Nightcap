@@ -78,6 +78,7 @@ impl Inner {
                 schedule,
                 sun_schedule_set_aside,
                 written_at,
+                switched_by,
             } => {
                 // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
                 let written_at = written_at.and_then(|at| {
@@ -92,6 +93,7 @@ impl Inner {
                     schedule,
                     sun_schedule_set_aside,
                     written_at,
+                    switched_by,
                 ));
             }
             Fact::StrengthChanged { value } => self.strength = Some(value),

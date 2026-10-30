@@ -209,11 +209,11 @@ mod tests {
     };
 
     use super::{Disk, File, Files, Owned, Paths};
-    use crate::Fact;
     use crate::clock::ManualClock;
     use crate::server::react::{Input, react};
     use crate::server::start::Setup;
     use crate::server::state::Inner;
+    use crate::{Fact, SwitchedBy};
 
     fn disk(folder: &Path) -> Disk {
         Disk(Paths::in_folder(folder))
@@ -352,6 +352,7 @@ mod tests {
                 schedule: hours,
                 sun_schedule_set_aside: false,
                 written_at: None,
+                switched_by: SwitchedBy::Schedule,
             }),
         );
         let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
