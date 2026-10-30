@@ -594,7 +594,7 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "nightcap-cli"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -608,7 +608,7 @@ dependencies = [
 
 [[package]]
 name = "nightcap-core"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "etcetera",
  "jiff",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "nightcap-protocol"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "idna",
  "jiff",
@@ -1095,7 +1095,7 @@ dependencies = [
 
 [[package]]
 name = "uniffi-bindgen"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "uniffi",
 ]
