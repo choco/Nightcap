@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
-use jiff::Timestamp;
+use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{Install, NightShift, OnOff};
 
-use crate::commands::Loaded;
-use crate::rules::places::{Context, Places, World};
-use crate::rules::schedule::Timeline;
+use crate::rules::{Context, Rules, World};
+use crate::schedule::Timeline;
 use crate::server::turn::wanted;
 use crate::server::watch::Watching;
-use crate::setup::grants::Grants;
+use crate::setup::SetupState;
 use crate::storage::ad_hoc_rules;
+use crate::storage::config::NightShiftConfig;
+use crate::storage::document::Unusable;
 use crate::storage::file::Files;
 use crate::storage::saved_state::{Persisted, Store};
 
@@ -26,18 +27,18 @@ pub(crate) struct Inner {
     pub(crate) store: Store,
     pub(crate) ad_hoc_store: ad_hoc_rules::Store,
     pub(crate) facts: Facts,
-    pub(crate) places: Places,
+    pub(crate) rules: Rules,
     pub(crate) strength: Option<u8>,
     /// The wakeup the shell was last asked for, until it fires.
     pub(crate) wakeup: Option<Timestamp>,
     pub(crate) watching: Watching,
-    pub(crate) grants: Grants,
+    pub(crate) setup: SetupState,
     pub(crate) loaded: Loaded,
     /// What was last written to `state.json`.
     pub(crate) saved: Persisted,
 }
 
-/// What the places read but don't own, lent to them as a `World` for each call, and what the
+/// What the rules read but don't own, lent to them as a `World` for each call, and what the
 /// core believes about Night Shift and the session from the shell's reports.
 pub(crate) struct Facts {
     pub(crate) night_shift: NightShift,
@@ -95,20 +96,20 @@ impl Inner {
     /// Mid-trial, the state the trial's end would leave, with Night Shift as the trial holds it:
     /// a run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
-        let (rules, linked) = self.places.kept();
+        let (rules, linked) = self.rules.kept();
         Persisted {
             rules,
             linked,
             websites: self.facts.websites,
-            notifications_wanted: self.grants.notifications_wanted,
-            open_at_login: self.grants.open_at_login,
-            night_shift: wanted(&self.places.decide(&self.facts.world(now))).map(OnOff::from),
+            notifications_wanted: self.setup.notifications_wanted,
+            open_at_login: self.setup.open_at_login,
+            night_shift: wanted(&self.rules.decide(&self.facts.world(now))).map(OnOff::from),
             until: self
                 .facts
                 .timeline
                 .next_transition(self.facts.applied_until),
             applied_from_config: self.loaded.applied_from_config,
-            schedule_off_accepted: self.grants.schedule_off_accepted,
+            schedule_off_accepted: self.setup.schedule_off_accepted,
         }
     }
 
@@ -123,4 +124,20 @@ impl Inner {
             Err(error) => tracing::warn!("couldn't save the state: {error}"),
         }
     }
+}
+
+/// What the core read from its files: the config's lengths and `[night_shift]`, whether the
+/// config was found, and why it or `rules.toml` can't be used; with what of the config's
+/// `[night_shift]` was last applied (ADR-0014).
+pub(crate) struct Loaded {
+    pub(crate) config_error: Option<Unusable>,
+    /// Whether the config file existed when it was last loaded.
+    pub(crate) config_found: bool,
+    /// The lengths a change can be picked for, from the config or else 30 minutes, 1 hour and
+    /// 2 hours.
+    pub(crate) lengths: Vec<SignedDuration>,
+    pub(crate) config_night_shift: NightShiftConfig,
+    pub(crate) applied_from_config: NightShiftConfig,
+    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
+    pub(crate) ad_hoc_error: Option<Unusable>,
 }

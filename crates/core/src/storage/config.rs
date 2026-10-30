@@ -6,7 +6,7 @@ use nightcap_protocol::{OnOff, Problem, RuleIdentity, Schedule, TimeOfDay};
 use serde::{Deserialize, Serialize};
 use toml::Spanned;
 
-use crate::rules::schedule;
+use crate::schedule;
 use crate::storage::document::{self, Table, Unusable, Why};
 use crate::storage::file::{self, Files};
 

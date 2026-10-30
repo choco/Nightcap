@@ -10,7 +10,7 @@ use super::{indefinite, is_turn, loggable, rule};
 
 /// Every rule, as what decides now, or as a trial found them.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct Rules {
+pub(super) struct RuleSet {
     /// The apps' and sites' indefinite rules, one per place: the config's, then the user's
     /// ad-hoc ones, which `rules.toml` keeps, then a trial's (ADR-0006).
     indefinite: Vec<Rule>,
@@ -23,7 +23,7 @@ pub(super) struct Rules {
     linked: Option<Place>,
 }
 
-impl Rules {
+impl RuleSet {
     pub(super) fn new(
         kept: Vec<Rule>,
         linked: Option<Place>,

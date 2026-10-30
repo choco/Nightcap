@@ -21,7 +21,7 @@ impl Inner {
     pub(crate) fn checks(&self, now: Timestamp) -> Vec<Check> {
         // No file holds u32::MAX rules, so the count never saturates.
         let rules_from = |set_by| {
-            let count = (self.places.indefinite().iter())
+            let count = (self.rules.indefinite().iter())
                 .filter(|rule| rule.set_by == set_by)
                 .count();
             u32::try_from(count).unwrap_or(u32::MAX)
@@ -33,7 +33,7 @@ impl Inner {
         let mut found = vec![CheckDetail::NightShift(
             if self.facts.night_shift == NightShift::Unavailable {
                 NightShiftDetail::Unavailable
-            } else if self.grants.schedule_set_aside && !self.grants.schedule_off_accepted {
+            } else if self.setup.schedule_set_aside && !self.setup.schedule_off_accepted {
                 NightShiftDetail::SetAside
             } else if sun_times_overdue {
                 NightShiftDetail::NoSunTimes
@@ -44,7 +44,7 @@ impl Inner {
             },
         )];
         // Nothing is said about the permissions until the shell first reports them.
-        if let Some(granted) = self.grants.accessibility {
+        if let Some(granted) = self.setup.accessibility {
             found.push(CheckDetail::Accessibility(
                 match (self.facts.website_checking(), granted) {
                     (false, _) => AccessibilityDetail::NotNeeded,
@@ -54,8 +54,8 @@ impl Inner {
             ));
             found.push(CheckDetail::Notifications(
                 match (
-                    self.grants.notifications == NotificationPermission::Granted,
-                    self.grants.notifications_wanted,
+                    self.setup.notifications == NotificationPermission::Granted,
+                    self.setup.notifications_wanted,
                 ) {
                     (true, _) => NotificationsDetail::Allowed,
                     (false, true) => NotificationsDetail::SwitchedOff,
@@ -64,12 +64,12 @@ impl Inner {
             ));
         }
         if let Some(item) = self
-            .grants
+            .setup
             .login_item
             .filter(|_| self.install == Install::SelfManaged)
         {
             found.push(CheckDetail::OpenAtLogin(
-                match (item, self.grants.open_at_login) {
+                match (item, self.setup.open_at_login) {
                     (LoginItem::Enabled, _) => OpenAtLoginDetail::Opens,
                     (LoginItem::RequiresApproval, true) => OpenAtLoginDetail::AwaitingApproval,
                     (LoginItem::NotRegistered, true) => OpenAtLoginDetail::Removed,

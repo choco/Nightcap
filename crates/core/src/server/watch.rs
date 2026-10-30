@@ -5,7 +5,7 @@
 use nightcap_protocol::BundleId;
 
 use crate::Effect;
-use crate::rules::domain::Host;
+use crate::domain::Host;
 use crate::server::state::Inner;
 
 /// The front app's place in the shell's browser list, and the watch on it.
@@ -64,7 +64,7 @@ impl Inner {
     /// ADR-0008).
     pub(crate) fn rewatch(&mut self) -> Option<Effect> {
         let wanted = self.facts.context.app.clone().filter(|_| {
-            self.watching.is_browser && self.facts.website_checking() && !self.places.released()
+            self.watching.is_browser && self.facts.website_checking() && !self.rules.released()
         });
         match (&self.watching.watch, wanted) {
             (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => None,

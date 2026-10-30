@@ -6,8 +6,8 @@ use nightcap_protocol::{
     ResetTo,
 };
 
-use super::{World, rules::Rules};
-use crate::rules::domain;
+use super::{World, set::RuleSet};
+use crate::domain;
 
 /// One place's own reasons and what it inherits from the places after it.
 #[derive(Debug)]
@@ -22,7 +22,7 @@ struct ResolvedPlace {
 /// even though the front query shows only the most specific site.
 #[derive(Debug)]
 pub(super) struct Resolution<'a> {
-    rules: &'a Rules,
+    rules: &'a RuleSet,
     places: Vec<ResolvedPlace>,
     everywhere: ResolvedPlace,
     app: Option<BundleId>,
@@ -35,7 +35,7 @@ pub(super) struct Resolution<'a> {
 
 impl<'a> Resolution<'a> {
     pub(super) fn new(
-        rules: &'a Rules,
+        rules: &'a RuleSet,
         world: &World<'_>,
         stands_in: bool,
         released: bool,
@@ -105,7 +105,7 @@ impl<'a> Resolution<'a> {
 
     /// Each place owns its reasons; inheritance is the first reason supplied after it.
     fn resolve(
-        rules: &Rules,
+        rules: &RuleSet,
         places: impl IntoIterator<Item = Place>,
         base: &[Reason],
         released: bool,
@@ -148,7 +148,7 @@ impl<'a> Resolution<'a> {
         (resolved, everywhere)
     }
 
-    fn reasons(rules: &Rules, place: &Place, base: &[Reason], released: bool) -> Vec<Reason> {
+    fn reasons(rules: &RuleSet, place: &Place, base: &[Reason], released: bool) -> Vec<Reason> {
         if released && *place != Place::Everywhere {
             return Vec::new();
         }

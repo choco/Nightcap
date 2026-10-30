@@ -381,7 +381,7 @@ mod tests {
             })
         );
         assert_eq!(
-            inner.places.rules(),
+            inner.rules.rules(),
             Rules {
                 rules: Vec::new(),
                 temporary: vec![Rule {

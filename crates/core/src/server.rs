@@ -3,6 +3,7 @@
 //! they arrived: after each, it publishes a snapshot for the reads, then hands the outcome to the
 //! shell's listener.
 
+mod commands;
 pub(crate) mod mailbox;
 pub(crate) mod messages;
 pub(crate) mod react;

@@ -3,13 +3,14 @@
 uniffi::setup_scaffolding!();
 
 mod clock;
-mod commands;
+mod domain;
 mod ffi;
 mod ipc;
 mod logging;
 mod rules;
 #[cfg(any(test, debug_assertions))]
 mod scenario;
+mod schedule;
 mod server;
 mod setup;
 mod storage;

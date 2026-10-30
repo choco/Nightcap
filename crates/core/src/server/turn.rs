@@ -5,7 +5,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
 
-use crate::rules::schedule::CheckedSchedule;
+use crate::schedule::CheckedSchedule;
 use crate::server::state::{Inner, Session};
 use crate::setup::checks::SUN_TIMES_PATIENCE;
 use crate::{Effect, SwitchedBy};
@@ -40,7 +40,7 @@ impl Inner {
             })
             .ok();
         let previous = std::mem::replace(&mut self.facts.timeline.schedule, checked);
-        self.grants
+        self.setup
             .schedule_reported(sun_schedule_set_aside && schedule == Schedule::Off);
         if self.facts.session == Session::Back {
             // The shell's fresh read after returning: nobody could change Night Shift by
@@ -54,7 +54,7 @@ impl Inner {
             // macOS applies an edited schedule at once, so the edit is a schedule
             // transition and whatever it switched isn't an outside change.
             tracing::info!("schedule edited");
-            self.places.schedule_edited();
+            self.rules.schedule_edited();
             None
         } else {
             self.reconcile(enabled, switched_by, switched, now)
@@ -86,12 +86,12 @@ impl Inner {
             }
             SwitchedBy::Nightcap => None,
             SwitchedBy::Outside => {
-                let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
+                let wanted = wanted(&self.rules.decide(&self.facts.world(now)))?;
                 if enabled == wanted {
                     return None;
                 }
                 tracing::info!("Night Shift turned {observed} outside Nightcap");
-                self.places.adopt(observed, &self.facts.world(now))
+                self.rules.adopt(observed, &self.facts.world(now))
             }
         }
     }
@@ -100,7 +100,7 @@ impl Inner {
     /// last turn. Rules end by the clock as it reads; the schedule never runs backwards, though
     /// the clock can.
     pub(crate) fn catch_up(&mut self, now: Timestamp) {
-        self.places.expire(now);
+        self.rules.expire(now);
         if now <= self.facts.applied_until {
             return;
         }
@@ -153,7 +153,7 @@ impl Inner {
             .or(retry)
             .into_iter()
             .chain(patience_ends)
-            .chain(self.places.ends())
+            .chain(self.rules.ends())
             .min();
         if next == self.wakeup {
             return None;
@@ -178,7 +178,7 @@ impl Inner {
         if self.watching.awaits_first_read() {
             return None;
         }
-        let decision = self.places.decide(&self.facts.world(now));
+        let decision = self.rules.decide(&self.facts.world(now));
         let wanted = wanted(&decision)?;
         if self.left_to_macos(&decision) || wanted == (self.facts.night_shift == NightShift::On) {
             return None;

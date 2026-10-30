@@ -2,19 +2,17 @@
 //! a rule with what it did too, short of a reload and an update check; the rule commits they
 //! make; and reading the config again, which is how a change to it takes effect.
 
-use jiff::{SignedDuration, Timestamp};
+use jiff::Timestamp;
 use nightcap_protocol::{
     CheckKind, CheckState, Command, Done, FileError, Install, LoginItem, NightShift, OnOff, Place,
     Refusal, RuleAdded, RuleIdentity,
 };
 
 use crate::Effect;
-use crate::rules::places::Places;
-use crate::rules::schedule::{CheckedSchedule, OutOfRange};
+use crate::rules::Rules;
+use crate::schedule::{CheckedSchedule, OutOfRange};
 use crate::server::state::Inner;
 use crate::storage::config;
-use crate::storage::config::NightShiftConfig;
-use crate::storage::document::Unusable;
 use crate::storage::file::File;
 
 impl Inner {
@@ -61,28 +59,28 @@ impl Inner {
         let mut added = None;
         let done = match command {
             Command::On => {
-                self.places.switch(OnOff::On, &self.facts.world(now));
+                self.rules.switch(OnOff::On, &self.facts.world(now));
                 Ok(())
             }
             Command::Off => {
-                self.places.switch(OnOff::Off, &self.facts.world(now));
+                self.rules.switch(OnOff::Off, &self.facts.world(now));
                 Ok(())
             }
             Command::Toggle => {
                 let world = self.facts.world(now);
-                let to = (self.places.says(&Place::Everywhere, &world))
+                let to = (self.rules.says(&Place::Everywhere, &world))
                     .unwrap_or(world.observed)
                     .other();
-                self.places.switch(to, &world);
+                self.rules.switch(to, &world);
                 Ok(())
             }
             Command::Set {
                 place,
                 state: on,
                 length,
-            } => self.places.set(place, *on, *length, &self.facts.world(now)),
+            } => self.rules.set(place, *on, *length, &self.facts.world(now)),
             Command::Reset(place) => {
-                self.places.reset(place);
+                self.rules.reset(place);
                 Ok(())
             }
             Command::AddRule { identity, says } => self
@@ -91,11 +89,11 @@ impl Inner {
             Command::RemoveRule(identity) => self.remove_rule(identity),
             Command::OpenAtLogin(chosen) => match self.install {
                 Install::SelfManaged => {
-                    self.grants.open_at_login = *chosen == OnOff::On;
+                    self.setup.open_at_login = *chosen == OnOff::On;
                     match chosen {
                         OnOff::On => effects.push(Effect::RegisterLoginItem),
                         // An item waiting for approval would still ask for it.
-                        OnOff::Off if self.grants.login_item != Some(LoginItem::NotRegistered) => {
+                        OnOff::Off if self.setup.login_item != Some(LoginItem::NotRegistered) => {
                             effects.push(Effect::UnregisterLoginItem);
                         }
                         OnOff::Off => {}
@@ -107,12 +105,12 @@ impl Inner {
             Command::KeepNotificationsOff => {
                 self.to_accept(CheckKind::Notifications, now).map(|()| {
                     tracing::info!("notifications kept off");
-                    self.grants.notifications_wanted = false;
+                    self.setup.notifications_wanted = false;
                 })
             }
             Command::KeepScheduleOff => self.to_accept(CheckKind::NightShift, now).map(|()| {
                 tracing::info!("the schedule kept off while sunset to sunrise is set aside");
-                self.grants.schedule_off_accepted = true;
+                self.setup.schedule_off_accepted = true;
             }),
             Command::Strength(value) | Command::PreviewStrength(value) => {
                 if self.strength.is_none() {
@@ -146,7 +144,7 @@ impl Inner {
             Command::Websites(chosen) => self.set_websites(*chosen == OnOff::On),
             Command::Reload => {
                 let effects = self.reload()?;
-                return Ok((Done::Rules(self.places.rules().rules), effects));
+                return Ok((Done::Rules(self.rules.rules().rules), effects));
             }
             Command::CheckForUpdates => {
                 if let Install::NotSelfManaged(why) = self.install {
@@ -157,7 +155,7 @@ impl Inner {
             }
         };
         done.map(|()| {
-            let decision = self.places.decide(&self.facts.world(now));
+            let decision = self.rules.decide(&self.facts.world(now));
             let done = match added {
                 Some(rule) => Done::RuleAdded { rule, decision },
                 None => Done::Decision(decision),
@@ -181,22 +179,22 @@ impl Inner {
     }
 
     fn add_rule(&mut self, identity: &RuleIdentity, says: OnOff) -> Result<RuleAdded, Refusal> {
-        let mut next = self.places.clone();
+        let mut next = self.rules.clone();
         let added = next.add_rule(identity, says)?;
         self.commit_rules(next)?;
         Ok(added)
     }
 
     fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {
-        let mut next = self.places.clone();
+        let mut next = self.rules.clone();
         next.remove_rule(identity)?;
         self.commit_rules(next)
     }
 
     /// Takes `next` as the places once `rules.toml` keeps the ad-hoc rules it has, if they
     /// changed.
-    fn commit_rules(&mut self, next: Places) -> Result<(), Refusal> {
-        if next.ad_hoc() != self.places.ad_hoc() {
+    fn commit_rules(&mut self, next: Rules) -> Result<(), Refusal> {
+        if next.ad_hoc() != self.rules.ad_hoc() {
             self.check_ad_hoc_rules_on()?;
             self.ad_hoc_store.save(&next.ad_hoc()).map_err(|error| {
                 tracing::warn!("couldn't save rules.toml: {error}");
@@ -206,7 +204,7 @@ impl Inner {
                 }
             })?;
         }
-        self.places = next;
+        self.rules = next;
         Ok(())
     }
 
@@ -214,12 +212,12 @@ impl Inner {
     /// (ADR-0007), from `rules.toml` too. The config wins over them whether or not the file can
     /// be written, and the next load drops them again.
     pub(crate) fn graduate(&mut self, rules: Vec<(RuleIdentity, OnOff)>) {
-        let before = self.places.ad_hoc().len();
-        self.places.set_config(rules);
-        let graduated = before - self.places.ad_hoc().len();
+        let before = self.rules.ad_hoc().len();
+        self.rules.set_config(rules);
+        let graduated = before - self.rules.ad_hoc().len();
         if graduated > 0 {
             tracing::info!("{graduated} ad-hoc rules graduated into the config");
-            if let Err(error) = self.ad_hoc_store.save(&self.places.ad_hoc()) {
+            if let Err(error) = self.ad_hoc_store.save(&self.rules.ad_hoc()) {
                 tracing::warn!("couldn't save rules.toml: {error}");
             }
         }
@@ -295,24 +293,8 @@ impl Inner {
     }
 }
 
-/// What the core read from its files: the config's lengths and `[night_shift]`, whether the
-/// config was found, and why it or `rules.toml` can't be used; with what of the config's
-/// `[night_shift]` was last applied (ADR-0014).
-pub(crate) struct Loaded {
-    pub(crate) config_error: Option<Unusable>,
-    /// Whether the config file existed when it was last loaded.
-    pub(crate) config_found: bool,
-    /// The lengths a change can be picked for, from the config or else 30 minutes, 1 hour and
-    /// 2 hours.
-    pub(crate) lengths: Vec<SignedDuration>,
-    pub(crate) config_night_shift: NightShiftConfig,
-    pub(crate) applied_from_config: NightShiftConfig,
-    /// Why `rules.toml` can't be used; while set, ad-hoc rules are off and the file is left be.
-    pub(crate) ad_hoc_error: Option<Unusable>,
-}
-
 /// A refusal as the log may name it: never the app, domain or path it carries (ADR-0009).
-pub(crate) fn kind(refusal: &Refusal) -> &'static str {
+fn kind(refusal: &Refusal) -> &'static str {
     match refusal {
         Refusal::NightShiftUnavailable => "Night Shift unavailable",
         Refusal::StrengthUnavailable => "strength unavailable",

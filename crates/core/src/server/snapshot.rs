@@ -91,7 +91,7 @@ impl Snapshot {
                 state: facts.night_shift,
                 strength: inner.strength,
                 schedule: timeline.schedule.map(Schedule::from),
-                set_aside: inner.grants.schedule_set_aside,
+                set_aside: inner.setup.schedule_set_aside,
                 scheduled: timeline
                     .scheduled_state(facts.applied_until)
                     .map(OnOff::from),
@@ -99,8 +99,8 @@ impl Snapshot {
                 next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
                 next_off: timeline.next_turn(facts.applied_until, OnOff::On),
             },
-            front: (inner.places).front(&facts.world(now), inner.watching.is_watching()),
-            rules: inner.places.rules(),
+            front: (inner.rules).front(&facts.world(now), inner.watching.is_watching()),
+            rules: inner.rules.rules(),
             config: ConfigState {
                 path: inner.files.path(File::Config).display().to_string(),
                 strength: inner.loaded.config_night_shift.strength,
@@ -113,23 +113,23 @@ impl Snapshot {
                     state: OnOff::from(facts.website_checking()),
                     from_config: facts.config_websites.is_some(),
                 },
-                notifications_wanted: inner.grants.notifications_wanted,
-                open_at_login: inner.grants.open_at_login,
+                notifications_wanted: inner.setup.notifications_wanted,
+                open_at_login: inner.setup.open_at_login,
             },
             checks: Checks {
                 checks: inner.checks(now),
                 permissions: Permissions {
-                    accessibility: inner.grants.accessibility == Some(true),
-                    notifications: inner.grants.notifications,
-                    login_item: inner.grants.login_item,
+                    accessibility: inner.setup.accessibility == Some(true),
+                    notifications: inner.setup.notifications,
+                    login_item: inner.setup.login_item,
                 },
             },
-            trial: inner.places.trial(),
+            trial: inner.rules.trial(),
             about: About {
                 version: env!("CARGO_PKG_VERSION").to_owned(),
                 install: inner.install,
             },
-            ad_hoc: inner.places.ad_hoc(),
+            ad_hoc: inner.rules.ad_hoc(),
         }
     }
 

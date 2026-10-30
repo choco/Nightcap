@@ -7,12 +7,11 @@ use jiff::tz::TimeZone;
 use nightcap_protocol::{Install, Instance, NightShift, NotSelfManaged, NotificationPermission};
 
 use crate::clock::Clock;
-use crate::commands::Loaded;
-use crate::rules::places::{Context, Places};
-use crate::rules::schedule::{SunTimes, Timeline};
-use crate::server::state::{Facts, Inner, Session};
+use crate::rules::{Context, Rules};
+use crate::schedule::{SunTimes, Timeline};
+use crate::server::state::{Facts, Inner, Loaded, Session};
 use crate::server::watch::Watching;
-use crate::setup::grants::Grants;
+use crate::setup::SetupState;
 use crate::storage::config::{self, NightShiftConfig};
 use crate::storage::file::Files;
 use crate::storage::{ad_hoc_rules, saved_state};
@@ -76,11 +75,11 @@ impl Inner {
                 websites: persisted.websites,
                 config_websites: config.websites,
             },
-            places: Places::new(persisted.rules.clone(), persisted.linked.clone(), ad_hoc),
+            rules: Rules::new(persisted.rules.clone(), persisted.linked.clone(), ad_hoc),
             strength: None,
             wakeup: None,
             watching: Watching::default(),
-            grants: Grants {
+            setup: SetupState {
                 accessibility: None,
                 notifications: NotificationPermission::NotRequested,
                 notifications_wanted: persisted.notifications_wanted,

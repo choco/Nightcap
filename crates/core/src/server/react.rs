@@ -7,7 +7,7 @@ use jiff::Timestamp;
 use jiff::tz::TimeZone;
 use nightcap_protocol::{Command, Done, Refusal};
 
-use crate::rules::schedule::SunTimes;
+use crate::schedule::SunTimes;
 use crate::server::messages::{Replied, Reply};
 use crate::server::state::Inner;
 use crate::{AppCommand, Cause, Effect, Fact, Outcome};
@@ -77,7 +77,7 @@ pub(crate) fn react(inner: &mut Inner, input: Input, now: Timestamp) -> (Outcome
         Input::Terminating => {
             // Nightcap can't tell a restart from being removed, so it never leaves a force
             // behind (ADR-0008), nor Night Shift on for a trial's stand-in (ADR-0016).
-            inner.places.release(now);
+            inner.rules.release(now);
             (Cause::Quit, Vec::new(), None, None)
         }
     };
@@ -105,13 +105,11 @@ impl Inner {
                 is_browser,
             } => self.app_activated(bundle_id, is_browser),
             Fact::HostChanged { generation, host } => self.host_changed(generation, host),
-            Fact::LoginItemChanged { item } => self.grants.login_item_changed(item),
+            Fact::LoginItemChanged { item } => self.setup.login_item_changed(item),
             Fact::PermissionsChanged {
                 accessibility,
                 notifications,
-            } => self
-                .grants
-                .permissions_changed(accessibility, notifications),
+            } => self.setup.permissions_changed(accessibility, notifications),
             Fact::StatusChanged {
                 enabled,
                 schedule,
@@ -178,9 +176,9 @@ impl Inner {
     /// Runs a command only the app sends, answering with the decision it leads to.
     fn app_command(&mut self, command: AppCommand, now: Timestamp) -> Done {
         match command {
-            AppCommand::BeginTrial { stands_in } => self.places.begin_trial(stands_in),
-            AppCommand::EndTrial => self.places.end_trial(now),
+            AppCommand::BeginTrial { stands_in } => self.rules.begin_trial(stands_in),
+            AppCommand::EndTrial => self.rules.end_trial(now),
         }
-        Done::Decision(self.places.decide(&self.facts.world(now)))
+        Done::Decision(self.rules.decide(&self.facts.world(now)))
     }
 }
