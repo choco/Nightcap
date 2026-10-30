@@ -1,0 +1,43 @@
+name: audit
+
+# Advisories come out whether or not the code changes, so the check runs weekly, as well as on a
+# change to what it checks or how, and before a release (release.yml).
+on:
+  schedule:
+    - cron: "23 5 * * 1"
+  # Dependabot's branches run as pull requests alone. The check runs none of the dependencies'
+  # code, so it needs no `ci` label (checks.yml).
+  push:
+    branches-ignore: ["dependabot/**"]
+    paths:
+      - Cargo.lock
+      - deny.toml
+      - site/pnpm-lock.yaml
+      - app/Nightcap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      - .github/workflows/**
+      - flake.lock
+      - scripts/check
+  pull_request:
+    paths:
+      - Cargo.lock
+      - deny.toml
+      - site/pnpm-lock.yaml
+      - app/Nightcap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+      - .github/workflows/**
+      - flake.lock
+      - scripts/check
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - run: nix develop .#audit --command scripts/check --audit
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -6,7 +6,6 @@
 - **Lint and format:** Biome, with its recommended rules. CI runs `biome ci`.
 - **Dependencies** are pinned to exact versions at least two weeks old.
   - pnpm's `minimumReleaseAge` enforces the age for transitive dependencies too.
-  - Dependabot's npm `cooldown` matches it.
 
 ## React
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Runs what CI checks: every area by default, or only those named. CI's jobs call it by area.
 #   --rust     rustfmt, clippy, rustdoc and the tests
-#   --deps     cargo-deny's advisories, licences, bans and sources (deny.toml)
+#   --deps     cargo-deny's licences, bans and sources (deny.toml)
+#   --audit    known vulnerabilities, as the advisory databases stand today: in the crates
+#              (cargo-deny's advisories), the site's packages (pnpm audit), the Swift packages
+#              (OSV-Scanner) and the workflows' actions (zizmor, with a GitHub token: GH_TOKEN,
+#              else gh's login)
 #   --scripts  shellcheck on the shell scripts in scripts/ and release/, and actionlint on the
 #              workflows, with shellcheck on their run steps
 #   --site     Biome, the type checker and the site's build (build-site)
@@ -9,7 +13,7 @@
 #              (build-core, build-app), the String Catalog against the dev build's strings
 #              (sync-strings --check), then the Swift tests (test-app); by default only on
 #              macOS, which has them
-# Usage: check [--rust] [--deps] [--scripts] [--site] [--swift]
+# Usage: check [--rust] [--deps] [--audit] [--scripts] [--site] [--swift]
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -17,12 +21,14 @@ cd "$root"
 
 rust=
 deps=
+audit=
 scripts=
 site=
 swift=
 if [[ $# -eq 0 ]]; then
   rust=1
   deps=1
+  audit=1
   scripts=1
   site=1
   if [[ "$(uname)" == Darwin ]]; then
@@ -33,11 +39,12 @@ for area in "$@"; do
   case "$area" in
     --rust) rust=1 ;;
     --deps) deps=1 ;;
+    --audit) audit=1 ;;
     --scripts) scripts=1 ;;
     --site) site=1 ;;
     --swift) swift=1 ;;
     *)
-      echo "usage: check [--rust] [--deps] [--scripts] [--site] [--swift]" >&2
+      echo "usage: check [--rust] [--deps] [--audit] [--scripts] [--site] [--swift]" >&2
       exit 1
       ;;
   esac
@@ -51,7 +58,31 @@ if [[ -n "$rust" ]]; then
 fi
 
 if [[ -n "$deps" ]]; then
-  cargo deny check
+  cargo deny check bans licenses sources
+fi
+
+if [[ -n "$audit" ]]; then
+  cargo deny check advisories
+  # The site's lockfile holds two YAML documents, pnpm itself in the first. OSV-Scanner reads only
+  # that one, and passes; pnpm's own audit reads both.
+  pnpm --dir site audit
+  osv-scanner scan source \
+    --lockfile app/Nightcap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+  # zizmor looks the actions' advisories up through GitHub's API, and without a token skips that
+  # audit with only a warning.
+  if [[ -z "${GH_TOKEN:-}" ]]; then
+    GH_TOKEN="$(gh auth token)"
+    export GH_TOKEN
+  fi
+  vulnerable_actions="$(zizmor --no-progress --no-exit-codes --format json-v1 . | jq -r '
+    .[] | select(.ident == "known-vulnerable-actions") | .locations[]
+    | select(.symbolic.kind == "Primary")
+    | "\(.symbolic.key.Local.verbatim_path): \(.concrete.feature) (\(.symbolic.annotation))"')"
+  if [[ -n "$vulnerable_actions" ]]; then
+    echo "error: actions with known vulnerabilities:" >&2
+    echo "$vulnerable_actions" >&2
+    exit 1
+  fi
 fi
 
 if [[ -n "$scripts" ]]; then

@@ -11,8 +11,11 @@ jobs:
   checks:
     uses: ./.github/workflows/checks.yml
 
+  audit:
+    uses: ./.github/workflows/audit.yml
+
   build:
-    needs: checks
+    needs: [checks, audit]
     runs-on: xcode-27
     environment: release
     steps:

@@ -41,18 +41,29 @@
               pkgs.shellcheck
             ];
           };
+          # The vulnerability checks, for CI's audit job, which takes cargo from the runner too.
+          audit = pkgs.mkShellNoCC {
+            packages = [
+              pkgs.cargo-deny
+              pkgs.gh
+              pkgs.jq
+              pkgs.osv-scanner
+              pkgs.pnpm
+              pkgs.zizmor
+            ];
+          };
         in
         {
-          inherit lint;
+          inherit lint audit;
           default = pkgs.mkShellNoCC {
-            inputsFrom = [ lint ];
+            inputsFrom = [
+              lint
+              audit
+            ];
             packages = [
               (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
-              pkgs.gh
               pkgs.librsvg
-              pkgs.jq
               pkgs.nodejs_24
-              pkgs.pnpm
             ]
             # dmgbuild builds the DMG with hdiutil, so nixpkgs offers it on macOS alone.
             ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.python3Packages.dmgbuild ];
