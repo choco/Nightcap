@@ -3,6 +3,8 @@
 
 use std::sync::{Arc, Mutex, MutexGuard};
 
+use jiff::Timestamp;
+
 use nightcap_protocol::{
     About, Answer, Checks, ConfigState, ExportFormat, Front, NightShiftState, OnOff, Payload,
     Permissions, Preferences, Query, Response, RuleIdentity, Rules, Schedule, TrialState,
@@ -80,8 +82,8 @@ impl Snapshot {
 }
 
 impl Snapshot {
-    pub(crate) fn of(inner: &Inner) -> Self {
-        let now = inner.clock.now();
+    /// The core as `inner` stands after the input it decided at `now`.
+    pub(crate) fn of(inner: &Inner, now: Timestamp) -> Self {
         let facts = &inner.facts;
         let timeline = &facts.timeline;
         Self {

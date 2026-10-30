@@ -10,7 +10,7 @@ use nightcap_protocol::{Command, Done, Refusal};
 use crate::rules::schedule::SunTimes;
 use crate::server::messages::{Replied, Reply};
 use crate::server::state::Inner;
-use crate::{AppCommand, Cause, Fact, Outcome};
+use crate::{AppCommand, Cause, Effect, Fact, Outcome};
 
 /// Where the CLI waits on a command's answer, which goes back over the socket (ADR-0010).
 pub(crate) type Waiter = mpsc::Sender<Result<Done, Refusal>>;
@@ -47,44 +47,59 @@ fn replied(ticket: Option<u64>, answer: Result<Done, Refusal>) -> Option<Replied
     })
 }
 
-/// The outcome `input` leads to, which says what it answers, and the answer the CLI waits on,
-/// to send once the snapshot `input` left is published.
-pub(crate) fn react(inner: &mut Inner, input: Input) -> (Outcome, Option<Answer>) {
-    let outcome = match input {
+/// One turn of the core, the same for every input whoever sent it, at `now`, the one time a
+/// turn reads the clock (ADR-0002): the rules that ran out end and the schedule's transitions
+/// apply, then the input, then the turn works out what the shell must do as the input left
+/// things, and saves. Gives the outcome, and the answer the CLI waits on, to send once the
+/// snapshot the input left is published.
+pub(crate) fn react(inner: &mut Inner, input: Input, now: Timestamp) -> (Outcome, Option<Answer>) {
+    inner.catch_up(now);
+    let (cause, mut effects, reply, answer) = match input {
         Input::Fact(fact) => {
             let cause = match fact {
                 Fact::Launched => Cause::Launch,
                 _ => Cause::Fact,
             };
-            inner
-                .turn(cause, |inner, outcome| inner.fact(fact, outcome))
-                .0
+            (cause, inner.fact(fact, now), None, None)
         }
-        Input::Command(command, reply_to) => {
-            let (mut outcome, answer) = inner.command(&command);
-            return match reply_to {
-                ReplyTo::App(ticket) => {
-                    outcome.reply = replied(ticket, answer);
-                    (outcome, None)
-                }
-                ReplyTo::Cli(waiter) => (outcome, Some((waiter, answer))),
-            };
+        Input::Command(command, ReplyTo::App(ticket)) => {
+            let (effects, answer) = inner.command(&command, now);
+            (Cause::Command, effects, replied(ticket, answer), None)
+        }
+        Input::Command(command, ReplyTo::Cli(waiter)) => {
+            let (effects, answer) = inner.command(&command, now);
+            (Cause::Command, effects, None, Some((waiter, answer)))
         }
         Input::AppCommand(command, ticket) => {
-            let (mut outcome, done) =
-                inner.turn(Cause::Command, |inner, _| inner.app_command(command));
-            outcome.reply = replied(ticket, Ok(done));
-            outcome
+            let done = inner.app_command(command, now);
+            (Cause::Command, Vec::new(), replied(ticket, Ok(done)), None)
         }
-        Input::Terminating => inner.turn(Cause::Quit, |inner, _| inner.terminating()).0,
+        Input::Terminating => {
+            // Nightcap can't tell a restart from being removed, so it never leaves a force
+            // behind (ADR-0008), nor Night Shift on for a trial's stand-in (ADR-0016).
+            inner.places.release(now);
+            (Cause::Quit, Vec::new(), None, None)
+        }
     };
-    (outcome, None)
+    effects.extend(inner.rewatch());
+    effects.extend(inner.enforce(now));
+    effects.extend(inner.reschedule(now));
+    inner.save(now);
+    (
+        Outcome {
+            cause,
+            effects,
+            reply,
+        },
+        answer,
+    )
 }
 
 impl Inner {
-    fn fact(&mut self, fact: Fact, outcome: &mut Outcome) {
+    /// What a fact changes, and the effects it calls for itself.
+    fn fact(&mut self, fact: Fact, now: Timestamp) -> Vec<Effect> {
         match fact {
-            Fact::Launched => self.launched(&mut outcome.effects),
+            Fact::Launched => return self.launched(),
             Fact::AppActivated {
                 bundle_id,
                 is_browser,
@@ -112,16 +127,21 @@ impl Inner {
                         })
                         .ok()
                 });
-                outcome.effects.extend(self.status_changed(
-                    enabled,
-                    schedule,
-                    sun_schedule_set_aside,
-                    written_at,
-                    switched_by,
-                ));
+                return self
+                    .status_changed(
+                        enabled,
+                        schedule,
+                        sun_schedule_set_aside,
+                        written_at,
+                        switched_by,
+                        now,
+                    )
+                    .into_iter()
+                    .collect();
             }
             Fact::StrengthChanged { value } => self.strength = Some(value),
-            Fact::TimerFired => self.reconciling.timer_fired(),
+            // The shell's timer is spent, whether or not what it waited for came due.
+            Fact::TimerFired => self.wakeup = None,
             Fact::SunTimesChanged { sunrises, sunsets } => {
                 let timestamps = |times: Vec<SystemTime>| {
                     times
@@ -149,30 +169,18 @@ impl Inner {
                     tracing::error!("keeping the old time zone: {iana_id} is unknown: {error}");
                 }
             },
-            Fact::SessionChanged { active } => self.reconciling.session_changed(active),
+            Fact::SessionChanged { active } => self.facts.session_changed(active),
             Fact::Woke => tracing::debug!("woke"),
         }
+        Vec::new()
     }
 
     /// Runs a command only the app sends, answering with the decision it leads to.
-    fn app_command(&mut self, command: AppCommand) -> Done {
-        let now = self.clock.now();
+    fn app_command(&mut self, command: AppCommand, now: Timestamp) -> Done {
         match command {
             AppCommand::BeginTrial { stands_in } => self.places.begin_trial(stands_in),
             AppCommand::EndTrial => self.places.end_trial(now),
         }
         Done::Decision(self.places.decide(&self.facts.world(now)))
-    }
-
-    /// Nightcap can't tell a restart from being removed, so it never leaves a force behind
-    /// (ADR-0008), nor Night Shift on for a trial's stand-in (ADR-0016).
-    fn terminating(&mut self) {
-        let now = self.clock.now();
-        self.places.release(now);
-        if let Some(socket) = &self.socket
-            && let Err(error) = std::fs::remove_file(socket)
-        {
-            tracing::warn!("couldn't remove {}: {error}", socket.display());
-        }
     }
 }

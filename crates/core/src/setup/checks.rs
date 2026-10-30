@@ -27,8 +27,8 @@ impl Inner {
             u32::try_from(count).unwrap_or(u32::MAX)
         };
         let sun_times_overdue = self
-            .reconciling
-            .sun_times_awaited_since()
+            .facts
+            .sun_times_awaited_since
             .is_some_and(|since| now.duration_since(since) >= SUN_TIMES_PATIENCE);
         let mut found = vec![CheckDetail::NightShift(
             if self.facts.night_shift == NightShift::Unavailable {

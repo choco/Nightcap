@@ -7,7 +7,7 @@ use std::fs::{self, DirBuilder, Permissions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
@@ -25,8 +25,16 @@ use crate::server::snapshot::Published;
 /// How long a client may take to send a line, and how long it waits for the core's thread.
 const TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The socket a server listens on, and where it lives, which the core's thread removes on the way
+/// out.
+#[derive(Debug)]
+pub(crate) struct Socket {
+    pub(crate) listener: UnixListener,
+    pub(crate) path: PathBuf,
+}
+
 /// Takes the socket at `path`, failing if another instance holds it.
-pub(crate) fn bind(path: &Path) -> Result<UnixListener, CoreError> {
+pub(crate) fn bind(path: &Path) -> Result<Socket, CoreError> {
     let Some(folder) = path.parent() else {
         tracing::error!("{} has no folder", path.display());
         return Err(CoreError::Io {
@@ -48,7 +56,12 @@ pub(crate) fn bind(path: &Path) -> Result<UnixListener, CoreError> {
         }
         fs::remove_file(path).map_err(|error| io_error("couldn't remove stale", path, &error))?;
     }
-    UnixListener::bind(path).map_err(|error| io_error("couldn't listen at", path, &error))
+    let listener =
+        UnixListener::bind(path).map_err(|error| io_error("couldn't listen at", path, &error))?;
+    Ok(Socket {
+        listener,
+        path: path.to_owned(),
+    })
 }
 
 /// Serves `listener` on a thread of its own.
@@ -194,8 +207,9 @@ mod tests {
     /// and queries read a snapshot of a core at noon with nothing reported.
     fn served(socket: &Path) -> mpsc::Receiver<Mail> {
         let (mailbox, inbox) = Mailbox::new();
-        let published = Arc::new(Published::new(Snapshot::of(&noon(None))));
-        serve(bind(socket).unwrap(), mailbox, published).unwrap();
+        let stage = noon();
+        let published = Arc::new(Published::new(Snapshot::of(&stage.inner, stage.now())));
+        serve(bind(socket).unwrap().listener, mailbox, published).unwrap();
         inbox
     }
 
@@ -203,8 +217,10 @@ mod tests {
     /// listener.
     fn served_core(socket: &Path) -> (Core, mpsc::Receiver<Heard>) {
         let (listener, outcomes) = ChannelListener::new();
+        let stage = noon();
         let core = Core::run(
-            noon(Some(socket)),
+            stage.inner,
+            stage.clock,
             Some(bind(socket).unwrap()),
             Arc::new(listener),
         )

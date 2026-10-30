@@ -1,35 +1,16 @@
-//! One turn of the core, for every fact and command: it catches up on the schedule, then
-//! rewatches, writes Night Shift, reschedules its wakeup and saves. Writing Night
-//! Shift and reading its status callbacks reconcile against the schedule the core computes
-//! (ADR-0004).
+//! The steps of a turn that keep Night Shift in line with macOS: catching up on the schedule,
+//! reading its status reports, writing Night Shift and keeping the wakeup. Writing Night Shift and
+//! reading its status reports reconcile against the schedule the core computes (ADR-0004).
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
 
 use crate::rules::schedule::CheckedSchedule;
-use crate::server::state::Inner;
+use crate::server::state::{Inner, Session};
 use crate::setup::checks::SUN_TIMES_PATIENCE;
-use crate::{Cause, Effect, Outcome, SwitchedBy};
+use crate::{Effect, SwitchedBy};
 
 impl Inner {
-    /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
-    /// the schedule transitions and the ends that came due, lets `react` change the state, then
-    /// rewatches, writes Night Shift, reschedules and saves.
-    pub(crate) fn turn<T>(
-        &mut self,
-        cause: Cause,
-        react: impl FnOnce(&mut Self, &mut Outcome) -> T,
-    ) -> (Outcome, T) {
-        self.catch_up();
-        let mut outcome = Outcome::new(cause);
-        let answer = react(self, &mut outcome);
-        self.rewatch(&mut outcome.effects);
-        self.enforce(&mut outcome.effects);
-        self.reschedule(&mut outcome.effects);
-        self.save();
-        (outcome, answer)
-    }
-
     /// Night Shift as CoreBrightness reports it: while the session is this user's, a schedule
     /// edit is a schedule transition, and anything else is reconciled.
     pub(crate) fn status_changed(
@@ -39,8 +20,9 @@ impl Inner {
         sun_schedule_set_aside: bool,
         written_at: Option<Timestamp>,
         switched_by: SwitchedBy,
+        now: Timestamp,
     ) -> Option<Effect> {
-        if self.reconciling.session == Session::Away {
+        if self.facts.session == Session::Away {
             tracing::debug!("ignored a status callback while dormant");
             return None;
         }
@@ -60,10 +42,10 @@ impl Inner {
         let previous = std::mem::replace(&mut self.facts.timeline.schedule, checked);
         self.grants
             .schedule_reported(sun_schedule_set_aside && schedule == Schedule::Off);
-        if self.reconciling.session == Session::Back {
+        if self.facts.session == Session::Back {
             // The shell's fresh read after returning: nobody could change Night Shift by
             // hand while the session was away.
-            self.reconciling.session = Session::Active;
+            self.facts.session = Session::Active;
             None
         } else if previous
             .zip(checked)
@@ -75,21 +57,22 @@ impl Inner {
             self.places.schedule_edited();
             None
         } else {
-            self.reconcile(enabled, switched_by, switched)
+            self.reconcile(enabled, switched_by, switched, now)
         }
     }
 
     /// Reconciles a status callback with what the core wants, by whose write it shows
     /// (ADR-0004). The schedule's switch and Nightcap's own write need nothing. Another app's
     /// write that differs from what the core wants is an outside change, handled like the
-    /// equivalent command (ADR-0018).
+    /// equivalent command (ADR-0018), and told.
     fn reconcile(
         &mut self,
         enabled: bool,
         switched_by: SwitchedBy,
         switched: bool,
+        now: Timestamp,
     ) -> Option<Effect> {
-        if self.reconciling.left_by_last_run.take() == Some(OnOff::from(enabled)) {
+        if self.facts.left_by_last_run.take() == Some(OnOff::from(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
             return None;
         }
@@ -103,7 +86,6 @@ impl Inner {
             }
             SwitchedBy::Nightcap => None,
             SwitchedBy::Outside => {
-                let now = self.clock.now();
                 let wanted = wanted(&self.places.decide(&self.facts.world(now)))?;
                 if enabled == wanted {
                     return None;
@@ -117,8 +99,7 @@ impl Inner {
     /// Ends the rules that ran out, and applies every schedule transition that came due since the
     /// last turn. Rules end by the clock as it reads; the schedule never runs backwards, though
     /// the clock can.
-    fn catch_up(&mut self) {
-        let now = self.clock.now();
+    pub(crate) fn catch_up(&mut self, now: Timestamp) {
         self.places.expire(now);
         if now <= self.facts.applied_until {
             return;
@@ -135,21 +116,21 @@ impl Inner {
     }
 
     /// Keeps the shell's one wakeup at the next schedule transition or the end of a rule,
-    /// whichever comes first. Sunset to sunrise with no transition ahead lacks the sun
-    /// times, which CoreBrightness can take a minute or two after login to work out, so the
-    /// wakeup comes at the next whole minute instead: the shell reads them again before each.
-    /// It comes too as the patience for them ends, when going without them becomes a problem
-    /// with no input to show it, so that the problem appears in a fact's turn.
-    fn reschedule(&mut self, effects: &mut Vec<Effect>) {
-        let now = self.clock.now();
+    /// whichever comes first, asking only when that changes. Sunset to sunrise with no
+    /// transition ahead lacks the sun times, which CoreBrightness can take a minute or two after
+    /// login to work out, so the wakeup comes at the next whole minute instead: the shell reads
+    /// them again before each. It comes too as the patience for them ends, when going without
+    /// them becomes a problem with no input to show it, so that the problem appears in a fact's
+    /// turn.
+    pub(crate) fn reschedule(&mut self, now: Timestamp) -> Option<Effect> {
         let transition = self
             .facts
             .timeline
             .next_transition(self.facts.applied_until);
         let awaits_sun_times = transition.is_none()
             && self.facts.timeline.schedule == Some(CheckedSchedule::SunsetToSunrise);
-        self.reconciling.sun_times_awaited_since =
-            awaits_sun_times.then(|| self.reconciling.sun_times_awaited_since.unwrap_or(now));
+        self.facts.sun_times_awaited_since =
+            awaits_sun_times.then(|| self.facts.sun_times_awaited_since.unwrap_or(now));
         #[expect(
             clippy::expect_used,
             reason = "rounding fails only beside jiff's limits, millennia from any clock"
@@ -164,7 +145,7 @@ impl Inner {
                 + SignedDuration::from_mins(1)
         });
         let patience_ends = self
-            .reconciling
+            .facts
             .sun_times_awaited_since
             .map(|since| since + SUN_TIMES_PATIENCE)
             .filter(|ends| *ends > now);
@@ -174,38 +155,35 @@ impl Inner {
             .chain(patience_ends)
             .chain(self.places.ends())
             .min();
-        if next != self.reconciling.wakeup {
-            self.reconciling.wakeup = next;
-            effects.push(match next {
-                Some(at) => Effect::ScheduleWakeup { at: at.into() },
-                None => Effect::CancelWakeup,
-            });
+        if next == self.wakeup {
+            return None;
         }
+        self.wakeup = next;
+        Some(match next {
+            Some(at) => Effect::ScheduleWakeup { at: at.into() },
+            None => Effect::CancelWakeup,
+        })
     }
 
     /// Writes Night Shift when what the core wants differs from what was last observed
     /// (ADR-0004), short of what's left to macOS's schedule. The shell writes once while the
     /// same write is on its way, so asking again before its status arrives changes nothing.
-    fn enforce(&mut self, effects: &mut Vec<Effect>) {
+    pub(crate) fn enforce(&self, now: Timestamp) -> Option<Effect> {
         if self.facts.night_shift == NightShift::Unavailable
-            || self.reconciling.session != Session::Active
+            || self.facts.session != Session::Active
         {
-            return;
+            return None;
         }
         // A new watch keeps Night Shift as it is until its first read (ADR-0012).
         if self.watching.awaits_first_read() {
-            return;
+            return None;
         }
-        let decision = self.places.decide(&self.facts.world(self.clock.now()));
-        let Some(wanted) = wanted(&decision) else {
-            return;
-        };
-        if self.left_to_macos(&decision) {
-            return;
+        let decision = self.places.decide(&self.facts.world(now));
+        let wanted = wanted(&decision)?;
+        if self.left_to_macos(&decision) || wanted == (self.facts.night_shift == NightShift::On) {
+            return None;
         }
-        if wanted != (self.facts.night_shift == NightShift::On) {
-            effects.push(Effect::SetNightShift { enabled: wanted });
-        }
+        Some(Effect::SetNightShift { enabled: wanted })
     }
 
     /// Whether Nightcap leaves Night Shift to macOS's schedule, which performs its own
@@ -221,56 +199,6 @@ impl Inner {
                 last_transition.is_some_and(|transition| written < transition)
             })
     }
-}
-
-/// What reconciling Night Shift with macOS keeps from one turn to the next (ADR-0004).
-pub(crate) struct Reconciling {
-    /// Where the last run left Night Shift, which the first status callback will show.
-    left_by_last_run: Option<OnOff>,
-    session: Session,
-    /// The wakeup the shell was last asked for.
-    wakeup: Option<Timestamp>,
-    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
-    sun_times_awaited_since: Option<Timestamp>,
-}
-
-impl Reconciling {
-    /// Nothing written or awaited yet, in an active session, with Night Shift where the last
-    /// run left it.
-    pub(crate) fn new(left_by_last_run: Option<OnOff>) -> Self {
-        Self {
-            left_by_last_run,
-            session: Session::Active,
-            wakeup: None,
-            sun_times_awaited_since: None,
-        }
-    }
-
-    /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
-    pub(crate) fn sun_times_awaited_since(&self) -> Option<Timestamp> {
-        self.sun_times_awaited_since
-    }
-
-    pub(crate) fn timer_fired(&mut self) {
-        // The shell's timer is spent, whether or not its transition came due.
-        self.wakeup = None;
-    }
-
-    pub(crate) fn session_changed(&mut self, active: bool) {
-        tracing::info!("session active: {active}");
-        self.session = if active { Session::Back } else { Session::Away };
-    }
-}
-
-/// Whether Night Shift is this user's to change: with fast user switching, another user's
-/// session can be in front.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Session {
-    Active,
-    /// Another user is in front: status callbacks aren't this user's, and nothing is written.
-    Away,
-    /// Back in front, waiting for the shell's fresh read of a status that went unwatched.
-    Back,
 }
 
 /// The Night Shift state a decision asks for, if it asks for one.

@@ -62,12 +62,12 @@ impl Inner {
     /// Watches the frontmost browser while website checking is on, whatever its own place says,
     /// since a site in it that says on decides over it, but not on the way out (ADR-0012,
     /// ADR-0008).
-    pub(crate) fn rewatch(&mut self, effects: &mut Vec<Effect>) {
+    pub(crate) fn rewatch(&mut self) -> Option<Effect> {
         let wanted = self.facts.context.app.clone().filter(|_| {
             self.watching.is_browser && self.facts.website_checking() && !self.places.released()
         });
         match (&self.watching.watch, wanted) {
-            (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => {}
+            (Some(watch), Some(bundle_id)) if watch.bundle_id == bundle_id => None,
             (_, Some(bundle_id)) => {
                 self.watching.generation += 1;
                 let generation = self.watching.generation;
@@ -77,17 +77,17 @@ impl Inner {
                     generation,
                     reported: false,
                 });
-                effects.push(Effect::WatchBrowser {
+                Some(Effect::WatchBrowser {
                     bundle_id: bundle_id.into(),
                     generation,
-                });
+                })
             }
             (Some(_), None) => {
                 self.facts.context.host = None;
                 self.watching.watch = None;
-                effects.push(Effect::StopWatching);
+                Some(Effect::StopWatching)
             }
-            (None, None) => {}
+            (None, None) => None,
         }
     }
 }

@@ -5,7 +5,7 @@
 
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, mpsc};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
@@ -223,6 +223,7 @@ pub struct Staged {
 /// What a staged core decides on, and the snapshot its reads answer from.
 pub(crate) struct Inline {
     inner: Mutex<Inner>,
+    clock: Arc<dyn Clock>,
     published: Arc<Published>,
 }
 
@@ -233,16 +234,17 @@ impl fmt::Debug for Inline {
 }
 
 impl Inline {
-    /// Runs `decide` on the staged core, then publishes what it left, as the core's thread does
-    /// after each input.
+    /// Runs `decide` on the staged core at the time its clock reads, then publishes what it
+    /// left, as the core's thread does after each input.
     #[expect(
         clippy::expect_used,
         reason = "panics abort (ADR-0002), so none can poison the lock"
     )]
-    pub(crate) fn decide<T>(&self, decide: impl FnOnce(&mut Inner) -> T) -> T {
+    pub(crate) fn decide<T>(&self, decide: impl FnOnce(&mut Inner, Timestamp) -> T) -> T {
         let mut inner = self.inner.lock().expect("no panic happens while it's held");
-        let answer = decide(&mut inner);
-        self.published.publish(Snapshot::of(&inner));
+        let now = self.clock.now();
+        let answer = decide(&mut inner, now);
+        self.published.publish(Snapshot::of(&inner, now));
         answer
     }
 }
@@ -252,14 +254,14 @@ impl Staged {
         let clock = Arc::new(ManualClock::new(now));
         let inner = Inner::start(Setup {
             install,
-            socket: None,
             files: files.clone(),
             clock: clock.clone(),
             zone: zone.clone(),
         });
-        let published = Arc::new(Published::new(Snapshot::of(&inner)));
+        let published = Arc::new(Published::new(Snapshot::of(&inner, now)));
         let inline = Arc::new(Inline {
             inner: Mutex::new(inner),
+            clock: clock.clone(),
             published: published.clone(),
         });
         Self {
@@ -284,7 +286,7 @@ impl Staged {
     /// Reports a fact as the shell does, and returns its outcome.
     pub fn report(&self, fact: Fact) -> Outcome {
         self.inline
-            .decide(|inner| react(inner, Input::Fact(fact)).0)
+            .decide(|inner, now| react(inner, Input::Fact(fact), now).0)
     }
 
     /// Sends a command as the app does, under a ticket of its own, and returns its outcome,
@@ -292,7 +294,7 @@ impl Staged {
     pub fn send(&self, command: Command) -> (Outcome, Result<Done, Refusal>) {
         let ticket = self.tickets.fetch_add(1, Ordering::Relaxed);
         let input = Input::Command(command, ReplyTo::App(Some(ticket)));
-        let outcome = self.inline.decide(|inner| react(inner, input).0);
+        let outcome = self.inline.decide(|inner, now| react(inner, input, now).0);
         #[expect(
             clippy::expect_used,
             reason = "react replies to every command the app sends with a ticket"
@@ -308,7 +310,7 @@ impl Staged {
     /// Sends a command only the app has, with no ticket, and returns its outcome.
     pub fn send_app(&self, command: AppCommand) -> Outcome {
         self.inline
-            .decide(|inner| react(inner, Input::AppCommand(command, None)).0)
+            .decide(|inner, now| react(inner, Input::AppCommand(command, None), now).0)
     }
 
     /// Quits as the shell does, and returns what it must carry out before it exits.
@@ -323,7 +325,14 @@ impl Staged {
         let (outcome, response) = match over_the_wire(&request) {
             Request::Queries(queries) => (None, self.inline.published.latest().answer(&queries)),
             Request::Command(command) => {
-                let (outcome, answer) = self.inline.decide(|inner| inner.command(&command));
+                let (waiter, _) = mpsc::channel();
+                let input = Input::Command(command, ReplyTo::Cli(waiter));
+                let (outcome, answer) = self.inline.decide(|inner, now| react(inner, input, now));
+                #[expect(
+                    clippy::expect_used,
+                    reason = "react answers every command the CLI sends"
+                )]
+                let (_, answer) = answer.expect("the CLI's answer");
                 (Some(outcome), Response::from(answer))
             }
         };

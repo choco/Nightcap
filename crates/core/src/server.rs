@@ -12,27 +12,40 @@ pub(crate) mod state;
 pub(crate) mod turn;
 pub(crate) mod watch;
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::thread;
 
 use crate::CoreError;
+use crate::clock::Clock;
 use mailbox::{Mail, Mailbox};
 use messages::Listener;
 use react::{Input, react};
 use snapshot::{Published, Snapshot};
 use state::Inner;
 
-/// Starts the core's thread on `inner`, which publishes to `published` and tells `listener`,
-/// and gives the mailbox it takes its mail from.
+/// Starts the core's thread on `inner`, by `clock`, which publishes to `published`, tells
+/// `listener`, and removes the socket at `socket` on the way out, and gives the mailbox it takes
+/// its mail from.
 pub(crate) fn spawn(
     inner: Inner,
+    clock: Arc<dyn Clock>,
+    socket: Option<PathBuf>,
     published: Arc<Published>,
     listener: Arc<dyn Listener>,
 ) -> Result<Mailbox, CoreError> {
     let (mailbox, inbox) = Mailbox::new();
     thread::Builder::new()
         .name("nightcap-core".to_owned())
-        .spawn(move || serve(inner, &inbox, &published, listener.as_ref()))
+        .spawn(move || {
+            let server = Server {
+                clock: clock.as_ref(),
+                socket: socket.as_deref(),
+                published: &published,
+                listener: listener.as_ref(),
+            };
+            server.serve(inner, &inbox);
+        })
         .map_err(|error| {
             tracing::error!("couldn't start the core's thread: {error}");
             CoreError::Thread {
@@ -42,33 +55,46 @@ pub(crate) fn spawn(
     Ok(mailbox)
 }
 
-/// Decides each piece of mail in turn, until the app quits or every sender is gone. Each
-/// snapshot is published before the outcome or the answer goes out, so whoever hears of a change
-/// reads it, and the listener hears each outcome with the snapshot its input left.
-fn serve(
-    mut inner: Inner,
-    inbox: &mpsc::Receiver<Mail>,
-    published: &Published,
-    listener: &dyn Listener,
-) {
-    for mail in inbox {
-        match mail {
-            Mail::Input(input) => {
-                let (outcome, answer) = react(&mut inner, input);
-                let snapshot = published.publish(Snapshot::of(&inner));
-                if let Some((reply, answer)) = answer {
-                    // The receiver is gone only if the client already hung up, and then no one
-                    // is waiting.
-                    let _ = reply.send(answer);
+/// What the core's thread runs by, beside the state it decides from.
+struct Server<'a> {
+    clock: &'a dyn Clock,
+    /// The socket the CLI reaches the core at, which the server removes on the way out.
+    socket: Option<&'a Path>,
+    published: &'a Published,
+    listener: &'a dyn Listener,
+}
+
+impl Server<'_> {
+    /// Decides each piece of mail in turn, reading the clock once for each, until the app quits
+    /// or every sender is gone. Each snapshot is published before the outcome or the answer goes
+    /// out, so whoever hears of a change reads it, and the listener hears each outcome with the
+    /// snapshot its input left.
+    fn serve(&self, mut inner: Inner, inbox: &mpsc::Receiver<Mail>) {
+        for mail in inbox {
+            let now = self.clock.now();
+            match mail {
+                Mail::Input(input) => {
+                    let (outcome, answer) = react(&mut inner, input, now);
+                    let snapshot = self.published.publish(Snapshot::of(&inner, now));
+                    if let Some((reply, answer)) = answer {
+                        // The receiver is gone only if the client already hung up, and then no
+                        // one is waiting.
+                        let _ = reply.send(answer);
+                    }
+                    self.listener.outcome(outcome, snapshot);
                 }
-                listener.outcome(outcome, snapshot);
-            }
-            Mail::Stop { reply } => {
-                let (outcome, _) = react(&mut inner, Input::Terminating);
-                published.publish(Snapshot::of(&inner));
-                // The core stops whether or not anyone still waits for what it released.
-                let _ = reply.send(outcome);
-                return;
+                Mail::Stop { reply } => {
+                    let (outcome, _) = react(&mut inner, Input::Terminating, now);
+                    self.published.publish(Snapshot::of(&inner, now));
+                    if let Some(socket) = self.socket
+                        && let Err(error) = std::fs::remove_file(socket)
+                    {
+                        tracing::warn!("couldn't remove {}: {error}", socket.display());
+                    }
+                    // The core stops whether or not anyone still waits for what it released.
+                    let _ = reply.send(outcome);
+                    return;
+                }
             }
         }
     }
@@ -89,7 +115,7 @@ pub(crate) mod tests {
     use super::Listener;
     use super::mailbox::Mail;
     use super::react::{Input, ReplyTo};
-    use crate::clock::ManualClock;
+    use crate::clock::{Clock, ManualClock};
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};
@@ -117,27 +143,40 @@ pub(crate) mod tests {
         }
     }
 
-    /// A managed release in Zurich at `now`, on files in memory, serving `socket` if given.
-    fn inner_at(now: &str, socket: Option<&Path>) -> Inner {
-        Inner::start(Setup {
+    /// A core's state as it starts, and the clock it runs by.
+    pub(crate) struct Stage {
+        pub(crate) inner: Inner,
+        pub(crate) clock: Arc<dyn Clock>,
+    }
+
+    impl Stage {
+        pub(crate) fn now(&self) -> jiff::Timestamp {
+            self.clock.now()
+        }
+    }
+
+    /// A managed release in Zurich at `now`, on files in memory.
+    fn stage_at(now: &str) -> Stage {
+        let clock: Arc<dyn Clock> = Arc::new(ManualClock::new(now.parse().unwrap()));
+        let inner = Inner::start(Setup {
             install: Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
-            socket: socket.map(Path::to_owned),
             files: Arc::new(Memory::new(Paths::in_folder(Path::new("/nightcap")))),
-            clock: Arc::new(ManualClock::new(now.parse().unwrap())),
+            clock: clock.clone(),
             zone: TimeZone::get("Europe/Zurich").unwrap(),
-        })
+        });
+        Stage { inner, clock }
     }
 
     /// Noon, with nothing reported yet.
-    pub(crate) fn noon(socket: Option<&Path>) -> Inner {
-        inner_at("2026-10-16T12:00:00+02:00", socket)
+    pub(crate) fn noon() -> Stage {
+        stage_at("2026-10-16T12:00:00+02:00")
     }
 
     /// A core on its own thread, with the outcomes it tells its listener.
-    fn running(inner: Inner) -> (Core, mpsc::Receiver<Heard>) {
+    fn running(stage: Stage) -> (Core, mpsc::Receiver<Heard>) {
         let (listener, outcomes) = ChannelListener::new();
         (
-            Core::run(inner, None, Arc::new(listener)).unwrap(),
+            Core::run(stage.inner, stage.clock, None, Arc::new(listener)).unwrap(),
             outcomes,
         )
     }
@@ -186,7 +225,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_listener_hears_each_outcome_in_the_order_the_inputs_arrived() {
-        let (core, outcomes) = running(noon(None));
+        let (core, outcomes) = running(noon());
 
         core.report(reported(false));
         core.send(Command::On, None);
@@ -210,7 +249,7 @@ pub(crate) mod tests {
 
     #[test]
     fn each_command_from_the_app_is_replied_to_in_its_own_outcome_whatever_comes_before() {
-        let (core, outcomes) = running(noon(None));
+        let (core, outcomes) = running(noon());
 
         core.report(reported(false));
         core.send(Command::On, Some(7));
@@ -242,7 +281,7 @@ pub(crate) mod tests {
 
     #[test]
     fn each_outcome_says_what_its_input_was() {
-        let (core, outcomes) = running(noon(None));
+        let (core, outcomes) = running(noon());
         let Runs::Thread(mailbox) = &core.runs else {
             panic!("a running core decides on its own thread");
         };
@@ -276,7 +315,7 @@ pub(crate) mod tests {
 
     #[test]
     fn the_listener_hears_each_outcome_with_the_snapshot_its_input_left() {
-        let (core, outcomes) = running(noon(None));
+        let (core, outcomes) = running(noon());
 
         core.report(reported(false));
         core.send(Command::On, None);
@@ -291,7 +330,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_read_after_an_outcome_sees_what_its_input_left() {
-        let (core, outcomes) = running(noon(None));
+        let (core, outcomes) = running(noon());
         assert_eq!(core.snapshot().night_shift().state, NightShift::Unavailable);
 
         core.report(reported(false));
@@ -302,7 +341,7 @@ pub(crate) mod tests {
 
     #[test]
     fn stopping_decides_everything_sent_before_it_and_releases_every_force() {
-        let (core, outcomes) = running(inner_at("2026-10-16T23:00:00+02:00", None));
+        let (core, outcomes) = running(stage_at("2026-10-16T23:00:00+02:00"));
         core.report(reported(true));
         core.report(figma());
         core.send(

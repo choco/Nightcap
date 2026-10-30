@@ -8,6 +8,7 @@ use nightcap_protocol::{
     Refusal, RuleAdded, RuleIdentity,
 };
 
+use crate::Effect;
 use crate::rules::places::Places;
 use crate::rules::schedule::{CheckedSchedule, OutOfRange};
 use crate::server::state::Inner;
@@ -15,28 +16,32 @@ use crate::storage::config;
 use crate::storage::config::NightShiftConfig;
 use crate::storage::document::Unusable;
 use crate::storage::file::File;
-use crate::{Cause, Effect, Outcome};
 
 impl Inner {
     /// Runs a command from the app or the CLI, decided the same whoever sent it, and answers it:
     /// what it did, or why the core refused it.
-    pub(crate) fn command(&mut self, command: &Command) -> (Outcome, Result<Done, Refusal>) {
-        self.turn(Cause::Command, |inner, outcome| {
-            let answer = inner.run_command(command, &mut outcome.effects);
-            if let Err(why) = &answer {
-                tracing::warn!("a command was refused: {}", kind(why));
+    pub(crate) fn command(
+        &mut self,
+        command: &Command,
+        now: Timestamp,
+    ) -> (Vec<Effect>, Result<Done, Refusal>) {
+        match self.run_command(command, now) {
+            Ok((done, effects)) => (effects, Ok(done)),
+            Err(why) => {
+                tracing::warn!("a command was refused: {}", kind(&why));
+                (Vec::new(), Err(why))
             }
-            answer
-        })
+        }
     }
 
     /// Answers a command with the resulting decision, and for adding a rule what it did; a
-    /// reload answers with every rule, and an update check that it started.
+    /// reload answers with every rule, and an update check that it started. Gives the effects
+    /// the command calls for itself; a refused one calls for none.
     fn run_command(
         &mut self,
         command: &Command,
-        effects: &mut Vec<Effect>,
-    ) -> Result<Done, Refusal> {
+        now: Timestamp,
+    ) -> Result<(Done, Vec<Effect>), Refusal> {
         let night_shift = self.facts.night_shift;
         let needs_night_shift = matches!(
             command,
@@ -52,7 +57,7 @@ impl Inner {
         if needs_night_shift && night_shift == NightShift::Unavailable {
             return Err(Refusal::NightShiftUnavailable);
         }
-        let now = self.clock.now();
+        let mut effects = Vec::new();
         let mut added = None;
         let done = match command {
             Command::On => {
@@ -140,25 +145,24 @@ impl Inner {
             },
             Command::Websites(chosen) => self.set_websites(*chosen == OnOff::On),
             Command::Reload => {
-                return self
-                    .reload(effects)
-                    .map(|()| Done::Rules(self.places.rules().rules));
+                let effects = self.reload()?;
+                return Ok((Done::Rules(self.places.rules().rules), effects));
             }
             Command::CheckForUpdates => {
                 if let Install::NotSelfManaged(why) = self.install {
                     return Err(Refusal::NoUpdater(why));
                 }
                 tracing::info!("checking for updates");
-                effects.push(Effect::CheckForUpdates);
-                return Ok(Done::UpdateCheckStarted);
+                return Ok((Done::UpdateCheckStarted, vec![Effect::CheckForUpdates]));
             }
         };
         done.map(|()| {
             let decision = self.places.decide(&self.facts.world(now));
-            match added {
+            let done = match added {
                 Some(rule) => Done::RuleAdded { rule, decision },
                 None => Done::Decision(decision),
-            }
+            };
+            (done, effects)
         })
     }
 
@@ -221,20 +225,20 @@ impl Inner {
         }
     }
 
-    /// Loads the config again; an invalid one keeps the rules loaded before, and its check says
-    /// why.
-    pub(crate) fn reload(&mut self, effects: &mut Vec<Effect>) -> Result<(), Refusal> {
+    /// Loads the config again, with the writes its `[night_shift]` calls for; an invalid one
+    /// keeps the rules loaded before, and its check says why.
+    pub(crate) fn reload(&mut self) -> Result<Vec<Effect>, Refusal> {
         match config::load(self.files.as_ref()) {
             Ok(config) => {
                 tracing::info!("reloaded the config: {} rules", config.rules.len());
                 self.facts.config_websites = config.websites;
                 self.loaded.config_night_shift = config.night_shift;
                 self.loaded.lengths = config.lengths;
-                self.apply_config_night_shift(effects);
+                let effects = self.apply_config_night_shift();
                 self.loaded.config_error = None;
                 self.loaded.config_found = config.found;
                 self.graduate(config.rules);
-                Ok(())
+                Ok(effects)
             }
             Err(error) => {
                 tracing::warn!("keeping the rules loaded before: {error}");
@@ -264,9 +268,10 @@ impl Inner {
 
     /// Writes the config's strength and schedule where they changed since last applied, once
     /// Night Shift, and for the strength its value, is known (ADR-0014).
-    pub(crate) fn apply_config_night_shift(&mut self, effects: &mut Vec<Effect>) {
+    pub(crate) fn apply_config_night_shift(&mut self) -> Vec<Effect> {
+        let mut effects = Vec::new();
         if self.facts.night_shift == NightShift::Unavailable {
-            return;
+            return effects;
         }
         let wanted = self.loaded.config_night_shift;
         if wanted.strength != self.loaded.applied_from_config.strength && self.strength.is_some() {
@@ -286,6 +291,7 @@ impl Inner {
             }
             self.loaded.applied_from_config.schedule = wanted.schedule;
         }
+        effects
     }
 }
 

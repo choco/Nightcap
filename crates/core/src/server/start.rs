@@ -1,7 +1,6 @@
 //! How a core starts: where it lives and what kind of install it serves, the clock it reads,
 //! what it finds in its files, and what the shell's launch does.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use jiff::tz::TimeZone;
@@ -11,8 +10,7 @@ use crate::clock::Clock;
 use crate::commands::Loaded;
 use crate::rules::places::{Context, Places};
 use crate::rules::schedule::{SunTimes, Timeline};
-use crate::server::state::{Facts, Inner};
-use crate::server::turn::Reconciling;
+use crate::server::state::{Facts, Inner, Session};
 use crate::server::watch::Watching;
 use crate::setup::grants::Grants;
 use crate::storage::config::{self, NightShiftConfig};
@@ -20,11 +18,9 @@ use crate::storage::file::Files;
 use crate::storage::{ad_hoc_rules, saved_state};
 use crate::{CoreError, Effect};
 
-/// Where a core lives and what kind of install it serves.
+/// Where a core lives and what kind of install it serves, and the clock it starts by.
 pub(crate) struct Setup {
     pub(crate) install: Install,
-    /// The socket the IPC thread serves, which the core removes on the way out.
-    pub(crate) socket: Option<PathBuf>,
     pub(crate) files: Arc<dyn Files>,
     pub(crate) clock: Arc<dyn Clock>,
     pub(crate) zone: TimeZone,
@@ -33,9 +29,10 @@ pub(crate) struct Setup {
 impl Inner {
     /// The core as it finds its files, with nothing reported yet.
     pub(crate) fn start(setup: Setup) -> Self {
+        let now = setup.clock.now();
         let store = saved_state::Store::new(setup.files.clone());
         let mut persisted = store.load();
-        persisted.expire(setup.clock.now());
+        persisted.expire(now);
         let (config, config_error) = match config::load(setup.files.as_ref()) {
             Ok(config) => (config, None),
             Err(error) => {
@@ -60,27 +57,28 @@ impl Inner {
         };
         let mut inner = Self {
             install: setup.install,
-            socket: setup.socket,
             files: setup.files,
             store,
             ad_hoc_store,
-            clock: setup.clock.clone(),
             facts: Facts {
                 night_shift: NightShift::Unavailable,
                 written_at: None,
+                left_by_last_run: persisted.night_shift,
+                session: Session::Active,
                 timeline: Timeline {
                     schedule: None,
                     sun_times: SunTimes::default(),
                     zone: setup.zone,
                 },
+                sun_times_awaited_since: None,
                 context: Context::default(),
-                applied_until: setup.clock.now(),
+                applied_until: now,
                 websites: persisted.websites,
                 config_websites: config.websites,
             },
             places: Places::new(persisted.rules.clone(), persisted.linked.clone(), ad_hoc),
             strength: None,
-            reconciling: Reconciling::new(persisted.night_shift),
+            wakeup: None,
             watching: Watching::default(),
             grants: Grants {
                 accessibility: None,
@@ -107,11 +105,12 @@ impl Inner {
 
     /// The shell's launch: starts the updater where this install updates itself, and applies the
     /// config's `[night_shift]`.
-    pub(crate) fn launched(&mut self, effects: &mut Vec<Effect>) {
-        if self.install == Install::SelfManaged {
-            effects.push(Effect::StartUpdater);
-        }
-        self.apply_config_night_shift(effects);
+    pub(crate) fn launched(&mut self) -> Vec<Effect> {
+        let updater = (self.install == Install::SelfManaged).then_some(Effect::StartUpdater);
+        updater
+            .into_iter()
+            .chain(self.apply_config_night_shift())
+            .collect()
     }
 }
 

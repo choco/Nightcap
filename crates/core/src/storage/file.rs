@@ -223,7 +223,6 @@ mod tests {
     fn started(folder: &Path) -> Inner {
         Inner::start(Setup {
             install: Install::NotSelfManaged(NotSelfManaged::ManagedInstall),
-            socket: None,
             files: Arc::new(disk(folder)),
             clock: Arc::new(ManualClock::new(
                 "2026-10-16T23:00:00+02:00".parse().unwrap(),
@@ -235,7 +234,7 @@ mod tests {
     /// What the check of `kind` found.
     fn found(inner: &Inner, kind: CheckKind) -> CheckDetail {
         inner
-            .checks(inner.clock.now())
+            .checks("2026-10-16T23:00:00+02:00".parse().unwrap())
             .into_iter()
             .find(|check| check.detail.kind() == kind)
             .unwrap()
@@ -338,6 +337,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // Night Shift on at 23:00 by the custom hours until 07:00, with Mail snoozed.
         let mut inner = started(dir.path());
+        let now = "2026-10-16T23:00:00+02:00".parse().unwrap();
         let hours = Schedule::Custom {
             from: TimeOfDay {
                 hour: 22,
@@ -354,6 +354,7 @@ mod tests {
                 written_at: None,
                 switched_by: SwitchedBy::Schedule,
             }),
+            now,
         );
         let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
         let snooze = Command::Set {
@@ -361,13 +362,16 @@ mod tests {
             state: OnOff::Off,
             length: Lasting::For(jiff::SignedDuration::from_mins(30)),
         };
-        inner.command(&snooze).1.unwrap();
+        inner.command(&snooze, now).1.unwrap();
         fs::create_dir(dir.path().join("rules.toml")).unwrap();
 
-        let (_, answer) = inner.command(&Command::AddRule {
-            identity: mail.clone(),
-            says: OnOff::Off,
-        });
+        let (_, answer) = inner.command(
+            &Command::AddRule {
+                identity: mail.clone(),
+                says: OnOff::Off,
+            },
+            now,
+        );
 
         assert_eq!(
             answer,

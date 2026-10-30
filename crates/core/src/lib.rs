@@ -26,12 +26,12 @@ pub use scenario::{Scenario, ScenarioError, Staged, Step};
 pub use storage::file::File;
 
 use std::fmt;
-use std::os::unix::net::UnixListener;
 use std::sync::{Arc, mpsc};
 
 use nightcap_protocol::{Command, IoFailure, PathError};
 
-use clock::SystemClock;
+use clock::{Clock, SystemClock};
+use ipc::Socket;
 use server::mailbox::{Mail, Mailbox};
 #[cfg(any(test, debug_assertions))]
 use server::react::react;
@@ -88,14 +88,14 @@ impl Core {
         let install = install_of(instance, bundle_writable);
         // Before any file is read, so a second instance stops here.
         let socket = ipc::bind(&path)?;
+        let clock: Arc<dyn Clock> = Arc::new(SystemClock);
         let inner = Inner::start(Setup {
             install,
-            socket: Some(path),
             files: Arc::new(files),
-            clock: Arc::new(SystemClock),
+            clock: clock.clone(),
             zone,
         });
-        let core = Self::run(inner, Some(socket), listener)?;
+        let core = Self::run(inner, clock, Some(socket), listener)?;
         tracing::info!(
             "core {} listening, {install:?} install",
             env!("CARGO_PKG_VERSION")
@@ -140,7 +140,9 @@ impl Core {
                 }
             }
             #[cfg(any(test, debug_assertions))]
-            Runs::Inline(inline) => inline.decide(|inner| react(inner, Input::Terminating).0),
+            Runs::Inline(inline) => {
+                inline.decide(|inner, now| react(inner, Input::Terminating, now).0)
+            }
         }
     }
 
@@ -153,17 +155,19 @@ impl Core {
 }
 
 impl Core {
-    /// A core deciding from `inner` on its own thread, which tells `listener` each outcome, with
-    /// `socket`'s thread putting the CLI's requests into its mailbox.
+    /// A core deciding from `inner` on its own thread, by `clock`, which tells `listener` each
+    /// outcome, with `socket`'s thread putting the CLI's requests into its mailbox.
     pub(crate) fn run(
         inner: Inner,
-        socket: Option<UnixListener>,
+        clock: Arc<dyn Clock>,
+        socket: Option<Socket>,
         listener: Arc<dyn Listener>,
     ) -> Result<Self, CoreError> {
-        let published = Arc::new(Published::new(Snapshot::of(&inner)));
-        let mailbox = server::spawn(inner, published.clone(), listener)?;
+        let published = Arc::new(Published::new(Snapshot::of(&inner, clock.now())));
+        let path = socket.as_ref().map(|socket| socket.path.clone());
+        let mailbox = server::spawn(inner, clock, path, published.clone(), listener)?;
         if let Some(socket) = socket {
-            ipc::serve(socket, mailbox.clone(), published.clone())?;
+            ipc::serve(socket.listener, mailbox.clone(), published.clone())?;
         }
         Ok(Self {
             published,
@@ -179,7 +183,7 @@ impl Core {
                 }
             }
             #[cfg(any(test, debug_assertions))]
-            Runs::Inline(inline) => _ = inline.decide(|inner| react(inner, input)),
+            Runs::Inline(inline) => _ = inline.decide(|inner, now| react(inner, input, now)),
         }
     }
 }
