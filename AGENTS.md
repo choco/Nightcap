@@ -36,6 +36,10 @@ Swift files under `app/Nightcap/` join the app target automatically, and those u
 
 Writing, reviewing or briefing code follows its language's guide, which holds the language's conventions apart from this project: Rust `docs/style/rust.md`, Swift `docs/style/swift.md`, TypeScript, React and CSS `docs/style/typescript.md`, shell `docs/style/shell.md`, GitHub Actions `docs/style/github-actions.md`. What is Nightcap's own lives here and in the ADRs. Its comments use the glossary's words and name the ADR a rule comes from.
 
+## Contributions
+
+A commit names its human author alone, with no co-author or assisted-by line for an AI tool; how AI helped goes in the issue or pull request's description, under `AI_POLICY.md`.
+
 ## Design
 
 Brand and UI work start from `design/README.md`, the design system's brand book, with its tokens, fonts and component previews beside it.

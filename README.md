@@ -100,6 +100,10 @@ check             # everything CI checks
 
 The dev build has its own bundle ID, so it runs beside an installed copy without sharing its permissions or state. [`AGENTS.md`](AGENTS.md) covers the rest of the workflow.
 
+## Contributing
+
+Issues and pull requests are welcome. Read the [AI policy](AI_POLICY.md) first: it says how AI tools can be used here, and what every contribution needs.
+
 ## Support
 
 Nightcap is free. If it's useful to you, you can [sponsor its work on GitHub](https://github.com/sponsors/choco).
