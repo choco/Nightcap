@@ -10,13 +10,10 @@
 mod common;
 
 use nightcap_core::{Effect, Fact, Staged};
-use nightcap_protocol::{
-    Command, Length, OnOff, Payload, Place, Refusal, Response, Schedule, TimeOfDay,
-};
+use nightcap_protocol::{Command, Payload, Refusal, Response, Schedule, TimeOfDay};
 
 use common::{
     at, custom_hours, late, launch, noon, refusal, report_night_shift, reported, resettable, send,
-    yours,
 };
 
 /// Night Shift reported off with no schedule, at a strength of 60.
@@ -110,18 +107,15 @@ fn set_schedule_writes_it_and_answers_with_the_decision() {
 }
 
 #[test]
-fn switching_the_schedule_off_while_night_shift_is_on_keeps_it_on() {
+fn switching_the_schedule_off_while_night_shift_is_on_lets_it_go_off_with_it() {
     let staged = late().then(reported(true, custom_hours())).stage().unwrap();
 
     send(&staged, Command::SetSchedule(Schedule::Off));
     // macOS switches Night Shift off along with the schedule.
     let effects = staged.report(reported(false, Schedule::Off)).effects;
 
-    assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
-    assert_eq!(
-        resettable(&staged),
-        vec![yours(Place::Everywhere, OnOff::On, Length::Indefinite)]
-    );
+    assert!(!effects.contains(&Effect::SetNightShift { enabled: true }));
+    assert_eq!(resettable(&staged), Vec::new());
 }
 
 #[test]

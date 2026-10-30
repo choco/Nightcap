@@ -15,7 +15,7 @@ Night Shift's strength and schedule belong to macOS: System Settings shows them 
 ## Consequences
 
 - Three more private methods, which every macOS version Nightcap claims has to be checked for (ADR-0013). The adapter checks their signatures like the others. Where they're missing, onboarding's Night Shift steps open Night Shift's settings in System Settings instead, and the slider doesn't show.
-- Choosing a schedule in onboarding can switch Night Shift on or off at once, since macOS applies the new schedule straight away.
+- Writing a schedule can switch Night Shift on or off at once, since macOS applies the new schedule straight away: choosing "By hand" in onboarding, or `schedule = "off"` in the config, while Night Shift is on lets it go off with the schedule, and Nightcap doesn't switch it back.
 
 ## Rejected alternatives
 

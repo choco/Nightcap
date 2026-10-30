@@ -52,7 +52,6 @@ impl Inner {
         };
         let switched = std::mem::replace(&mut self.facts.night_shift, observed) != observed;
         self.reconciling.pending_write = None;
-        let keep_on = std::mem::take(&mut self.reconciling.keep_on_with_schedule_off);
         // A shell bug, logged rather than a panic, which would stop the app (ADR-0002).
         let checked = CheckedSchedule::try_from(schedule)
             .inspect_err(|error| {
@@ -75,10 +74,6 @@ impl Inner {
             // transition and whatever it switched isn't an outside change.
             tracing::info!("schedule edited");
             self.places.schedule_edited();
-            if keep_on && schedule == Schedule::Off && !enabled {
-                let now = self.clock.now();
-                self.places.switch(OnOff::On, &self.facts.world(now));
-            }
             None
         } else {
             self.reconcile(enabled, written, switched)
@@ -227,9 +222,6 @@ pub(crate) struct Reconciling {
     /// Where the last run left Night Shift, which the first status callback will show.
     left_by_last_run: Option<OnOff>,
     session: Session,
-    /// Nightcap switched the schedule off while Night Shift was on, and macOS switches it off
-    /// with the schedule: the edit's callback turns it back on, as choosing "By hand" means.
-    keep_on_with_schedule_off: bool,
     /// The wakeup the shell was last asked for.
     wakeup: Option<Timestamp>,
     /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
@@ -244,7 +236,6 @@ impl Reconciling {
             pending_write: None,
             left_by_last_run,
             session: Session::Active,
-            keep_on_with_schedule_off: false,
             wakeup: None,
             sun_times_awaited_since: None,
         }
@@ -253,11 +244,6 @@ impl Reconciling {
     /// Since when sunset to sunrise has had no transition ahead, for want of sun times.
     pub(crate) fn sun_times_awaited_since(&self) -> Option<Timestamp> {
         self.sun_times_awaited_since
-    }
-
-    /// Nightcap is about to write `schedule` on command, with Night Shift as it is.
-    pub(crate) fn writing_schedule(&mut self, schedule: Schedule, night_shift: NightShift) {
-        self.keep_on_with_schedule_off = schedule == Schedule::Off && night_shift == NightShift::On;
     }
 
     pub(crate) fn timer_fired(&mut self) {

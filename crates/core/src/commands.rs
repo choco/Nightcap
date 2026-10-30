@@ -144,7 +144,6 @@ impl Inner {
                 Err(OutOfRange(time)) => Err(Refusal::NotATimeOfDay(time)),
                 Ok(_) => {
                     tracing::info!("schedule set on command");
-                    self.reconciling.writing_schedule(*schedule, night_shift);
                     effects.push(Effect::SetSchedule {
                         schedule: *schedule,
                     });
