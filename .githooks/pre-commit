@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Refuses a commit whose staged changes hold a secret, with betterleaks from the flake's lint
+# shell, so it works outside `nix develop` too. Git runs it for every worktree of a clone once
+# `git config core.hooksPath .githooks` names this folder.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+nix develop --option warn-dirty false "$root#lint" --command \
+  betterleaks git --pre-commit --staged --no-banner --redact --verbose .

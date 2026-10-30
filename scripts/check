@@ -6,14 +6,15 @@
 #              (cargo-deny's advisories), the site's packages (pnpm audit), the Swift packages
 #              (OSV-Scanner) and the workflows' actions (zizmor, with a GitHub token: GH_TOKEN,
 #              else gh's login)
-#   --scripts  shellcheck on the shell scripts in scripts/ and release/, and actionlint on the
-#              workflows, with shellcheck on their run steps
+#   --secrets  betterleaks over every commit, with what it finds redacted
+#   --scripts  shellcheck on the shell scripts in scripts/, release/ and .githooks/, and
+#              actionlint on the workflows, with shellcheck on their run steps
 #   --site     Biome, the type checker and the site's build (build-site)
 #   --swift    swift-format against .swift-format, the debug core and the dev build
 #              (build-core, build-app), the String Catalog against the dev build's strings
 #              (sync-strings --check), then the Swift tests (test-app); by default only on
 #              macOS, which has them
-# Usage: check [--rust] [--deps] [--audit] [--scripts] [--site] [--swift]
+# Usage: check [--rust] [--deps] [--audit] [--secrets] [--scripts] [--site] [--swift]
 set -euo pipefail
 
 root="$(git rev-parse --show-toplevel)"
@@ -22,6 +23,7 @@ cd "$root"
 rust=
 deps=
 audit=
+secrets=
 scripts=
 site=
 swift=
@@ -29,6 +31,7 @@ if [[ $# -eq 0 ]]; then
   rust=1
   deps=1
   audit=1
+  secrets=1
   scripts=1
   site=1
   if [[ "$(uname)" == Darwin ]]; then
@@ -40,11 +43,12 @@ for area in "$@"; do
     --rust) rust=1 ;;
     --deps) deps=1 ;;
     --audit) audit=1 ;;
+    --secrets) secrets=1 ;;
     --scripts) scripts=1 ;;
     --site) site=1 ;;
     --swift) swift=1 ;;
     *)
-      echo "usage: check [--rust] [--deps] [--audit] [--scripts] [--site] [--swift]" >&2
+      echo "usage: check [--rust] [--deps] [--audit] [--secrets] [--scripts] [--site] [--swift]" >&2
       exit 1
       ;;
   esac
@@ -85,13 +89,18 @@ if [[ -n "$audit" ]]; then
   fi
 fi
 
+if [[ -n "$secrets" ]]; then
+  # The repository and CI's logs are public, so a finding prints without the secret.
+  betterleaks git --no-banner --redact --verbose .
+fi
+
 if [[ -n "$scripts" ]]; then
   # The scripts have no extensions, so their shebangs pick them out. The C locale lets awk read
   # past the images beside them.
   shell_scripts=()
   while IFS= read -r script; do
     shell_scripts+=("$script")
-  done < <(LC_ALL=C find scripts release -type f -exec awk \
+  done < <(LC_ALL=C find scripts release .githooks -type f -exec awk \
     'FNR == 1 && /^#!.*[^a-z](ba)?sh( |$)/ { print FILENAME } { nextfile }' {} +)
   shellcheck "${shell_scripts[@]}"
   actionlint

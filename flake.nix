@@ -33,10 +33,12 @@
       devShells = forAllSystems (
         pkgs:
         let
-          # The linters alone, for CI's lint job, which takes cargo from the runner.
+          # The linters and the secret scanner alone, for CI's lint job, which takes cargo from the
+          # runner, and the pre-commit hook.
           lint = pkgs.mkShellNoCC {
             packages = [
               pkgs.actionlint
+              pkgs.betterleaks
               pkgs.cargo-deny
               pkgs.shellcheck
             ];
