@@ -2,14 +2,20 @@
 //! and the commands that change them (ADR-0018, ADR-0006), with what a trial found, which its end
 //! puts back (ADR-0016), and the release on the way out (ADR-0008).
 
+mod resolution;
+mod rules;
+
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    BundleId, Decision, Domain, Front, Inherited, Lasting, Length, ListedRule, OnOff, Place,
-    PlaceInFront, Reason, Refusal, ResetTo, Rule, RuleAdded, RuleIdentity, SetBy, TrialState,
+    BundleId, Decision, Front, Lasting, Length, OnOff, Place, Reason, Refusal, Rule, RuleAdded,
+    RuleIdentity, SetBy, TrialState,
 };
 
+use resolution::Resolution;
+use rules::Rules;
+
 use crate::Effect;
-use crate::rules::domain::{self, Host};
+use crate::rules::domain::Host;
 use crate::rules::schedule::Timeline;
 
 /// What rules match against.
@@ -33,21 +39,6 @@ pub(crate) struct World<'a> {
     pub observed: OnOff,
     /// Website checking, without which no site is in front for its row (ADR-0012).
     pub website_checking: bool,
-}
-
-/// Every rule, as what decides now, or as a trial found them.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct Rules {
-    /// The apps' and sites' indefinite rules, one per place: the config's, then the user's
-    /// ad-hoc ones, which `rules.toml` keeps, then a trial's (ADR-0006).
-    indefinite: Vec<Rule>,
-    /// Everywhere's indefinite rule: the switch's.
-    switched: Option<Rule>,
-    /// Each place's temporary rule, one at most.
-    temporary: Vec<Rule>,
-    /// The place an outside change set a temporary rule at together with everywhere's: taking
-    /// off either takes off both (ADR-0018).
-    linked: Option<Place>,
 }
 
 /// The rules at every place (ADR-0018).
@@ -84,25 +75,7 @@ impl Places {
         linked: Option<Place>,
         ad_hoc: Vec<(RuleIdentity, OnOff)>,
     ) -> Self {
-        let mut live = Rules {
-            indefinite: ad_hoc
-                .into_iter()
-                .map(|(identity, says)| indefinite(identity, says, SetBy::You))
-                .collect(),
-            switched: None,
-            temporary: Vec::new(),
-            linked,
-        };
-        for rule in kept {
-            if rule.length != Length::Indefinite {
-                if live.temporary_at(&rule.place).is_none() {
-                    live.temporary.push(rule);
-                }
-            } else if rule.place == Place::Everywhere {
-                live.switched.get_or_insert(rule);
-            }
-        }
-        live.tidy();
+        let live = Rules::new(kept, linked, ad_hoc);
         Self {
             live,
             trial: None,
@@ -113,9 +86,7 @@ impl Places {
     /// The rules `state.json` keeps, every place's temporary rule then everywhere's indefinite
     /// one, with Adoption's link: mid-trial, those the trial found.
     pub(crate) fn kept(&self) -> (Vec<Rule>, Option<Place>) {
-        let kept = self.found();
-        let rules = kept.temporary.iter().chain(&kept.switched).cloned();
-        (rules.collect(), kept.linked.clone())
+        self.found().kept()
     }
 
     /// The rules outside a trial: mid-trial, those it found, which its end puts back.
@@ -125,31 +96,19 @@ impl Places {
 
     /// The ad-hoc rules `rules.toml` keeps: mid-trial, those the trial found.
     pub(crate) fn ad_hoc(&self) -> Vec<(RuleIdentity, OnOff)> {
-        self.found()
-            .indefinite
-            .iter()
-            .filter(|rule| rule.set_by == SetBy::You)
-            .filter_map(|rule| Some((rule.place.identity()?, rule.says)))
-            .collect()
+        self.found().ad_hoc()
     }
 
     /// The apps' and sites' indefinite rules, as they decide now.
     pub(crate) fn indefinite(&self) -> &[Rule] {
-        &self.live.indefinite
+        self.live.indefinite()
     }
 
     /// Takes the config's rules, dropping the user's and a trial's for the places it now has,
     /// which have graduated (ADR-0007), from what the trial's end puts back too.
     pub(crate) fn set_config(&mut self, config: Vec<(RuleIdentity, OnOff)>) {
-        let config: Vec<Rule> = config
-            .into_iter()
-            .map(|(identity, says)| indefinite(identity, says, SetBy::Config))
-            .collect();
         for rules in self.kept_mut() {
-            rules.indefinite.retain(|rule| {
-                rule.set_by != SetBy::Config && !config.iter().any(|each| each.place == rule.place)
-            });
-            rules.indefinite.splice(0..0, config.iter().cloned());
+            rules.set_config(&config);
         }
     }
 
@@ -157,10 +116,10 @@ impl Places {
     /// while they say otherwise, and if the stand-in or the schedule still says otherwise, sets
     /// an indefinite rule of the user's saying `to`.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
-        while self.peel(&Place::Everywhere, Some(to)) {}
+        while self.live.peel(&Place::Everywhere, Some(to)) {}
         if self.says(&Place::Everywhere, world) != Some(to) {
             tracing::info!("switched {to} everywhere, indefinitely");
-            self.put(rule(Place::Everywhere, to, Length::Indefinite, SetBy::You));
+            self.live.set_everywhere(to);
         }
     }
 
@@ -194,21 +153,16 @@ impl Places {
                         .ok_or(Refusal::NoSchedule)?,
                 ),
             },
-            Lasting::Indefinite if *place != Place::Everywhere => {
-                return Err(Refusal::IndefiniteIsAdded);
-            }
             Lasting::Indefinite => Length::Indefinite,
         };
-        tracing::info!("{} {state} {length:?}", loggable(place));
-        self.put(rule(place.clone(), state, length, SetBy::You));
-        Ok(())
+        self.live.set(place, state, length)
     }
 
     /// Takes off a place's temporary rule, which puts back its indefinite rule, and for
     /// everywhere its indefinite one too, which puts back the stand-in or the schedule.
     pub(crate) fn reset(&mut self, place: &Place) {
         tracing::info!("reset {}", loggable(place));
-        while self.peel(place, None) {}
+        self.live.reset(place);
     }
 
     /// Takes an outside change as flipping what the user sees (ADR-0018): takes off what the
@@ -218,24 +172,19 @@ impl Places {
     /// was enough, as the effect that tells it.
     pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Effect> {
         let mut decision = self.decide(world);
-        while decision.state != Some(state) && self.peel(&decision.place, Some(state)) {
+        while decision.state != Some(state) && self.live.peel(&decision.place, Some(state)) {
             decision = self.decide(world);
         }
         if decision.state == Some(state) {
             return None;
         }
         let until = world.timeline.next_turn(world.applied_until, state);
-        let adopted = |place| {
-            let length = Length::UntilScheduleTurns { until };
-            rule(place, state, length, SetBy::OutsideChange)
-        };
         let place = decision.place;
-        self.put(adopted(place.clone()));
+        self.live.adopt(&place, state, until);
         if place != Place::Everywhere {
-            while self.peel(&Place::Everywhere, Some(state)) {}
+            while self.live.peel(&Place::Everywhere, Some(state)) {}
             if self.says(&Place::Everywhere, world) != Some(state) {
-                self.put(adopted(Place::Everywhere));
-                self.live.linked = Some(place.clone());
+                self.live.link_adoption(&place, state, until);
             }
         }
         let snoozed = decision.reasons.iter().find_map(|reason| match reason {
@@ -264,71 +213,34 @@ impl Places {
         identity: &RuleIdentity,
         says: OnOff,
     ) -> Result<RuleAdded, Refusal> {
-        let place = Place::from(identity.clone());
         let set_by = self.trial.as_ref().map_or(SetBy::You, |_| SetBy::Trial);
-        let rules = &mut self.live.indefinite;
-        let added = match rules.iter_mut().find(|rule| rule.place == place) {
-            Some(rule) if rule.says == says => RuleAdded::AlreadySays {
-                set_by: rule.set_by,
-            },
-            Some(rule) if rule.set_by == SetBy::Config => {
-                return Err(Refusal::ConfigSays {
-                    identity: identity.clone(),
-                    says: rule.says,
-                });
-            }
-            Some(rule) => {
-                rule.says = says;
-                RuleAdded::Changed {
-                    set_by: rule.set_by,
-                }
-            }
-            None => {
-                rules.push(indefinite(identity.clone(), says, set_by));
-                RuleAdded::New { set_by }
-            }
-        };
-        tracing::info!("{} rule {}: {added:?}", loggable(&place), says);
-        self.reset(&place);
-        Ok(added)
+        self.live.add_rule(identity, says, set_by)
     }
 
     /// Removes the user's rule or a trial's, and the place's temporary rule; a config rule
     /// changes only in the config (ADR-0006).
     pub(crate) fn remove_rule(&mut self, identity: &RuleIdentity) -> Result<(), Refusal> {
-        let place = Place::from(identity.clone());
-        let rules = &mut self.live.indefinite;
-        let identity = identity.clone();
-        match rules
-            .iter()
-            .find(|rule| rule.place == place)
-            .map(|rule| rule.set_by)
-        {
-            None => return Err(Refusal::NoSuchRule { identity }),
-            Some(SetBy::Config) => return Err(Refusal::ConfigRule { identity }),
-            Some(_) => rules.retain(|rule| rule.place != place),
-        }
-        tracing::info!("removed the rule for {}", loggable(&place));
-        self.reset(&place);
-        Ok(())
+        self.live.remove_rule(identity)
     }
 
     /// Takes off every rule that ended by `at`, and those a trial's end would put back
     /// likewise.
     pub(crate) fn expire(&mut self, at: Timestamp) {
         let ended = |rule: &Rule| rule.length.end().is_some_and(|end| end <= at);
-        for rule in self.live.temporary.iter().filter(|rule| ended(rule)) {
+        for rule in self.live.temporary().iter().filter(|rule| ended(rule)) {
             tracing::info!("a rule ended: {}", loggable(&rule.place));
         }
-        self.take_off_wherever(ended);
+        for rules in self.kept_mut() {
+            rules.expire(at);
+        }
     }
 
     /// An edited schedule ends every rule waiting on its next turn (ADR-0018), and those a
     /// trial's end would put back likewise.
     pub(crate) fn schedule_edited(&mut self) {
-        self.take_off_wherever(|rule| {
-            matches!(rule.length, Length::UntilScheduleTurns { until: Some(_) })
-        });
+        for rules in self.kept_mut() {
+            rules.schedule_edited();
+        }
     }
 
     /// Begins a trial unless one runs (ADR-0016), standing in for the schedule with Night Shift
@@ -375,27 +287,12 @@ impl Places {
     /// What Night Shift should be: what the most specific place in front that says something
     /// says, and what it rests on.
     pub(crate) fn decide(&self, world: &World<'_>) -> Decision {
-        self.in_front(world)
-            .into_iter()
-            .chain([Place::Everywhere])
-            .find_map(|place| {
-                let reasons = self.reasons(&place, world);
-                Some(Decision {
-                    state: Some(reasons.first()?.says()),
-                    place,
-                    reasons,
-                })
-            })
-            .unwrap_or(Decision {
-                state: None,
-                place: Place::Everywhere,
-                reasons: Vec::new(),
-            })
+        self.resolve(world).decision()
     }
 
     /// What a place itself says, or None when nothing there says anything.
     pub(crate) fn says(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
-        self.reasons(place, world).first().map(Reason::says)
+        self.resolve(world).says(place)
     }
 
     /// What's in front, as `front()` answers it, with whether a browser is `watching`: each
@@ -404,103 +301,29 @@ impl Places {
     /// The site is the most specific domain with a rule covering the host, else the tab domain
     /// (ADR-0017), while website checking knows the host.
     pub(crate) fn front(&self, world: &World<'_>, watching: bool) -> Front {
-        let mut places = self.in_front(world);
-        let site = (world.context.host.as_ref())
-            .filter(|_| world.website_checking)
-            .map(|host| match places.first() {
-                Some(Place::Domain(domain)) => domain.clone(),
-                _ => {
-                    places.insert(0, Place::Domain(host.tab_domain()));
-                    host.tab_domain()
-                }
-            });
-        let mut following = Vec::new();
-        let mut after: Option<Inherited> = None;
-        let mut stand = |place: Place| {
-            let says = self.says(&place, world);
-            let stands = PlaceInFront {
-                gives: says
-                    .or(after.as_ref().map(|after| after.says))
-                    .unwrap_or(world.observed),
-                temporary: self.live.temporary_at(&place).cloned(),
-                indefinite: self.live.indefinite_at(&place).cloned(),
-                base: self.base(&place, world).into_iter().next(),
-                inherits: after.clone(),
-                reset_to: self.reset_to(&place, &following, world),
-                place: place.clone(),
-            };
-            following.push(place.clone());
-            if let Some(says) = says {
-                after = Some(Inherited { from: place, says });
-            }
-            stands
-        };
-        let everywhere = stand(Place::Everywhere);
-        // Deciding reads every domain covering the host; only the most specific is in front.
-        let mut places: Vec<PlaceInFront> = (places.into_iter().rev())
-            .map(&mut stand)
-            .filter(|stands| match &stands.place {
-                Place::Domain(domain) => Some(domain) == site.as_ref(),
-                Place::App(_) | Place::Everywhere => true,
-            })
-            .collect();
-        places.reverse();
-        Front {
-            app: world.context.app.clone(),
-            watching,
-            host: (world.context.host.as_ref()).map(|host| host.as_str().to_owned()),
-            site,
-            decision: self.decide(world),
-            places,
-            everywhere,
-        }
+        self.resolve(world).front(watching)
     }
 
-    /// Applies the same removal as Reset to a copy, then reads this place and the less
-    /// specific places in front. Inheritance can change when Adoption's link is removed.
-    fn reset_to(&self, place: &Place, following: &[Place], world: &World<'_>) -> Option<ResetTo> {
-        let mut reset = self.clone();
-        while reset.peel(place, None) {}
-        std::iter::once(place)
-            .chain(following.iter().rev())
-            .find_map(|at| {
-                let reason = reset.reasons(at, world).into_iter().next()?;
-                if at != place {
-                    return Some(ResetTo::Inherited(Inherited {
-                        from: at.clone(),
-                        says: reason.says(),
-                    }));
-                }
-                Some(match reason {
-                    Reason::Rule(rule) => ResetTo::Rule { says: rule.says },
-                    Reason::StandIn => ResetTo::StandIn,
-                    Reason::Schedule { state, until } => ResetTo::Schedule { state, until },
-                })
-            })
+    fn resolve(&self, world: &World<'_>) -> Resolution<'_> {
+        Resolution::new(
+            &self.live,
+            world,
+            self.trial.as_ref().is_some_and(|trial| trial.stands_in),
+            self.released,
+        )
     }
 
     /// What the rules query answers, as the rules decide now: the apps' and sites' indefinite
     /// rules, the config's, then the ad-hoc ones, then a trial's, each with its snooze, its
     /// place's temporary rule where that says the other way; and every place's temporary rule.
     pub(crate) fn rules(&self) -> nightcap_protocol::Rules {
-        let live = &self.live;
-        nightcap_protocol::Rules {
-            rules: (live.indefinite.iter())
-                .map(|rule| ListedRule {
-                    rule: rule.clone(),
-                    snooze: (live.temporary_at(&rule.place))
-                        .filter(|temporary| temporary.says != rule.says)
-                        .cloned(),
-                })
-                .collect(),
-            temporary: live.temporary.clone(),
-        }
+        self.live.listed()
     }
 
     /// When each rule with an end ends.
     pub(crate) fn ends(&self) -> impl Iterator<Item = Timestamp> {
         self.live
-            .temporary
+            .temporary()
             .iter()
             .filter_map(|rule| rule.length.end())
     }
@@ -511,156 +334,9 @@ impl Places {
         self.released
     }
 
-    /// The places in front but everywhere, most specific first, as deciding reads them: the
-    /// domains with a rule covering the host, longest first, then the app.
-    fn in_front(&self, world: &World<'_>) -> Vec<Place> {
-        let mut domains: Vec<&Domain> = Vec::new();
-        if let Some(host) = &world.context.host
-            && !self.released
-        {
-            for rule in self.live.indefinite.iter().chain(&self.live.temporary) {
-                if let Place::Domain(domain) = &rule.place
-                    && domain::covers(domain, host)
-                    && !domains.contains(&domain)
-                {
-                    domains.push(domain);
-                }
-            }
-            domains.sort_by(|a, b| (b.as_str().len().cmp(&a.as_str().len())).then(a.cmp(b)));
-        }
-        (domains.into_iter().cloned().map(Place::Domain))
-            .chain(world.context.app.clone().map(Place::App))
-            .collect()
-    }
-
-    /// What a place rests on: its temporary rule, its indefinite one, then for everywhere the
-    /// stand-in, then the schedule once it's known. On the way out, only everywhere's rules short
-    /// of one until a time, and the schedule (ADR-0008).
-    fn reasons(&self, place: &Place, world: &World<'_>) -> Vec<Reason> {
-        if self.released && *place != Place::Everywhere {
-            return Vec::new();
-        }
-        (self.live.temporary_at(place))
-            .filter(|rule| !(self.released && matches!(rule.length, Length::Until { .. })))
-            .into_iter()
-            .chain(self.live.indefinite_at(place))
-            .cloned()
-            .map(Reason::Rule)
-            .chain(self.base(place, world))
-            .collect()
-    }
-
-    /// What everywhere's rules sit on: the stand-in, then the schedule once it's known. An app's
-    /// or site's sit on nothing of their own.
-    fn base(&self, place: &Place, world: &World<'_>) -> Vec<Reason> {
-        if *place != Place::Everywhere {
-            return Vec::new();
-        }
-        let stands_in = self.trial.as_ref().is_some_and(|trial| trial.stands_in);
-        let schedule = (world.timeline)
-            .scheduled_state(world.applied_until)
-            .map(|state| Reason::Schedule {
-                state: OnOff::from(state),
-                until: world.timeline.next_transition(world.applied_until),
-            });
-        (stands_in.then_some(Reason::StandIn))
-            .into_iter()
-            .chain(schedule)
-            .collect()
-    }
-
-    /// Takes off the first of a place's rules that a reset would, its temporary one, then for
-    /// everywhere its indefinite one, unless it says `keep`, with the one Adoption linked to it,
-    /// and says whether it did.
-    fn peel(&mut self, place: &Place, keep: Option<OnOff>) -> bool {
-        let live = &mut self.live;
-        let switched = live
-            .switched
-            .as_ref()
-            .filter(|_| *place == Place::Everywhere);
-        let Some(rule) = live.temporary_at(place).or(switched) else {
-            return false;
-        };
-        if Some(rule.says) == keep {
-            return false;
-        }
-        if rule.length == Length::Indefinite {
-            live.switched = None;
-            return true;
-        }
-        let turn = is_turn(rule);
-        live.temporary.retain(|rule| rule.place != *place);
-        if turn
-            && let Some(linked) =
-                (live.linked).take_if(|linked| linked == place || *place == Place::Everywhere)
-        {
-            let partner = if *place == Place::Everywhere {
-                linked
-            } else {
-                Place::Everywhere
-            };
-            (live.temporary).retain(|rule| !(rule.place == partner && is_turn(rule)));
-        }
-        true
-    }
-
-    /// Puts a rule at its place: a temporary one in place of the one there, and everywhere's
-    /// indefinite one in place of both of everywhere's. Taking off one that Adoption linked
-    /// leaves its partner unlinked.
-    fn put(&mut self, rule: Rule) {
-        let live = &mut self.live;
-        if rule.length == Length::Indefinite {
-            live.temporary.retain(|each| each.place != rule.place);
-            live.switched = Some(rule);
-        } else if let Some(each) = (live.temporary.iter_mut()).find(|each| each.place == rule.place)
-        {
-            *each = rule;
-        } else {
-            live.temporary.push(rule);
-        }
-        live.tidy();
-    }
-
-    /// Takes off the temporary rules `ended` picks, from what's live and what a trial's end
-    /// would put back.
-    fn take_off_wherever(&mut self, ended: impl Fn(&Rule) -> bool) {
-        for rules in self.kept_mut() {
-            rules.temporary.retain(|rule| !ended(rule));
-            rules.tidy();
-        }
-    }
-
     /// What's live and what a trial's end would put back.
     fn kept_mut(&mut self) -> impl Iterator<Item = &mut Rules> {
         std::iter::once(&mut self.live).chain(self.trial.iter_mut().map(|trial| &mut trial.found))
-    }
-}
-
-impl Rules {
-    fn temporary_at(&self, place: &Place) -> Option<&Rule> {
-        self.temporary.iter().find(|rule| rule.place == *place)
-    }
-
-    /// An app's or site's indefinite rule, or everywhere's, the switch's.
-    fn indefinite_at(&self, place: &Place) -> Option<&Rule> {
-        match place {
-            Place::Everywhere => self.switched.as_ref(),
-            Place::App(_) | Place::Domain(_) => {
-                self.indefinite.iter().find(|rule| rule.place == *place)
-            }
-        }
-    }
-
-    /// Drops Adoption's link unless both its places still hold the rules it set.
-    fn tidy(&mut self) {
-        let temporary = &self.temporary;
-        self.linked.take_if(|linked| {
-            ![&*linked, &Place::Everywhere].into_iter().all(|end| {
-                temporary.iter().any(|rule| {
-                    rule.place == *end && is_turn(rule) && rule.set_by == SetBy::OutsideChange
-                })
-            })
-        });
     }
 }
 
@@ -695,6 +371,7 @@ fn loggable(place: &Place) -> String {
 mod tests {
     use jiff::civil;
     use jiff::tz::TimeZone;
+    use nightcap_protocol::PlaceInFront;
 
     use super::*;
     use crate::rules::schedule::{CheckedSchedule, SunTimes};
@@ -827,46 +504,8 @@ mod tests {
     /// a link only between two rules an outside change set until the schedule turns,
     /// everywhere's and another place's.
     fn assert_sound(places: &Places) {
-        for kept in [&places.live, places.found()] {
-            for rules in [&kept.indefinite, &kept.temporary] {
-                for (index, rule) in rules.iter().enumerate() {
-                    assert!(
-                        !rules[index + 1..]
-                            .iter()
-                            .any(|other| other.place == rule.place),
-                        "{} has two rules of a kind",
-                        rule.place
-                    );
-                }
-            }
-            assert!(
-                (kept.indefinite.iter()).all(
-                    |rule| rule.length == Length::Indefinite && rule.place != Place::Everywhere
-                )
-            );
-            assert!(
-                (kept.switched.iter()).all(
-                    |rule| rule.length == Length::Indefinite && rule.place == Place::Everywhere
-                )
-            );
-            assert!(
-                (kept.temporary.iter()).all(|rule| rule.length != Length::Indefinite),
-                "{:?}",
-                kept.temporary
-            );
-            let rules = &kept.temporary;
-            if let Some(linked) = &kept.linked {
-                assert_ne!(*linked, Place::Everywhere);
-                for end in [linked, &Place::Everywhere] {
-                    assert!(
-                        rules.iter().any(|rule| rule.place == *end
-                            && rule.set_by == SetBy::OutsideChange
-                            && is_turn(rule)),
-                        "{end} has no rule for the link to {linked}"
-                    );
-                }
-            }
-        }
+        places.live.assert_sound();
+        places.found().assert_sound();
     }
 
     #[test]
@@ -984,6 +623,7 @@ mod tests {
         for (places, lent, site, deciding, reasons) in cases {
             let front = places.front(&lent.world(), false);
             assert_eq!(front.site, site.map(|site| site.parse().unwrap()));
+            assert_eq!(places.decide(&lent.world()), front.decision);
             assert_eq!(
                 front.decision,
                 Decision {
