@@ -1,10 +1,10 @@
 name: audit
 
-# Advisories come out whether or not the code changes, so the check runs weekly, as well as on a
+# Advisories come out whether or not the code changes, so the check runs daily, as well as on a
 # change to what it checks or how, and before a release (release.yml).
 on:
   schedule:
-    - cron: "23 5 * * 1"
+    - cron: "23 5 * * *"
   # Dependabot's branches run as pull requests alone. The check runs none of the dependencies'
   # code, so it needs no `ci` label (checks.yml).
   push:
