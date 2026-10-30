@@ -35,7 +35,7 @@ uniffi::custom_type!(Timestamp, SystemTime, {
 });
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -411,6 +411,39 @@ pub struct PlaceInFront {
     pub base: Option<Reason>,
     /// The first less specific place in front that says something, and what it says.
     pub inherits: Option<Inherited>,
+    /// What resetting this place would restore now, including Adoption's linked rule being
+    /// taken off. None while nothing would say what Night Shift should be (ADR-0020).
+    pub reset_to: Option<ResetTo>,
+}
+
+/// What a reset restores at its place, without changing anything (ADR-0020).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum ResetTo {
+    /// The place's own indefinite rule.
+    Rule {
+        says: OnOff,
+    },
+    /// A less specific place, after the reset has also taken off any linked rule.
+    Inherited(Inherited),
+    StandIn,
+    Schedule {
+        state: OnOff,
+        until: Option<Timestamp>,
+    },
+}
+
+#[uniffi::export]
+impl ResetTo {
+    /// What the place would say after resetting it.
+    pub fn says(&self) -> OnOff {
+        match self {
+            Self::Rule { says } => *says,
+            Self::Inherited(inherited) => inherited.says,
+            Self::StandIn => OnOff::On,
+            Self::Schedule { state, .. } => *state,
+        }
+    }
 }
 
 /// What a place in front inherits: a less specific place's say.
@@ -1456,6 +1489,7 @@ mod tests {
                     ..figma_rule()
                 }),
                 indefinite: Some(figma_rule()),
+                reset_to: Some(ResetTo::Rule { says: OnOff::Off }),
                 base: None,
                 inherits: Some(Inherited {
                     from: Place::Everywhere,
@@ -1472,6 +1506,10 @@ mod tests {
                     until: Some(at("2026-10-17T05:00:00Z")),
                 }),
                 inherits: None,
+                reset_to: Some(ResetTo::Schedule {
+                    state: OnOff::On,
+                    until: Some(at("2026-10-17T05:00:00Z")),
+                }),
             },
         };
         round_trip(Response::Ok(Payload::Answers(vec![

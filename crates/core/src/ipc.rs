@@ -444,6 +444,7 @@ mod tests {
                 },
                 places: Vec::new(),
                 everywhere: PlaceInFront {
+                    reset_to: None,
                     place: Place::Everywhere,
                     gives: OnOff::Off,
                     temporary: None,

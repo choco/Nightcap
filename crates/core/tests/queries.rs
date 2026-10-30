@@ -11,8 +11,8 @@ use nightcap_protocol::{
     About, AccessibilityDetail, Answer, Check, CheckDetail, CheckState, Checks, Command,
     ConfigState, Decision, ExportFormat, Front, Inherited, Install, Lasting, Length, ListedRule,
     LoginItem, NightShift, NightShiftState, NotSelfManaged, NotificationPermission, OnOff,
-    Permissions, Place, PlaceInFront, Preferences, Query, Reason, Rules, Schedule, TrialState,
-    WebsiteChecking,
+    Permissions, Place, PlaceInFront, Preferences, Query, Reason, ResetTo, Rules, Schedule,
+    TrialState, WebsiteChecking,
 };
 
 use common::{
@@ -176,6 +176,7 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                     gives: OnOff::Off,
                     temporary: None,
                     indefinite: Some(domain_rule("figma.com")),
+                    reset_to: Some(ResetTo::Rule { says: OnOff::Off }),
                     base: None,
                     inherits: Some(Inherited {
                         from: Place::Everywhere,
@@ -184,6 +185,10 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                 },
                 PlaceInFront {
                     place: Place::App("com.apple.Safari".parse().unwrap()),
+                    reset_to: Some(ResetTo::Inherited(Inherited {
+                        from: Place::Everywhere,
+                        says: OnOff::On
+                    })),
                     gives: OnOff::On,
                     temporary: None,
                     indefinite: None,
@@ -195,6 +200,10 @@ fn front_answers_the_app_the_site_and_what_decides_there() {
                 },
             ],
             everywhere: PlaceInFront {
+                reset_to: Some(ResetTo::Schedule {
+                    state: OnOff::On,
+                    until: Some(at("2026-10-17T07:00:00+02:00"))
+                }),
                 place: Place::Everywhere,
                 gives: OnOff::On,
                 temporary: None,
@@ -521,4 +530,152 @@ fn about_answers_the_version_and_the_install() {
         Install::SelfManaged
     );
     answers_alike(&managed);
+}
+
+#[test]
+fn front_answers_what_a_reset_restores_without_changing_the_snapshot() {
+    let morning = Some(at("2026-10-17T07:00:00+02:00"));
+    let scenarios = [
+        (
+            on_by_the_schedule()
+                .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+                .then(activate_event("com.figma.Desktop"))
+                .then(set(figma_app(), OnOff::On, minutes(30))),
+            figma_app(),
+            Some(ResetTo::Rule { says: OnOff::Off }),
+        ),
+        (
+            on_by_the_schedule()
+                .config("websites = true\n[rules.off]\napp = [\"com.apple.Safari\"]\n")
+                .then(activate_browser_event("com.apple.Safari"))
+                .then(host_event(1, "example.com"))
+                .then(set(
+                    Place::Domain("example.com".parse().unwrap()),
+                    OnOff::On,
+                    minutes(30),
+                )),
+            Place::Domain("example.com".parse().unwrap()),
+            Some(ResetTo::Inherited(Inherited {
+                from: Place::App("com.apple.Safari".parse().unwrap()),
+                says: OnOff::Off,
+            })),
+        ),
+        (
+            on_figma().then(host_event(1, "docs.figma.com")).then(set(
+                Place::Domain("docs.figma.com".parse().unwrap()),
+                OnOff::On,
+                minutes(30),
+            )),
+            Place::Domain("docs.figma.com".parse().unwrap()),
+            Some(ResetTo::Inherited(Inherited {
+                from: Place::Domain("figma.com".parse().unwrap()),
+                says: OnOff::Off,
+            })),
+        ),
+        (
+            on_by_the_schedule().then(Command::Off),
+            Place::Everywhere,
+            Some(ResetTo::Schedule {
+                state: OnOff::On,
+                until: morning,
+            }),
+        ),
+        (
+            off_by_the_schedule()
+                .then(AppCommand::BeginTrial { stands_in: true })
+                .then(Command::Off),
+            Place::Everywhere,
+            Some(ResetTo::StandIn),
+        ),
+        (
+            noon().then(reported(false, Schedule::SunsetToSunrise)),
+            Place::Everywhere,
+            None,
+        ),
+    ];
+
+    for (scenario, place, expected) in scenarios {
+        let staged = scenario.stage().unwrap();
+        let snapshot = staged.core().snapshot();
+        let before = snapshot.front();
+        let standing = before
+            .places
+            .iter()
+            .chain([&before.everywhere])
+            .find(|at| at.place == place)
+            .unwrap();
+        assert_eq!(standing.reset_to, expected);
+        answers_alike(&staged);
+        assert_eq!(snapshot.front(), before);
+        assert_eq!(staged.core().snapshot().front(), before);
+
+        let result = staged.send(Command::Reset(place.clone())).1.unwrap();
+        let nightcap_protocol::Done::Decision(decision) = result else {
+            panic!("reset answers a decision")
+        };
+        // Every scenario resets the most specific place, so its result decides the screen too.
+        assert_eq!(decision.state, expected.as_ref().map(ResetTo::says));
+        assert_eq!(
+            snapshot.front(),
+            before,
+            "a kept snapshot must not change after Reset"
+        );
+    }
+}
+
+#[test]
+fn a_reset_result_describes_its_place_even_when_another_place_decides_the_screen() {
+    let staged = on_by_the_schedule()
+        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .then(Command::Off)
+        .then(activate_event("com.figma.Desktop"))
+        .stage()
+        .unwrap();
+    let before = staged.core().snapshot().front();
+    assert_eq!(
+        before.everywhere.reset_to,
+        Some(ResetTo::Schedule {
+            state: OnOff::On,
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+        })
+    );
+
+    send(&staged, Command::Reset(Place::Everywhere));
+    let after = staged.core().snapshot().front();
+    assert_eq!(after.everywhere.gives, OnOff::On);
+    assert_eq!(after.decision.state, Some(OnOff::Off));
+}
+
+#[test]
+fn reset_results_include_the_removal_of_adoptions_linked_rule() {
+    for place in [Place::Everywhere, figma_app()] {
+        let staged = noon()
+            .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+            .then(reported(false, custom_hours()))
+            .then(activate_event("com.figma.Desktop"))
+            .then(written(true, custom_hours(), "2026-10-16T12:01:00+02:00"))
+            .stage()
+            .unwrap();
+        let before = staged.core().snapshot().front();
+        assert!(before.everywhere.temporary.is_some());
+        assert!(before.places[0].temporary.is_some());
+        let predicted = before
+            .places
+            .iter()
+            .chain([&before.everywhere])
+            .find(|at| at.place == place)
+            .unwrap()
+            .reset_to
+            .as_ref()
+            .unwrap()
+            .says();
+        assert_eq!(predicted, OnOff::Off);
+
+        send(&staged, Command::Reset(place));
+        let after = staged.core().snapshot().front();
+        assert!(after.everywhere.temporary.is_none());
+        assert!(after.places[0].temporary.is_none());
+        assert_eq!(after.everywhere.gives, predicted);
+        assert_eq!(after.decision.state, Some(predicted));
+    }
 }

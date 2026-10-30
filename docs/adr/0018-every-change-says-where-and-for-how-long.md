@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0020 for reset queries only
+---
+
 # Every change to Night Shift is a rule that says where and for how long, a place holds one temporary rule, and the switch is everywhere's
 
 Night Shift can be changed from the menu, the shortcut, the CLI and Control Center, and each change has to say what it covers and when it ends. Turning Night Shift on in front of a rule, off past sunrise, on for an evening in one app: each needs an answer that survives Cmd-Tabbing away and back and never costs the user their rules. Nightcap can't block Control Center, so an outside change always takes effect; the only question is what it means. Two logic prototypes, kept on the `prototype/on-off` branch, settled the model below.

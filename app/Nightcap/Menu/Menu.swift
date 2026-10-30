@@ -146,26 +146,20 @@ private struct Rows {
         let state = at.gives.other()
         let named = named(place)
         let rule = at.indefinite
-        // What a reset leaves: an app's or site's rule, else what it inherits; for everywhere, the
-        // stand-in or the schedule. Where it goes the row's way, the place has a temporary rule.
-        let left = named == nil ? at.base?.says() : rule?.says ?? at.inherits?.says
+        let left = at.resetTo?.says()
         let undo: String? =
-            switch (named, rule, at.inherits?.from) {
+            switch at.resetTo {
             case _ where left != state: nil
-            // The switch keeps everywhere's indefinite rule where it says its way, so only there
-            // would going back to the schedule differ from it. While a trial stands in, the
-            // schedule isn't there to go back to.
-            case (nil, _, _):
-                if case .schedule(_, .some) = at.base, rule?.says == state {
-                    words.backToTheSchedule
-                } else {
-                    nil
+            case .rule: words.putTheRuleBack
+            case .inherited(let inherited):
+                switch inherited.from {
+                case .domain(let domain): words.likeTheRest(of: .site(domain: domain))
+                case .app(let browser): words.likeTheRest(of: .app(name: name(of: browser)))
+                case .everywhere: words.likeEverywhereElse
                 }
-            case (_, .some, _): words.putTheRuleBack
-            // A site follows a domain that covers it, or its browser, where that has its own say.
-            case (_, nil, .domain(let domain)?): words.likeTheRest(of: .site(domain: domain))
-            case (_, nil, .app(let browser)?): words.likeTheRest(of: .app(name: name(of: browser)))
-            case (_, nil, _): words.likeEverywhereElse
+            // Everywhere's switch already removes a temporary rule over the schedule.
+            case .schedule(_, .some) where rule?.says == state: words.backToTheSchedule
+            case .schedule, .standIn, nil: nil
             }
         var undoing = undo.map { [Menu.Item.choice(Menu.Choice(title: $0, command: .reset(place)))] } ?? []
         // Removing a rule is the user's to do whenever they like, even where nothing on screen

@@ -5,7 +5,7 @@
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     BundleId, Decision, Domain, Front, Inherited, Lasting, Length, ListedRule, OnOff, Place,
-    PlaceInFront, Reason, Refusal, Rule, RuleAdded, RuleIdentity, SetBy, TrialState,
+    PlaceInFront, Reason, Refusal, ResetTo, Rule, RuleAdded, RuleIdentity, SetBy, TrialState,
 };
 
 use crate::Effect;
@@ -414,6 +414,7 @@ impl Places {
                     host.tab_domain()
                 }
             });
+        let mut following = Vec::new();
         let mut after: Option<Inherited> = None;
         let mut stand = |place: Place| {
             let says = self.says(&place, world);
@@ -425,8 +426,10 @@ impl Places {
                 indefinite: self.live.indefinite_at(&place).cloned(),
                 base: self.base(&place, world).into_iter().next(),
                 inherits: after.clone(),
+                reset_to: self.reset_to(&place, &following, world),
                 place: place.clone(),
             };
+            following.push(place.clone());
             if let Some(says) = says {
                 after = Some(Inherited { from: place, says });
             }
@@ -451,6 +454,29 @@ impl Places {
             places,
             everywhere,
         }
+    }
+
+    /// Applies the same removal as Reset to a copy, then reads this place and the less
+    /// specific places in front. Inheritance can change when Adoption's link is removed.
+    fn reset_to(&self, place: &Place, following: &[Place], world: &World<'_>) -> Option<ResetTo> {
+        let mut reset = self.clone();
+        while reset.peel(place, None) {}
+        std::iter::once(place)
+            .chain(following.iter().rev())
+            .find_map(|at| {
+                let reason = reset.reasons(at, world).into_iter().next()?;
+                if at != place {
+                    return Some(ResetTo::Inherited(Inherited {
+                        from: at.clone(),
+                        says: reason.says(),
+                    }));
+                }
+                Some(match reason {
+                    Reason::Rule(rule) => ResetTo::Rule { says: rule.says },
+                    Reason::StandIn => ResetTo::StandIn,
+                    Reason::Schedule { state, until } => ResetTo::Schedule { state, until },
+                })
+            })
     }
 
     /// What the rules query answers, as the rules decide now: the apps' and sites' indefinite
