@@ -97,5 +97,5 @@ The app's part that tells the core what macOS observes, such as the front app, N
 _Avoid_: host, observer
 
 **Executor**:
-The app's part that carries out what the core decides, in the order it decided it: first what macOS must do, then what happened, for the menu, Settings and notifications to show. The fixes the app carries out alone go through it too.
+The app's part that sends its commands to the core and carries out what the core decides, in the order it decided it: what macOS must do and what to tell in a notification, then the redraw of the menu, Settings, onboarding and the tour, then whatever waits on the reply to a command it sent. The fixes the app carries out alone go through it too.
 _Avoid_: host, dispatcher

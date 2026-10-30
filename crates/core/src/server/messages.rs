@@ -1,7 +1,7 @@
 //! What crosses between the shell and the core (ADR-0002): the facts the shell reports, the
-//! commands only the app sends, the outcome of each, with what it answers, the effects it
-//! carries out and the events it tells, and the listener that hears it with the snapshot its
-//! input left.
+//! commands only the app sends, the outcome of each, with what it answers, the effects the shell
+//! carries out and the reply to the app's command, and the listener that hears it with the
+//! snapshot its input left.
 
 use std::sync::Arc;
 use std::time::SystemTime;
