@@ -54,6 +54,12 @@
               pkgs.zizmor
             ];
           };
+          # dmgbuild, for CI's release job, which builds the DMG on the macOS runner. It builds
+          # the image with hdiutil, so nixpkgs offers it on macOS alone.
+          dmg = pkgs.mkShellNoCC {
+            packages = [ pkgs.python3Packages.dmgbuild ];
+          };
+          isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
         in
         {
           inherit lint audit;
@@ -61,26 +67,26 @@
             inputsFrom = [
               lint
               audit
-            ];
+            ]
+            ++ pkgs.lib.optionals isDarwin [ dmg ];
             packages = [
               (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
               pkgs.librsvg
               pkgs.nodejs_24
-            ]
-            # dmgbuild builds the DMG with hdiutil, so nixpkgs offers it on macOS alone.
-            ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.python3Packages.dmgbuild ];
+            ];
             # The Rust toolchain propagates Nix's clang wrapper and SDK. On macOS, cargo
             # builds with Xcode's tools instead, matching CI and the Swift shell.
             shellHook = ''
               export PATH="$(git rev-parse --show-toplevel)/scripts:$PATH"
             ''
-            + pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
+            + pkgs.lib.optionalString isDarwin ''
               export CC=/usr/bin/cc CXX=/usr/bin/c++ AR=/usr/bin/ar
               export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
               export MACOSX_DEPLOYMENT_TARGET=15.0
             '';
           };
         }
+        // pkgs.lib.optionalAttrs isDarwin { inherit dmg; }
       );
     };
 }

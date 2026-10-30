@@ -22,6 +22,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+      # Installed first, so a failure stops the release before it signs or notarizes anything.
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       - name: Check the tag matches the Cargo version
         run: test "v$(scripts/version)" = "$GITHUB_REF_NAME"
       - name: Check CHANGELOG.md has the release's notes
@@ -54,12 +56,8 @@ jobs:
         run: release/notarize build/xcode/Release/Nightcap.app
       - run: release/verify build/xcode/Release/Nightcap.app
       - run: release/package build/xcode/Release/Nightcap.app build/dist
-      - name: Install dmgbuild
-        run: |
-          python3 -m venv "$RUNNER_TEMP/dmgbuild"
-          "$RUNNER_TEMP/dmgbuild/bin/pip" install --quiet dmgbuild==1.6.7 ds_store==1.3.2 mac_alias==2.2.3
-          echo "$RUNNER_TEMP/dmgbuild/bin" >> "$GITHUB_PATH"
-      - run: release/dmg build/xcode/Release/Nightcap.app build/dist
+      # dmgbuild comes from the flake's dmg shell, at the dev shell's version.
+      - run: nix develop .#dmg --command release/dmg build/xcode/Release/Nightcap.app build/dist
       - name: Sign the update and write the appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
