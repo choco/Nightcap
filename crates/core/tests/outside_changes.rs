@@ -9,7 +9,7 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Scenario, Staged};
+use nightcap_core::{Cause, Effect, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
@@ -26,7 +26,15 @@ fn an_outside_change_sets_everywhere_until_the_schedule_turns_it_back() {
         .report(written(true, custom_hours(), "2026-10-16T20:00:00+02:00"))
         .effects;
 
-    assert_eq!(effects, Vec::new());
+    assert_eq!(
+        effects,
+        vec![Effect::Adopted {
+            place: Place::Everywhere,
+            snoozed: None,
+            state: OnOff::On,
+            until: Some(at("2026-10-17T07:00:00+02:00")),
+        }]
+    );
     assert_eq!(
         resettable(&staged),
         vec![adopted(
@@ -200,13 +208,13 @@ fn an_external_on_in_front_of_a_rule_snoozes_it_until_the_schedule_turns_and_say
         outcome,
         Outcome {
             cause: Cause::Fact,
-            effects: Vec::new(),
-            events: vec![Event::Adopted {
+            effects: vec![Effect::Adopted {
                 place: figma_app(),
                 snoozed: Some(figma()),
                 state: OnOff::On,
                 until: Some(at("2026-10-17T07:00:00+02:00")),
             }],
+            reply: None,
         }
     );
     assert_eq!(
@@ -247,13 +255,13 @@ fn flipping_back_from_outside_takes_off_both_linked_rules() {
         outcome,
         Outcome {
             cause: Cause::Fact,
-            effects: Vec::new(),
-            events: vec![Event::Adopted {
+            effects: vec![Effect::Adopted {
                 place: figma_app(),
                 snoozed: Some(figma()),
                 state: OnOff::On,
                 until: Some(at("2026-10-17T07:00:00+02:00")),
             }],
+            reply: None,
         }
     );
     let morning = Some("2026-10-17T07:00:00+02:00");

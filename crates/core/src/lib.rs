@@ -15,7 +15,9 @@ mod setup;
 mod storage;
 
 pub use ffi::{is_bundle_id, normalize_domain};
-pub use server::messages::{AppCommand, Cause, Effect, Event, Fact, Listener, Outcome, SwitchedBy};
+pub use server::messages::{
+    AppCommand, Cause, Effect, Fact, Listener, Outcome, Replied, Reply, SwitchedBy,
+};
 pub use server::snapshot::Snapshot;
 
 #[cfg(any(test, debug_assertions))]
@@ -31,9 +33,9 @@ use nightcap_protocol::{Command, IoFailure, PathError};
 
 use clock::SystemClock;
 use server::mailbox::{Mail, Mailbox};
-use server::react::Input;
 #[cfg(any(test, debug_assertions))]
 use server::react::react;
+use server::react::{Input, ReplyTo};
 use server::snapshot::Published;
 use server::start::{Setup, install_of, instance_of, zone_of};
 use server::state::Inner;
@@ -101,19 +103,22 @@ impl Core {
         Ok(Arc::new(core))
     }
 
-    /// Something macOS observed.
+    /// Something macOS observed: a signal, which nobody waits on.
     pub fn report(&self, fact: Fact) {
         self.post(Input::Fact(fact));
     }
 
-    /// A command from the app, which hears of a refusal as an event.
-    pub fn send(&self, command: Command) {
-        self.post(Input::Command(command, None));
+    /// A command from the menu, Settings, onboarding or the shortcut, decided as the CLI's are.
+    /// Returns at once; its outcome carries `ticket` back with the reply, after its effects.
+    #[uniffi::method(default(ticket = None))]
+    pub fn send(&self, command: Command, ticket: Option<u64>) {
+        self.post(Input::Command(command, ReplyTo::App(ticket)));
     }
 
-    /// A command only the app sends.
-    pub fn send_app(&self, command: AppCommand) {
-        self.post(Input::AppCommand(command));
+    /// A command only the app sends (ADR-0016), replied to the same way.
+    #[uniffi::method(default(ticket = None))]
+    pub fn send_app(&self, command: AppCommand, ticket: Option<u64>) {
+        self.post(Input::AppCommand(command, ticket));
     }
 
     /// Releases every force as the app quits (ADR-0008), once everything before it is decided,

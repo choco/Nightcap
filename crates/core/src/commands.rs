@@ -4,8 +4,8 @@
 
 use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
-    CheckKind, CheckState, Command, FileError, Install, LoginItem, NightShift, OnOff, Payload,
-    Place, Refusal, RuleAdded, RuleIdentity,
+    CheckKind, CheckState, Command, Done, FileError, Install, LoginItem, NightShift, OnOff, Place,
+    Refusal, RuleAdded, RuleIdentity,
 };
 
 use crate::rules::places::Places;
@@ -15,28 +15,16 @@ use crate::storage::config;
 use crate::storage::config::NightShiftConfig;
 use crate::storage::document::Unusable;
 use crate::storage::file::File;
-use crate::{Cause, Effect, Event, Outcome};
+use crate::{Cause, Effect, Outcome};
 
 impl Inner {
-    /// Runs a command from the app or the CLI. The CLI, which waits on the answer, hears of a
-    /// refusal there alone; the app, which doesn't, hears of it as an event, short of a reload's:
-    /// the config file's check says why already.
-    pub(crate) fn command(
-        &mut self,
-        command: Command,
-        waited_on: bool,
-    ) -> (Outcome, Result<Payload, Refusal>) {
+    /// Runs a command from the app or the CLI, decided the same whoever sent it, and answers it:
+    /// what it did, or why the core refused it.
+    pub(crate) fn command(&mut self, command: &Command) -> (Outcome, Result<Done, Refusal>) {
         self.turn(Cause::Command, |inner, outcome| {
-            let answer = inner.run_command(&command, &mut outcome.effects);
-            if let Err(why) = &answer
-                && !waited_on
-                && command != Command::Reload
-            {
-                tracing::warn!("a command from the app was refused: {}", kind(why));
-                outcome.events.push(Event::Refused {
-                    command,
-                    why: why.clone(),
-                });
+            let answer = inner.run_command(command, &mut outcome.effects);
+            if let Err(why) = &answer {
+                tracing::warn!("a command was refused: {}", kind(why));
             }
             answer
         })
@@ -48,7 +36,7 @@ impl Inner {
         &mut self,
         command: &Command,
         effects: &mut Vec<Effect>,
-    ) -> Result<Payload, Refusal> {
+    ) -> Result<Done, Refusal> {
         let night_shift = self.facts.night_shift;
         let needs_night_shift = matches!(
             command,
@@ -154,7 +142,7 @@ impl Inner {
             Command::Reload => {
                 return self
                     .reload(effects)
-                    .map(|()| Payload::Rules(self.places.rules().rules));
+                    .map(|()| Done::Rules(self.places.rules().rules));
             }
             Command::CheckForUpdates => {
                 if let Install::NotSelfManaged(why) = self.install {
@@ -162,14 +150,14 @@ impl Inner {
                 }
                 tracing::info!("checking for updates");
                 effects.push(Effect::CheckForUpdates);
-                return Ok(Payload::UpdateCheckStarted);
+                return Ok(Done::UpdateCheckStarted);
             }
         };
         done.map(|()| {
             let decision = self.places.decide(&self.facts.world(now));
             match added {
-                Some(rule) => Payload::RuleAdded { rule, decision },
-                None => Payload::Decision(decision),
+                Some(rule) => Done::RuleAdded { rule, decision },
+                None => Done::Decision(decision),
             }
         })
     }

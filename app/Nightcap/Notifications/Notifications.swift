@@ -3,7 +3,7 @@ import NightcapCore
 import UserNotifications
 import os
 
-/// Nightcap's notifications: what the core tells, as notices, the problems the app announces,
+/// Nightcap's notifications: what an outcome tells, as notices, the problems the app announces,
 /// what's new after an update, and Sparkle's reminders. A click on one opens the page its notice
 /// names.
 final class Notifications: NSObject {
@@ -14,13 +14,11 @@ final class Notifications: NSObject {
         UNUserNotificationCenter.current().delegate = self
     }
 
-    /// Tells the user of an event, with a notification where it calls for one.
-    func tell(_ event: Event) {
-        let front = NSWorkspace.shared.frontmostApplication.flatMap { app in
+    /// The app in front, which a rule of its own is named by.
+    private var frontApp: Notice.FrontApp? {
+        NSWorkspace.shared.frontmostApplication.flatMap { app in
             app.bundleIdentifier.map { Notice.FrontApp(bundleId: $0, name: app.localizedName) }
         }
-        guard let notice = Notice(event, frontApp: front, words: .system) else { return }
-        post(notice)
     }
 
     /// Asks for permission first if it hasn't been asked yet, so a notice sent at launch isn't
@@ -44,6 +42,21 @@ final class Notifications: NSObject {
                 log.error("couldn't post \"\(notice.title, privacy: .public)\": \(error, privacy: .public)")
             }
         }
+    }
+}
+
+extension Notifications: Telling {
+    func tell(adoptedSnoozing snoozed: RuleIdentity?, state: OnOff, until: Date?) {
+        guard
+            let notice = Notice(
+                adoptedSnoozing: snoozed, state: state, until: until, frontApp: frontApp, words: .system)
+        else { return }
+        post(notice)
+    }
+
+    func tell(refused command: Command, why: Refusal) {
+        guard let notice = Notice(refused: command, why: why, frontApp: frontApp, words: .system) else { return }
+        post(notice)
     }
 }
 

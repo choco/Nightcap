@@ -295,11 +295,35 @@ pub enum Response {
 }
 
 /// A command's answer, or why it was refused.
-impl From<Result<Payload, Refusal>> for Response {
-    fn from(answer: Result<Payload, Refusal>) -> Self {
+impl From<Result<Done, Refusal>> for Response {
+    fn from(answer: Result<Done, Refusal>) -> Self {
         match answer {
-            Ok(payload) => Self::Ok(payload),
+            Ok(done) => Self::Ok(Payload::from(done)),
             Err(refusal) => Self::Refused(refusal),
+        }
+    }
+}
+
+/// What a command did, the same whoever sent it, the app or the CLI (ADR-0002).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum Done {
+    /// The decision it leads to.
+    Decision(Decision),
+    /// What adding a rule did, and the decision it leads to.
+    RuleAdded { rule: RuleAdded, decision: Decision },
+    /// The apps' and sites' indefinite rules after a reload, as the rules query lists them.
+    Rules(Vec<ListedRule>),
+    /// Sparkle is checking; it shows what it finds in its own window.
+    UpdateCheckStarted,
+}
+
+impl From<Done> for Payload {
+    fn from(done: Done) -> Self {
+        match done {
+            Done::Decision(decision) => Self::Decision(decision),
+            Done::RuleAdded { rule, decision } => Self::RuleAdded { rule, decision },
+            Done::Rules(rules) => Self::Rules(rules),
+            Done::UpdateCheckStarted => Self::UpdateCheckStarted,
         }
     }
 }
@@ -456,7 +480,7 @@ pub struct Decision {
 }
 
 /// What adding a rule did at its app or site (ADR-0006).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleAdded {
     /// A rule where there was none, the user's, or during a trial the trial's (ADR-0016).

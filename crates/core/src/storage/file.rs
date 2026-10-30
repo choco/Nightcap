@@ -361,16 +361,13 @@ mod tests {
             state: OnOff::Off,
             length: Lasting::For(jiff::SignedDuration::from_mins(30)),
         };
-        inner.command(snooze, false).1.unwrap();
+        inner.command(&snooze).1.unwrap();
         fs::create_dir(dir.path().join("rules.toml")).unwrap();
 
-        let (_, answer) = inner.command(
-            Command::AddRule {
-                identity: mail.clone(),
-                says: OnOff::Off,
-            },
-            false,
-        );
+        let (_, answer) = inner.command(&Command::AddRule {
+            identity: mail.clone(),
+            says: OnOff::Off,
+        });
 
         assert_eq!(
             answer,

@@ -7,54 +7,60 @@ private let figma = Notice.FrontApp(bundleId: "com.figma.Desktop", name: "Figma"
 /// 07:00 on 17 October 2026 in Zurich.
 private let morning = Date(timeIntervalSince1970: 1_792_213_200)
 
+/// The notice for `adopted`, an outside change as the core tells it.
+private func notice(_ adopted: Effect, frontApp: Notice.FrontApp?, words: Wording) -> Notice? {
+    guard case .adopted(_, let snoozed, let state, let until) = adopted else { return nil }
+    return Notice(adoptedSnoozing: snoozed, state: state, until: until, frontApp: frontApp, words: words)
+}
+
 /// The notice for a check that became a problem.
 private func problem(_ detail: CheckDetail) -> Notice? {
     Notice(problem: detail, words: .staged)
 }
 
-/// What each notification says, about an event from the core, a problem or an update.
+/// What each notification says, about what an outcome tells, a problem or an update.
 struct NoticeTests {
     @Test func anOutsideChangeNamesTheSnoozedRuleByItsAppInFrontAndItsEnd() {
-        let adopted = Event.adopted(
+        let adopted = Effect.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: morning)
 
-        let notice = Notice(adopted, frontApp: figma, words: .staged)
+        let notice = notice(adopted, frontApp: figma, words: .staged)
 
         #expect(notice?.title == "Night Shift turned on outside Nightcap")
         #expect(notice?.body == "Snoozed the Figma rule until 07:00.")
     }
 
     @Test func aRuleWhoseAppIsntInFrontGoesByItsBundleIdAndADomainRuleByItsDomain() {
-        let app = Event.adopted(
+        let app = Effect.adopted(
             place: .app("com.apple.mail"), snoozed: .app("com.apple.mail"), state: .off, until: nil)
-        let site = Event.adopted(
+        let site = Effect.adopted(
             place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .on, until: morning)
 
         #expect(
-            Notice(app, frontApp: figma, words: .staged)?.body
+            notice(app, frontApp: figma, words: .staged)?.body
                 == "Snoozed the com.apple.mail rule until you turn it on.")
-        #expect(Notice(site, frontApp: figma, words: .staged)?.body == "Snoozed the figma.com rule until 07:00.")
+        #expect(notice(site, frontApp: figma, words: .staged)?.body == "Snoozed the figma.com rule until 07:00.")
     }
 
     @Test func anOutsideChangeWithNoEndLastsUntilYouTurnItBack() {
-        let on = Event.adopted(
+        let on = Effect.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: nil)
-        let off = Event.adopted(place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .off, until: nil)
+        let off = Effect.adopted(place: .domain("figma.com"), snoozed: .domain("figma.com"), state: .off, until: nil)
 
-        #expect(Notice(on, frontApp: figma, words: .staged)?.body == "Snoozed the Figma rule until you turn it off.")
-        #expect(Notice(off, frontApp: figma, words: .staged)?.title == "Night Shift turned off outside Nightcap")
+        #expect(notice(on, frontApp: figma, words: .staged)?.body == "Snoozed the Figma rule until you turn it off.")
+        #expect(notice(off, frontApp: figma, words: .staged)?.title == "Night Shift turned off outside Nightcap")
     }
 
     @Test func everyTimeReadsWithTwoDigitHoursOnA24HourClockAndAmOrPmOnA12HourOne() {
         let zurich = TimeZone(identifier: "Europe/Zurich")!
         let swiss = Wording(locale: Locale(identifier: "en_CH"), timeZone: zurich)
         let american = Wording(locale: Locale(identifier: "en_US"), timeZone: zurich)
-        let adopted = Event.adopted(
+        let adopted = Effect.adopted(
             place: .app("com.figma.Desktop"), snoozed: .app("com.figma.Desktop"), state: .on, until: morning)
 
-        #expect(Notice(adopted, frontApp: figma, words: swiss)?.body == "Snoozed the Figma rule until 07:00.")
+        #expect(notice(adopted, frontApp: figma, words: swiss)?.body == "Snoozed the Figma rule until 07:00.")
         #expect(
-            Notice(adopted, frontApp: figma, words: american)?.body == "Snoozed the Figma rule until 7:00\u{202F}AM.")
+            notice(adopted, frontApp: figma, words: american)?.body == "Snoozed the Figma rule until 7:00\u{202F}AM.")
         #expect(swiss.time(TimeOfDay(hour: 6, minute: 5)) == "06:05")
         #expect(american.time(TimeOfDay(hour: 22, minute: 0)) == "10:00\u{202F}PM")
         #expect(swiss.eveningClock == "21:42")
@@ -64,9 +70,9 @@ struct NoticeTests {
     }
 
     @Test func anOutsideChangeThatSnoozedNoRuleTellsNothing() {
-        let adopted = Event.adopted(place: .everywhere, snoozed: nil, state: .on, until: morning)
+        let adopted = Effect.adopted(place: .everywhere, snoozed: nil, state: .on, until: morning)
 
-        #expect(Notice(adopted, frontApp: figma, words: .staged) == nil)
+        #expect(notice(adopted, frontApp: figma, words: .staged) == nil)
     }
 
     @Test func anUpdateOpensItsVersionInTheChangelog() {
@@ -154,8 +160,16 @@ struct NoticeTests {
         #expect(problem(.configFile(.valid(rules: 1))) == nil)
     }
 
+    @Test func aRefusedReloadIsLeftToTheConfigFilesCheck() {
+        let invalid = Refusal.invalidConfig(.unreadable(path: "/nightcap/config.toml", failure: .permissionDenied))
+
+        #expect(Notice(refused: .reload, why: invalid, frontApp: nil, words: .staged) == nil)
+        #expect(
+            Notice(refused: .checkForUpdates, why: .noUpdater(.managedInstall), frontApp: nil, words: .staged) != nil)
+    }
+
     @Test func aRefusalSaysWhyTheChangeWasntMade() {
-        let notice = Notice(.refused(command: .on, why: .nightShiftUnavailable), frontApp: nil, words: .staged)
+        let notice = Notice(refused: .on, why: .nightShiftUnavailable, frontApp: nil, words: .staged)
 
         #expect(notice?.title == "Nightcap couldn’t make that change")
         #expect(notice?.body == "Night Shift isn’t available on this Mac.")
@@ -163,7 +177,7 @@ struct NoticeTests {
 
     @Test func aRefusalNamesTheRuleItsAboutAsTheOtherNoticesDo() {
         let refused = { (why: Refusal) in
-            Notice(.refused(command: .toggle, why: why), frontApp: figma, words: .staged)?.body
+            Notice(refused: .toggle, why: why, frontApp: figma, words: .staged)?.body
         }
 
         #expect(
@@ -180,7 +194,7 @@ struct NoticeTests {
 
     @Test func aRefusalSaysWhatItCarries() {
         let refused = { (why: Refusal) in
-            Notice(.refused(command: .toggle, why: why), frontApp: nil, words: .staged)?.body
+            Notice(refused: .toggle, why: why, frontApp: nil, words: .staged)?.body
         }
 
         #expect(refused(.strengthUnavailable) == "Night Shift’s strength can’t be read on this Mac.")

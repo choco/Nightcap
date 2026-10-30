@@ -19,7 +19,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::CoreError;
 use crate::server::mailbox::{Mail, Mailbox};
-use crate::server::react::Input;
+use crate::server::react::{Input, ReplyTo};
 use crate::server::snapshot::Published;
 
 /// How long a client may take to send a line, and how long it waits for the core's thread.
@@ -119,7 +119,7 @@ fn converse(stream: UnixStream, mailbox: &Mailbox, published: &Published) -> io:
         Request::Command(command) => {
             let (reply, answer) = mpsc::channel();
             mailbox
-                .post(Mail::Input(Input::Command(command, Some(reply))))
+                .post(Mail::Input(Input::Command(command, ReplyTo::Cli(reply))))
                 .map_err(io::Error::other)?;
             Response::from(answer.recv_timeout(TIMEOUT).map_err(|_| {
                 io::Error::new(
@@ -173,14 +173,14 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Answer, Command, Decision, Front, Hello, HelloMessage, HelloReply, IoFailure, NightShift,
-        OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request, Response,
-        RuleIdentity,
+        Answer, Command, Decision, Done, Front, Hello, HelloMessage, HelloReply, IoFailure,
+        NightShift, OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request,
+        Response, RuleIdentity,
     };
 
     use super::{bind, serve};
     use crate::server::mailbox::{Mail, Mailbox};
-    use crate::server::react::Input;
+    use crate::server::react::{Input, ReplyTo};
     use crate::server::snapshot::{Published, Snapshot};
     use crate::server::tests::{ChannelListener, Heard, noon};
     use crate::{Cause, Core, CoreError, Outcome};
@@ -275,13 +275,13 @@ mod tests {
         drop(UnixStream::connect(&socket).unwrap());
 
         let response = ask(&socket, Request::Command(Command::Reload));
-        let Ok(Mail::Input(Input::Command(command, Some(reply)))) =
+        let Ok(Mail::Input(Input::Command(command, ReplyTo::Cli(reply)))) =
             inbox.recv_timeout(Duration::from_secs(5))
         else {
             panic!("the reload reaches the mailbox");
         };
         assert_eq!(command, Command::Reload);
-        reply.send(Ok(Payload::Rules(Vec::new()))).unwrap();
+        reply.send(Ok(Done::Rules(Vec::new()))).unwrap();
         assert_eq!(
             response.join().unwrap(),
             Response::Ok(Payload::Rules(Vec::new()))
@@ -454,10 +454,13 @@ mod tests {
         let before = core.snapshot();
         let asked_before = ask(&socket, queries()).join().unwrap();
 
-        core.send(Command::AddRule {
-            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-            says: OnOff::Off,
-        });
+        core.send(
+            Command::AddRule {
+                identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
+                says: OnOff::Off,
+            },
+            None,
+        );
         outcomes.recv_timeout(Duration::from_secs(5)).unwrap();
         let after = core.snapshot();
         let asked_after = ask(&socket, queries()).join().unwrap();

@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    Command, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity, Schedule,
+    Done, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity, Schedule,
 };
 
 use crate::Snapshot;
@@ -135,23 +135,15 @@ pub enum Effect {
         at: SystemTime,
     },
     CancelWakeup,
-}
-
-/// Something that happened, which a client may tell the user, once.
-#[derive(Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum Event {
-    /// Night Shift switched outside Nightcap, taken as flipping what the user sees (ADR-0018):
-    /// `place` has a rule saying `state` until the schedule turns, at `until` if it has a turn,
-    /// snoozing its indefinite rule, if one decided.
+    /// Tells the user Night Shift switched outside Nightcap, taken as flipping what they see
+    /// (ADR-0018): `place` has a rule saying `state` until the schedule turns, at `until` if it
+    /// has a turn, snoozing its indefinite rule, if one decided.
     Adopted {
         place: Place,
         snoozed: Option<RuleIdentity>,
         state: OnOff,
         until: Option<Timestamp>,
     },
-    /// The core refused a command from the app, other than a reload, whose refusal the config
-    /// file's check shows; the CLI hears its refusal as the reply.
-    Refused { command: Command, why: Refusal },
 }
 
 /// What an outcome answers (ADR-0002), as a fact about its input: what that means for the user
@@ -173,10 +165,12 @@ pub enum Cause {
 pub struct Outcome {
     /// What the outcome answers.
     pub cause: Cause,
-    /// What macOS must do, in order.
+    /// What the shell must do, in order.
     pub effects: Vec<Effect>,
-    /// What happened, for the clients to tell.
-    pub events: Vec<Event>,
+    /// The reply to the app's own command, under the ticket it sent the command with: None for
+    /// a fact, quitting, a command sent with no ticket, and the CLI's, whose reply goes over
+    /// its socket.
+    pub reply: Option<Replied>,
 }
 
 impl Outcome {
@@ -185,7 +179,32 @@ impl Outcome {
         Self {
             cause,
             effects: Vec::new(),
-            events: Vec::new(),
+            reply: None,
+        }
+    }
+}
+
+/// The reply to a command of the app's, with the ticket it sent the command with.
+#[derive(Debug, PartialEq, Eq, uniffi::Record)]
+pub struct Replied {
+    pub ticket: u64,
+    pub reply: Reply,
+}
+
+/// A command's reply, the same whoever sent it (ADR-0002).
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Enum)]
+pub enum Reply {
+    /// What it did.
+    Done(Done),
+    /// Why the core refused it, which then changed nothing.
+    Refused(Refusal),
+}
+
+impl From<Result<Done, Refusal>> for Reply {
+    fn from(answer: Result<Done, Refusal>) -> Self {
+        match answer {
+            Ok(done) => Self::Done(done),
+            Err(why) => Self::Refused(why),
         }
     }
 }

@@ -1,9 +1,9 @@
 import Foundation
 import NightcapCore
 
-/// What a notification says: about something the core told, an outside change adopted as a
-/// snooze or a command the core refused, which left what the user chose undone; or about a
-/// problem that appeared on its own, or the first launch after an update, which the app tells.
+/// What a notification says: about an outside change the core adopted as a snooze, or a command
+/// of the app's the core refused, which left what the user chose undone; or about a problem that
+/// appeared on its own, or the first launch after an update, which the app tells.
 struct Notice: Equatable {
     let title: String
     let body: String
@@ -16,27 +16,31 @@ struct Notice: Equatable {
         let name: String?
     }
 
-    /// The notice for `event`, in `words`, or nil where the user isn't told: an adoption that
-    /// snoozed no rule.
-    init?(_ event: Event, frontApp: FrontApp?, words: Wording) {
-        // A rule goes by its app's name while that app is in front, else by its bundle ID.
-        let rule = { (identity: RuleIdentity) -> Wording.Place in
-            switch identity {
-            case .app(let bundleId):
-                .app(
-                    name: frontApp.flatMap { app in
-                        app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
-                    } ?? bundleId)
-            case .domain(let domain): .site(domain: domain)
-            }
-        }
-        switch event {
-        case .adopted(_, let snoozed, let state, let until):
-            guard let snoozed else { return nil }
-            self.init(
-                title: words.turnedOutsideNightcap(state), body: words.snoozed(rule(snoozed), state, until: until))
-        case .refused(_, let why):
-            self.init(title: words.refused, body: words.refusal(why, rule: rule))
+    /// The notice for an outside change taken as the user's, in `words`, or nil where it snoozed
+    /// no rule.
+    init?(adoptedSnoozing snoozed: RuleIdentity?, state: OnOff, until: Date?, frontApp: FrontApp?, words: Wording) {
+        guard let snoozed else { return nil }
+        self.init(
+            title: words.turnedOutsideNightcap(state),
+            body: words.snoozed(Self.rule(snoozed, frontApp: frontApp), state, until: until))
+    }
+
+    /// The notice for a command of the app's the core refused, in `words`, or nil for a reload,
+    /// whose refusal the config file's check shows already.
+    init?(refused command: Command, why: Refusal, frontApp: FrontApp?, words: Wording) {
+        if case .reload = command { return nil }
+        self.init(title: words.refused, body: words.refusal(why) { Self.rule($0, frontApp: frontApp) })
+    }
+
+    /// A rule goes by its app's name while that app is in front, else by its bundle ID.
+    private static func rule(_ identity: RuleIdentity, frontApp: FrontApp?) -> Wording.Place {
+        switch identity {
+        case .app(let bundleId):
+            .app(
+                name: frontApp.flatMap { app in
+                    app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
+                } ?? bundleId)
+        case .domain(let domain): .site(domain: domain)
         }
     }
 

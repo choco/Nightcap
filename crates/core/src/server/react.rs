@@ -5,29 +5,46 @@ use std::time::SystemTime;
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, Payload, Refusal};
+use nightcap_protocol::{Command, Done, Refusal};
 
 use crate::rules::schedule::SunTimes;
+use crate::server::messages::{Replied, Reply};
 use crate::server::state::Inner;
 use crate::{AppCommand, Cause, Fact, Outcome};
 
 /// Where the CLI waits on a command's answer, which goes back over the socket (ADR-0010).
-pub(crate) type Reply = mpsc::Sender<Result<Payload, Refusal>>;
+pub(crate) type Waiter = mpsc::Sender<Result<Done, Refusal>>;
 
 /// The answer to a command the CLI sent, with where it waits.
-pub(crate) type Answer = (Reply, Result<Payload, Refusal>);
+pub(crate) type Answer = (Waiter, Result<Done, Refusal>);
+
+/// Where a command's reply goes: the app's outcome, under the ticket it sent the command with,
+/// if any, or the CLI's socket.
+#[derive(Debug)]
+pub(crate) enum ReplyTo {
+    App(Option<u64>),
+    Cli(Waiter),
+}
 
 /// Something that changes the core: a fact the platform reports, a command from the app or the
 /// CLI, or the app quitting.
 #[derive(Debug)]
 pub(crate) enum Input {
     Fact(Fact),
-    /// A command, and where the CLI waits on its answer; the app, which waits nowhere, hears of a
-    /// refusal as an event.
-    Command(Command, Option<Reply>),
-    AppCommand(AppCommand),
+    /// A command, decided the same whoever sent it, and where its reply goes.
+    Command(Command, ReplyTo),
+    /// A command only the app sends (ADR-0016), under the ticket it sent it with, if any.
+    AppCommand(AppCommand, Option<u64>),
     /// The app is quitting, which releases every force (ADR-0008).
     Terminating,
+}
+
+/// The reply to a command of the app's that has a ticket.
+fn replied(ticket: Option<u64>, answer: Result<Done, Refusal>) -> Option<Replied> {
+    ticket.map(|ticket| Replied {
+        ticket,
+        reply: Reply::from(answer),
+    })
 }
 
 /// The outcome `input` leads to, which says what it answers, and the answer the CLI waits on,
@@ -43,14 +60,21 @@ pub(crate) fn react(inner: &mut Inner, input: Input) -> (Outcome, Option<Answer>
                 .turn(cause, |inner, outcome| inner.fact(fact, outcome))
                 .0
         }
-        Input::Command(command, reply) => {
-            let (outcome, answer) = inner.command(command, reply.is_some());
-            return (outcome, reply.map(|reply| (reply, answer)));
+        Input::Command(command, reply_to) => {
+            let (mut outcome, answer) = inner.command(&command);
+            return match reply_to {
+                ReplyTo::App(ticket) => {
+                    outcome.reply = replied(ticket, answer);
+                    (outcome, None)
+                }
+                ReplyTo::Cli(waiter) => (outcome, Some((waiter, answer))),
+            };
         }
-        Input::AppCommand(command) => {
-            inner
-                .turn(Cause::Command, |inner, _| inner.app_command(command))
-                .0
+        Input::AppCommand(command, ticket) => {
+            let (mut outcome, done) =
+                inner.turn(Cause::Command, |inner, _| inner.app_command(command));
+            outcome.reply = replied(ticket, Ok(done));
+            outcome
         }
         Input::Terminating => inner.turn(Cause::Quit, |inner, _| inner.terminating()).0,
     };
@@ -88,7 +112,7 @@ impl Inner {
                         })
                         .ok()
                 });
-                outcome.events.extend(self.status_changed(
+                outcome.effects.extend(self.status_changed(
                     enabled,
                     schedule,
                     sun_schedule_set_aside,
@@ -130,11 +154,14 @@ impl Inner {
         }
     }
 
-    fn app_command(&mut self, command: AppCommand) {
+    /// Runs a command only the app sends, answering with the decision it leads to.
+    fn app_command(&mut self, command: AppCommand) -> Done {
+        let now = self.clock.now();
         match command {
             AppCommand::BeginTrial { stands_in } => self.places.begin_trial(stands_in),
-            AppCommand::EndTrial => self.places.end_trial(self.clock.now()),
+            AppCommand::EndTrial => self.places.end_trial(now),
         }
+        Done::Decision(self.places.decide(&self.facts.world(now)))
     }
 
     /// Nightcap can't tell a restart from being removed, so it never leaves a force behind

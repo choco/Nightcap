@@ -4,7 +4,7 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Event, Fact, Scenario, Staged, SwitchedBy, normalize_domain};
+use nightcap_core::{Cause, Effect, Fact, Reply, Scenario, Staged, SwitchedBy, normalize_domain};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, CheckDetail, CheckKind, CheckState, Command,
     ConfigFileDetail, ExportFormat, FileError, NightShiftDetail, NotSelfManaged,
@@ -227,7 +227,7 @@ fn stopping_website_checking_settles_missing_accessibility() {
 }
 
 #[test]
-fn a_fix_whose_command_is_refused_comes_back_as_a_refusal() {
+fn a_fix_whose_command_is_refused_is_replied_to_with_why() {
     let set_in_config = noon().config("websites = true\n").stage().unwrap();
     set_in_config.report(permissions(false, NotificationPermission::Granted));
     let managed = noon().stage().unwrap();
@@ -235,20 +235,16 @@ fn a_fix_whose_command_is_refused_comes_back_as_a_refusal() {
     let (stopped, _) = set_in_config.send(Command::Websites(OnOff::Off));
     let (not_opened, _) = managed.send(Command::OpenAtLogin(OnOff::Off));
 
-    assert!(matches!(
-        stopped.events.as_slice(),
-        [Event::Refused {
-            command: Command::Websites(OnOff::Off),
-            why: Refusal::WebsiteCheckingInConfig,
-        }]
-    ));
-    assert!(matches!(
-        not_opened.events.as_slice(),
-        [Event::Refused {
-            command: Command::OpenAtLogin(OnOff::Off),
-            why: Refusal::NoLoginItem(NotSelfManaged::ManagedInstall),
-        }]
-    ));
+    assert_eq!(
+        stopped.reply.map(|replied| replied.reply),
+        Some(Reply::Refused(Refusal::WebsiteCheckingInConfig))
+    );
+    assert_eq!(
+        not_opened.reply.map(|replied| replied.reply),
+        Some(Reply::Refused(Refusal::NoLoginItem(
+            NotSelfManaged::ManagedInstall
+        )))
+    );
 }
 
 #[test]
@@ -474,19 +470,21 @@ fn reloading_mends_a_broken_config_once_it_is_fixed() {
 }
 
 #[test]
-fn a_refused_reload_from_the_app_is_told_by_the_config_check_alone() {
+fn a_refused_reload_is_replied_to_with_why_and_the_config_check_shows_it() {
     let staged = noon()
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         .stage()
         .unwrap();
     staged.write_config(Some("[rules.off]\ndomian = [\"figma.com\"]\n"));
 
-    let (outcome, answer) = staged.send(Command::Reload);
+    let (outcome, _) = staged.send(Command::Reload);
 
-    assert_eq!(outcome.events, Vec::new());
     assert!(
-        matches!(answer, Err(Refusal::InvalidConfig(_))),
-        "{answer:?}"
+        matches!(
+            outcome.reply.as_ref().map(|replied| &replied.reply),
+            Some(Reply::Refused(Refusal::InvalidConfig(_)))
+        ),
+        "{outcome:?}"
     );
     assert_eq!(
         check(&staged, CheckKind::ConfigFile).map(|check| check.state),

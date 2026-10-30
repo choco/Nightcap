@@ -3,9 +3,9 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Event, Fact, Outcome, Scenario, Staged};
+use nightcap_core::{Cause, Effect, Fact, Reply, Scenario, Staged};
 use nightcap_protocol::{
-    CheckDetail, CheckKind, CheckState, Command, Install, LoginItem, NotSelfManaged, OnOff,
+    CheckDetail, CheckKind, CheckState, Command, Done, Install, LoginItem, NotSelfManaged, OnOff,
     OpenAtLoginDetail, Payload, Refusal, Response,
 };
 
@@ -37,31 +37,25 @@ fn update_is_refused_where_nightcap_doesnt_update_itself() {
 }
 
 #[test]
-fn the_apps_update_check_starts_sparkles_check_or_comes_back_as_a_refusal() {
+fn the_apps_update_check_starts_sparkles_check_or_is_replied_to_with_why_not() {
     let self_managed = noon().installed(Install::SelfManaged).stage().unwrap();
     let managed = noon().stage().unwrap();
 
     let (started, _) = self_managed.send(Command::CheckForUpdates);
     let (refused, _) = managed.send(Command::CheckForUpdates);
 
+    assert_eq!(started.cause, Cause::Command);
+    assert_eq!(started.effects, vec![Effect::CheckForUpdates]);
     assert_eq!(
-        started,
-        Outcome {
-            cause: Cause::Command,
-            effects: vec![Effect::CheckForUpdates],
-            events: Vec::new(),
-        }
+        started.reply.map(|replied| replied.reply),
+        Some(Reply::Done(Done::UpdateCheckStarted))
     );
+    assert_eq!(refused.effects, Vec::new());
     assert_eq!(
-        refused,
-        Outcome {
-            cause: Cause::Command,
-            effects: Vec::new(),
-            events: vec![Event::Refused {
-                command: Command::CheckForUpdates,
-                why: Refusal::NoUpdater(NotSelfManaged::ManagedInstall),
-            }],
-        }
+        refused.reply.map(|replied| replied.reply),
+        Some(Reply::Refused(Refusal::NoUpdater(
+            NotSelfManaged::ManagedInstall
+        )))
     );
 }
 
@@ -259,7 +253,7 @@ fn choosing_not_to_open_at_login_leaves_an_item_that_isnt_registered_alone() {
 
     let (outcome, answer) = staged.send(Command::OpenAtLogin(OnOff::Off));
 
-    assert_eq!(outcome, Outcome::new(Cause::Command));
+    assert_eq!(outcome.effects, Vec::new());
     assert!(answer.is_ok());
     assert_eq!(
         check(&staged, CheckKind::OpenAtLogin).map(|check| check.state),

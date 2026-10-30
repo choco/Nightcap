@@ -9,7 +9,7 @@ use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
 use crate::rules::schedule::CheckedSchedule;
 use crate::server::state::Inner;
 use crate::setup::checks::SUN_TIMES_PATIENCE;
-use crate::{Cause, Effect, Event, Outcome, SwitchedBy};
+use crate::{Cause, Effect, Outcome, SwitchedBy};
 
 impl Inner {
     /// One turn of the core, for a fact or a command, whose outcome answers `cause`: it applies
@@ -39,7 +39,7 @@ impl Inner {
         sun_schedule_set_aside: bool,
         written_at: Option<Timestamp>,
         switched_by: SwitchedBy,
-    ) -> Option<Event> {
+    ) -> Option<Effect> {
         if self.reconciling.session == Session::Away {
             tracing::debug!("ignored a status callback while dormant");
             return None;
@@ -88,7 +88,7 @@ impl Inner {
         enabled: bool,
         switched_by: SwitchedBy,
         switched: bool,
-    ) -> Option<Event> {
+    ) -> Option<Effect> {
         if self.reconciling.left_by_last_run.take() == Some(OnOff::from(enabled)) {
             tracing::info!("Night Shift is where the last run left it");
             return None;

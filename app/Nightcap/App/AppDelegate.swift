@@ -4,9 +4,8 @@ import NightcapCore
 import os
 
 /// The composition root: it starts the core, wires the reporter, which tells the core what macOS
-/// observes, and the executor, which carries out what the core decides, to the adapters that
-/// drive macOS, and sends the UI's commands to the core (ADR-0002). No sender looks at an
-/// outcome.
+/// observes, and the executor, which sends the UI's commands to the core and carries out what the
+/// core decides through the adapters that drive macOS (ADR-0002).
 @main
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
@@ -77,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             wakeups: WakeupTimer { reporter.wakeupCameDue() },
             browser: BrowserWatch { generation, host in reporter.reportHost(generation: generation, host: host) },
             accessibility: accessibility, notifications: reporter, systemSettings: SystemSettings(),
-            rereading: reporter)
+            rereading: reporter, telling: notifications)
         self.core = core
         self.reporter = reporter
         self.executor = executor
@@ -85,7 +84,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let onboardingRecord = onboardingRecord
         let whatsNew = WhatsNew(defaults: .standard, words: .system)
         let announcer = Announcer(defaults: .standard, words: .system)
-        executor.onEvent { [notifications] event in notifications.tell(event) }
         executor.onChange { [notifications] cause, snapshot in
             if cause == .launch, let notice = whatsNew.launched(snapshot.about()) { notifications.post(notice) }
             announcer.heard(cause, snapshot).forEach { notifications.post($0) }
@@ -133,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The press peeks at once, so a tap that turns Night Shift off shows no flash of warmth:
     /// switching it ends the peek. A tap that leaves it on, as when CoreBrightness refuses the
-    /// switch, ends the peek once the toggle's outcome is carried out (ADR-0015).
+    /// switch, ends the peek once the toggle's own outcome is carried out (ADR-0015).
     private func listenForShortcut() {
         shortcut = Shortcut(
             press: { [weak self] in
@@ -141,9 +139,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.tour?.shortcutPressed()
             },
             tap: { [weak self] in
-                guard let self, let core, let executor else { return }
-                core.send(command: .toggle)
-                executor.onNextChange { [weak self] in self?.nightShift?.endPeek() }
+                guard let self, let executor else { return }
+                executor.send(.toggle) { [weak self] _ in self?.nightShift?.endPeek() }
                 tour?.shortcutTapped()
             },
             release: { [weak self] in
@@ -159,18 +156,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tour.reveal()
             return
         }
-        guard let core else { return }
+        guard let core, let executor else { return }
         let snapshot = core.snapshot()
         let tour = Tour(
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             browser: tourBrowser(snapshot),
             press: { [weak self] in self?.shortcut?.press() },
             release: { [weak self] in self?.shortcut?.release() },
-            begin: { core.sendApp(command: $0) },
+            begin: { executor.send($0) },
             onEnd: { [weak self] begun in
                 guard let self else { return }
                 self.tour = nil
-                if begun { core.sendApp(command: .endTrial) }
+                if begun { executor.send(AppCommand.endTrial) }
             })
         self.tour = tour
         tour.start(snapshot)
@@ -200,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             now: { Date() },
             shortcut: KeyboardShortcuts.getShortcut(for: .nightShift),
             askForAccessibility: { executor.perform(.askForAccessibility) },
-            choose: { command in core.send(command: command) },
+            choose: { command in executor.send(command) },
             askForNotifications: { reporter.askForNotifications() },
             onFinish: { [weak self] websites in
                 guard let self else { return }
@@ -223,12 +220,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The menu-bar item, drawn first from `snapshot`.
     private func showStatusMenu(_ snapshot: Snapshot) {
-        guard let core, let reporter else { return }
+        guard let core, let reporter, let executor else { return }
         statusMenu = StatusMenu(
             snapshot,
             current: { core.snapshot() },
             icons: siteIcons,
-            choose: { command in core.send(command: command) },
+            choose: { command in executor.send(command) },
             openSettings: { [weak self] onProblem in
                 self?.showSettings(onProblem ? Settings.tab(for: core.snapshot().checks().checks) : nil)
             },
@@ -246,9 +243,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsWindow(
             current: { core.snapshot() },
             icons: siteIcons,
-            choose: { command in core.send(command: command) },
+            choose: { command in executor.send(command) },
             perform: { fix in executor.perform(fix) },
-            checkForUpdates: updater.running ? { core.send(command: .checkForUpdates) } : nil,
+            checkForUpdates: updater.running ? { executor.send(.checkForUpdates) } : nil,
             export: { core.snapshot().export(format: $0) },
             takeTour: { [weak self] in
                 guard let self else { return }

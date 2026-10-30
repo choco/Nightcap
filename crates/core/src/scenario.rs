@@ -4,21 +4,22 @@
 //! builds have none of this, so the app there can't stage a core.
 
 use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 use jiff::tz::TimeZone;
-use nightcap_protocol::{Command, Install, NotSelfManaged, Payload, Refusal, Request, Response};
+use nightcap_protocol::{Command, Done, Install, NotSelfManaged, Refusal, Request, Response};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::clock::{Clock, ManualClock};
-use crate::server::react::{Input, react};
+use crate::server::react::{Input, ReplyTo, react};
 use crate::server::snapshot::{Published, Snapshot};
 use crate::server::start::{Setup, install_of, instance_of, zone_of};
 use crate::server::state::Inner;
 use crate::storage::file::{File, Memory, Paths};
-use crate::{AppCommand, Core, Fact, Outcome, Runs};
+use crate::{AppCommand, Core, Fact, Outcome, Replied, Reply, Runs};
 
 /// Where a staged core starts: the time and the time zone, the app it runs as, its files in
 /// their own formats, then what happens, in order.
@@ -215,6 +216,8 @@ pub struct Staged {
     clock: Arc<ManualClock>,
     install: Install,
     zone: TimeZone,
+    /// The ticket the next command `send` sends goes under.
+    tickets: AtomicU64,
 }
 
 /// What a staged core decides on, and the snapshot its reads answer from.
@@ -269,6 +272,7 @@ impl Staged {
             clock,
             install,
             zone,
+            tickets: AtomicU64::new(0),
         }
     }
 
@@ -283,16 +287,28 @@ impl Staged {
             .decide(|inner| react(inner, Input::Fact(fact)).0)
     }
 
-    /// Sends a command as the app does, and returns its outcome, which tells of a refusal as an
-    /// event, and what the core answers.
-    pub fn send(&self, command: Command) -> (Outcome, Result<Payload, Refusal>) {
-        self.inline.decide(|inner| inner.command(command, false))
+    /// Sends a command as the app does, under a ticket of its own, and returns its outcome,
+    /// which carries the reply under that ticket, and what the reply says.
+    pub fn send(&self, command: Command) -> (Outcome, Result<Done, Refusal>) {
+        let ticket = self.tickets.fetch_add(1, Ordering::Relaxed);
+        let input = Input::Command(command, ReplyTo::App(Some(ticket)));
+        let outcome = self.inline.decide(|inner| react(inner, input).0);
+        #[expect(
+            clippy::expect_used,
+            reason = "react replies to every command the app sends with a ticket"
+        )]
+        let Replied { reply, .. } = outcome.reply.as_ref().expect("a reply under its ticket");
+        let answer = match reply {
+            Reply::Done(done) => Ok(done.clone()),
+            Reply::Refused(why) => Err(why.clone()),
+        };
+        (outcome, answer)
     }
 
-    /// Sends a command only the app has, and returns its outcome.
+    /// Sends a command only the app has, with no ticket, and returns its outcome.
     pub fn send_app(&self, command: AppCommand) -> Outcome {
         self.inline
-            .decide(|inner| react(inner, Input::AppCommand(command)).0)
+            .decide(|inner| react(inner, Input::AppCommand(command, None)).0)
     }
 
     /// Quits as the shell does, and returns what it must carry out before it exits.
@@ -307,7 +323,7 @@ impl Staged {
         let (outcome, response) = match over_the_wire(&request) {
             Request::Queries(queries) => (None, self.inline.published.latest().answer(&queries)),
             Request::Command(command) => {
-                let (outcome, answer) = self.inline.decide(|inner| inner.command(command, true));
+                let (outcome, answer) = self.inline.decide(|inner| inner.command(&command));
                 (Some(outcome), Response::from(answer))
             }
         };

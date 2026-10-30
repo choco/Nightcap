@@ -6,8 +6,8 @@ mod common;
 use nightcap_core::{Effect, Fact, File, Staged};
 use nightcap_protocol::{
     AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
-    Decision, ExportFormat, FileError, Lasting, Length, OnOff, Payload, Place, Problem, Reason,
-    Refusal, Request, Response, Rule, RuleAdded, RuleIdentity, SetBy, ValueType,
+    Decision, Done, ExportFormat, FileError, Lasting, Length, OnOff, Payload, Place, Problem,
+    Reason, Refusal, Request, Response, Rule, RuleAdded, RuleIdentity, SetBy, ValueType,
 };
 
 use common::{
@@ -535,7 +535,7 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
     assert!(
         matches!(
             &answer,
-            Ok(Payload::RuleAdded {
+            Ok(Done::RuleAdded {
                 rule: RuleAdded::AlreadySays { set_by: SetBy::You },
                 decision,
             }) if decision.place == Place::from(mail())

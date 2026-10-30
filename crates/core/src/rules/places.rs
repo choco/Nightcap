@@ -8,7 +8,7 @@ use nightcap_protocol::{
     PlaceInFront, Reason, Refusal, Rule, RuleAdded, RuleIdentity, SetBy, TrialState,
 };
 
-use crate::Event;
+use crate::Effect;
 use crate::rules::domain::{self, Host};
 use crate::rules::schedule::Timeline;
 
@@ -215,8 +215,8 @@ impl Places {
     /// deciding place says, and sets `state` until the schedule next turns it back over an
     /// indefinite rule or the schedule, everywhere too, linked, where an app or a site decides
     /// and everywhere says otherwise. Gives what it set, unless taking off what said otherwise
-    /// was enough.
-    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Event> {
+    /// was enough, as the effect that tells it.
+    pub(crate) fn adopt(&mut self, state: OnOff, world: &World<'_>) -> Option<Effect> {
         let mut decision = self.decide(world);
         while decision.state != Some(state) && self.peel(&decision.place, Some(state)) {
             decision = self.decide(world);
@@ -245,7 +245,7 @@ impl Places {
         if snoozed.is_some() {
             tracing::info!("snoozed {} after an outside change", loggable(&place));
         }
-        Some(Event::Adopted {
+        Some(Effect::Adopted {
             place,
             snoozed,
             state,

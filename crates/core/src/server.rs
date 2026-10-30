@@ -82,17 +82,20 @@ pub(crate) mod tests {
 
     use jiff::tz::TimeZone;
     use nightcap_protocol::{
-        Command, Install, NightShift, NotSelfManaged, OnOff, RuleIdentity, Schedule, TimeOfDay,
+        Command, Done, Install, NightShift, NotSelfManaged, OnOff, Refusal, RuleIdentity, Schedule,
+        TimeOfDay,
     };
 
     use super::Listener;
     use super::mailbox::Mail;
-    use super::react::Input;
+    use super::react::{Input, ReplyTo};
     use crate::clock::ManualClock;
     use crate::server::start::Setup;
     use crate::server::state::Inner;
     use crate::storage::file::{Memory, Paths};
-    use crate::{AppCommand, Cause, Core, Effect, Fact, Outcome, Runs, Snapshot, SwitchedBy};
+    use crate::{
+        AppCommand, Cause, Core, Effect, Fact, Outcome, Reply, Runs, Snapshot, SwitchedBy,
+    };
 
     /// An outcome as the listener hears it, with the snapshot its input left.
     pub(crate) type Heard = (Outcome, Arc<Snapshot>);
@@ -186,7 +189,7 @@ pub(crate) mod tests {
         let (core, outcomes) = running(noon(None));
 
         core.report(reported(false));
-        core.send(Command::On);
+        core.send(Command::On, None);
         core.report(reported(true));
 
         assert_eq!(
@@ -206,6 +209,38 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn each_command_from_the_app_is_replied_to_in_its_own_outcome_whatever_comes_before() {
+        let (core, outcomes) = running(noon(None));
+
+        core.report(reported(false));
+        core.send(Command::On, Some(7));
+        core.report(figma());
+        core.send(Command::CheckForUpdates, Some(8));
+        core.send(Command::Off, None);
+
+        let replies: Vec<Option<(u64, Reply)>> = (0..5)
+            .map(|_| {
+                next(&outcomes)
+                    .reply
+                    .map(|replied| (replied.ticket, replied.reply))
+            })
+            .collect();
+        assert!(matches!(
+            replies.as_slice(),
+            [
+                None,
+                Some((7, Reply::Done(Done::Decision(_)))),
+                None,
+                Some((
+                    8,
+                    Reply::Refused(Refusal::NoUpdater(NotSelfManaged::ManagedInstall))
+                )),
+                None,
+            ]
+        ));
+    }
+
+    #[test]
     fn each_outcome_says_what_its_input_was() {
         let (core, outcomes) = running(noon(None));
         let Runs::Thread(mailbox) = &core.runs else {
@@ -215,10 +250,13 @@ pub(crate) mod tests {
 
         core.report(Fact::Launched);
         core.report(reported(false));
-        core.send(Command::On);
-        core.send_app(AppCommand::BeginTrial { stands_in: false });
+        core.send(Command::On, None);
+        core.send_app(AppCommand::BeginTrial { stands_in: false }, None);
         mailbox
-            .post(Mail::Input(Input::Command(Command::Off, Some(reply))))
+            .post(Mail::Input(Input::Command(
+                Command::Off,
+                ReplyTo::Cli(reply),
+            )))
             .unwrap();
 
         let causes: Vec<Cause> = (0..5).map(|_| next(&outcomes).cause).collect();
@@ -241,7 +279,7 @@ pub(crate) mod tests {
         let (core, outcomes) = running(noon(None));
 
         core.report(reported(false));
-        core.send(Command::On);
+        core.send(Command::On, None);
 
         let (_, after_the_report) = next_heard(&outcomes);
         let (_, after_the_command) = next_heard(&outcomes);
@@ -267,10 +305,13 @@ pub(crate) mod tests {
         let (core, outcomes) = running(inner_at("2026-10-16T23:00:00+02:00", None));
         core.report(reported(true));
         core.report(figma());
-        core.send(Command::AddRule {
-            identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-            says: OnOff::Off,
-        });
+        core.send(
+            Command::AddRule {
+                identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
+                says: OnOff::Off,
+            },
+            None,
+        );
         // Nightcap's own write, landing.
         core.report(status(false, Some("2026-10-16T23:00:00+02:00")));
 

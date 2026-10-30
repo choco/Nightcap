@@ -2,12 +2,12 @@ import Foundation
 import NightcapCore
 import os
 
-/// Carries out what the core decides (ADR-0002). The inbox hands it each outcome, with the
-/// snapshot its input left, on the main queue, in the order the core decided them: the outcome's
-/// effects go to the adapters that drive macOS, in order, then its events to whoever subscribed,
-/// then the UI redraws once, from that snapshot. No effect needs the core to have heard what the
-/// one before it changed. The app's own fixes, which never reach the core, are carried out here
-/// too.
+/// Sends the app's commands and carries out what the core decides (ADR-0002). The inbox hands it
+/// each outcome, with the snapshot its input left, on the main queue, in the order the core
+/// decided them: the outcome's effects go to the adapters that drive macOS, in order, then the UI
+/// redraws once, from that snapshot, then whatever waits on the reply to the app's command runs.
+/// No effect needs the core to have heard what the one before it changed. The app's own fixes,
+/// which never reach the core, are carried out here too.
 final class Executor {
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "app")
     private let core: Core
@@ -21,10 +21,12 @@ final class Executor {
     private let notifications: NotificationsAsking
     private let systemSettings: SystemSettingsOpening
     private let rereading: Rereading
-    private var eventHandlers: [(Event) -> Void] = []
+    private let telling: Telling
     private var changeHandlers: [(Cause, Snapshot) -> Void] = []
-    /// Run once, after the next outcome is carried out.
-    private var nextChangeHandlers: [() -> Void] = []
+    /// The ticket the last command the app sent went under.
+    private var lastTicket: UInt64 = 0
+    /// The app's commands the core hasn't replied to yet, by ticket, with what waits on each.
+    private var awaiting: [UInt64: (command: Command, then: (Reply) -> Void)] = [:]
 
     /// Carries out what `inbox`, the listener `core` tells, hands over. An outcome that arrives
     /// before this waits there for the main queue's next turn, so the executor is made in the turn
@@ -41,7 +43,8 @@ final class Executor {
         accessibility: AccessibilityAsking,
         notifications: NotificationsAsking,
         systemSettings: SystemSettingsOpening,
-        rereading: Rereading
+        rereading: Rereading,
+        telling: Telling
     ) {
         self.core = core
         self.inbox = inbox
@@ -54,26 +57,30 @@ final class Executor {
         self.notifications = notifications
         self.systemSettings = systemSettings
         self.rereading = rereading
+        self.telling = telling
         inbox.receive = { [weak self] outcome, snapshot in self?.carryOut(outcome, snapshot) }
     }
 
-    // MARK: Subscriptions
+    // MARK: Commands and subscriptions
 
-    /// Calls `handler` with each event the core tells, as its outcome is carried out.
-    func onEvent(_ handler: @escaping (Event) -> Void) {
-        eventHandlers.append(handler)
+    /// Sends a command from the menu, Settings, onboarding or the shortcut, as the CLI's are sent.
+    /// `then` gets its reply once the command's own outcome is carried out, whatever outcomes come
+    /// before it; a refusal is told in a notification first, where it calls for one.
+    func send(_ command: Command, then: @escaping (Reply) -> Void = { _ in }) {
+        lastTicket += 1
+        awaiting[lastTicket] = (command, then)
+        core.send(command: command, ticket: lastTicket)
+    }
+
+    /// Sends a command only the app has (ADR-0016), which nothing waits on.
+    func send(_ command: AppCommand) {
+        core.sendApp(command: command, ticket: nil)
     }
 
     /// Calls `handler` once each outcome is carried out, with what it answers and the snapshot its
     /// input left, so what shows the core's state redraws from it.
     func onChange(_ handler: @escaping (Cause, Snapshot) -> Void) {
         changeHandlers.append(handler)
-    }
-
-    /// Calls `handler` once, after the next outcome is carried out: the one a command sent now
-    /// leads to, unless another input was already on its way.
-    func onNextChange(_ handler: @escaping () -> Void) {
-        nextChangeHandlers.append(handler)
     }
 
     // MARK: Carrying out
@@ -104,13 +111,14 @@ final class Executor {
 
     private func carryOut(_ outcome: Outcome, _ snapshot: Snapshot) {
         outcome.effects.forEach(carryOut)
-        for event in outcome.events {
-            eventHandlers.forEach { $0(event) }
+        let replied = outcome.reply.flatMap { replied in
+            awaiting.removeValue(forKey: replied.ticket).map { (waiting: $0, reply: replied.reply) }
+        }
+        if let replied, case .refused(let why) = replied.reply {
+            telling.tell(refused: replied.waiting.command, why: why)
         }
         changeHandlers.forEach { $0(outcome.cause, snapshot) }
-        let next = nextChangeHandlers
-        nextChangeHandlers = []
-        next.forEach { $0() }
+        replied.map { $0.waiting.then($0.reply) }
     }
 
     private func carryOut(_ effect: Effect) {
@@ -154,6 +162,8 @@ final class Executor {
             browser.watch(bundleId: bundleId, generation: generation)
         case .stopWatching:
             browser.stop()
+        case .adopted(_, let snoozed, let state, let until):
+            telling.tell(adoptedSnoozing: snoozed, state: state, until: until)
         }
     }
 
@@ -238,6 +248,15 @@ enum SystemSettingsPane {
 
 protocol SystemSettingsOpening {
     func open(_ pane: SystemSettingsPane)
+}
+
+/// Tells the user, in a notification, what an outcome calls for.
+protocol Telling {
+    /// Night Shift switched outside Nightcap, taken as the user's change, which snoozed `snoozed`
+    /// if a rule decided (ADR-0018).
+    func tell(adoptedSnoozing snoozed: RuleIdentity?, state: OnOff, until: Date?)
+    /// The core refused a command the app sent.
+    func tell(refused command: Command, why: Refusal)
 }
 
 /// Reads again, for the core, what an effect changed that macOS doesn't announce.
