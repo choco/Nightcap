@@ -10,9 +10,8 @@ import os
 /// the tour finds Night Shift off, stands in for the schedule with it on; the steps follow the
 /// core's answers to the queries, and quote the menu's items as `Menu` words them.
 final class Tour {
-    enum Step {
-        case moon, rule, snooze, site, peek, end
-    }
+    typealias Step = TourFlow.Step
+    typealias Milestones = TourFlow.Milestones
 
     /// The browser the site step opens the project's site in: the default one, while website
     /// checking can watch it.
@@ -21,25 +20,13 @@ final class Tour {
         let name: String
     }
 
-    /// What happened during a step, which the core's answers show only as it happens: the user
-    /// left the sample with its rule, the rule came back from its snooze, and the user left the
-    /// site's tab with its rule.
-    struct Milestones {
-        var returned = false
-        var ruleBack = false
-        var siteLeft = false
-    }
-
-    private enum Try {
-        case tap, hold
-    }
-
     /// What the panel shows for its step, apart from the keycaps and their hint.
     private struct Shown: Equatable {
         let title: String
         let body: String
         let standsIn: Bool
         let done: Bool
+        let canAdvance: Bool
     }
 
     /// Tour Sample.app, beside the CLI in Nightcap's bundle: an app of its own, so it stays the
@@ -66,20 +53,8 @@ final class Tour {
     private let words = Wording.system
     /// The menu's items the steps quote.
     private let quotes: TourQuotes
-    private let steps: [Step]
-    private var index = 0
-    /// The tour begins its trial once the user continues from its first step.
-    private var begun = false
-    /// What the steps follow, from the moment the core runs the trial.
-    private var report: TourFacts?
-    /// Whether the tour asks its trial to stand in for the schedule, from Night Shift as the core
-    /// last heard, as the tour finds it before the trial begins.
-    private var asksForStandIn = false
-    private var milestones = Milestones()
+    private var flow: TourFlow
     private var drawn: Shown?
-    private var keysDown = false
-    private var lastTry: Try?
-    private var tried = false
     private let panel = FloatingPanel()
     private weak var keyCaps: KeyCaps?
     private weak var hint: NSTextField?
@@ -110,28 +85,15 @@ final class Tour {
         self.release = release
         self.begin = begin
         self.onEnd = onEnd
-        // Without a shortcut there's nothing to peek with.
-        steps = [.moon, .rule, .snooze] + (browser == nil ? [] : [.site]) + (shortcut == nil ? [] : [.peek]) + [.end]
+        flow = TourFlow(sample: Self.sample.bundleId, site: site?.domain, hasShortcut: shortcut != nil)
     }
 
-    private var step: Step { steps[index] }
-
-    /// What every step after the first follows.
-    private var facts: TourFacts { report! }
-
-    /// The rule the rule step asks for, which the snooze step snoozes.
-    private var ruled: Bool { facts.sample.rule == .off }
-
-    private var snoozed: Bool { ruled && facts.sample.snoozed }
-
-    private var siteRuled: Bool { facts.site?.rule == .off }
-
-    /// Whether the tour has Night Shift on in place of the schedule: as the core answers once the
-    /// trial has begun, and until then as the tour will ask.
-    private var standsIn: Bool { report?.standsIn ?? asksForStandIn }
-
-    /// Tour Sample stays open through the steps that use it.
-    private var usesSample: Bool { step == .rule || step == .snooze }
+    private var step: Step { flow.step }
+    private var ruled: Bool { flow.facts?.sample.rule == .off }
+    private var snoozed: Bool { ruled && flow.facts?.sample.snoozed == true }
+    private var siteRuled: Bool { flow.facts?.site?.rule == .off }
+    private var standsIn: Bool { flow.standsIn }
+    private var usesSample: Bool { flow.usesSample }
 
     /// At the top right, under the menu bar, where the moon is: on macOS 27 an app isn't told
     /// where its status item is, so nothing points at it. The first step follows `snapshot`.
@@ -147,21 +109,16 @@ final class Tour {
     }
 
     func end() {
-        panel.close()
-        closeSample()
-        onEnd(begun)
+        carryOut(flow.end())
     }
 
-    // MARK: What the tour follows
-
-    /// Takes the core's snapshot after each change, however it was made, and redraws what it
-    /// changes.
+    /// Follows the core's answers, opening the sample only once the trial has begun.
     func refresh(_ snapshot: Snapshot) {
-        let report = TourFacts(snapshot, sample: Self.sample.bundleId, site: site?.domain)
-        if let before = self.report, let after = report { follow(from: before, to: after) }
-        self.report = report
-        asksForStandIn = TourFacts.asksForStandIn(snapshot)
-        guard reported else { return }
+        carryOut(flow.refresh(snapshot))
+        redraw()
+    }
+
+    private func redraw() {
         if shown != drawn {
             draw()
         } else if step == .peek {
@@ -169,23 +126,17 @@ final class Tour {
         }
     }
 
-    /// Whether the step can be drawn: every step after the first follows what the core answers
-    /// once it has decided the trial's begin.
-    private var reported: Bool { step == .moon || report != nil }
-
-    /// Records what the step at hand saw happen between two answers.
-    private func follow(from before: TourFacts, to after: TourFacts) {
-        let left = { (place: TourPlace?, now: TourPlace?) in
-            place?.inFront == true && place?.rule == .off && now?.inFront == false
-        }
-        switch step {
-        case .rule where left(before.sample, after.sample):
-            milestones.returned = true
-        case .snooze where before.sample.snoozed && !after.sample.snoozed && after.sample.rule == .off:
-            milestones.ruleBack = true
-        case .site where left(before.site, after.site):
-            milestones.siteLeft = true
-        default: break
+    private func carryOut(_ effects: [TourFlow.Effect]) {
+        for effect in effects {
+            switch effect {
+            case .beginTrial(let standsIn): begin(.beginTrial(standsIn: standsIn))
+            case .openSample: openSample()
+            case .closeSample: closeSample()
+            case .openSite: NSWorkspace.shared.open(Self.siteURL)
+            case .finish(let begun):
+                panel.close()
+                onEnd(begun)
+            }
         }
     }
 
@@ -199,49 +150,31 @@ final class Tour {
     }
 
     func shortcutPressed() {
-        keysDown = true
+        flow.shortcutPressed()
         update()
     }
 
     func shortcutTapped() {
-        keysDown = false
         tried(.tap)
     }
 
     func shortcutReleased() {
-        keysDown = false
         tried(.hold)
     }
 
-    private func tried(_ kind: Try) {
-        guard step == .peek else { return }
-        lastTry = kind
-        let firstTry = !tried
-        tried = true
+    private func tried(_ kind: TourFlow.Try) {
+        flow.tried(kind)
         // The keycaps may be handling the mouse-up that got here.
-        DispatchQueue.main.async { [weak self] in firstTry ? self?.draw() : self?.update() }
+        DispatchQueue.main.async { [weak self] in self?.redraw() }
     }
 
-    // MARK: Steps
-
     private func advance() {
-        if step == .moon, !begun {
-            begun = true
-            begin(.beginTrial(standsIn: asksForStandIn))
-        }
-        let hadSample = usesSample
-        index += 1
-        // Snoozing needs the rule the step before asks for.
-        if step == .snooze, !ruled { index += 1 }
-        if hadSample, !usesSample { closeSample() }
-        log.info("tour at step \(String(describing: self.step), privacy: .public)")
-        if step == .rule { openSample() }
-        if step == .site { NSWorkspace.shared.open(Self.siteURL) }
-        if reported { draw() }
+        carryOut(flow.advance())
+        redraw()
     }
 
     private var stepLabel: String {
-        step == .end ? words.tour : words.step(index + 1, of: steps.count - 1)
+        step == .end ? words.tour : words.step(flow.position, of: flow.stepCount)
     }
 
     private var keys: String { shortcut?.description ?? "" }
@@ -254,33 +187,33 @@ final class Tour {
         switch step {
         case .moon:
             return words.theMoonIsNightcap
-        case .rule where milestones.returned:
+        case .rule where flow.milestones.returned:
             return words.itComesBack
-        case .rule where ruled && facts.sample.inFront:
+        case .rule where ruled && flow.facts?.sample.inFront == true:
             return words.trueColourInTheSample
-        case .rule where facts.sample.inFront:
+        case .rule where flow.facts?.sample.inFront == true:
             return words.giveItARule(addSampleRule)
         case .rule:
             return words.tryARule(sample)
-        case .snooze where milestones.ruleBack:
+        case .snooze where flow.milestones.ruleBack:
             return words.theRulesBack(words.quoted(quotes.addExampleRule), in: Self.example.name)
-        case .snooze where snoozed && facts.sample.inFront:
+        case .snooze where snoozed && flow.facts?.sample.inFront == true:
             return words.thatsASnooze(putBack)
         case .snooze where snoozed:
             return words.putTheRuleBack(sample, putBack)
-        case .snooze where !ruled && facts.sample.inFront:
+        case .snooze where !ruled && flow.facts?.sample.inFront == true:
             return words.snoozingNeedsARule(addSampleRule)
         case .snooze where !ruled:
             return words.snoozingNeedsARule(sample, addSampleRule)
-        case .snooze where facts.sample.inFront:
+        case .snooze where flow.facts?.sample.inFront == true:
             return words.snoozeIt(words.quoted(row: quotes.snoozeSample))
         case .snooze:
             return words.snoozeARule(sample)
-        case .site where milestones.siteLeft:
+        case .site where flow.milestones.siteLeft:
             return words.sitesWorkTheSameWay
         case .site where siteRuled:
             return words.trueColourOnOneSite
-        case .site where facts.site?.inFront == true:
+        case .site where flow.facts?.site?.inFront == true:
             return words.nowASite(browser, words.quoted(quotes.addSiteRule!))
         case .site:
             return words.nowASite(browser)
@@ -292,29 +225,21 @@ final class Tour {
     }
 
     private var hintText: String {
-        if keysDown { return words.trueColourWhileYouHold }
-        if report?.everywhereOn == false { return words.tapToTurnItBackOn }
-        switch lastTry {
+        if flow.keysDown { return words.trueColourWhileYouHold }
+        if flow.facts?.everywhereOn == false { return words.tapToTurnItBackOn }
+        switch flow.lastTry {
         case .hold: return words.thatWasAPeek
         case .tap: return words.nowTryHolding
         case nil: return words.holdTheKeys
         }
     }
 
-    /// Whether the step has shown what it's for, which turns its Skip into Continue.
-    private var done: Bool {
-        switch step {
-        case .moon, .end: true
-        case .rule: milestones.returned
-        case .snooze: milestones.ruleBack
-        case .site: milestones.siteLeft
-        case .peek: tried
-        }
-    }
+    private var done: Bool { flow.done }
 
     private var shown: Shown {
         let (title, body) = texts
-        return Shown(title: title, body: body, standsIn: step == .moon && standsIn, done: done)
+        return Shown(
+            title: title, body: body, standsIn: step == .moon && standsIn, done: done, canAdvance: flow.canAdvance)
     }
 
     /// The step's buttons, secondary first: Skip until the step is done, then Continue.
@@ -323,10 +248,10 @@ final class Tour {
             return [firstClick(CapsuleButton(words.done, .primary) { [weak self] in self?.end() })]
         }
         let next: () -> Void = { [weak self] in self?.advance() }
-        return [
-            firstClick(
-                done ? CapsuleButton(words.continueTour, .primary, next) : CapsuleButton(words.skip, .regular, next))
-        ]
+        let button = firstClick(
+            done ? CapsuleButton(words.continueTour, .primary, next) : CapsuleButton(words.skip, .regular, next))
+        button.isEnabled = flow.canAdvance
+        return [button]
     }
 
     /// The panel never takes the focus, so a click on it is often its first.
@@ -347,7 +272,7 @@ final class Tour {
 
     /// Redraws only the keycaps and their hint, which a press changes.
     private func update() {
-        keyCaps?.down = keysDown
+        keyCaps?.down = flow.keysDown
         if let hint {
             hint.attributedStringValue = NSAttributedString(
                 string: hintText, attributes: hint.attributedStringValue.attributes(at: 0, effectiveRange: nil))
@@ -434,7 +359,7 @@ final class Tour {
         let modifiers = shortcut?.modifiers.ks_symbolicRepresentation ?? ""
         let keys = modifiers.map(String.init) + [String(self.keys.dropFirst(modifiers.count))]
         let caps = KeyCaps(keys: keys, label: self.keys, press: press, release: release)
-        caps.down = keysDown
+        caps.down = flow.keysDown
         keyCaps = caps
         let hint = NSTextField.label(hintText, size: 12, weight: .regular, color: .secondaryLabelColor, width: width)
         hint.alignment = .center
@@ -477,9 +402,7 @@ final class Tour {
     /// The panel at `step` as a PNG, on the menu's colour, for comparing against the prototype:
     /// with `facts` as the core's answers would give them.
     func snapshot(_ step: Step, facts: TourFacts, milestones: Milestones = Milestones()) -> Data? {
-        index = steps.firstIndex(of: step)!
-        report = facts
-        self.milestones = milestones
+        flow.stage(step, facts: facts, milestones: milestones)
         let content = self.content()
         let size = content.fittingSize
         let backdrop = SnapshotBackdrop(frame: NSRect(origin: .zero, size: size))

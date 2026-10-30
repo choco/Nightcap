@@ -63,6 +63,7 @@
 				Platform/NightShiftWrites.swift,
 				Settings/Settings.swift,
 				Tour/TourFacts.swift,
+				Tour/TourFlow.swift,
 				Tour/TourQuotes.swift,
 				Wording/Checks.swift,
 				Wording/Localizable.xcstrings,
