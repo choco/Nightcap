@@ -36,7 +36,8 @@ extension Wording {
     var openNightShiftSettings: String { text("Open Night Shift Settings…") }
     var shortcut: String { text("Shortcut") }
     var shortcutDetail: String {
-        text("Tap it to turn Night Shift on or off.") + " " + text("Hold it to see true colour until you let go.")
+        text("Tap it to turn Night Shift on or off.") + " "
+            + text("Hold it to see true colour, or Night Shift’s warmth while it’s off, until you let go.")
     }
     var notifications: String { text("Notifications") }
     var notificationsDetail: String {

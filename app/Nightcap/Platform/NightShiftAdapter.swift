@@ -83,7 +83,9 @@ final class NightShiftAdapter: NightShiftWriting {
     private let setMode: SetMode?
     private let setScheduleImplementation: SetSchedule?
     private let setProperty: SetProperty?
-    private var peeking = false
+    /// Night Shift and its tint as the peek found them, while one lasts, which ending it puts
+    /// back.
+    private var peekedFrom: (enabled: Bool, factor: Float)?
     private var writes = NightShiftWrites()
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
@@ -293,35 +295,45 @@ final class NightShiftAdapter: NightShiftWriting {
         }
     }
 
-    /// Shows true colour with Night Shift still on: `BlueLightReductionFactor`, the tint macOS
-    /// fades at each switch, set to 0 (ADR-0015). Nothing to show while Night Shift is off.
+    /// Shows the other side of Night Shift at once, without switching it (ADR-0015): true colour
+    /// while it's on, its warmth at the set strength while it's off. `BlueLightReductionFactor`,
+    /// the tint macOS fades at each switch, tints the screen even with Night Shift off.
     func peek() {
-        guard !peeking, status?.enabled == true, setFactor(0, fade: 0) else { return }
-        peeking = true
+        guard peekedFrom == nil, let enabled = status?.enabled, let factor = tintFactor,
+            setFactor(enabled ? 0 : 1, fade: 0)
+        else { return }
+        peekedFrom = (enabled, factor)
     }
 
-    /// Ends a peek. The warmth comes back only while Night Shift is still on: the factor tints
-    /// the screen even with Night Shift off, and stays at 0 while it's off, as macOS keeps it.
+    /// Ends a peek: the tint goes back to where the peek found it, partway through one of the
+    /// schedule's fades too, which macOS then carries on. Where Night Shift switched meanwhile,
+    /// the tint goes to what it now calls for.
     func endPeek() {
-        guard peeking else { return }
-        peeking = false
-        guard status?.enabled == true else { return }
-        _ = setFactor(1, fade: 0.2)
+        guard let from = peekedFrom else { return }
+        peekedFrom = nil
+        guard let enabled = status?.enabled else { return }
+        let factor: Float = enabled == from.enabled ? from.factor : (enabled ? 1 : 0)
+        _ = setFactor(factor, fade: 0.2)
     }
 
-    /// The factor outlives Nightcap, so a crash mid-peek leaves Night Shift on with no warmth,
-    /// which nothing else puts back.
+    /// The factor outlives Nightcap, so a crash mid-peek leaves Night Shift on with no warmth, or
+    /// off with its warmth, which nothing else puts back.
     func repairPeek() {
-        guard status?.enabled == true, tintFactor == 0 else { return }
-        log.notice("Night Shift was on without its tint, as a peek a crash cut short leaves it; putting it back")
-        _ = setFactor(1, fade: 0.2)
+        guard let enabled = status?.enabled, let factor = tintFactor else { return }
+        if enabled, factor == 0 {
+            log.notice("Night Shift was on without its tint, as a peek a crash cut short leaves it; putting it back")
+            _ = setFactor(1, fade: 0.2)
+        } else if !enabled, factor > 0 {
+            log.notice("Night Shift was off with its tint, as a peek a crash cut short leaves it; taking it off")
+            _ = setFactor(0, fade: 0.2)
+        }
     }
 
-    private var tintFactor: Double? {
+    private var tintFactor: Float? {
         let value =
             copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), "BlueLightReductionFactor")?
             .takeRetainedValue() as? [String: Any]
-        return (value?["BlueLightReductionFactorValue"] as? NSNumber)?.doubleValue
+        return (value?["BlueLightReductionFactorValue"] as? NSNumber)?.floatValue
     }
 
     private func setFactor(_ value: Float, fade: Float) -> Bool {
@@ -375,7 +387,7 @@ final class NightShiftAdapter: NightShiftWriting {
             return
         }
         writes.wrote(enabled)
-        peeking = false
+        peekedFrom = nil
     }
 
     private static func timeOfDay(_ hour: Int32, _ minute: Int32) -> TimeOfDay? {

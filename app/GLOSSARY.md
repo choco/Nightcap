@@ -87,7 +87,7 @@ Nightcap's one global keyboard shortcut, ⌃⌥⌘N unless the user records anot
 _Avoid_: hotkey
 
 **Peek**:
-True colour while the shortcut is held, with Night Shift still on. It drops the tint and nothing else, so the core never learns of it.
+The other side of Night Shift while the shortcut is held: true colour while it's on, its warmth at the set strength while it's off. It sets the tint and nothing else, so the core never learns of it, and letting go puts the tint back as the peek found it.
 _Avoid_: preview, which is the strength's while its slider moves
 
 ### Between macOS and the core
