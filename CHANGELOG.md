@@ -2,6 +2,14 @@
 
 What changed in each version of Nightcap.
 
+## 1.2.2 · 11 November 2026
+
+When you leave an app or site that turns Night Shift off, Night Shift comes back partway through the schedule’s fade in, as macOS has it, instead of at full warmth.
+
+### Fixed
+
+- Leaving an app or site whose rule turns Night Shift off, in the half hour Night Shift fades in after sunset (two minutes with custom hours), brings it back where the schedule’s fade is, and the fade carries on from there.
+
 ## 1.2.1 · 30 October 2026
 
 Night Shift follows macOS’s schedule more reliably, and the shortcut’s peek restores the screen as it found it. This release also simplifies Nightcap’s internals.
