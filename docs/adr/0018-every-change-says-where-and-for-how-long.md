@@ -53,7 +53,7 @@ Night Shift can be changed from the menu, the shortcut, the CLI and Control Cent
 
 **State and commands**
 
-- `state.json` keeps every place's temporary rule and everywhere's indefinite one, but not the apps' and sites' indefinite rules, which the config and `rules.toml` keep, each with its end, who set it, and Adoption's link (ADR-0008). Of the rules a file holds at a place, the first of each kind stays.
+- `state.json` keeps every place's temporary rule and everywhere's indefinite one, but not the apps' and sites' indefinite rules, which the config and `rules.toml` keep, each with its end, who set it, and Adoption's link (ADR-0008). Of the rules a file holds at a place, the first of each kind stays, and one Nightcap never keeps there, such as a temporary rule set by the config, is dropped.
 - Commands: `On`, `Off` and `Toggle` are the switch. `Set { place, state, length }` sets a temporary rule of the user's, for a time, until a time or until the schedule turns, in place of the place's; or, for everywhere alone, its indefinite rule, which takes off its temporary one too. An app's or site's indefinite rule is added with `AddRule` (ADR-0006). `Reset(place)` takes off what a reset does.
 - The CLI: `nightcap on|off [--for 45m | --until 23:30 | --until-schedule] [--app ID | --domain D]`, `nightcap toggle` and `nightcap reset [--app ID | --domain D]`. A length is written as `30m`, `1h` or `1h30m`.
 - The config's top-level `lengths` sets the lengths a temporary rule can be picked for, in the same form: the lengths are the model's, whichever client offers them.

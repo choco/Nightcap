@@ -1,6 +1,6 @@
 # Control
 
-How Nightcap decides whether Night Shift is on or off, from rules, the schedule and the user's own changes.
+How Nightcap decides whether Night Shift is on or off, from rules, the schedule and the user's own changes, and checks what it depends on against what the user set up.
 
 ## Language
 
@@ -153,6 +153,29 @@ One thing behind a decision: a rule, the stand-in or the schedule.
 What Night Shift should be right now: what the deciding place says.
 _Avoid_: desired state
 
+### Checks
+
+**Choice**:
+Something the user decided about how Nightcap runs, such as website checking, notifications or opening at login. Nightcap records it, so a check can tell a change the user made on purpose from one that broke what they set up.
+_Avoid_: wish, preference
+
+**Grant**:
+A permission the user gave Nightcap in System Settings: Accessibility or notifications.
+
+**Check**:
+One thing Nightcap depends on, such as a grant or a valid config file, compared with what the user set up.
+_Avoid_: doctor, health check
+
+**Problem**:
+A check that needs the user: drift or broken.
+_Avoid_: issue, error
+
+**Drift**:
+A problem where something the user set up stopped working, such as notifications switched off after being allowed. It lasts until the user restores it or accepts the change.
+
+**Broken**:
+A problem the user can't accept, only fix: an invalid config or ad-hoc rules file, Night Shift unavailable, or sunset to sunrise without sun times for ten minutes.
+
 ### Talking to Nightcap
 
 **Server**:
@@ -163,7 +186,7 @@ _Avoid_: daemon, service
 A request for Nightcap to do something, such as the switch, a temporary rule at a place, adding a rule, a reload, an update check or keeping notifications off, which Nightcap may refuse. The app and the CLI send the same commands, a fix's among them where the app doesn't carry it out in macOS itself; beginning and ending a trial are the app's alone.
 
 **Refusal**:
-Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too, short of a reload's, which the config file's check shows already.
+Why Nightcap refused a command, which then changes nothing: what the client needs to say why, such as the config rule that decides, which it words itself. The app tells it in a notification, for a fix's command too, short of a reload's, which the config file's check shows already; while notifications are off, only its log says why.
 
 **Snapshot**:
 Nightcap as it stood after one input, which a client reads from whole: every query asked of it answers as of that input, whatever Nightcap decides after.

@@ -2,8 +2,8 @@
 
 ## Contexts
 
-- [Control](./crates/core/GLOSSARY.md): decides whether Night Shift is on or off, from rules, the schedule and the user's own changes
-- [App](./app/GLOSSARY.md): what the user sees and sets up, and the checks that compare that setup with what macOS is doing
+- [Control](./crates/core/GLOSSARY.md): decides whether Night Shift is on or off, from rules, the schedule and the user's own changes, and checks what it depends on against what the user set up
+- [App](./app/GLOSSARY.md): what the user sees and sets up, and the fixes it offers for the problems the checks find
 - [Release](./release/GLOSSARY.md): builds, signs and publishes the app so grants survive updates
 
 ## Relationships

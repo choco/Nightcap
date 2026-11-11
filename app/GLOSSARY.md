@@ -1,17 +1,10 @@
 # App
 
-What the user sees and sets up: the menu, Settings and onboarding, and the checks that compare what the user set up with what macOS is doing.
+What the user sees and sets up: the menu, Settings, onboarding and the tour, and the fixes it offers for the problems Control's checks find.
 
 ## Language
 
 ### Setup
-
-**Choice**:
-Something the user decided about how Nightcap runs, such as website checking, notifications or opening at login. Nightcap records it, so a check can tell a change the user made on purpose from one that broke what they set up.
-_Avoid_: wish, preference
-
-**Grant**:
-A permission the user gave Nightcap in System Settings: Accessibility or notifications.
 
 **Open at login**:
 The choice that macOS starts Nightcap at login, which a self-managed install carries out through its login item.
@@ -31,21 +24,7 @@ The tour's own app, Tour Sample, which the user adds a rule for from the menu, a
 **Suggestion**:
 An app or website onboarding offers a rule for, already ticked if it has one: installed apps where colour matters, and websites that need true colour, mostly video streaming.
 
-### Checks
-
-**Check**:
-One thing Nightcap depends on, such as a grant or a valid config file, compared with what the user set up.
-_Avoid_: doctor, health check
-
-**Problem**:
-A check that needs the user: drift or broken. The menu calls it needing attention.
-_Avoid_: issue, error
-
-**Drift**:
-A problem where something the user set up stopped working, such as notifications switched off after being allowed. It lasts until the user restores it or accepts the change.
-
-**Broken**:
-A problem the user can't accept, only fix: an invalid config or ad-hoc rules file, Night Shift unavailable, or sunset to sunrise without sun times for ten minutes.
+### Problems
 
 **Fix**:
 An action offered with a problem: a restore, an accept, or reloading a broken file. The app picks which a check offers. Most are commands; the rest happen in macOS itself, asking for a grant or opening the pane of System Settings where the user puts something back, and the app carries them out alone.
@@ -58,7 +37,7 @@ A fix that takes the change as the user's new choice, such as keeping notificati
 _Avoid_: dismiss, ignore
 
 **Announce**:
-Post one notification when a problem appears on its own, as the snapshot after a fact shows it, never one the user caused with a command. The app remembers what it told until the problem ends, across relaunches, and tells one that comes back again.
+Post one notification when a problem appears on its own, as the snapshot after a fact shows it, never one the user caused with a command. The app remembers what it told until the problem ends, across relaunches, and tells one that comes back again. A problem is its check's: one that finds something else while it lasts, such as a broken config broken another way at the next launch, isn't told again.
 
 ### Menu
 
@@ -70,10 +49,10 @@ The menu's first item, after any problem line: Night Shift, checked while it's o
 _Avoid_: status line
 
 **Problem line**:
-The menu's line while any problem exists, counting them; it opens Settings where the problem is.
+The menu's line while any problem exists, counting them as needing attention; it opens Settings where the problem is.
 
 **Place row**:
-A menu item with a submenu for one place: everywhere's, Turn On or Turn Off, under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. An app's or site's tells what its place says, its temporary rule then its indefinite one, such as “On until 07:00, then your config’s rule”. Each turns its place the other way for each of the lengths, until a time picked with Custom… in a small window of its own, and until the schedule next turns it back, shown as the time, “Until 07:00”, with the moment under it: “At sunrise”, “At sunset”, “When the schedule ends” or “When the schedule starts”, and left out without a schedule. A new temporary rule takes the place of the one there, so over one with the row's way under it the lengths would come to the same as undoing it, and an app's or site's row offers undoing instead: Put the Rule Back, and Like Everywhere Else, or for a site Like the Rest of Safari, say, where its browser has a say of its own, and Like the Rest of figma.com where a domain that covers it does. As they apply, it also offers Always, its indefinite rule, greyed under a config rule with “Your config decides”, and Remove Your Rule. Everywhere's offers nothing the switch would do anyway: the switch takes off everywhere's temporary rule and keeps its indefinite one where that says its way, so Back to the Schedule shows only while the indefinite rule says the row's way under a temporary rule; the lengths, unless the indefinite rule, else the stand-in or the schedule, says the row's way; and the schedule's turn, unless the indefinite rule, the stand-in or the schedule says the row's way. With nothing to offer, everywhere's row is left out.
+A menu item with a submenu for one place: everywhere's, Turn On or Turn Off, under the Night Shift item, then the front app's and the front site's, which is titled for “This Site” and names the site on the line under it. An app's or site's tells what its place says, its temporary rule then its indefinite one, such as “On until 07:00, then your config’s rule”. Each turns its place the other way for each of the lengths, until a time picked with Custom… in a small window of its own, and until the schedule next turns it back, shown as the time, “Until 07:00”, with the moment under it: “At sunrise”, “At sunset”, “When the schedule ends” or “When the schedule starts”, and left out without a schedule. A new temporary rule takes the place of the one there, so over one with the row's way under it the lengths would come to the same as undoing it, and an app's or site's row offers undoing instead: Put the Rule Back, and Like Everywhere Else, or for a site Like the Rest of Safari, say, where its browser has a say of its own, and Like the Rest of figma.com where a domain that covers it does. As they apply, it also offers Always, its indefinite rule, greyed under a config rule with “Your config decides”, and Remove Your Rule, both greyed while the ad-hoc rules file can't be used, short of during the tour. Everywhere's offers nothing the switch would do anyway: the switch takes off everywhere's temporary rule and keeps its indefinite one where that says its way, so Back to the Schedule shows only while the indefinite rule says the row's way under a temporary rule; the lengths, unless the indefinite rule, else the stand-in or the schedule, says the row's way; and the schedule's turn, unless the indefinite rule, the stand-in or the schedule says the row's way. With nothing to offer, everywhere's row is left out.
 _Avoid_: rule toggle
 
 **Site icon**:
