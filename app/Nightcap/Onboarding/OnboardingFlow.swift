@@ -127,8 +127,9 @@ final class OnboardingFlow {
     /// The furthest step reached, whose dot and those before it can be clicked.
     private var reached = 0
 
-    /// The apps' and sites' rules, as the snapshot onboarding last took has them.
-    private var rules: [ListedRule]
+    /// The Rules tab's rows for the apps' and sites' rules, as the snapshot onboarding last took
+    /// has them.
+    private var ruleRows: [Settings.RuleRow]
     /// The grants, as the snapshot onboarding last took has them.
     private var permissions: Permissions
     /// Whether the config sets website checking, as the snapshot onboarding last took has it.
@@ -155,7 +156,7 @@ final class OnboardingFlow {
         onFinish: @escaping (_ websites: OnOff?) -> Void
     ) {
         setup = Setup(snapshot)
-        rules = snapshot.rules().rules
+        ruleRows = Settings.rows(of: snapshot.rules().rules, words: words)
         permissions = snapshot.checks().permissions
         configSetsWebsites = setup.websitesFromConfig != nil
         self.words = words
@@ -186,7 +187,7 @@ final class OnboardingFlow {
     /// way to the sites as the grant arrives while it doesn't show; while it shows, it shows the
     /// grant first (`grantArrived`).
     func refresh(_ snapshot: Snapshot) {
-        rules = snapshot.rules().rules
+        ruleRows = Settings.rows(of: snapshot.rules().rules, words: words)
         permissions = snapshot.checks().permissions
         configSetsWebsites = snapshot.config().websites != nil
         if step != .websites, page == .accessibility, accessibilityGranted {
@@ -370,9 +371,8 @@ final class OnboardingFlow {
     /// here.
     private var ruled: [RuleIdentity: String] {
         Dictionary(
-            Settings.rows(of: rules, words: words).filter { !given.contains($0.identity) }.map {
-                ($0.identity, $0.label)
-            }, uniquingKeysWith: { first, _ in first })
+            ruleRows.filter { !given.contains($0.identity) }.map { ($0.identity, $0.label) },
+            uniquingKeysWith: { first, _ in first })
     }
 
     /// The slider's strength: a preview while it's dragged, saved otherwise, as the menu's does.
@@ -416,7 +416,7 @@ final class OnboardingFlow {
     var addedSites: [Suggestion] { added(sites) }
 
     private func added(_ suggestions: [Suggestion]) -> [Suggestion] {
-        let ruled = Set(Settings.rows(of: rules, words: words).map(\.identity))
+        let ruled = Set(ruleRows.map(\.identity))
         return suggestions.filter { given.contains($0.identity) && ruled.contains($0.identity) }
     }
 

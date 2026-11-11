@@ -20,20 +20,17 @@ private let aRule = """
 /// A config that answers website checking, both of Night Shift's steps and, with a rule, the apps.
 private let answersAll = answersAllButTheApps + aRule
 
+/// macOS reporting Night Shift off with no schedule, at a strength of 60.
+private let nightShiftReported: [Step] = [reported(false, .off), .fact(.strengthChanged(value: 60))]
+
 /// The snapshot a managed release's launch leaves at noon, or a self-managed release's where
 /// `selfManaged`, with `config` as its config, after macOS reported Night Shift off with no
 /// schedule at a strength of 60 where `reported`.
 private func launch(config: String? = nil, selfManaged: Bool = false, reported: Bool = true) throws -> Snapshot {
-    let nightShift: [Step] = [
-        .fact(
-            .statusChanged(
-                enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil, switchedBy: .schedule)),
-        .fact(.strengthChanged(value: 60)),
-    ]
-    return try Core.staged(
+    try Core.staged(
         scenario: Scenario(
             now: at("2026-10-16T12:00:00+02:00"), bundleWritable: selfManaged, config: config,
-            steps: (reported ? nightShift : []) + [.fact(.launched)])
+            steps: (reported ? nightShiftReported : []) + [.fact(.launched)])
     ).snapshot()
 }
 

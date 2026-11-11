@@ -4,8 +4,7 @@ import Testing
 
 private let figma = Notice.FrontApp(bundleId: "com.figma.Desktop", name: "Figma")
 
-/// 07:00 on 17 October 2026 in Zurich.
-private let morning = Date(timeIntervalSince1970: 1_792_213_200)
+private let morning = at("2026-10-17T07:00:00+02:00")
 
 /// The notice for `adopted`, an outside change as the core tells it.
 private func notice(_ adopted: Effect, frontApp: Notice.FrontApp?, words: Wording) -> Notice? {

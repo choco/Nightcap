@@ -47,8 +47,8 @@ extension Wording {
     }
 
     /// An app's or site's rule decides: "Off in Figma: your config’s rule".
-    func rule(_ says: OnOff, at place: Place, whose: Whose) -> String {
-        let rule = self.whose(whose)
+    func rule(_ says: OnOff, at place: Place, setBy: SetBy) -> String {
+        let rule = whose(setBy)
         return switch (says, place) {
         case (.on, .app(let name)): text("On in \(name): \(rule)")
         case (.off, .app(let name)): text("Off in \(name): \(rule)")

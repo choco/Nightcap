@@ -25,10 +25,7 @@ private func core(
         scenario: Scenario(
             now: Date(), bundleId: bundleId, bundleWritable: bundleWritable, config: config, rules: rules,
             steps: [
-                .fact(
-                    .statusChanged(
-                        enabled: false, schedule: schedule, sunScheduleSetAside: false, writtenAt: nil,
-                        switchedBy: .schedule)),
+                reported(false, schedule),
                 .fact(.strengthChanged(value: 60)),
                 .fact(.loginItemChanged(item: .notRegistered)),
                 permissions(accessibility, notifications),
@@ -62,16 +59,7 @@ private func onboarding(
 /// Onboarding's flow on a staged core: what each user is asked, and what reaches the core when.
 struct OnboardingFlowTests {
     @Test func onboardingAsksAboutNightShiftStartingFromTheMacsValues() throws {
-        let core = try Core.staged(
-            scenario: Scenario(
-                now: at("2026-10-16T12:00:00+02:00"),
-                steps: [
-                    .fact(
-                        .statusChanged(
-                            enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil,
-                            switchedBy: .schedule)),
-                    .fact(.strengthChanged(value: 60)),
-                ]))
+        let core = try atNoon(reported(false, .off), .fact(.strengthChanged(value: 60)))
 
         #expect(
             setup(core)
@@ -92,9 +80,7 @@ struct OnboardingFlowTests {
                 .snapshot())
             return [setup.askStrength, setup.askSchedule]
         }
-        let status = Step.fact(
-            .statusChanged(
-                enabled: false, schedule: .off, sunScheduleSetAside: false, writtenAt: nil, switchedBy: .schedule))
+        let status = reported(false, .off)
         let reported = [status, .fact(.strengthChanged(value: 60))]
 
         #expect(try asks(nil, []) == [false, false])

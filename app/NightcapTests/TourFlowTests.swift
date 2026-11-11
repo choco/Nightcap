@@ -1,6 +1,15 @@
 import NightcapCore
 import Testing
 
+/// A tour on `core` at its rule step, its trial begun with Night Shift on.
+private func running(_ core: Core, site: String? = nil, hasShortcut: Bool = false) -> TourFlow {
+    var flow = TourFlow(sample: tourSample, site: site, hasShortcut: hasShortcut)
+    _ = flow.advance()
+    core.sendApp(command: .beginTrial(standsIn: false))
+    _ = flow.refresh(core.snapshot())
+    return flow
+}
+
 struct TourFlowTests {
     @Test func continuingWaitsForTheTrialBeforeOpeningTheSample() throws {
         let core = try offByTheSchedule()
@@ -44,11 +53,7 @@ struct TourFlowTests {
         for hasSite in [false, true] {
             for hasShortcut in [false, true] {
                 let core = try onByTheSchedule()
-                var flow = TourFlow(
-                    sample: tourSample, site: hasSite ? "nightcap.choco.me" : nil, hasShortcut: hasShortcut)
-                _ = flow.advance()
-                core.sendApp(command: .beginTrial(standsIn: false))
-                _ = flow.refresh(core.snapshot())
+                var flow = running(core, site: hasSite ? "nightcap.choco.me" : nil, hasShortcut: hasShortcut)
                 #expect(flow.advance() == (hasSite ? [.closeSample, .openSite] : [.closeSample]))
                 if hasSite {
                     #expect(flow.step == .site)
@@ -75,10 +80,7 @@ struct TourFlowTests {
 
     @Test func theRuleAndSnoozeStepsFollowChangesMadeThroughTheCore() throws {
         let core = try onByTheSchedule()
-        var flow = TourFlow(sample: tourSample, site: nil, hasShortcut: false)
-        _ = flow.advance()
-        core.sendApp(command: .beginTrial(standsIn: false))
-        _ = flow.refresh(core.snapshot())
+        var flow = running(core)
         core.bringToFront(tourSample)
         core.send(command: .addRule(identity: .app(tourSample), says: .off))
         _ = flow.refresh(core.snapshot())
@@ -101,10 +103,7 @@ struct TourFlowTests {
 
     @Test func aTrialEndingClosesTheTour() throws {
         let core = try onByTheSchedule()
-        var flow = TourFlow(sample: tourSample, site: nil, hasShortcut: false)
-        _ = flow.advance()
-        core.sendApp(command: .beginTrial(standsIn: false))
-        _ = flow.refresh(core.snapshot())
+        var flow = running(core)
         core.sendApp(command: .endTrial)
         #expect(flow.refresh(core.snapshot()) == [.closeSample, .finish(begun: true)])
         #expect(flow.refresh(core.snapshot()).isEmpty)

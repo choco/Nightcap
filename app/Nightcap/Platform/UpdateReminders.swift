@@ -6,12 +6,12 @@ import Sparkle
 /// notification, since its window opens behind whatever the user is doing.
 final class UpdateReminders: NSObject, SPUStandardUserDriverDelegate {
     private let dockIcon: DockIcon
-    private let notify: (_ title: String, _ body: String, _ id: String) -> Void
+    private let post: (Notice, _ id: String) -> Void
 
-    /// `notify` posts a notification under `id`, replacing any earlier one under it.
-    init(dockIcon: DockIcon, notify: @escaping (_ title: String, _ body: String, _ id: String) -> Void) {
+    /// `post` posts a notice under `id`, replacing any earlier one under it.
+    init(dockIcon: DockIcon, post: @escaping (Notice, _ id: String) -> Void) {
         self.dockIcon = dockIcon
-        self.notify = notify
+        self.post = post
     }
 
     var supportsGentleScheduledUpdateReminders: Bool { true }
@@ -21,9 +21,8 @@ final class UpdateReminders: NSObject, SPUStandardUserDriverDelegate {
     ) {
         dockIcon.show(for: .update)
         guard !state.userInitiated else { return }
-        notify(
-            "Nightcap \(update.displayVersionString) is ready to install",
-            "Its update window is open behind your other windows.", "update")
+        let ready = Wording.system.updateReady(update.displayVersionString)
+        post(Notice(title: ready.title, body: ready.body), "update")
     }
 
     func standardUserDriverWillFinishUpdateSession() {

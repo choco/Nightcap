@@ -8,12 +8,6 @@ struct TourApp: Equatable {
     let name: String
 }
 
-/// The site the tour opens for its site step, and the browser it opens it in.
-struct TourSite: Equatable {
-    let domain: String
-    let browser: String
-}
-
 /// What a running tour's steps follow (ADR-0016), from the core's answers, whichever way the
 /// user made a change: the sample's and the site's places, the switch's side, and whether the
 /// tour's trial stands in for the schedule.

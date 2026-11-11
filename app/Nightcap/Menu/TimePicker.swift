@@ -78,9 +78,7 @@ final class TimePicker: NSObject, NSWindowDelegate {
     }
 
     private func updateHint() {
-        hint.attributedStringValue = NSAttributedString(
-            string: Self.hintText(until: end, words: words),
-            attributes: hint.attributedStringValue.attributes(at: 0, effectiveRange: nil))
+        hint.relabel(Self.hintText(until: end, words: words))
     }
 
     private func done() {

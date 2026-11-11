@@ -45,7 +45,7 @@ extension Wording {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = timeZone
         let seven = calendar.date(from: DateComponents(year: 2026, month: 10, day: 28, hour: 7, minute: 0))!
-        return (turnedOutsideNightcap(.on), snoozed(.app(name: app), .on, until: seven))
+        return (turnedOutsideNightcap(.on), snoozed(app, .on, until: seven))
     }
     var loginCaption: String { text("Log in, and the moon is already there.") }
 

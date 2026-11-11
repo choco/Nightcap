@@ -94,11 +94,10 @@ final class NightShiftAdapter: NightShiftWriting {
     private var playing: (curve: TintCurve, mark: Date, timer: DispatchSourceTimer)?
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
-    /// thread with the new status, and whose write it's the first to show, whenever
-    /// CoreBrightness reports a status change. `onStrength` reports a fresh strength read
-    /// after each committed write.
+    /// thread whenever CoreBrightness reports a status change, which `report()` then reads.
+    /// `onStrength` reports a fresh strength read after each committed write.
     init?(
-        onChange: @escaping @MainActor (Status, SwitchedBy) -> Void,
+        onChange: @escaping @MainActor () -> Void,
         onStrength: @escaping (UInt8) -> Void
     ) {
         let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "nightshift")
@@ -112,18 +111,7 @@ final class NightShiftAdapter: NightShiftWriting {
                 log.fault("\(className, privacy: .public) is missing")
                 return nil
             }
-            for (name, expected) in methods {
-                let method = class_getInstanceMethod(found, NSSelectorFromString(name))
-                let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
-                guard encoding == expected else {
-                    log.fault(
-                        """
-                        \(className, privacy: .public).\(name, privacy: .public) is \
-                        \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public)
-                        """)
-                    return nil
-                }
-            }
+            guard Self.matches(methods, of: className, found, log: log) else { return nil }
             classes[className] = found
         }
         client = classes["CBBlueLightClient"]!.init()
@@ -134,19 +122,7 @@ final class NightShiftAdapter: NightShiftWriting {
         copyProperty = unsafeBitCast(
             systemClient.method(for: NSSelectorFromString("copyPropertyForKey:")), to: CopyProperty.self)
         let found = { (encodings: [String: String], what: String, className: String) in
-            encodings.allSatisfy { name, expected in
-                let method = class_getInstanceMethod(classes[className]!, NSSelectorFromString(name))
-                let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
-                if encoding != expected {
-                    log.fault(
-                        """
-                        \(className, privacy: .public).\(name, privacy: .public) is \
-                        \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public); \
-                        \(what, privacy: .public) can't be set
-                        """)
-                }
-                return encoding == expected
-            }
+            Self.matches(encodings, of: className, classes[className]!, log: log, unsettable: what)
         }
         let strengthFound = found(Self.strengthEncodings, "the strength", "CBBlueLightClient")
         let scheduleFound = found(Self.scheduleEncodings, "the schedule", "CBBlueLightClient")
@@ -180,13 +156,31 @@ final class NightShiftAdapter: NightShiftWriting {
         let setBlock = unsafeBitCast(
             client.method(for: NSSelectorFromString("setStatusNotificationBlock:")), to: SetBlock.self)
         // CoreBrightness calls this on one of its own queues, often several times per change.
-        setBlock(client, NSSelectorFromString("setStatusNotificationBlock:")) { [weak self] in
+        setBlock(client, NSSelectorFromString("setStatusNotificationBlock:")) {
             DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let reported = self?.report() else { return }
-                    onChange(reported.status, reported.switchedBy)
-                }
+                MainActor.assumeIsolated { onChange() }
             }
+        }
+    }
+
+    /// Whether each of `encodings`' methods on `type`, the class named `className`, has the
+    /// encoding expected. The first that doesn't is logged, with `what` it leaves unsettable.
+    private static func matches(
+        _ encodings: [String: String], of className: String, _ type: NSObject.Type, log: Logger,
+        unsettable what: String? = nil
+    ) -> Bool {
+        encodings.allSatisfy { name, expected in
+            let method = class_getInstanceMethod(type, NSSelectorFromString(name))
+            let encoding = method.flatMap { method_getTypeEncoding($0) }.map { String(cString: $0) }
+            guard encoding != expected else { return true }
+            let consequence = what.map { "; \($0) can't be set" } ?? ""
+            log.fault(
+                """
+                \(className, privacy: .public).\(name, privacy: .public) is \
+                \(encoding ?? "missing", privacy: .public), expected \(expected, privacy: .public)\
+                \(consequence, privacy: .public)
+                """)
+            return false
         }
     }
 
@@ -263,10 +257,7 @@ final class NightShiftAdapter: NightShiftWriting {
     /// Nil when CoreBrightness marks no writes, without which Nightcap can't tell the schedule's
     /// switches from the user's (ADR-0004).
     private var marks: Marks? {
-        let selector = NSSelectorFromString("copyPropertyForKey:")
-        guard
-            let status = copyProperty(systemClient, selector, "CBBlueReductionStatus")?
-                .takeRetainedValue() as? [String: Any],
+        guard let status = property("CBBlueReductionStatus"),
             let written = status["BlueLightReductionAlgoOverride"] as? NSNumber
         else {
             log.fault("CoreBrightness reported no mark of writes, so Night Shift can't be reconciled")
@@ -288,11 +279,7 @@ final class NightShiftAdapter: NightShiftWriting {
     /// The sunrises and sunsets CoreBrightness schedules by, from the day before to the day
     /// after, or nil when it reports none.
     var sunTimes: SunTimes? {
-        let selector = NSSelectorFromString("copyPropertyForKey:")
-        guard
-            let schedule = copyProperty(systemClient, selector, "BlueLightSunSchedule")?
-                .takeRetainedValue() as? [String: Any]
-        else {
+        guard let schedule = property("BlueLightSunSchedule") else {
             log.error("CoreBrightness reported no sun schedule")
             return nil
         }
@@ -352,10 +339,13 @@ final class NightShiftAdapter: NightShiftWriting {
     }
 
     private var tintFactor: Float? {
-        let value =
-            copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), "BlueLightReductionFactor")?
+        (property("BlueLightReductionFactor")?["BlueLightReductionFactorValue"] as? NSNumber)?.floatValue
+    }
+
+    /// The dictionary BrightnessSystemClient keeps under `key`, if any.
+    private func property(_ key: String) -> [String: Any]? {
+        copyProperty(systemClient, NSSelectorFromString("copyPropertyForKey:"), key as NSString)?
             .takeRetainedValue() as? [String: Any]
-        return (value?["BlueLightReductionFactorValue"] as? NSNumber)?.floatValue
     }
 
     private func setFactor(_ value: Float, fade: Float) -> Bool {

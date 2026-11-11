@@ -13,13 +13,6 @@ final class Tour {
     typealias Step = TourFlow.Step
     typealias Milestones = TourFlow.Milestones
 
-    /// The browser the site step opens the project's site in: the default one, while website
-    /// checking can watch it.
-    struct Browser {
-        let bundleId: String
-        let name: String
-    }
-
     /// What the panel shows for its step, apart from the keycaps and their hint.
     private struct Shown: Equatable {
         let title: String
@@ -47,9 +40,10 @@ final class Tour {
 
     private let log = Logger(subsystem: Bundle.main.bundleIdentifier!, category: "tour")
     private let shortcut: KeyboardShortcuts.Shortcut?
-    private let browser: Browser?
-    /// The project's site in `browser`, for the site step.
-    private let site: TourSite?
+    /// The name of the browser the site step opens the project's site in.
+    private let browser: String?
+    /// The project's site, by its domain, for the site step.
+    private let site: String?
     private let words = Wording.system
     /// The menu's items the steps quote.
     private let quotes: TourQuotes
@@ -65,13 +59,13 @@ final class Tour {
     private let begin: (_ trial: AppCommand) -> Void
     private let onEnd: (_ begun: Bool) -> Void
 
-    /// `press` and `release` work the shortcut as its keys would, for the keycaps; `begin` hands
-    /// the core the trial's begin as the user continues from the first step, and `onEnd` runs
-    /// once the tour is over, with whether the trial began. Without `browser`, the tour has no
-    /// site step.
+    /// `browser` names the default browser, while website checking can watch it; without it, the
+    /// tour has no site step. `press` and `release` work the shortcut as its keys would, for the
+    /// keycaps; `begin` hands the core the trial's begin as the user continues from the first
+    /// step, and `onEnd` runs once the tour is over, with whether the trial began.
     init(
         shortcut: KeyboardShortcuts.Shortcut?,
-        browser: Browser?,
+        browser: String?,
         press: @escaping () -> Void,
         release: @escaping () -> Void,
         begin: @escaping (_ trial: AppCommand) -> Void,
@@ -79,13 +73,13 @@ final class Tour {
     ) {
         self.shortcut = shortcut
         self.browser = browser
-        site = browser.map { TourSite(domain: Self.siteURL.host()!, browser: $0.bundleId) }
+        site = browser == nil ? nil : Self.siteURL.host()!
         quotes = TourQuotes(sample: Self.sample, site: site, example: Self.example, words: words)
         self.press = press
         self.release = release
         self.begin = begin
         self.onEnd = onEnd
-        flow = TourFlow(sample: Self.sample.bundleId, site: site?.domain, hasShortcut: shortcut != nil)
+        flow = TourFlow(sample: Self.sample.bundleId, site: site, hasShortcut: shortcut != nil)
     }
 
     private var step: Step { flow.step }
@@ -181,7 +175,7 @@ final class Tour {
 
     private var texts: Wording.Said {
         let sample = Self.sample.name
-        let browser = self.browser?.name ?? ""
+        let browser = self.browser ?? ""
         let addSampleRule = words.quoted(quotes.addSampleRule)
         let putBack = words.quoted(quotes.putSampleRuleBack)
         switch step {
@@ -242,21 +236,19 @@ final class Tour {
             title: title, body: body, standsIn: step == .moon && standsIn, done: done, canAdvance: flow.canAdvance)
     }
 
-    /// The step's buttons, secondary first: Skip until the step is done, then Continue.
-    private var buttons: [NSButton] {
+    /// The step's button: Skip until the step is done, then Continue, and Done at the end.
+    private var button: CapsuleButton {
+        let button: CapsuleButton
         if step == .end {
-            return [firstClick(CapsuleButton(words.done, .primary) { [weak self] in self?.end() })]
+            button = CapsuleButton(words.done, .primary) { [weak self] in self?.end() }
+        } else {
+            let next: () -> Void = { [weak self] in self?.advance() }
+            button =
+                done ? CapsuleButton(words.continueTour, .primary, next) : CapsuleButton(words.skip, .regular, next)
+            button.isEnabled = flow.canAdvance
         }
-        let next: () -> Void = { [weak self] in self?.advance() }
-        let button = firstClick(
-            done ? CapsuleButton(words.continueTour, .primary, next) : CapsuleButton(words.skip, .regular, next))
-        button.isEnabled = flow.canAdvance
-        return [button]
-    }
-
-    /// The panel never takes the focus, so a click on it is often its first.
-    private func firstClick(_ button: NSButton) -> NSButton {
-        (button as? CapsuleButton)?.actsOnFirstClick = true
+        // The panel never takes the focus, so a click on it is often its first.
+        button.actsOnFirstClick = true
         return button
     }
 
@@ -273,10 +265,7 @@ final class Tour {
     /// Redraws only the keycaps and their hint, which a press changes.
     private func update() {
         keyCaps?.down = flow.keysDown
-        if let hint {
-            hint.attributedStringValue = NSAttributedString(
-                string: hintText, attributes: hint.attributedStringValue.attributes(at: 0, effectiveRange: nil))
-        }
+        hint?.relabel(hintText)
         if let content = panel.glass.subviews.first { fit(content.fittingSize) }
     }
 
@@ -320,19 +309,16 @@ final class Tour {
         case .peek: views.append(peekKeys(width: inner))
         default: break
         }
-        let lastText = views.last
-        let buttons = self.buttons
-        if !buttons.isEmpty {
-            views.append(NSStackView(.horizontal, [NSView()] + buttons))
-        }
+        let aboveButton = views.last!
+        views.append(NSStackView(.horizontal, [NSView(), button]))
         let stack = NSStackView(
             .vertical, views, alignment: .leading,
             edgeInsets: NSEdgeInsets(top: 14, left: Self.padding, bottom: 14, right: Self.padding))
         stack.widthAnchor.constraint(equalToConstant: Self.width).isActive = true
-        for view in views where view is NSStackView || view is Group {
+        for view in views {
             view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -2 * Self.padding).isActive = true
         }
-        if !buttons.isEmpty, let lastText { stack.setCustomSpacing(12, after: lastText) }
+        stack.setCustomSpacing(12, after: aboveButton)
         return stack
     }
 
@@ -404,12 +390,7 @@ final class Tour {
     func snapshot(_ step: Step, facts: TourFacts, milestones: Milestones = Milestones()) -> Data? {
         flow.stage(step, facts: facts, milestones: milestones)
         let content = self.content()
-        let size = content.fittingSize
-        let backdrop = SnapshotBackdrop(frame: NSRect(origin: .zero, size: size))
-        content.frame = backdrop.bounds
-        backdrop.addSubview(content)
-        backdrop.appearance = NSApp.appearance
-        return backdrop.png()
+        return SnapshotBackdrop.png(of: content, size: content.fittingSize)
     }
     #endif
 }

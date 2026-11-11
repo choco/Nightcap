@@ -4,7 +4,7 @@ import Testing
 
 /// A write mark CoreBrightness keeps, `seconds` after 23:00 on 16 October.
 private func mark(_ seconds: TimeInterval) -> Date {
-    Date(timeIntervalSince1970: 1_792_184_400 + seconds)
+    at("2026-10-16T23:00:00+02:00") + seconds
 }
 
 /// Whose write a status report is the first to show (ADR-0004): the schedule's switches leave no

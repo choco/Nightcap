@@ -7,16 +7,10 @@ extension Wording {
     /// A refused command's notification's title.
     var refused: String { text("Nightcap couldn’t make that change") }
 
-    /// Why the core refused a command, in a sentence, with `rule` naming the app or site a
+    /// Why the core refused a command, in a sentence, with `name` naming the app or site a
     /// refusal is about: "Your config’s rule for Figma keeps Night Shift off. Change it there."
-    func refusal(_ refusal: Refusal, rule: (RuleIdentity) -> Place) -> String {
-        func name(_ identity: RuleIdentity) -> String {
-            switch rule(identity) {
-            case .app(let name): name
-            case .site(let domain): domain
-            }
-        }
-        return switch refusal {
+    func refusal(_ refusal: Refusal, naming name: (RuleIdentity) -> String) -> String {
+        switch refusal {
         case .nightShiftUnavailable: text("Night Shift isn’t available on this Mac.")
         case .strengthUnavailable: text("Night Shift’s strength can’t be read on this Mac.")
         case .strengthOutOfRange(let strength): text("A strength is 0 to 100, not \(Int(strength)).")

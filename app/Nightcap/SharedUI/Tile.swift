@@ -10,17 +10,25 @@ final class Tile: NSView {
             tinted: true)
     }
 
+    /// A site's own icon, or the globe until it has arrived (ADR-0019).
+    convenience init(site icon: NSImage?) {
+        if let icon {
+            self.init(image: icon)
+        } else {
+            self.init(symbol: "globe")
+        }
+    }
+
     /// A symbol in the secondary colour, at its own size, or a picture, such as a site's icon,
     /// at 16 points.
     init(image: NSImage, tinted: Bool = false) {
         super.init(frame: .zero)
-        let view = NSImageView(image: image)
+        let view: NSImageView
         if tinted {
+            view = NSImageView(image: image)
             view.contentTintColor = .nightcapSecondary
         } else {
-            view.imageScaling = .scaleProportionallyUpOrDown
-            view.widthAnchor.constraint(equalToConstant: 16).isActive = true
-            view.heightAnchor.constraint(equalToConstant: 16).isActive = true
+            view = NSImageView(icon: image, side: 16)
         }
         view.translatesAutoresizingMaskIntoConstraints = false
         addSubview(view)

@@ -22,25 +22,25 @@ struct Notice: Equatable {
         guard let snoozed else { return nil }
         self.init(
             title: words.turnedOutsideNightcap(state),
-            body: words.snoozed(Self.rule(snoozed, frontApp: frontApp), state, until: until))
+            body: words.snoozed(Self.name(of: snoozed, frontApp: frontApp), state, until: until))
     }
 
     /// The notice for a command of the app's the core refused, in `words`, or nil for a reload,
     /// whose refusal the config file's check shows already.
     init?(refused command: Command, why: Refusal, frontApp: FrontApp?, words: Wording) {
         if case .reload = command { return nil }
-        self.init(title: words.refused, body: words.refusal(why) { Self.rule($0, frontApp: frontApp) })
+        self.init(title: words.refused, body: words.refusal(why) { Self.name(of: $0, frontApp: frontApp) })
     }
 
-    /// A rule goes by its app's name while that app is in front, else by its bundle ID.
-    private static func rule(_ identity: RuleIdentity, frontApp: FrontApp?) -> Wording.Place {
+    /// An app's rule goes by the app's name while it's in front, else by its bundle ID; a site's
+    /// by its domain.
+    private static func name(of identity: RuleIdentity, frontApp: FrontApp?) -> String {
         switch identity {
         case .app(let bundleId):
-            .app(
-                name: frontApp.flatMap { app in
-                    app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
-                } ?? bundleId)
-        case .domain(let domain): .site(domain: domain)
+            frontApp.flatMap { app in
+                app.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame ? app.name : nil
+            } ?? bundleId
+        case .domain(let domain): domain
         }
     }
 

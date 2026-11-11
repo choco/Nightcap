@@ -72,10 +72,7 @@ final class Stage: NSView {
     /// in the app (design/README.md). The icon's tile fills 80% of its image, so a 28-point
     /// image shows a 22-point tile.
     private static func wordmark() -> NSView {
-        let icon = NSImageView(image: NSApp.applicationIconImage)
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        let icon = NSImageView(icon: NSApp.applicationIconImage, side: 28)
         let name = NSTextField(labelWithString: "Nightcap")
         name.font = .nightcapWordmark(size: 26)
         name.textColor = .labelColor

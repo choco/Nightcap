@@ -11,6 +11,17 @@ enum SnapshotRenderer {
     static func runIfAsked() {
         guard let folder = ProcessInfo.processInfo.environment["NIGHTCAP_SNAPSHOT"] else { return }
         try! FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+        let folderURL = URL(fileURLWithPath: folder)
+        func write(_ name: String, _ png: Data?) {
+            guard let png else { fatalError("couldn't render \(name)") }
+            try! png.write(to: folderURL.appendingPathComponent(name))
+        }
+        func inEachAppearance(_ render: (_ appearance: String) -> Void) {
+            for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                render(name)
+            }
+        }
         let today = { (hour: Int, minute: Int) in
             Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: Date())!
         }
@@ -51,14 +62,9 @@ enum SnapshotRenderer {
             current: { settingsCore.snapshot() }, icons: icons, choose: { _ in },
             perform: { _ in },
             checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            NSApp.appearance = NSAppearance(named: appearance)
+        inEachAppearance { appearance in
             for tab in SettingsWindow.Tab.allCases {
-                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-\(tab.rawValue)-\(name).png")
-                guard let png = window.snapshot(tab, shortcut: shortcut) else {
-                    fatalError("couldn't render \(tab)")
-                }
-                try! png.write(to: url)
+                write("app-\(tab.rawValue)-\(appearance).png", window.snapshot(tab, shortcut: shortcut))
             }
         }
         // A self-managed release that doesn't open at login yet, with Photos' rule in its config, at
@@ -99,19 +105,16 @@ enum SnapshotRenderer {
             ("last-things", newUser, .lastThings, .ask, false),
             ("ready", newUser, .ready, .ask, false),
         ]
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            NSApp.appearance = NSAppearance(named: appearance)
+        inEachAppearance { appearance in
             for (state, onboarding, step, page, reviewing) in states {
-                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-onboarding-\(state)-\(name).png")
-                guard let png = onboarding.snapshot(step, page: page, reviewing: reviewing) else {
-                    fatalError("couldn't render \(state)")
-                }
-                try! png.write(to: url)
+                write(
+                    "app-onboarding-\(state)-\(appearance).png",
+                    onboarding.snapshot(step, page: page, reviewing: reviewing))
             }
         }
         let tour = Tour(
             shortcut: shortcut,
-            browser: Tour.Browser(bundleId: "com.apple.Safari", name: "Safari"),
+            browser: "Safari",
             press: {}, release: {}, begin: { _ in }, onEnd: { _ in })
         let away = TourPlace(inFront: false, rule: nil, snoozed: false)
         let inFront = TourPlace(inFront: true, rule: nil, snoozed: false)
@@ -138,34 +141,22 @@ enum SnapshotRenderer {
             ("peek", .peek, facts(away, away), .init()),
             ("end", .end, facts(away, away), .init()),
         ]
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            NSApp.appearance = NSAppearance(named: appearance)
+        inEachAppearance { appearance in
             for (state, step, facts, milestones) in tourStates {
-                let url = URL(fileURLWithPath: folder).appendingPathComponent("app-tour-\(state)-\(name).png")
-                guard let png = tour.snapshot(step, facts: facts, milestones: milestones) else {
-                    fatalError("couldn't render the tour at \(state)")
-                }
-                try! png.write(to: url)
+                write("app-tour-\(state)-\(appearance).png", tour.snapshot(step, facts: facts, milestones: milestones))
             }
         }
-        for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
-            NSApp.appearance = NSAppearance(named: appearance)
+        inEachAppearance { appearance in
             for (state, hidden) in [("shown", false), ("hidden", true)] {
                 let content = PointOut(hidden: hidden, onOK: {}, takeTour: {})
-                let backdrop = SnapshotBackdrop(frame: NSRect(origin: .zero, size: content.size))
-                content.view.frame = backdrop.bounds
-                backdrop.addSubview(content.view)
-                backdrop.appearance = NSApp.appearance
-                guard let png = backdrop.png() else { fatalError("couldn't render the pointer") }
-                try! png.write(
-                    to: URL(fileURLWithPath: folder).appendingPathComponent("app-point-out-\(state)-\(name).png"))
+                write(
+                    "app-point-out-\(state)-\(appearance).png",
+                    SnapshotBackdrop.png(of: content.view, size: content.size))
             }
         }
         for icon in [Menu.Moon.on, .off, .forcedOff] {
             for problems in [false, true] {
-                let name = "icon-\(icon)-\(problems ? "problems" : "plain").png"
-                try! menuBarIcon(icon, problems: problems)
-                    .write(to: URL(fileURLWithPath: folder).appendingPathComponent(name))
+                write("icon-\(icon)-\(problems ? "problems" : "plain").png", menuBarIcon(icon, problems: problems))
             }
         }
         exit(0)
@@ -217,6 +208,15 @@ extension NSView {
 
 /// The menu's colour, opaque, behind a snapshot of a panel, which the panel's glass would show.
 final class SnapshotBackdrop: NSView {
+    /// `content` at `size` on the backdrop, in the app's appearance, as a PNG.
+    static func png(of content: NSView, size: NSSize) -> Data? {
+        let backdrop = SnapshotBackdrop(frame: NSRect(origin: .zero, size: size))
+        content.frame = backdrop.bounds
+        backdrop.addSubview(content)
+        backdrop.appearance = NSApp.appearance
+        return backdrop.png()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             Paint.menu.withAlphaComponent(1).setFill()

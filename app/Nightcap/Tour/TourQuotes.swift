@@ -19,14 +19,13 @@ struct TourQuotes: Equatable {
     /// Always, in the example's row with it in front and Night Shift off: a rule that says on.
     let addExampleRule: Wording.Quote
 
-    init(sample: TourApp, site: TourSite?, example: TourApp, words: Wording) {
+    /// `site` is the domain of the site step's site.
+    init(sample: TourApp, site: String?, example: TourApp, words: Wording) {
         let sampleOff = words.turn(.off, at: .app(name: sample.name))
         addSampleRule = Wording.Quote(row: sampleOff, item: words.always)
         snoozeSample = words.turn(.on, at: .app(name: sample.name))
         putSampleRuleBack = Wording.Quote(row: sampleOff, item: words.putTheRuleBack)
-        addSiteRule = site.map { site in
-            Wording.Quote(row: words.turn(.off, at: .site(domain: site.domain)), item: words.always)
-        }
+        addSiteRule = site.map { Wording.Quote(row: words.turn(.off, at: .site(domain: $0)), item: words.always) }
         addExampleRule = Wording.Quote(row: words.turn(.on, at: .app(name: example.name)), item: words.always)
     }
 }

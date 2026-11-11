@@ -102,7 +102,6 @@ extension Menu {
         let rows = Rows(
             nightShift: nightShift, front: front, lengths: snapshot.config().lengths, checks: snapshot.checks().checks,
             now: now, frontName: front.app.flatMap(appName), words: words)
-        let decision = front.decision
         let everywhere = front.everywhere.gives
         var entries: [Entry] = []
         if let strength = nightShift.strength { entries.append(.strength(strength)) }
@@ -111,18 +110,33 @@ extension Menu {
         let inFront = front.places.reversed().compactMap(rows.row)
         if !inFront.isEmpty { entries.append(.separator) }
         entries += inFront.map(Entry.row)
-        let moon: Moon =
-            switch decision.state ?? everywhere {
-            case .off where decision.place != .everywhere && everywhere == .on: .forcedOff
-            case .on: .on
-            case .off: .off
-            }
         self.init(
-            moon: moon, problemLine: rows.problemLine(),
+            moon: Self.moon(front), problemLine: rows.problemLine(),
             nightShift: NightShiftItem(
                 on: everywhere == .on, line: rows.line(), command: everywhere == .on ? .off : .on),
             entries: entries)
     }
+
+    /// The menu-bar icon the menu for `snapshot` shows: the moon, and whether the problem line's
+    /// dot is on it.
+    static func icon(_ snapshot: Snapshot) -> (moon: Moon, problem: Bool) {
+        guard snapshot.nightShift().state != .unavailable else { return (.unavailable, false) }
+        return (moon(snapshot.front()), snapshot.checks().checks.contains { $0.state.isProblem() })
+    }
+
+    /// The moon while Night Shift is available.
+    private static func moon(_ front: Front) -> Moon {
+        let decision = front.decision
+        let everywhere = front.everywhere.gives
+        return switch decision.state ?? everywhere {
+        case .off where decision.place != .everywhere && everywhere == .on: .forcedOff
+        case .on: .on
+        case .off: .off
+        }
+    }
+
+    /// The icon this menu shows.
+    var icon: (moon: Moon, problem: Bool) { (moon, problemLine != nil) }
 }
 
 /// What the rows read, and how they word it.
@@ -205,7 +219,7 @@ private struct Rows {
             site: site,
             subtitle: words.placeSays(
                 at.temporary.map { Wording.TemporaryRule(state: $0.says, until: $0.length.end()) },
-                then: rule.map { (says: $0.says, whose: Self.whose($0.setBy)) }),
+                then: rule.map { (says: $0.says, setBy: $0.setBy) }),
             items: items)
     }
 
@@ -218,7 +232,7 @@ private struct Rows {
         }
         return switch (top, named(decision.place)) {
         case (.rule(let rule), let place?) where rule.length == .indefinite:
-            words.rule(rule.says, at: place, whose: Self.whose(rule.setBy))
+            words.rule(rule.says, at: place, setBy: rule.setBy)
         case (.rule(let rule), let place?): words.change(rule.says, at: place, until: rule.length.end())
         case (.rule(let rule), nil): words.change(rule.says, until: rule.length.end())
         case (.standIn, _): words.onForTheTour
@@ -271,14 +285,5 @@ private struct Rows {
     /// An app by its name while it's in front, else by its bundle ID.
     private func name(of bundleId: String) -> String {
         (front.app == bundleId ? frontName : nil) ?? bundleId
-    }
-
-    private static func whose(_ setBy: SetBy) -> Wording.Whose {
-        switch setBy {
-        case .config: .config
-        case .you: .yours
-        case .trial: .tour
-        case .outsideChange: .outsideChange
-        }
     }
 }

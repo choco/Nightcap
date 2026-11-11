@@ -1,8 +1,8 @@
 import Foundation
 import NightcapCore
 
-/// What the notifications say: an outside change adopted as a snooze, the first launch after an
-/// update, and a problem that appeared on its own.
+/// What the notifications say: an outside change adopted as a snooze, an update ready to install,
+/// the first launch after an update, and a problem that appeared on its own.
 extension Wording {
     /// Night Shift switched outside Nightcap, as in Control Center: "Night Shift turned on outside
     /// Nightcap".
@@ -13,19 +13,23 @@ extension Wording {
         }
     }
 
-    /// The rule an outside change to `state` snoozed, and until when: "Snoozed the Figma rule until
-    /// 07:00.", or with no end "Snoozed the Figma rule until you turn it off."
-    func snoozed(_ rule: Place, _ state: OnOff, until end: Date?) -> String {
-        let name =
-            switch rule {
-            case .app(let name): name
-            case .site(let domain): domain
-            }
-        return switch (end, state) {
+    /// The rule, by its app's or site's `name`, that an outside change to `state` snoozed, and
+    /// until when: "Snoozed the Figma rule until 07:00.", or with no end "Snoozed the Figma rule
+    /// until you turn it off."
+    func snoozed(_ name: String, _ state: OnOff, until end: Date?) -> String {
+        switch (end, state) {
         case (let end?, _): text("Snoozed the \(name) rule until \(time(end)).")
         case (nil, .on): text("Snoozed the \(name) rule until you turn it off.")
         case (nil, .off): text("Snoozed the \(name) rule until you turn it on.")
         }
+    }
+
+    /// A scheduled update, whose window opens behind whatever the user is doing.
+    func updateReady(_ version: String) -> (title: String, body: String) {
+        (
+            text("Nightcap \(version) is ready to install"),
+            text("Its update window is open behind your other windows.")
+        )
     }
 
     func updated(to version: String) -> String {

@@ -202,10 +202,6 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
 
     private func generalPane(_ settings: Settings) -> NSView {
         let websites = settings.websiteChecking
-        let toggle = NSSwitch()
-        toggle.state = websites.on ? .on : .off
-        toggle.isEnabled = !websites.locked
-        toggle.onAction { [choose] in choose(websites.command) }
         return pane([
             block(
                 words.websites,
@@ -213,7 +209,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
                     cell(
                         row(
                             title: words.checkWebsites, detail: words.checkWebsitesDetail(setInConfig: websites.locked),
-                            accessory: toggle),
+                            accessory: toggle(websites)),
                         settings.check(.accessibility))
                 ]),
             block(
@@ -278,10 +274,16 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
     /// "Open at login", in self-managed installs, with its check while it's a problem.
     private func openAtLogin(_ settings: Settings) -> [NSView] {
         guard let openAtLogin = settings.openAtLogin else { return [] }
+        let setting = row(title: words.openAtLogin, detail: nil, accessory: toggle(openAtLogin))
+        return [cell(setting, settings.check(.openAtLogin))]
+    }
+
+    private func toggle(_ setting: Settings.Switch) -> NSSwitch {
         let toggle = NSSwitch()
-        toggle.state = openAtLogin.on ? .on : .off
-        toggle.onAction { [choose] in choose(openAtLogin.command) }
-        return [cell(row(title: words.openAtLogin, detail: nil, accessory: toggle), settings.check(.openAtLogin))]
+        toggle.state = setting.on ? .on : .off
+        toggle.isEnabled = !setting.locked
+        toggle.onAction { [choose] in choose(setting.command) }
+        return toggle
     }
 
     private func rulesPane(_ settings: Settings) -> NSView {
@@ -350,14 +352,9 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) else {
                 return (bundleId, words.notInstalled, Tile(symbol: "app"))
             }
-            let icon = NSImageView(image: Apps.icon(at: url, side: 26))
-            icon.imageScaling = .scaleProportionallyUpOrDown
-            icon.widthAnchor.constraint(equalToConstant: 26).isActive = true
-            icon.heightAnchor.constraint(equalToConstant: 26).isActive = true
-            return (Apps.name(at: url), bundleId, icon)
+            return (Apps.name(at: url), bundleId, NSImageView(icon: Apps.icon(at: url, side: 26), side: 26))
         case .domain(let domain):
-            let icon = icons.icon(for: domain).map { Tile(image: $0) } ?? Tile(symbol: "globe")
-            return (domain, words.websiteWithSubdomains, icon)
+            return (domain, words.websiteWithSubdomains, Tile(site: icons.icon(for: domain)))
         }
     }
 

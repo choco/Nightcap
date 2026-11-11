@@ -17,6 +17,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let onClose: () -> Void
     /// What the open menu shows, so `refresh(_:)` redraws it only when that changed.
     private var shown: Menu?
+    /// What the icon shows, so `refresh(_:)` redraws it only when that changed.
+    private var drawn: (moon: Menu.Moon, problem: Bool)?
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
     /// "Nightcap is up here", or the panel saying the moon is hidden, while it shows.
@@ -87,13 +89,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// changed. A new strength alone moves the slider in place, since rebuilding the menu would
     /// end a drag.
     func refresh(_ snapshot: Snapshot) {
+        guard let shown, let menu = item.menu else {
+            draw(Menu.icon(snapshot))
+            return
+        }
         let decided = decide(snapshot)
-        let image = MenuArt.moon(for: decided.moon)
-        if decided.problemLine != nil { image?.accessibilityDescription = words.needingAttention(decided.moon) }
-        item.button?.image = image
-        item.button?.appearsDisabled = decided.moon == .unavailable
-        dot.isHidden = decided.problemLine == nil
-        guard let shown, decided != shown, let menu = item.menu else { return }
+        draw(decided.icon)
+        guard decided != shown else { return }
         if let slider, Self.apartFromStrength(decided) == Self.apartFromStrength(shown),
             let strength = Self.strength(in: decided)
         {
@@ -102,6 +104,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         } else {
             rebuild(menu, showing: decided)
         }
+    }
+
+    private func draw(_ icon: (moon: Menu.Moon, problem: Bool)) {
+        if let drawn, drawn == icon { return }
+        drawn = icon
+        let image = MenuArt.moon(for: icon.moon)
+        if icon.problem { image?.accessibilityDescription = words.needingAttention(icon.moon) }
+        item.button?.image = image
+        item.button?.appearsDisabled = icon.moon == .unavailable
+        dot.isHidden = !icon.problem
     }
 
     /// The menu `snapshot` decides as it's drawn, with the front app by its name.
@@ -301,10 +313,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// The image beside a place row: its symbol, or the app's own icon, running or installed.
     private static func image(for place: Place) -> NSImage? {
         guard case .app(let bundleId) = place else { return MenuArt.symbol(for: place).flatMap(symbol) }
-        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
-        let installed = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+        let icon =
+            NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first?.icon
+            ?? NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
             .map { NSWorkspace.shared.icon(forFile: $0.path) }
-        return (running ?? installed).map(menuSized)
+        return icon.map(menuSized)
     }
 
     /// A place row: a submenu that turns its place the other way (ADR-0018).

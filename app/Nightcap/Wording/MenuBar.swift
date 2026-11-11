@@ -3,7 +3,7 @@ import NightcapCore
 
 /// The menu's own words, beside the place rows' and the Night Shift item's line: its fixed items,
 /// the moon as VoiceOver reads it, the problem line, Custom…'s window, and "Nightcap is up here"
-/// under the moon.
+/// under the moon. Also the app menu's, while Nightcap is in the Dock.
 extension Wording {
     /// Night Shift's name as a title: the Night Shift item's, its block's in Settings, and
     /// onboarding's for its part and for the step that keeps a schedule.
@@ -22,6 +22,10 @@ extension Wording {
     var settings: String { text("Settings…") }
 
     var quitNightcap: String { text("Quit Nightcap") }
+
+    var aboutNightcap: String { text("About Nightcap") }
+
+    var hideNightcap: String { text("Hide Nightcap") }
 
     /// The moon, as VoiceOver reads it: "Night Shift forced off".
     func moon(_ moon: Menu.Moon) -> String {

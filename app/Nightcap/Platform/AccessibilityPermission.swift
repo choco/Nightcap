@@ -10,11 +10,11 @@ import notify
 /// Settings posts before `tccd` writes, so it can keep the old answer; it's only the fallback.
 final class AccessibilityPermission: AccessibilityAsking {
     private(set) var granted: Bool
-    private let onChange: (Bool) -> Void
+    private let onChange: () -> Void
     private var token = NOTIFY_TOKEN_INVALID
 
     /// `onChange` runs on the main thread whenever the grant flips.
-    init(onChange: @escaping (Bool) -> Void) {
+    init(onChange: @escaping () -> Void) {
         granted = Self.check()
         self.onChange = onChange
         notify_register_dispatch("com.apple.tcc.access.changed", &token, .main) { [weak self] _ in
@@ -36,7 +36,7 @@ final class AccessibilityPermission: AccessibilityAsking {
         let now = Self.check()
         guard now != granted else { return }
         granted = now
-        onChange(now)
+        onChange()
     }
 
     private static func check() -> Bool {

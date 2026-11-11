@@ -89,8 +89,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
     ) {
         // One place is kept for an app the user chooses.
         let words = self.words
-        let apps = Self.suggestedApps.compactMap { GridItem(app: $0.bundleId, kind: words[keyPath: $0.kind]) }
-            .prefix(OnboardingFlow.gridSize - 1)
+        let apps = Array(
+            Self.suggestedApps.lazy.compactMap { GridItem(app: $0.bundleId, kind: words[keyPath: $0.kind]) }
+                .prefix(OnboardingFlow.gridSize - 1))
         appItems = Dictionary(uniqueKeysWithValues: apps.map { (RuleIdentity.app($0.id), $0) })
         flow = OnboardingFlow(
             snapshot, apps: apps.map(\.id), sites: Self.suggestedSites.map(\.host), words: words,
@@ -417,16 +418,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         if let opensAtLogin = flow.opensAtLogin {
             lines.append((words.openAtLogin, words.onOrOff(opensAtLogin), opensAtLogin))
         }
-        var rowViews: [NSView] = []
-        for start in stride(from: 0, to: lines.count, by: 2) {
-            let cells = lines[start..<min(start + 2, lines.count)].enumerated().map { column, line in
-                Divided(summary(line.0, line.1, done: line.2), left: column > 0) as NSView
-            }
-            rowViews.append(
-                NSStackView(
-                    .horizontal, cells.count == 2 ? cells : cells + [NSView()], distribution: .fillEqually, spacing: 0))
-        }
-        return rows(rowViews)
+        return grid(lines.map { summary($0.0, $0.1, done: $0.2) }, perRow: 2)
     }
 
     private func websitesControls() -> [NSView] {
@@ -455,10 +447,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         glyph.contentTintColor = .nightcapSecondary
         glyph.widthAnchor.constraint(equalToConstant: 18).isActive = true
         let text = NSMutableAttributedString(
-            attributedString: NSTextField.label(
-                "\(lead) \(rest)", size: 12, weight: .regular, color: .labelColor, width: Self.textWidth - 60
-            )
-            .attributedStringValue)
+            attributedString: .label("\(lead) \(rest)", font: .systemFont(ofSize: 12), color: .labelColor))
         text.addAttribute(
             .font, value: NSFont.systemFont(ofSize: 12, weight: .semibold),
             range: NSRange(location: 0, length: (lead as NSString).length))
@@ -480,7 +469,7 @@ final class Onboarding: NSObject, NSWindowDelegate {
         return Padded(line, top: 8, left: 12, bottom: 8, right: 12)
     }
 
-    /// The suggestions' cells, three to a row in a group, divided by hairlines.
+    /// The suggestions' cells, three to a row.
     private func grid(_ suggestions: [OnboardingFlow.Suggestion], _ items: [RuleIdentity: GridItem]) -> NSView {
         let cells = suggestions.compactMap { suggestion -> GridCell? in
             guard let item = items[suggestion.identity] else { return nil }
@@ -490,12 +479,17 @@ final class Onboarding: NSObject, NSWindowDelegate {
                 draw()
             }
         }
+        return grid(cells, perRow: 3)
+    }
+
+    /// `cells`, `perRow` to a row in a group, divided by hairlines.
+    private func grid(_ cells: [NSView], perRow: Int) -> NSView {
         var lines: [NSView] = []
-        for start in stride(from: 0, to: cells.count, by: 3) {
-            var line = cells[start..<min(start + 3, cells.count)].enumerated().map { column, cell in
+        for start in stride(from: 0, to: cells.count, by: perRow) {
+            var line = cells[start..<min(start + perRow, cells.count)].enumerated().map { column, cell in
                 Divided(cell, left: column > 0) as NSView
             }
-            while line.count < 3 { line.append(NSView()) }
+            while line.count < perRow { line.append(NSView()) }
             lines.append(NSStackView(.horizontal, line, distribution: .fillEqually, spacing: 0))
         }
         return rows(lines)
@@ -546,11 +540,9 @@ final class Onboarding: NSObject, NSWindowDelegate {
 
     /// Says so while the screen shows the strength, which it does only during a drag.
     private func showPreview(_ previewing: Bool) {
-        guard let previewNote else { return }
-        let replacement = NSTextField.label(
-            words.strengthPreview(showing: previewing), size: 12, weight: .regular,
-            color: previewing ? .nightcapMoon : .nightcapSecondary, width: Self.textWidth)
-        previewNote.attributedStringValue = replacement.attributedStringValue
+        previewNote?.attributedStringValue = .label(
+            words.strengthPreview(showing: previewing), font: .systemFont(ofSize: 12),
+            color: previewing ? .nightcapMoon : .nightcapSecondary)
     }
 
     private func fact(_ title: String, _ text: String) -> NSView {

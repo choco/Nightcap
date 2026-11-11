@@ -11,9 +11,7 @@ final class Updater: Updating {
 
     /// `notifications` posts Sparkle's reminders.
     init(dockIcon: DockIcon, notifications: Notifications) {
-        reminders = UpdateReminders(dockIcon: dockIcon) { title, body, id in
-            notifications.post(Notice(title: title, body: body), id: id)
-        }
+        reminders = UpdateReminders(dockIcon: dockIcon) { notice, id in notifications.post(notice, id: id) }
     }
 
     /// Whether Sparkle runs, which the launch's outcome decides.

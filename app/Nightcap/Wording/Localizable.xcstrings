@@ -223,6 +223,9 @@
     "A strength is 0 to 100, not %lld." : {
 
     },
+    "About Nightcap" : {
+
+    },
     "Accessibility" : {
 
     },
@@ -704,6 +707,9 @@
     "Give it a rule" : {
 
     },
+    "Hide Nightcap" : {
+
+    },
     "Hold %@ in any app to see true colour for as long as you hold it." : {
 
     },
@@ -767,6 +773,9 @@
 
     },
     "Its menu turns Night Shift on or off, everywhere or just in the app in front, for as long as you choose." : {
+
+    },
+    "Its update window is open behind your other windows." : {
 
     },
     "It’s a folder, not a file." : {
@@ -968,6 +977,9 @@
 
     },
     "Nightcap" : {
+
+    },
+    "Nightcap %@ is ready to install" : {
 
     },
     "Nightcap can do the same for websites: Night Shift goes off while a site you choose is in the front tab." : {

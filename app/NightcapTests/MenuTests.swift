@@ -26,12 +26,6 @@ private func siteTitle(_ row: Menu.PlaceRow?) -> (String?, String?) {
 /// What the menu shows, in its words, and the commands its items send (ADR-0018): the moon, the
 /// Night Shift item, the problem line, the strength and the place rows.
 struct MenuTests {
-    @Test func withNoScheduleTheNightShiftItemSaysSo() throws {
-        let core = try staged("2026-10-16T12:00:00+02:00", reported(false, .off))
-
-        #expect(core.menu().nightShift.line == "No schedule")
-    }
-
     @Test func theMenuSaysWhatNightShiftIsDoingAndWhy() throws {
         let core = try forced()
         let item = { (on: Bool, line: String, command: Command) in
@@ -485,6 +479,23 @@ struct MenuTests {
         #expect(core.menu().problemLine == line("2 Things Need Attention…", "Accessibility and notifications"))
         core.report(fact: .permissionsChanged(accessibility: true, notifications: .granted))
         #expect(core.menu().problemLine == nil)
+    }
+
+    /// The menu bar draws the icon alone while the menu is closed.
+    @Test func theIconIsTheMenusMoonAndProblemDot() throws {
+        let problem = Step.fact(.permissionsChanged(accessibility: false, notifications: .granted))
+        let cores = try [
+            onByTheSchedule(), offByTheSchedule(), forced(),
+            staged("2026-10-16T12:00:00+02:00", config: "websites = true\n", reported(false, .off), problem),
+            staged("2026-10-16T12:00:00+02:00", config: "websites = true\n", problem),
+        ]
+
+        let icons = cores.map { Menu.icon($0.snapshot()) }
+
+        #expect(icons.map(\.moon) == cores.map { $0.menu().moon })
+        #expect(icons.map(\.problem) == cores.map { $0.menu().problemLine != nil })
+        #expect(icons.map(\.moon) == [.on, .off, .forcedOff, .off, .unavailable])
+        #expect(icons.map(\.problem) == [false, false, false, true, false])
     }
 
     @Test func aScheduleSetAsideIsAProblemWithNightShift() throws {

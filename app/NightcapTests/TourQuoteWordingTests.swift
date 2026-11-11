@@ -3,7 +3,7 @@ import NightcapCore
 import Testing
 
 private let sample = TourApp(bundleId: tourSample, name: "Tour Sample")
-private let site = TourSite(domain: "nightcap.choco.me", browser: "com.apple.Safari")
+private let site = "nightcap.choco.me"
 private let mail = TourApp(bundleId: "com.apple.mail", name: "Mail")
 
 /// The row's item that sends a command `wanted` picks out, as the tour quotes it, and its command.

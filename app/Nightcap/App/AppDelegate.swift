@@ -17,11 +17,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let onboardingRecord = OnboardingRecord(defaults: .standard)
     private lazy var notifications = Notifications()
     private lazy var nightShift = NightShiftAdapter(
-        onChange: { [weak self] status, switchedBy in
-            self?.reporter?.reportNightShift(status, switchedBy: switchedBy)
-        },
+        onChange: { [weak self] in self?.reporter?.reportNightShift() },
         onStrength: { [weak self] value in self?.reporter?.reportStrength(value) })
-    private lazy var accessibility = AccessibilityPermission { [weak self] _ in
+    private lazy var accessibility = AccessibilityPermission { [weak self] in
         Task { await self?.reporter?.reportSystemState() }
     }
     private lazy var updater = Updater(dockIcon: dockIcon, notifications: notifications)
@@ -177,14 +175,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onShown()
     }
 
-    /// The default browser, for the tour's site step, while website checking can watch it, as
-    /// `snapshot` has it.
-    private func tourBrowser(_ snapshot: Snapshot) -> Tour.Browser? {
+    /// The default browser's name, for the tour's site step, while website checking can watch
+    /// it, as `snapshot` has it.
+    private func tourBrowser(_ snapshot: Snapshot) -> String? {
         guard snapshot.preferences().websiteChecking.state == .on, snapshot.checks().permissions.accessibility,
             let url = NSWorkspace.shared.urlForApplication(toOpen: URL(string: "https://example.com")!),
             let bundleId = Bundle(url: url)?.bundleIdentifier, BrowserWatcher.browsers.contains(bundleId)
         else { return nil }
-        return Tour.Browser(bundleId: bundleId, name: Apps.name(at: url))
+        return Apps.name(at: url)
     }
 
     /// Onboarding, drawn first from `snapshot`, the launch's.

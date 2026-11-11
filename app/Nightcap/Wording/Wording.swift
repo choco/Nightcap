@@ -21,11 +21,6 @@ struct Wording {
         case site(domain: String)
     }
 
-    /// Whose a rule is. A trial's is the tour's, the only trial the app begins.
-    enum Whose {
-        case config, yours, tour, outsideChange
-    }
-
     /// A temporary rule as the words tell it: on or off, until a time, or with no end until the
     /// user turns it back.
     struct TemporaryRule: Equatable {
@@ -62,11 +57,12 @@ struct Wording {
     }
 
     /// Whose rule decides, as a line names it: "your config’s rule".
-    func whose(_ whose: Whose) -> String {
-        switch whose {
+    func whose(_ setBy: SetBy) -> String {
+        switch setBy {
         case .config: text("your config’s rule")
-        case .yours: text("your rule")
-        case .tour: text("the tour’s rule")
+        case .you: text("your rule")
+        // The tour's trial is the only one the app begins.
+        case .trial: text("the tour’s rule")
         case .outsideChange: text("the outside change’s rule")
         }
     }

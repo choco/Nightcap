@@ -13,17 +13,11 @@ final class GridCell: NSView {
         checkbox.setAccessibilityLabel(item.name)
         checkbox.onAction(toggle)
         self.toggle = ruled == nil ? toggle : nil
-        let icon: NSView
-        switch item.icon {
-        case .app(let image):
-            let view = NSImageView(image: image)
-            view.imageScaling = .scaleProportionallyUpOrDown
-            view.widthAnchor.constraint(equalToConstant: 24).isActive = true
-            view.heightAnchor.constraint(equalToConstant: 24).isActive = true
-            icon = view
-        case .site(let image):
-            icon = image.map { Tile(image: $0) } ?? Tile(symbol: "globe")
-        }
+        let icon: NSView =
+            switch item.icon {
+            case .app(let image): NSImageView(icon: image, side: 24)
+            case .site(let image): Tile(site: image)
+            }
         let name = NSTextField(labelWithString: item.name)
         name.font = .systemFont(ofSize: 13)
         name.lineBreakMode = .byTruncatingTail

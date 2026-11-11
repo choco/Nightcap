@@ -119,16 +119,16 @@ extension Wording {
 
     /// The line under an app's or site's row: what its place says, its temporary rule then its
     /// rule, such as "On until 07:00, then your config’s rule". None where it says nothing.
-    func placeSays(_ temporary: TemporaryRule?, then rule: (says: OnOff, whose: Whose)?) -> String? {
+    func placeSays(_ temporary: TemporaryRule?, then rule: (says: OnOff, setBy: SetBy)?) -> String? {
         guard let temporary else {
             return rule.map { rule in
                 switch rule.says {
-                case .on: text("Always on: \(whose(rule.whose))")
-                case .off: text("Always off: \(whose(rule.whose))")
+                case .on: text("Always on: \(whose(rule.setBy))")
+                case .off: text("Always off: \(whose(rule.setBy))")
                 }
             }
         }
         let line = change(temporary.state, until: temporary.until)
-        return rule.map { rule in text("\(line), then \(whose(rule.whose))") } ?? line
+        return rule.map { rule in text("\(line), then \(whose(rule.setBy))") } ?? line
     }
 }
