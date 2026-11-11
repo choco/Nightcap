@@ -3,29 +3,26 @@ name: pages
 on:
   push:
     branches: [main]
-    paths: ["site/**", "design/**", "app/icons/AppIcon.svg", "CHANGELOG.md", "scripts/build-site", ".github/workflows/pages.yml"]
+    paths: ["site/**", "design/**", "app/icons/AppIcon.svg", "CHANGELOG.md", "scripts/build-site", "release/site", ".github/workflows/pages.yml"]
   workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Pages keys a deployment by its commit and ignores a second deploy of the same one, so a push
+  # carrying a version that isn't released yet leaves the deploy to that version's release.
+  pending:
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    outputs:
+      release: ${{ steps.pending.outputs.release }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # Pages keys a deployment by its commit and ignores a second deploy of the same one, so a push
-      # carrying a version that isn't released yet leaves the deploy to that version's release.
       - name: Check whether the release deploys this commit
         id: pending
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -37,42 +34,34 @@ jobs:
             echo "::notice::v$(scripts/version) isn't released yet, so its release deploys the site"
             echo "release=true" >> "$GITHUB_OUTPUT"
           fi
+
+  deploy:
+    needs: pending
+    if: needs.pending.outputs.release != 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        if: steps.pending.outputs.release != 'true'
         with:
           node-version: 24
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
-        if: steps.pending.outputs.release != 'true'
         with:
           package_json_file: site/package.json
           cache: true
           cache_dependency_path: site/pnpm-lock.yaml
       - name: Assemble the site and the newest release's appcast
-        if: steps.pending.outputs.release != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName --jq '.[].tagName')"
-          if [[ -n "$tag" ]]; then
-            # The site's download buttons, prerendered: the DMG, or the zip of a release that has none.
-            export VITE_RELEASE_VERSION="${tag#v}"
-            VITE_RELEASE_URL="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq \
-              '([.assets[] | select(.name | endswith(".dmg"))] + [.assets[] | select(.name | endswith(".zip"))])[0].url // empty')"
-            export VITE_RELEASE_URL
-          fi
-          scripts/build-site
-          if [[ -n "$tag" ]]; then
-            assets="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')"
-            if grep -qx appcast.xml <<<"$assets"; then
-              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern appcast.xml --dir build/site
-            else
-              echo "::notice::the newest release predates Sparkle and has no appcast.xml"
-            fi
-          fi
+        run: release/site
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        if: steps.pending.outputs.release != 'true'
         with:
           path: build/site
       - id: deployment
-        if: steps.pending.outputs.release != 'true'
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

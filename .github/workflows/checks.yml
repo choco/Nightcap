@@ -4,10 +4,10 @@ on:
   # Dependabot's branches run as pull requests alone, behind the gate below.
   push:
     branches-ignore: ["dependabot/**"]
-    paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
+    paths: &checked ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths: ["**", "!docs/**", "!**.md", "CHANGELOG.md"]
+    paths: *checked
   workflow_call:
 
 permissions:

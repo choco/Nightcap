@@ -10,8 +10,8 @@ app="$1"
 out="$2"
 
 repo="choco/Nightcap"
-sparkle_version="2.10.0"
-sparkle_sha256="c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
+# The tool from the Sparkle package the app is built with, which SwiftPM checks against its pin.
+sign_update="$root/build/SourcePackages/artifacts/sparkle/Sparkle/bin/sign_update"
 
 plist() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Contents/Info.plist"; }
 version="$(plist CFBundleShortVersionString)"
@@ -21,21 +21,13 @@ zip="Nightcap-$version.zip"
 [[ -f "$out/$zip" ]] || { echo "error: $out/$zip is missing; run release/package first" >&2; exit 1; }
 notes="$("$root/scripts/release-notes" "$version")"
 
-tools="$root/build/sparkle-$sparkle_version"
-if [[ ! -x "$tools/bin/sign_update" ]]; then
-  mkdir -p "$tools"
-  archive="$tools/Sparkle-$sparkle_version.tar.xz"
-  curl -fsSL -o "$archive" \
-    "https://github.com/sparkle-project/Sparkle/releases/download/$sparkle_version/Sparkle-$sparkle_version.tar.xz"
-  echo "$sparkle_sha256  $archive" | shasum -a 256 -c - >/dev/null
-  tar -xf "$archive" -C "$tools" ./bin/sign_update
-fi
+[[ -x "$sign_update" ]] || { echo "error: $sign_update is missing; run build-app first" >&2; exit 1; }
 
 # Prints: sparkle:edSignature="…" length="…"
 if [[ -n "${SPARKLE_PRIVATE_KEY:-}" ]]; then
-  enclosure="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$tools/bin/sign_update" --ed-key-file - "$out/$zip")"
+  enclosure="$(printf '%s' "$SPARKLE_PRIVATE_KEY" | "$sign_update" --ed-key-file - "$out/$zip")"
 else
-  enclosure="$("$tools/bin/sign_update" --account nightcap "$out/$zip")"
+  enclosure="$("$sign_update" --account nightcap "$out/$zip")"
 fi
 
 cat > "$out/appcast.xml" <<EOF

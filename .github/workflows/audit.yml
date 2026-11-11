@@ -9,7 +9,7 @@ on:
   # code, so it needs no `ci` label (checks.yml).
   push:
     branches-ignore: ["dependabot/**"]
-    paths:
+    paths: &audited
       - Cargo.lock
       - deny.toml
       - site/pnpm-lock.yaml
@@ -18,14 +18,7 @@ on:
       - flake.lock
       - scripts/check
   pull_request:
-    paths:
-      - Cargo.lock
-      - deny.toml
-      - site/pnpm-lock.yaml
-      - app/Nightcap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-      - .github/workflows/**
-      - flake.lock
-      - scripts/check
+    paths: *audited
   workflow_call:
   workflow_dispatch:
 

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Runs xcodebuild from the repository's root with the given arguments, in a clean environment,
+# which keeps the Nix dev shell's compiler and SDK variables away from Xcode. Indexing stays off:
+# in -target builds its store path comes out empty and swallows the next compiler flag.
+# Usage: xcodebuild-clean-env <xcodebuild arguments>
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+exec env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" \
+  ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
+  xcodebuild "$@" COMPILER_INDEX_STORE_ENABLE=NO

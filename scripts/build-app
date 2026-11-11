@@ -12,16 +12,12 @@ if [[ "${1:-}" == "--release" ]]; then
   configuration=Release
 fi
 
-# A clean environment keeps the Nix dev shell's compiler and SDK variables away from Xcode.
-# Indexing stays off: in -target builds its store path comes out empty and swallows the
-# next compiler flag.
-env -i HOME="$HOME" PATH="/usr/bin:/bin:/usr/sbin:/sbin" TMPDIR="${TMPDIR:-/tmp}" \
-  ${DEVELOPER_DIR:+DEVELOPER_DIR="$DEVELOPER_DIR"} \
-  xcodebuild build \
+# The packages go to a fixed folder, where release/appcast finds Sparkle's sign_update.
+scripts/xcodebuild-clean-env build \
   -project app/Nightcap.xcodeproj \
   -target Nightcap \
   -configuration "$configuration" \
+  -clonedSourcePackagesDirPath "$root/build/SourcePackages" \
   SYMROOT="$root/build/xcode" \
-  COMPILER_INDEX_STORE_ENABLE=NO \
   MARKETING_VERSION="$(scripts/version)" \
   CURRENT_PROJECT_VERSION="$(git rev-list --count HEAD)"

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Builds the site for Pages into build/site, with the newest release's download behind its buttons
+# and that release's appcast beside it, which installs read (ADR-0011). Needs GH_TOKEN or gh's
+# login.
+# Usage: release/site
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+repo="${GITHUB_REPOSITORY:-choco/Nightcap}"
+
+tag="$(gh release list --repo "$repo" --limit 1 --json tagName --jq '.[].tagName')"
+if [[ -n "$tag" ]]; then
+  assets="$(gh release view "$tag" --repo "$repo" --json assets)"
+  # The site's download buttons, prerendered: the DMG, or the zip of a release that has none.
+  export VITE_RELEASE_VERSION="${tag#v}"
+  VITE_RELEASE_URL="$(jq -r '([.assets[] | select(.name | endswith(".dmg"))]
+    + [.assets[] | select(.name | endswith(".zip"))])[0].url // empty' <<<"$assets")"
+  export VITE_RELEASE_URL
+fi
+"$root/scripts/build-site"
+if [[ -n "$tag" ]]; then
+  if jq -e 'any(.assets[]; .name == "appcast.xml")' <<<"$assets" >/dev/null; then
+    gh release download "$tag" --repo "$repo" --pattern appcast.xml --dir "$root/build/site"
+  else
+    echo "::notice::the newest release predates Sparkle and has no appcast.xml"
+  fi
+fi
