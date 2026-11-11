@@ -54,14 +54,9 @@ fn night_shift(found: NightShiftDetail, state: CheckState) -> Option<(CheckDetai
     stands(CheckDetail::NightShift(found), state)
 }
 
-/// Night Shift working with `schedule`, which is no problem.
-fn available(schedule: Schedule) -> Option<(CheckDetail, CheckState)> {
-    night_shift(
-        NightShiftDetail::Available {
-            schedule: Some(schedule),
-        },
-        CheckState::Ok,
-    )
+/// Night Shift working, which is no problem.
+fn available() -> Option<(CheckDetail, CheckState)> {
+    night_shift(NightShiftDetail::Available, CheckState::Ok)
 }
 
 /// Sunset to sunrise set aside until Location Services is back on, which the user set up.
@@ -127,7 +122,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
     staged.request(Request::Command(Command::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
-        config(ConfigFileDetail::Valid { rules: 1 }, CheckState::Ok)
+        config(ConfigFileDetail::Valid, CheckState::Ok)
     );
     staged.write_config(Some("[rules.off\napp = [\"com.figma.Desktop\"]\n"));
     staged.request(Request::Command(Command::Reload));
@@ -147,18 +142,13 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
 }
 
 #[test]
-fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
+fn the_ad_hoc_rules_check_says_whether_they_are_on_or_why_they_are_off() {
     let staged = noon().stage().unwrap();
     let ad_hoc = |found: AdHocRulesDetail, state| stands(CheckDetail::AdHocRules(found), state);
 
     assert_eq!(
         found(&staged, CheckKind::AdHocRules),
-        ad_hoc(AdHocRulesDetail::On { rules: 0 }, CheckState::Ok)
-    );
-    send(&staged, add_rule(figma(), OnOff::Off));
-    assert_eq!(
-        found(&staged, CheckKind::AdHocRules),
-        ad_hoc(AdHocRulesDetail::On { rules: 1 }, CheckState::Ok)
+        ad_hoc(AdHocRulesDetail::On, CheckState::Ok)
     );
     let path = etcetera::BaseStrategy::data_dir(&etcetera::base_strategy::Xdg::new().unwrap())
         .join("nightcap/rules.toml")
@@ -184,15 +174,7 @@ fn night_shift_missing_on_this_mac_is_broken() {
         night_shift(NightShiftDetail::Unavailable, CheckState::Broken)
     );
     staged.report(reported(false, Schedule::Off));
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(Schedule::Off)
-    );
-    staged.report(reported(false, custom_hours()));
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(custom_hours())
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
 }
 
 #[test]
@@ -304,10 +286,7 @@ fn sunset_to_sunrise_set_aside_is_a_problem_until_location_services_is_back_on()
     assert_eq!(found(&staged, CheckKind::NightShift), set_aside());
 
     staged.report(reported(true, Schedule::SunsetToSunrise));
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(Schedule::SunsetToSunrise)
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
 }
 
 #[test]
@@ -330,16 +309,10 @@ fn the_schedule_set_aside_can_be_kept_off_until_location_services_is_back_on() {
 
     _ = staged.send(Command::KeepScheduleOff);
 
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(Schedule::Off)
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
     let staged = staged.restart_at(at("2026-10-16T01:45:00+02:00"));
     staged.report(reported_set_aside(false, Schedule::Off));
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(Schedule::Off)
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
 
     staged.report(reported(true, Schedule::SunsetToSunrise));
     staged.report(reported_set_aside(false, Schedule::Off));
@@ -375,10 +348,7 @@ fn a_schedule_chosen_while_sunset_to_sunrise_is_set_aside_is_no_problem() {
 
     staged.report(reported_set_aside(true, custom_hours()));
 
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(custom_hours())
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
 }
 
 #[test]
@@ -387,7 +357,7 @@ fn sunset_to_sunrise_without_sun_times_for_ten_minutes_is_a_problem() {
         .stage()
         .unwrap();
     staged.report(reported(true, Schedule::SunsetToSunrise));
-    let following = available(Schedule::SunsetToSunrise);
+    let following = available();
 
     staged.set_now(at("2026-10-16T01:49:00+02:00"));
     staged.report(Fact::TimerFired);
@@ -424,10 +394,7 @@ fn nightcap_wakes_as_the_patience_for_sun_times_ends() {
         staged.report(Fact::TimerFired).effects,
         vec![wakeup("2026-10-16T01:50:30+02:00")]
     );
-    assert_eq!(
-        found(&staged, CheckKind::NightShift),
-        available(Schedule::SunsetToSunrise)
-    );
+    assert_eq!(found(&staged, CheckKind::NightShift), available());
 
     staged.set_now(at("2026-10-16T01:50:30+02:00"));
     let outcome = staged.report(Fact::TimerFired);
@@ -456,7 +423,7 @@ fn reloading_mends_a_broken_config_once_it_is_fixed() {
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
         stands(
-            CheckDetail::ConfigFile(ConfigFileDetail::Valid { rules: 1 }),
+            CheckDetail::ConfigFile(ConfigFileDetail::Valid),
             CheckState::Ok
         )
     );

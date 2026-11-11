@@ -129,28 +129,6 @@
         }
       }
     },
-    "%lld ad-hoc rules." : {
-      "localizations" : {
-        "en" : {
-          "variations" : {
-            "plural" : {
-              "one" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld ad-hoc rule."
-                }
-              },
-              "other" : {
-                "stringUnit" : {
-                  "state" : "translated",
-                  "value" : "%lld ad-hoc rules."
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "%lld of %lld" : {
       "localizations" : {
         "en" : {
@@ -1062,9 +1040,6 @@
 
     },
     "Nix" : {
-
-    },
-    "No ad-hoc rules." : {
 
     },
     "No config file." : {

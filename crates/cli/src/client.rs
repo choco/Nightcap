@@ -88,6 +88,18 @@ pub(crate) fn rules(
     Ok(rules.rules)
 }
 
+/// What a command leaves, in the one request `send` sends: the apps' and sites' rules, each with
+/// its snooze, and the trial that runs, if one does.
+pub(crate) fn rules_and_trial(
+    send: impl FnOnce(&Request) -> Result<Payload, Failure>,
+) -> Result<(Vec<ListedRule>, Option<TrialState>), Failure> {
+    let [Answer::Rules(rules), Answer::Trial(trial)] = answers(send, [Query::Rules, Query::Trial])?
+    else {
+        return Err(unexpected_reply());
+    };
+    Ok((rules.rules, trial))
+}
+
 /// What `nightcap status` shows, from the queries it asks in one request, so every answer is
 /// as of the same input (ADR-0010).
 #[derive(Debug)]

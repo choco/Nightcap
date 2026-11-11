@@ -6,7 +6,7 @@ use jiff::{SignedDuration, Timestamp};
 use nightcap_protocol::{
     AccessibilityDetail, AdHocRulesDetail, Check, CheckDetail, CheckState, ConfigFileDetail,
     Install, LoginItem, NightShift, NightShiftDetail, NotificationPermission, NotificationsDetail,
-    OpenAtLoginDetail, Schedule, SetBy,
+    OpenAtLoginDetail,
 };
 
 use crate::server::state::Inner;
@@ -19,13 +19,6 @@ pub(crate) const SUN_TIMES_PATIENCE: SignedDuration = SignedDuration::from_mins(
 impl Inner {
     /// Everything Nightcap depends on, compared with what the user set up.
     pub(crate) fn checks(&self, now: Timestamp) -> Vec<Check> {
-        // No file holds u32::MAX rules, so the count never saturates.
-        let rules_from = |set_by| {
-            let count = (self.rules.indefinite().iter())
-                .filter(|rule| rule.set_by == set_by)
-                .count();
-            u32::try_from(count).unwrap_or(u32::MAX)
-        };
         let sun_times_overdue = self
             .facts
             .sun_times_awaited_since
@@ -38,9 +31,7 @@ impl Inner {
             } else if sun_times_overdue {
                 NightShiftDetail::NoSunTimes
             } else {
-                NightShiftDetail::Available {
-                    schedule: self.facts.timeline.schedule.map(Schedule::from),
-                }
+                NightShiftDetail::Available
             },
         )];
         // Nothing is said about the permissions until the shell first reports them.
@@ -80,17 +71,13 @@ impl Inner {
         found.push(CheckDetail::ConfigFile(
             match (&self.loaded.config_error, self.loaded.config_found) {
                 (Some(error), _) => ConfigFileDetail::Error(error.into()),
-                (None, true) => ConfigFileDetail::Valid {
-                    rules: rules_from(SetBy::Config),
-                },
+                (None, true) => ConfigFileDetail::Valid,
                 (None, false) => ConfigFileDetail::Missing,
             },
         ));
         found.push(CheckDetail::AdHocRules(match &self.loaded.ad_hoc_error {
             Some(error) => AdHocRulesDetail::Off(error.into()),
-            None => AdHocRulesDetail::On {
-                rules: rules_from(SetBy::You),
-            },
+            None => AdHocRulesDetail::On,
         }));
         found
             .into_iter()
@@ -103,15 +90,17 @@ impl Inner {
 }
 
 /// Where what a check found leaves it: drift is what the user set up that stopped working, and
-/// broken what can only be fixed.
+/// broken what can only be fixed. The CLI's `check()` (`crates/cli/src/wording.rs`) words only
+/// the details this makes problems, and Swift's `Notice(problem:)` only those the app announces,
+/// so moving a detail into a problem here means adding it there.
 fn state(detail: &CheckDetail) -> CheckState {
     match detail {
-        CheckDetail::NightShift(NightShiftDetail::Available { .. })
+        CheckDetail::NightShift(NightShiftDetail::Available)
         | CheckDetail::Accessibility(AccessibilityDetail::Allowed)
         | CheckDetail::Notifications(NotificationsDetail::Allowed)
         | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens)
-        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. })
-        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => CheckState::Ok,
+        | CheckDetail::ConfigFile(ConfigFileDetail::Valid)
+        | CheckDetail::AdHocRules(AdHocRulesDetail::On) => CheckState::Ok,
         CheckDetail::Accessibility(AccessibilityDetail::NotNeeded)
         | CheckDetail::Notifications(NotificationsDetail::Off)
         | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Off)

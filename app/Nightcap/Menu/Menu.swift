@@ -56,13 +56,13 @@ struct Menu: Equatable {
     }
 
     enum Item: Equatable {
-        case choice(Choice)
+        case action(Action)
         case pickTime(PickTime)
         case separator
     }
 
     /// Choosing it sends `command`.
-    struct Choice: Equatable {
+    struct Action: Equatable {
         let title: String
         /// A line under the title, such as when a length ends.
         var subtitle: String? = nil
@@ -101,7 +101,7 @@ extension Menu {
         let front = snapshot.front()
         let rows = Rows(
             nightShift: nightShift, front: front, lengths: snapshot.config().lengths, checks: snapshot.checks().checks,
-            now: now, frontName: front.app.flatMap(appName), words: words)
+            rulesCanChange: snapshot.rulesCanChange(), now: now, frontName: front.app.flatMap(appName), words: words)
         let everywhere = front.everywhere.gives
         var entries: [Entry] = []
         if let strength = nightShift.strength { entries.append(.strength(strength)) }
@@ -145,6 +145,8 @@ private struct Rows {
     let front: Front
     let lengths: [SignedDuration]
     let checks: [Check]
+    /// Whether the core takes Always and Remove Your Rule, which are greyed while it doesn't.
+    let rulesCanChange: Bool
     let now: Date
     /// The front app's name, where it has one.
     let frontName: String?
@@ -175,11 +177,12 @@ private struct Rows {
             case .schedule(_, .some) where rule?.says == state: words.backToTheSchedule
             case .schedule, .standIn, nil: nil
             }
-        var undoing = undo.map { [Menu.Item.choice(Menu.Choice(title: $0, command: .reset(place)))] } ?? []
-        // Removing a rule is the user's to do whenever they like, even where nothing on screen
-        // would change.
+        var undoing = undo.map { [Menu.Item.action(Menu.Action(title: $0, command: .reset(place)))] } ?? []
+        // Removing a rule is the user's to do even where nothing on screen would change.
         if let rule, rule.setBy != .config, let identity = place.identity() {
-            undoing.append(.choice(Menu.Choice(title: words.removeYourRule, command: .removeRule(identity))))
+            undoing.append(
+                .action(
+                    Menu.Action(title: words.removeYourRule, enabled: rulesCanChange, command: .removeRule(identity))))
         }
         // A new temporary rule takes the place of the one there, so over one with the row's way
         // under it, a length would come to the same as undoing, or as the switch everywhere.
@@ -190,18 +193,19 @@ private struct Rows {
             lengths = picks(at: place, state, window: window)
             if left != state, let until = untilTurn(at: place, state) { lengths.append(until) }
         }
-        let always: Menu.Choice? =
+        let always: Menu.Action? =
             switch (place.identity(), rule) {
             case (nil, _): nil
             case (_, let rule?) where rule.says == state: nil
             case (let identity?, let rule?) where rule.setBy == .config:
-                Menu.Choice(
+                Menu.Action(
                     title: words.always, subtitle: words.yourConfigDecides, enabled: false,
                     command: .addRule(identity: identity, says: state))
             case (let identity?, _):
-                Menu.Choice(title: words.always, command: .addRule(identity: identity, says: state))
+                Menu.Action(
+                    title: words.always, enabled: rulesCanChange, command: .addRule(identity: identity, says: state))
             }
-        let groups: [[Menu.Item]] = [undoing, lengths, always.map { [.choice($0)] } ?? []]
+        let groups: [[Menu.Item]] = [undoing, lengths, always.map { [.action($0)] } ?? []]
         let items = Array(groups.filter { !$0.isEmpty }.joined(separator: [.separator]))
         guard let named else {
             // The app or site in front keeps the other way, which the row can't change there.
@@ -256,8 +260,8 @@ private struct Rows {
         let start = Date(
             timeIntervalSince1970: ((now.timeIntervalSince1970 + 60 * 60) / quarter).rounded(.up) * quarter)
         return lengths.map { length in
-            .choice(
-                Menu.Choice(
+            .action(
+                Menu.Action(
                     title: words.forLength(length), command: .set(place: place, state: state, length: .for(length))))
         } + [.pickTime(Menu.PickTime(item: words.custom, title: window, place: place, state: state, start: start))]
     }
@@ -267,8 +271,8 @@ private struct Rows {
     private func untilTurn(at place: Place, _ state: OnOff) -> Menu.Item? {
         guard let schedule = nightShift.schedule, let until = state == .on ? nightShift.nextOff : nightShift.nextOn
         else { return nil }
-        return .choice(
-            Menu.Choice(
+        return .action(
+            Menu.Action(
                 title: words.until(until), subtitle: words.moment(of: schedule, turning: state.other()),
                 command: .set(place: place, state: state, length: .untilScheduleTurns)))
     }

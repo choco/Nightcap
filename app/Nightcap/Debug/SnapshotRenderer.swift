@@ -62,6 +62,9 @@ enum SnapshotRenderer {
             current: { settingsCore.snapshot() }, icons: icons, choose: { _ in },
             perform: { _ in },
             checkForUpdates: {}, export: { _ in "" }, takeTour: {}, onClose: {})
+        // On macOS 27 a window drawn to PNG shows a search field's own text beside the label
+        // macOS lays over it, which KeyboardShortcuts recentres, so the General tab's shortcut
+        // field shows a fainter second copy; on screen the field's own text is empty.
         inEachAppearance { appearance in
             for tab in SettingsWindow.Tab.allCases {
                 write("app-\(tab.rawValue)-\(appearance).png", window.snapshot(tab, shortcut: shortcut))

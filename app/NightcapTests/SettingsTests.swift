@@ -162,6 +162,19 @@ struct SettingsTests {
         #expect(newer.accept == nil)
     }
 
+    @Test func settingsAddNoRuleWhileAdHocRulesAreOff() throws {
+        #expect(settings(try atNoon()).canAddRules)
+
+        let off = try atNoon(rules: "version = 99\n", reported(false))
+        #expect(!settings(off).canAddRules)
+        off.send(command: .addRule(identity: .domain("figma.com"), says: .off))
+        #expect(off.snapshot().rules().rules.isEmpty)
+
+        // A trial's rules never reach `rules.toml` (ADR-0016).
+        let trial = try atNoon(rules: "version = 99\n", reported(false), tourBegun)
+        #expect(settings(trial).canAddRules)
+    }
+
     @Test func settingsSwitchOpeningAtLoginInASelfManagedInstall() throws {
         let core = try selfManaged(.notRegistered)
         #expect(

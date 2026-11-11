@@ -36,9 +36,21 @@ extension Core {
     }
 }
 
-/// The check of `kind` where it stands, in English with a 24-hour clock.
-private func check(_ core: Core, _ kind: CheckKind) -> (CheckState, String)? {
-    core.found(kind).map { ($0.state, Wording.staged.check($0.detail)) }
+/// The check of `kind` where it stands, in `words`, with the schedule and the number of config
+/// rules the same snapshot answers, as Settings words it.
+private func check(_ core: Core, _ kind: CheckKind, in words: Wording = .staged) -> (CheckState, String)? {
+    let snapshot = core.snapshot()
+    let schedule = snapshot.nightShift().schedule
+    let configRules = snapshot.rules().rules.count(where: { $0.rule.setBy == .config })
+    return snapshot.checks().checks.first { $0.detail.kind() == kind }.map {
+        ($0.state, words.check($0.detail, schedule: schedule, configRules: configRules))
+    }
+}
+
+/// What a check found, in English, from its detail alone: for the details a staged core can't
+/// report, none of which needs the schedule or the config's rules.
+private func worded(_ detail: CheckDetail) -> String {
+    Wording.staged.check(detail, schedule: nil, configRules: 0)
 }
 
 /// What each check found, in the words Settings shows it in, from a staged core's checks.
@@ -112,16 +124,12 @@ struct CheckWordingTests {
             (.other, "Nightcap couldn’t read it."),
         ]
         for (failure, said) in unreadable {
-            #expect(
-                Wording.staged.check(.configFile(.error(.unreadable(path: "/n/config.toml", failure: failure))))
-                    == said)
+            #expect(worded(.configFile(.error(.unreadable(path: "/n/config.toml", failure: failure)))) == said)
         }
         #expect(
-            Wording.staged.check(.adHocRules(.off(.unreadable(path: "/n/rules.toml", failure: .isAFolder))))
+            worded(.adHocRules(.off(.unreadable(path: "/n/rules.toml", failure: .isAFolder))))
                 == "Ad-hoc rules are off: /n/rules.toml is a folder, not a file.")
-        #expect(
-            Wording.staged.check(.configFile(.error(.malformed(path: "/n/config.toml", at: nil))))
-                == "It isn’t valid TOML.")
+        #expect(worded(.configFile(.error(.malformed(path: "/n/config.toml", at: nil)))) == "It isn’t valid TOML.")
     }
 
     @Test func anInvalidConfigNamesTheEntryOrValueOnItsLine() throws {
@@ -171,47 +179,42 @@ struct CheckWordingTests {
                 ))
     }
 
-    @Test func theAdHocRulesCheckCountsThemOrSaysWhyTheyAreOff() throws {
-        let core = try atNoon()
-        #expect(check(core, .adHocRules)! == (.ok, "No ad-hoc rules."))
-        core.send(command: .addRule(identity: .app("com.figma.Desktop"), says: .off))
-        #expect(check(core, .adHocRules)! == (.ok, "1 ad-hoc rule."))
-        core.send(command: .addRule(identity: .domain("figma.com"), says: .off))
-        #expect(check(core, .adHocRules)! == (.ok, "2 ad-hoc rules."))
-
+    @Test func theAdHocRulesCheckSaysWhyTheyAreOff() throws {
         let newer = try atNoon(rules: "version = 3\n")
         guard case .adHocRules(.off(.newer(let path, _))) = newer.found(.adHocRules)?.detail else {
             Issue.record("expected rules.toml from a newer Nightcap")
             return
         }
+        // As Settings shows paths, with the home folder as `~`.
+        let shown = (path as NSString).abbreviatingWithTildeInPath
         #expect(
             check(newer, .adHocRules)!
-                == (.broken, "Ad-hoc rules are off: \(path) is version 3, from a newer Nightcap than this one."))
+                == (.broken, "Ad-hoc rules are off: \(shown) is version 3, from a newer Nightcap than this one."))
 
         let unexpected = try atNoon(rules: "version = 2\n[rules.off]\napp = \"com.figma.Desktop\"\n")
         #expect(
             check(unexpected, .adHocRules)!
                 == (
                     .broken,
-                    "Ad-hoc rules are off: \(path): line 3: `rules.off.app` is a list of strings, not a string."
+                    "Ad-hoc rules are off: \(shown): line 3: `rules.off.app` is a list of strings, not a string."
                 ))
 
         let missing = try atNoon(rules: "[rules.off]\napp = [\"com.figma.Desktop\"]\n")
         #expect(
             check(missing, .adHocRules)!
-                == (.broken, "Ad-hoc rules are off: \(path): line 1: `version` is missing."))
+                == (.broken, "Ad-hoc rules are off: \(shown): line 1: `version` is missing."))
 
         let malformed = try atNoon(rules: "version = 2\n[rules.off]\napp = [\"com.figma.Desktop\"\n")
         #expect(
             check(malformed, .adHocRules)!
-                == (.broken, "Ad-hoc rules are off: \(path): line 3, column 27 isn’t valid TOML."))
+                == (.broken, "Ad-hoc rules are off: \(shown): line 3, column 27 isn’t valid TOML."))
 
         let invalid = try atNoon(rules: "version = 2\n[rules.on]\ndomain = [\"figma.com\", \"*.figma.com\"]\n")
         #expect(
             check(invalid, .adHocRules)!
                 == (
                     .broken,
-                    "Ad-hoc rules are off: \(path): line 3: “*.figma.com” isn’t a domain like figma.com: no "
+                    "Ad-hoc rules are off: \(shown): line 3: “*.figma.com” isn’t a domain like figma.com: no "
                         + "scheme, path, port or wildcard."
                 ))
     }
@@ -246,8 +249,8 @@ struct CheckWordingTests {
         let twelveHour = Wording(locale: Locale(components: american), timeZone: Wording.staged.timeZone)
 
         #expect(
-            twelveHour.check(core.found(.nightShift)!.detail)
-                == "Available, following its schedule: 10:00\u{202F}PM to 7:00\u{202F}AM.")
+            check(core, .nightShift, in: twelveHour)!
+                == (.ok, "Available, following its schedule: 10:00\u{202F}PM to 7:00\u{202F}AM."))
     }
 
     @Test func sunsetToSunriseSetAsideNeedsLocationServices() throws {
@@ -266,7 +269,7 @@ struct CheckWordingTests {
     /// one check is worded from what the core reports after it has.
     @Test func sunsetToSunriseWithoutSunTimesSaysCustomHoursWork() {
         #expect(
-            Wording.staged.check(.nightShift(.noSunTimes))
+            worded(.nightShift(.noSunTimes))
                 == "macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule. "
                 + "Custom hours work without them.")
     }

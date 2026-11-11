@@ -19,7 +19,8 @@ const VERSION: u32 = 2;
 pub(crate) struct Persisted {
     /// Every place's temporary rule, and everywhere's indefinite one: the apps' and sites'
     /// indefinite rules are the config's and `rules.toml`'s (ADR-0018). Where it holds more of
-    /// a kind at a place, the first of each stays.
+    /// a kind at a place, the first of each stays, and a rule of a kind Nightcap never keeps
+    /// here is dropped.
     pub(crate) rules: Vec<Rule>,
     /// The place an outside change set a temporary rule at together with everywhere's, so
     /// taking off either takes off both.

@@ -326,7 +326,8 @@ final class NightShiftAdapter: NightShiftWriting {
     }
 
     /// The factor outlives Nightcap, so a crash mid-peek leaves Night Shift on with no warmth, or
-    /// off with its warmth, which nothing else puts back.
+    /// off with its warmth, which nothing else puts back. A partway factor is left alone: one a
+    /// crash mid-curve leaves can't be told from one of macOS's own fades (ADR-0021).
     func repairPeek() {
         guard let enabled = status?.enabled, let factor = tintFactor else { return }
         if enabled, factor == 0 {

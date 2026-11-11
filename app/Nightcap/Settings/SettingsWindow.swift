@@ -306,7 +306,7 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
             Group(rows: files),
             note(words.eachRule),
             Group(rows: rules),
-            rulesToolbar(),
+            rulesToolbar(settings),
             note(words.adHocRulesStay),
         ]
         // What the menu set for an app or site with no rule, which ends by itself: what it says
@@ -358,9 +358,11 @@ final class SettingsWindow: NSObject, NSWindowDelegate, NSToolbarDelegate {
         }
     }
 
-    private func rulesToolbar() -> NSView {
+    private func rulesToolbar(_ settings: Settings) -> NSView {
         let addApp = CapsuleButton(words.addApp, .regular) { [weak self] in self?.addApp() }
         let addWebsite = CapsuleButton(words.addWebsite, .regular) { [weak self] in self?.addWebsite() }
+        addApp.isEnabled = settings.canAddRules
+        addWebsite.isEnabled = settings.canAddRules
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let label = NSTextField(labelWithString: words.copyForConfigAs)

@@ -90,6 +90,8 @@ struct Settings: Equatable {
     /// The apps' and sites' indefinite rules: the config's, then the user's. A trial's never
     /// show (ADR-0016).
     let rules: [RuleRow]
+    /// Whether Add App… and Add Website… are on: off while the core would refuse a new rule.
+    let canAddRules: Bool
     /// The apps and sites Night Shift is on or off in for now, by a temporary rule alone: a
     /// snoozed rule shows on its own row, and everywhere's on the menu's Night Shift item.
     let forNow: [ForNowRow]
@@ -112,14 +114,18 @@ struct Settings: Equatable {
                 let on = item != .notRegistered
                 return Switch(on: on, locked: false, command: .openAtLogin(on ? .off : .on))
             } : nil
+        let schedule = snapshot.nightShift().schedule
+        let configRules = rules.rules.count(where: { $0.rule.setBy == .config })
         self.checks = checks.filter(Self.shows).map { check in
             let fixes = Self.fixes(for: check.detail, websitesFromConfig: websites.fromConfig, words: words)
             return CheckStatus(
-                kind: check.detail.kind(), state: check.state, text: words.check(check.detail),
+                kind: check.detail.kind(), state: check.state,
+                text: words.check(check.detail, schedule: schedule, configRules: configRules),
                 restore: fixes.restore, accept: fixes.accept)
         }
         configPath = snapshot.config().path
         self.rules = Self.rows(of: rules.rules, words: words)
+        canAddRules = snapshot.rulesCanChange()
         forNow = rules.temporary.compactMap { rule in
             guard let identity = rule.place.identity(), !rules.rules.contains(where: { $0.rule.place == rule.place })
             else { return nil }
@@ -202,7 +208,10 @@ struct Settings: Equatable {
         guard let identity = rule.place.identity() else { return nil }
         let shown: (label: String, button: CommandButton?)
         switch (listed.snooze, rule.setBy) {
-        case (_, .trial), (_, .outsideChange):
+        case (_, .trial):
+            return nil
+        // An app's or a site's indefinite rule is never an outside change's.
+        case (_, .outsideChange):
             return nil
         case (let snooze?, _):
             shown = (
@@ -217,6 +226,18 @@ struct Settings: Equatable {
         return RuleRow(
             identity: identity, says: rule.says, label: shown.label, snoozed: listed.snooze != nil,
             button: shown.button)
+    }
+}
+
+extension Snapshot {
+    /// Whether the core takes an app's or a site's rule added or removed, as the menu, Settings
+    /// and onboarding offer: not while `rules.toml` can't be used, as the ad-hoc rules' check
+    /// finds it, short of during a trial, whose rules never reach the file (ADR-0016).
+    func rulesCanChange() -> Bool {
+        trial() != nil
+            || !checks().checks.contains { check in
+                if case .adHocRules(.off) = check.detail { true } else { false }
+            }
     }
 }
 

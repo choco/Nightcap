@@ -166,9 +166,9 @@ extension Menu {
 
 extension Menu.PlaceRow {
     /// The row's item that sends `command`, if it offers one.
-    func choice(sending command: Command) -> Menu.Choice? {
+    func action(sending command: Command) -> Menu.Action? {
         items.lazy.compactMap { item in
-            if case .choice(let choice) = item, choice.command == command { choice } else { nil }
+            if case .action(let action) = item, action.command == command { action } else { nil }
         }.first
     }
 
@@ -183,7 +183,7 @@ extension Menu.PlaceRow {
     var titles: [String] {
         items.map { item in
             switch item {
-            case .choice(let choice): choice.title
+            case .action(let action): action.title
             case .pickTime(let pick): pick.item
             case .separator: "—"
             }
@@ -191,10 +191,10 @@ extension Menu.PlaceRow {
     }
 
     /// The item titled `title`, which the row must offer.
-    func choice(titled title: String) throws -> Menu.Choice {
+    func action(titled title: String) throws -> Menu.Action {
         try #require(
             items.lazy.compactMap { item in
-                if case .choice(let choice) = item, choice.title == title { choice } else { nil }
+                if case .action(let action) = item, action.title == title { action } else { nil }
             }.first, "no \(title) in \(titles)")
     }
 }

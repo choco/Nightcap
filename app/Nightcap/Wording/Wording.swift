@@ -63,6 +63,7 @@ struct Wording {
         case .you: text("your rule")
         // The tour's trial is the only one the app begins.
         case .trial: text("the tour’s rule")
+        // An app's or a site's indefinite rule is never an outside change's.
         case .outsideChange: text("the outside change’s rule")
         }
     }

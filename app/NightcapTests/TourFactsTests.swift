@@ -42,7 +42,7 @@ struct TourFactsTests {
 
         core.bringToFront(tourSample)
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: nil, snoozed: false))
-        core.send(command: try #require(core.appRow).choice(titled: "Always").command)
+        core.send(command: try #require(core.appRow).action(titled: "Always").command)
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: false))
         core.bringToFront("com.apple.mail")
 
@@ -53,9 +53,9 @@ struct TourFactsTests {
         let core = try onByTheSchedule(
             tourBegun, front(tourSample), .command(.addRule(identity: .app(tourSample), says: .off)))
 
-        core.send(command: try #require(core.appRow).choice(titled: "For 30 Minutes").command)
+        core.send(command: try #require(core.appRow).action(titled: "For 30 Minutes").command)
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: true))
-        core.send(command: try #require(core.appRow).choice(titled: "Put the Rule Back").command)
+        core.send(command: try #require(core.appRow).action(titled: "Put the Rule Back").command)
 
         #expect(try facts(core).sample == TourPlace(inFront: true, rule: .off, snoozed: false))
     }
@@ -89,7 +89,7 @@ struct TourFactsTests {
         let core = try onByTheSchedule(
             config: "websites = true\n", tourBegun, front("com.apple.Safari", browser: true),
             host("www.nightcap.choco.me"))
-        let always = try #require(core.siteRow).choice(titled: "Always")
+        let always = try #require(core.siteRow).action(titled: "Always")
         #expect(always.command == .addRule(identity: .domain(site), says: .off))
         core.send(command: always.command)
         let ruled = try facts(core)

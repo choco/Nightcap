@@ -29,7 +29,8 @@ final class Tour {
     /// The sample, by the ID its rule names and the name the menu calls it by once it's in front.
     static let sample = TourApp(Bundle(url: sampleURL)!)
     /// The app the steps give as an example of a rule that says on. Mail is part of macOS, so its
-    /// bundle is always there.
+    /// bundle is always there. Its name follows Nightcap's own localizations, where the menu's
+    /// name for the front app follows the system language, so the two can differ.
     static let example = TourApp(
         Bundle(url: NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.mail")!)!)
     private static let siteURL = URL(string: "https://nightcap.choco.me")!

@@ -601,7 +601,9 @@ impl Length {
     }
 }
 
-/// Who set a rule (ADR-0018).
+/// Who set a rule, as ADR-0018's "Who sets what" has it: an app's or a site's indefinite rule
+/// is the config's, the user's or a trial's, a temporary rule is the user's or an outside
+/// change's, and everywhere's indefinite rule is the user's.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum SetBy {
@@ -609,7 +611,9 @@ pub enum SetBy {
     Config,
     /// The user, from the app or the CLI.
     You,
-    /// The user during a trial, kept only while it runs (ADR-0016).
+    /// The user during a trial: an app's or a site's indefinite rule added while one runs,
+    /// which lasts only that long (ADR-0016). A temporary rule, or the switch's, set during a
+    /// trial is the user's.
     Trial,
     /// An outside change, which Nightcap adopted.
     OutsideChange,
@@ -850,8 +854,8 @@ impl CheckDetail {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum NightShiftDetail {
-    /// Night Shift works on this Mac, with this schedule; None until the shell first reports it.
-    Available { schedule: Option<Schedule> },
+    /// Night Shift works on this Mac, with the schedule the Night Shift query answers.
+    Available,
     /// This Mac has no Night Shift.
     Unavailable,
     /// macOS has sunset to sunrise set aside, and the schedule off, while Location Services is
@@ -899,8 +903,8 @@ pub enum OpenAtLoginDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ConfigFileDetail {
-    /// Valid, with this many rules.
-    Valid { rules: u32 },
+    /// Valid, with the rules the rules query lists as the config's.
+    Valid,
     /// There's no config file, which is an empty config.
     Missing,
     /// It can't be used; the rules are the ones loaded before, or none.
@@ -910,8 +914,8 @@ pub enum ConfigFileDetail {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum AdHocRulesDetail {
-    /// In use, with this many rules.
-    On { rules: u32 },
+    /// In use, with the rules the rules query lists as the user's.
+    On,
     /// Off, because `rules.toml` can't be used.
     Off(FileError),
 }
@@ -1125,6 +1129,10 @@ pub enum Schedule {
     },
 }
 
+/// A time on the clock, to the minute. Every one the core answers is a real time, from 00:00 to
+/// 23:59: the core checks each where it enters, in the shell's status report (`turn.rs`), a
+/// command that sets the schedule (`commands.rs`) and the config (`config.rs`). Only
+/// `Refusal::NotATimeOfDay` carries one that isn't.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct TimeOfDay {
     pub hour: u8,
@@ -1674,10 +1682,7 @@ mod tests {
                 ]
             })
             .chain([
-                CheckDetail::NightShift(NightShiftDetail::Available {
-                    schedule: Some(Schedule::SunsetToSunrise),
-                }),
-                CheckDetail::NightShift(NightShiftDetail::Available { schedule: None }),
+                CheckDetail::NightShift(NightShiftDetail::Available),
                 CheckDetail::NightShift(NightShiftDetail::Unavailable),
                 CheckDetail::NightShift(NightShiftDetail::SetAside),
                 CheckDetail::NightShift(NightShiftDetail::NoSunTimes),
@@ -1691,9 +1696,9 @@ mod tests {
                 CheckDetail::OpenAtLogin(OpenAtLoginDetail::AwaitingApproval),
                 CheckDetail::OpenAtLogin(OpenAtLoginDetail::Removed),
                 CheckDetail::OpenAtLogin(OpenAtLoginDetail::Off),
-                CheckDetail::ConfigFile(ConfigFileDetail::Valid { rules: 2 }),
+                CheckDetail::ConfigFile(ConfigFileDetail::Valid),
                 CheckDetail::ConfigFile(ConfigFileDetail::Missing),
-                CheckDetail::AdHocRules(AdHocRulesDetail::On { rules: 0 }),
+                CheckDetail::AdHocRules(AdHocRulesDetail::On),
             ]);
         for detail in details {
             for state in [

@@ -4,10 +4,11 @@ import NightcapCore
 /// The checks' words: what each found, as Settings shows it under its setting, the buttons of
 /// the fixes it offers, and what's wrong with one of Nightcap's files.
 extension Wording {
-    /// What a check found, in a sentence: "Valid, with 1 rule."
-    func check(_ detail: CheckDetail) -> String {
+    /// What a check found, in a sentence, with Night Shift's schedule and the number of config
+    /// rules as the same snapshot answers them: "Valid, with 1 rule."
+    func check(_ detail: CheckDetail, schedule: Schedule?, configRules: Int) -> String {
         switch detail {
-        case .nightShift(let found): nightShift(found)
+        case .nightShift(let found): nightShift(found, schedule: schedule)
         case .accessibility(.allowed): text("Accessibility is allowed.")
         case .accessibility(.notAllowed):
             text("Accessibility isn’t allowed, so website checking can’t read the front tab.")
@@ -20,28 +21,28 @@ extension Wording {
         case .openAtLogin(.awaitingApproval): text("macOS is waiting for your approval in Login Items.")
         case .openAtLogin(.removed): text("Nightcap no longer opens at login: it was removed in System Settings.")
         case .openAtLogin(.off): text("Nightcap doesn’t open at login.")
-        case .configFile(.valid(let rules)):
-            rules == 0 ? text("Valid, with no rules.") : text("Valid, with \(Int(rules)) rules.")
+        case .configFile(.valid):
+            configRules == 0 ? text("Valid, with no rules.") : text("Valid, with \(configRules) rules.")
         case .configFile(.missing): text("No config file.")
         case .configFile(.error(let error)): inTheFile(error)
-        case .adHocRules(.on(let rules)):
-            rules == 0 ? text("No ad-hoc rules.") : text("\(Int(rules)) ad-hoc rules.")
+        // Settings shows the ad-hoc rules' check only while it's a problem.
+        case .adHocRules(.on): mark(.ok)
         case .adHocRules(.off(let error)): text("Ad-hoc rules are off: \(located(error)).")
         }
     }
 
     /// Night Shift's check, with its schedule's hours in the user's clock.
-    private func nightShift(_ found: NightShiftDetail) -> String {
-        switch found {
-        case .available(nil): text("Available.")
-        case .available(.off?): text("Available, with no schedule.")
-        case .available(.sunsetToSunrise?): text("Available, following its schedule: sunset to sunrise.")
-        case .available(.custom(let from, let to)?):
+    private func nightShift(_ found: NightShiftDetail, schedule: Schedule?) -> String {
+        switch (found, schedule) {
+        case (.available, nil): text("Available.")
+        case (.available, .off?): text("Available, with no schedule.")
+        case (.available, .sunsetToSunrise?): text("Available, following its schedule: sunset to sunrise.")
+        case (.available, .custom(let from, let to)?):
             text("Available, following its schedule: \(time(from)) to \(time(to)).")
-        case .unavailable: text("Night Shift isn’t available on this Mac.")
-        case .setAside:
+        case (.unavailable, _): text("Night Shift isn’t available on this Mac.")
+        case (.setAside, _):
             text("Sunset to sunrise needs Location Services, so macOS turned the schedule off until it’s back on.")
-        case .noSunTimes:
+        case (.noSunTimes, _):
             text("macOS hasn’t worked out sunrise and sunset, so Nightcap can’t follow the schedule.") + " "
                 + text("Custom hours work without them.")
         }
@@ -71,19 +72,23 @@ extension Wording {
         }
     }
 
-    /// What's wrong with a file, starting from its path: "/…/rules.toml: line 3, column 7 isn’t
-    /// valid TOML".
+    /// What's wrong with a file, starting from its path, with the home folder as `~`, as Settings
+    /// shows the config's: "~/…/rules.toml: line 3, column 7 isn’t valid TOML".
     func located(_ error: FileError) -> String {
         switch error {
-        case .unreadable(let path, let failure): unreadable(path, failure)
+        case .unreadable(let path, let failure): unreadable(tilded(path), failure)
         case .malformed(let path, let at?):
-            text("\(path): line \(Int(at.line)), column \(Int(at.column)) isn’t valid TOML")
-        case .malformed(let path, nil): text("\(path) isn’t valid TOML")
+            text("\(tilded(path)): line \(Int(at.line)), column \(Int(at.column)) isn’t valid TOML")
+        case .malformed(let path, nil): text("\(tilded(path)) isn’t valid TOML")
         case .invalid(let path, let line, let problem):
-            text("\(path): line \(Int(line)): \(self.problem(problem))")
+            text("\(tilded(path)): line \(Int(line)): \(self.problem(problem))")
         case .newer(let path, let version):
-            text("\(path) is version \(Int(version)), from a newer Nightcap than this one")
+            text("\(tilded(path)) is version \(Int(version)), from a newer Nightcap than this one")
         }
+    }
+
+    private func tilded(_ path: String) -> String {
+        (path as NSString).abbreviatingWithTildeInPath
     }
 
     /// Why macOS couldn't read the file at `path`, starting from it: "/…/config.toml is a folder,

@@ -33,7 +33,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private let dot = NSView()
 
     /// Boxes a command for `NSMenuItem.representedObject`, which takes only objects.
-    private final class Choice: NSObject {
+    private final class CommandBox: NSObject {
         let command: Command
         init(_ command: Command) { self.command = command }
     }
@@ -277,7 +277,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         item.state = state.on ? .on : .off
         item.subtitle = state.line.map(MenuArt.wrapped)
         if let command = state.command {
-            item.representedObject = Choice(command)
+            item.representedObject = CommandBox(command)
         } else {
             item.isEnabled = false
         }
@@ -335,8 +335,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         submenu.autoenablesItems = false
         for entry in row.items {
             switch entry {
-            case .choice(let choice):
-                submenu.addItem(menuItem(choice))
+            case .action(let action):
+                submenu.addItem(menuItem(action))
             case .pickTime(let pick):
                 let custom = NSMenuItem(title: pick.item, action: #selector(pickTime(_:)), keyEquivalent: "")
                 custom.target = self
@@ -406,18 +406,18 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         choose(sender.dragging ? .previewStrength(value) : .strength(value))
     }
 
-    private func menuItem(_ item: Menu.Choice) -> NSMenuItem {
+    private func menuItem(_ item: Menu.Action) -> NSMenuItem {
         let menuItem = NSMenuItem(title: item.title, action: #selector(chose(_:)), keyEquivalent: "")
         menuItem.target = self
         menuItem.subtitle = item.subtitle.map(MenuArt.wrapped)
         menuItem.isEnabled = item.enabled
-        menuItem.representedObject = Choice(item.command)
+        menuItem.representedObject = CommandBox(item.command)
         return menuItem
     }
 
     @objc private func chose(_ sender: NSMenuItem) {
-        guard let choice = sender.representedObject as? Choice else { return }
-        choose(choice.command)
+        guard let action = sender.representedObject as? CommandBox else { return }
+        choose(action.command)
     }
 
     @objc private func settingsChosen() {

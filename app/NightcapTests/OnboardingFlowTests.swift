@@ -237,6 +237,26 @@ struct OnboardingFlowTests {
         #expect(staged.snapshot().rules().rules.contains { $0.rule.place == .app(imovie) && $0.rule.says == .on })
     }
 
+    /// Each rule the core would refuse posts a notification of its own, whose first brings up
+    /// macOS's prompt for notifications in the middle of onboarding.
+    @Test func addIsOffWhileAdHocRulesAreOff() throws {
+        let sent = Sent()
+        let flow = onboarding(try core(rules: "version = 99\n"), sent: sent)
+        flow.go(to: try #require(flow.steps.firstIndex(of: .apps)))
+        flow.toggle(flow.apps[0])
+
+        #expect(
+            flow.footer == OnboardingFlow.Footer(link: .chooseApp, secondary: .notNow, primary: .addRules(count: 0)))
+        #expect(!flow.footer.primary.enabled)
+        flow.perform(.notNow)
+        flow.perform(.turnOnWebsites)
+        flow.toggle(flow.sites[0])
+        #expect(flow.footer == OnboardingFlow.Footer(secondary: .notNow, primary: .addRules(count: 0)))
+        flow.perform(.notNow)
+        #expect(flow.step == .lastThings)
+        #expect(sent.commands == [])
+    }
+
     @Test func theScheduleIsSentOnlyWhenItChanges() throws {
         let sent = Sent()
         let flow = onboarding(try core(schedule: .sunsetToSunrise), sent: sent)

@@ -3,13 +3,13 @@
 
 mod common;
 
-use nightcap_core::{Effect, Staged};
-use nightcap_protocol::{Command, Lasting, OnOff, Place};
+use nightcap_core::{Effect, Scenario, Staged};
+use nightcap_protocol::{Command, Lasting, Length, OnOff, Place};
 
 use common::{
     accessibility_granted, activate, activate_browser, activate_event, add_rule, adopted, at,
-    books, custom_hours, echo, figma_app, forced, in_books_at_noon, late, launch, minutes,
-    on_by_the_schedule, reported, resettable, send, set, switched, until, until_turn, watch,
+    books, custom_hours, echo, figma_app, forced, in_books_at_noon, late, launch, mail, minutes,
+    on_by_the_schedule, reported, resettable, rules, send, set, switched, until, until_turn, watch,
     written, yours,
 };
 
@@ -61,6 +61,46 @@ fn rules_that_ended_while_nightcap_was_stopped_are_dropped_on_start() {
     let staged = staged.restart_at(at("2026-10-17T08:00:00+02:00"));
 
     assert_eq!(resettable(&staged), Vec::new());
+}
+
+#[test]
+fn rules_nightcap_never_keeps_are_dropped_from_state_json_on_start() {
+    let state = r#"{
+        "version": 2,
+        "rules": [
+            {"place": {"app": "com.figma.Desktop"}, "says": "on", "length": {"until": {"until": "2026-10-16T23:30:00+02:00"}}, "set_by": "config"},
+            {"place": {"app": "com.figma.Desktop"}, "says": "on", "length": {"until": {"until": "2026-10-16T23:30:00+02:00"}}, "set_by": "you"},
+            {"place": {"app": "com.apple.Notes"}, "says": "off", "length": {"until": {"until": "2026-10-16T23:30:00+02:00"}}, "set_by": "trial"},
+            {"place": {"app": "com.apple.mail"}, "says": "off", "length": {"until": {"until": "2026-10-16T23:30:00+02:00"}}, "set_by": "outside_change"},
+            {"place": {"app": "com.apple.mail"}, "says": "off", "length": {"until_schedule_turns": {"until": "2026-10-17T07:00:00+02:00"}}, "set_by": "outside_change"},
+            {"place": {"domain": "figma.com"}, "says": "off", "length": {"until_schedule_turns": {"until": null}}, "set_by": "you"},
+            {"place": {"app": "com.apple.iBooksX"}, "says": "off", "length": "indefinite", "set_by": "you"},
+            {"place": "everywhere", "says": "on", "length": "indefinite", "set_by": "config"},
+            {"place": "everywhere", "says": "on", "length": "indefinite", "set_by": "outside_change"},
+            {"place": "everywhere", "says": "off", "length": "indefinite", "set_by": "you"}
+        ]
+    }"#;
+
+    let staged = Scenario {
+        state: Some(state.to_owned()),
+        ..late()
+    }
+    .stage()
+    .unwrap();
+
+    assert_eq!(
+        resettable(&staged),
+        vec![
+            yours(figma_app(), OnOff::On, until("2026-10-16T23:30:00+02:00")),
+            adopted(
+                Place::from(mail()),
+                OnOff::Off,
+                Some("2026-10-17T07:00:00+02:00")
+            ),
+            yours(Place::Everywhere, OnOff::Off, Length::Indefinite),
+        ]
+    );
+    assert_eq!(rules(&staged), Vec::new());
 }
 
 #[test]

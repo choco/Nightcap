@@ -39,12 +39,18 @@ impl RuleSet {
             linked,
         };
         for rule in kept {
-            if rule.length != Length::Indefinite {
-                if live.temporary_at(&rule.place).is_none() {
-                    live.temporary.push(rule);
-                }
-            } else if rule.place == Place::Everywhere {
+            if !keepable(&rule) {
+                tracing::warn!(
+                    "dropped a rule from state.json that Nightcap never keeps there: {} {} {:?}, set by {:?}",
+                    loggable(&rule.place),
+                    rule.says,
+                    rule.length,
+                    rule.set_by
+                );
+            } else if rule.length == Length::Indefinite {
                 live.switched.get_or_insert(rule);
+            } else if live.temporary_at(&rule.place).is_none() {
+                live.temporary.push(rule);
             }
         }
         live.tidy();
@@ -323,6 +329,12 @@ impl RuleSet {
             "{:?}",
             self.temporary
         );
+        assert!(
+            (self.temporary.iter().chain(&self.switched)).all(keepable),
+            "{:?} {:?}",
+            self.temporary,
+            self.switched
+        );
         let rules = &self.temporary;
         if let Some(linked) = &self.linked {
             assert_ne!(*linked, Place::Everywhere);
@@ -335,5 +347,20 @@ impl RuleSet {
                 );
             }
         }
+    }
+}
+
+/// Whether `rule` is of a kind Nightcap keeps in `state.json` (ADR-0018): a temporary rule, the
+/// user's or an outside change's until the schedule turns, as Adoption sets it, or everywhere's
+/// indefinite rule, the switch's. A rule of the user's until the schedule turns always has a
+/// turn to wait for: the command that would set one without it is refused.
+fn keepable(rule: &Rule) -> bool {
+    match (rule.set_by, rule.length) {
+        (SetBy::You, Length::Indefinite) => rule.place == Place::Everywhere,
+        (SetBy::You, Length::Until { .. } | Length::UntilScheduleTurns { until: Some(_) })
+        | (SetBy::OutsideChange, Length::UntilScheduleTurns { .. }) => true,
+        (SetBy::You, Length::UntilScheduleTurns { until: None })
+        | (SetBy::OutsideChange, Length::Indefinite | Length::Until { .. })
+        | (SetBy::Config | SetBy::Trial, _) => false,
     }
 }

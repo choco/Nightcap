@@ -69,7 +69,8 @@ struct Trial {
 
 impl Rules {
     /// The places as `state.json` and `rules.toml` kept them, with no config rules until
-    /// `set_config`. Of the rules `state.json` holds at a place, the first of each kind stays.
+    /// `set_config`. Of the rules `state.json` holds at a place, the first of each kind stays,
+    /// and a rule of a kind Nightcap never keeps there is dropped.
     pub(crate) fn new(
         kept: Vec<Rule>,
         linked: Option<Place>,
@@ -97,11 +98,6 @@ impl Rules {
     /// The ad-hoc rules `rules.toml` keeps: mid-trial, those the trial found.
     pub(crate) fn ad_hoc(&self) -> Vec<(RuleIdentity, OnOff)> {
         self.found().ad_hoc()
-    }
-
-    /// The apps' and sites' indefinite rules, as they decide now.
-    pub(crate) fn indefinite(&self) -> &[Rule] {
-        self.live.indefinite()
     }
 
     /// Takes the config's rules, dropping the user's and a trial's for the places it now has,
@@ -500,9 +496,10 @@ mod tests {
     }
 
     /// The places' invariants, in what decides and in what a trial's end puts back: an
-    /// indefinite rule and a temporary one at most at each place, everywhere's the switch's; and
-    /// a link only between two rules an outside change set until the schedule turns,
-    /// everywhere's and another place's.
+    /// indefinite rule and a temporary one at most at each place, everywhere's the switch's;
+    /// each temporary rule and everywhere's indefinite one of a kind `state.json` keeps; and a
+    /// link only between two rules an outside change set until the schedule turns, everywhere's
+    /// and another place's.
     fn assert_sound(places: &Rules) {
         places.live.assert_sound();
         places.found().assert_sound();

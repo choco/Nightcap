@@ -14,8 +14,8 @@ private func onFigma(_ steps: Step...) throws -> Core {
             ] + steps))
 }
 
-private func choice(_ title: String, _ command: Command) -> Menu.Item {
-    .choice(Menu.Choice(title: title, command: command))
+private func action(_ title: String, _ command: Command) -> Menu.Item {
+    .action(Menu.Action(title: title, command: command))
 }
 
 /// A site row's title, and the site it names under it.
@@ -87,15 +87,15 @@ struct MenuTests {
                 == Menu.PlaceRow(
                     place: .everywhere, title: "Turn Off", site: nil, subtitle: nil,
                     items: [
-                        choice("For 30 Minutes", off(minutes(30))),
-                        choice("For 1 Hour", off(minutes(60))),
-                        choice("For 2 Hours", off(minutes(120))),
+                        action("For 30 Minutes", off(minutes(30))),
+                        action("For 1 Hour", off(minutes(60))),
+                        action("For 2 Hours", off(minutes(120))),
                         .pickTime(
                             Menu.PickTime(
                                 item: "Custom…", title: "Turn Off Everywhere", place: .everywhere, state: .off,
                                 start: at("2026-10-17T00:00:00+02:00"))),
-                        .choice(
-                            Menu.Choice(
+                        .action(
+                            Menu.Action(
                                 title: "Until 22:00", subtitle: "When the schedule starts",
                                 command: off(.untilScheduleTurns))),
                     ]))
@@ -113,7 +113,7 @@ struct MenuTests {
 
         #expect(row.titles == preset.map(\.title) + ["Custom…", "Until 22:00"])
         for (_, seconds, title) in preset {
-            let item = row.choice(sending: .set(place: .everywhere, state: .off, length: .for(seconds)))
+            let item = row.action(sending: .set(place: .everywhere, state: .off, length: .for(seconds)))
             #expect(item?.title == title)
         }
     }
@@ -130,7 +130,7 @@ struct MenuTests {
             let row = try #require(core.everywhereRow)
 
             let until = try #require(
-                row.choice(sending: .set(place: .everywhere, state: state, length: .untilScheduleTurns)))
+                row.action(sending: .set(place: .everywhere, state: state, length: .untilScheduleTurns)))
             #expect(until.title == title)
             #expect(until.subtitle == moment)
         }
@@ -209,11 +209,39 @@ struct MenuTests {
 
     @Test func aConfigRulesAlwaysIsGreyedBecauseTheConfigDecides() throws {
         let always = try #require(
-            try forced().appRow?.choice(sending: .addRule(identity: .app("com.figma.Desktop"), says: .on)))
+            try forced().appRow?.action(sending: .addRule(identity: .app("com.figma.Desktop"), says: .on)))
 
         #expect(always.title == "Always")
         #expect(always.subtitle == "Your config decides")
         #expect(!always.enabled)
+    }
+
+    /// The problem line already says that something needs attention.
+    @Test func alwaysIsGreyedWhileAdHocRulesAreOff() throws {
+        let core = try atNoon(rules: "version = 99\n", reported(false), front("com.apple.mail"))
+
+        let always = try #require(core.appRow).action(titled: "Always")
+
+        #expect(always.subtitle == nil)
+        #expect(!always.enabled)
+        #expect(core.menu().problemLine != nil)
+        core.send(command: always.command)
+        #expect(core.snapshot().rules().rules.isEmpty)
+    }
+
+    /// A trial's rules never reach `rules.toml` (ADR-0016), so the tour's rule is made and
+    /// removed whatever the file holds.
+    @Test func duringATrialAlwaysAndRemoveYourRuleStayOnWhileAdHocRulesAreOff() throws {
+        let core = try atNoon(rules: "version = 99\n", reported(false), tourBegun, front(tourSample))
+
+        let always = try #require(core.appRow).action(titled: "Always")
+        #expect(always.enabled)
+        core.send(command: always.command)
+        #expect(core.snapshot().rules().rules.map(\.rule.setBy) == [.trial])
+        let remove = try #require(core.appRow).action(titled: "Remove Your Rule")
+        #expect(remove.enabled)
+        core.send(command: remove.command)
+        #expect(core.snapshot().rules().rules.isEmpty)
     }
 
     @Test func withoutTheSunTimesAnAppsRowTurnsNightShiftTheOtherWayFromHowItIs() throws {
@@ -242,29 +270,29 @@ struct MenuTests {
         let row = try #require(core.everywhereRow)
         #expect(row.title == "Turn Off")
         #expect(row.titles == ["For 30 Minutes", "For 1 Hour", "For 2 Hours", "Custom…"])
-        core.send(command: try row.choice(titled: "For 30 Minutes").command)
+        core.send(command: try row.action(titled: "For 30 Minutes").command)
         #expect(core.snapshot().front().decision.state == .off)
     }
 
     @Test func undoingIsOfferedWhereItGoesTheRightWayAndARuleOfYoursCanAlwaysGo() throws {
         let core = try forced()
         core.send(command: .set(place: figmaApp, state: .on, length: .untilScheduleTurns))
-        #expect(core.appRow?.items.first == choice("Put the Rule Back", .reset(figmaApp)))
+        #expect(core.appRow?.items.first == action("Put the Rule Back", .reset(figmaApp)))
 
         core.bringToFront("com.apple.mail")
         core.send(command: .set(place: mailApp, state: .off, length: minutes(30)))
-        #expect(core.appRow?.items.first == choice("Like Everywhere Else", .reset(mailApp)))
+        #expect(core.appRow?.items.first == action("Like Everywhere Else", .reset(mailApp)))
 
         core.send(command: .reset(mailApp))
         core.send(command: .addRule(identity: .app("com.apple.mail"), says: .off))
         #expect(
-            try #require(core.appRow).choice(titled: "Remove Your Rule").command == .removeRule(.app("com.apple.mail")))
+            try #require(core.appRow).action(titled: "Remove Your Rule").command == .removeRule(.app("com.apple.mail")))
         // By day removing it changes nothing on screen, but the rule is still the user's to remove.
         let day = try staged(
             "2026-10-17T12:00:00+02:00", config: "[rules.off]\napp = [\"com.figma.Desktop\"]\n", reported(false),
             front("com.apple.mail"), .command(.addRule(identity: .app("com.apple.mail"), says: .off)))
         #expect(
-            try #require(day.appRow).choice(titled: "Remove Your Rule").command == .removeRule(.app("com.apple.mail")))
+            try #require(day.appRow).action(titled: "Remove Your Rule").command == .removeRule(.app("com.apple.mail")))
     }
 
     @Test func lengthsThatComeToTheSameAsUndoingAreLeftOut() throws {
@@ -304,7 +332,7 @@ struct MenuTests {
             .command(.set(place: .everywhere, state: .off, length: minutes(60))))
         let row = try #require(core.everywhereRow)
         #expect(row.titles == ["Back to the Schedule"])
-        core.send(command: try row.choice(titled: "Back to the Schedule").command)
+        core.send(command: try row.action(titled: "Back to the Schedule").command)
         let everywhere = core.snapshot().front().everywhere
         #expect(everywhere.temporary == nil && everywhere.indefinite == nil)
     }
@@ -360,8 +388,8 @@ struct MenuTests {
 
         for situation in situations {
             for row in try situation().rows {
-                for case .choice(let choice) in row.items {
-                    guard case .reset(let place) = choice.command else { continue }
+                for case .action(let action) in row.items {
+                    guard case .reset(let place) = action.command else { continue }
                     let core = try situation()
                     let standing = { (place: Place) -> PlaceInFront? in
                         let front = core.snapshot().front()
@@ -369,12 +397,12 @@ struct MenuTests {
                     }
                     let before = try #require(standing(place))
                     let state = before.gives.other()
-                    core.send(command: choice.command)
+                    core.send(command: action.command)
                     // A site left with no rules of its own gives way to the domain that covers it.
                     let after = try #require(standing(place) ?? before.inherits.flatMap { standing($0.from) })
-                    #expect(after.gives == state, "\(choice.title) at \(place)")
-                    #expect(after.temporary == nil, "\(choice.title) at \(place)")
-                    switch choice.title {
+                    #expect(after.gives == state, "\(action.title) at \(place)")
+                    #expect(after.temporary == nil, "\(action.title) at \(place)")
+                    switch action.title {
                     case "Put the Rule Back":
                         #expect(before.indefinite?.says == state)
                     case "Like Everywhere Else", "Like the Rest of Safari", "Like the Rest of figma.com":
@@ -387,9 +415,9 @@ struct MenuTests {
                         #expect(scheduled == state)
                         #expect(after.indefinite == nil)
                     default:
-                        Issue.record("\(choice.title) resets \(place)")
+                        Issue.record("\(action.title) resets \(place)")
                     }
-                    offered.insert(choice.title)
+                    offered.insert(action.title)
                 }
             }
         }
@@ -417,7 +445,7 @@ struct MenuTests {
         #expect(siteTitle(core.siteRow) == ("Turn Off at This Site", "docs.figma.com"))
         #expect(core.siteRow?.timePickerTitle == "Turn Off at docs.figma.com")
         #expect(
-            try #require(core.siteRow).choice(titled: "Always").command
+            try #require(core.siteRow).action(titled: "Always").command
                 == .addRule(identity: .domain("docs.figma.com"), says: .off))
         core.reportHost("www.figma.com")
         #expect(siteTitle(core.siteRow) == ("Turn Off at This Site", "figma.com"))
@@ -436,7 +464,7 @@ struct MenuTests {
         let row = try #require(core.siteRow)
 
         #expect(siteTitle(row) == ("Turn Off at This Site", "docs.figma.com"))
-        let undo = try row.choice(titled: "Like the Rest of figma.com").command
+        let undo = try row.action(titled: "Like the Rest of figma.com").command
         #expect(undo == .reset(docs))
         core.send(command: undo)
         #expect(siteTitle(core.siteRow) == ("Turn On at This Site", "figma.com"))
@@ -454,8 +482,8 @@ struct MenuTests {
         let row = try #require(core.siteRow)
 
         #expect(siteTitle(row) == ("Turn On at This Site", "example.com"))
-        #expect(try row.choice(titled: "Always").command == .addRule(identity: .domain("example.com"), says: .on))
-        core.send(command: try row.choice(titled: "For 30 Minutes").command)
+        #expect(try row.action(titled: "Always").command == .addRule(identity: .domain("example.com"), says: .on))
+        core.send(command: try row.action(titled: "For 30 Minutes").command)
         #expect(core.snapshot().front().decision.state == .on)
     }
 
@@ -524,12 +552,12 @@ struct MenuTests {
 
         var row = try #require(core.appRow)
         #expect(row.title == "Turn Off in Tour Sample")
-        #expect(try row.choice(titled: "Always").command == .addRule(identity: sample, says: .off))
+        #expect(try row.action(titled: "Always").command == .addRule(identity: sample, says: .off))
         core.send(command: .addRule(identity: sample, says: .off))
         row = try #require(core.appRow)
         #expect(row.title == "Turn On in Tour Sample")
         #expect(row.subtitle == "Always off: the tour’s rule")
-        #expect(try row.choice(titled: "Remove Your Rule").command == .removeRule(sample))
+        #expect(try row.action(titled: "Remove Your Rule").command == .removeRule(sample))
     }
 
     /// With nothing else deciding, the moon is Night Shift as last reported.

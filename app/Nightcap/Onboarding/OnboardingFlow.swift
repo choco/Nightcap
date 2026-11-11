@@ -134,6 +134,8 @@ final class OnboardingFlow {
     private var permissions: Permissions
     /// Whether the config sets website checking, as the snapshot onboarding last took has it.
     private var configSetsWebsites: Bool
+    /// Whether the core takes a new rule, as the snapshot onboarding last took has it.
+    private var rulesCanChange: Bool
     private let words: Wording
     private let askForAccessibility: () -> Void
     private let choose: (Command) -> Void
@@ -159,6 +161,7 @@ final class OnboardingFlow {
         ruleRows = Settings.rows(of: snapshot.rules().rules, words: words)
         permissions = snapshot.checks().permissions
         configSetsWebsites = setup.websitesFromConfig != nil
+        rulesCanChange = snapshot.rulesCanChange()
         self.words = words
         self.askForAccessibility = askForAccessibility
         self.choose = choose
@@ -182,14 +185,15 @@ final class OnboardingFlow {
         }
     }
 
-    /// Takes the rules and the grants as `snapshot` has them, the one each redraw after an
-    /// outcome hands on. What onboarding asks stays as it opened. The Accessibility page gives
-    /// way to the sites as the grant arrives while it doesn't show; while it shows, it shows the
-    /// grant first (`grantArrived`).
+    /// Takes the rules, whether the core takes new ones, and the grants as `snapshot` has them,
+    /// the one each redraw after an outcome hands on. What onboarding asks stays as it opened.
+    /// The Accessibility page gives way to the sites as the grant arrives while it doesn't show;
+    /// while it shows, it shows the grant first (`grantArrived`).
     func refresh(_ snapshot: Snapshot) {
         ruleRows = Settings.rows(of: snapshot.rules().rules, words: words)
         permissions = snapshot.checks().permissions
         configSetsWebsites = snapshot.config().websites != nil
+        rulesCanChange = snapshot.rulesCanChange()
         if step != .websites, page == .accessibility, accessibilityGranted {
             waitingForAccessibility = false
             page = .sites
@@ -400,8 +404,10 @@ final class OnboardingFlow {
         ticked.insert(.app(bundleId))
     }
 
-    /// The ticked suggestions without a rule on the step's grid.
+    /// The ticked suggestions without a rule on the step's grid; none while the core would refuse
+    /// their rules, each of which would post a notification of its own.
     private var adding: [Suggestion] {
+        guard rulesCanChange else { return [] }
         let grid =
             switch step {
             case .apps: apps

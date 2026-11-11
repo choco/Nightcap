@@ -85,6 +85,8 @@ impl From<&Unusable> for FileError {
 #[error("isn't valid TOML{}: {}", found_at(*.at), .error.message())]
 pub(crate) struct Malformed {
     pub(crate) at: Option<Position>,
+    /// toml's own text quotes the line, so it's logged only through this type's message, never as
+    /// part of the error's chain.
     #[source]
     error: Box<toml::de::Error>,
 }
@@ -316,6 +318,32 @@ mod tests {
                 column: 11
             })
         );
+    }
+
+    /// The log says a malformed file's description, which must never carry a domain (ADR-0009).
+    #[test]
+    fn toml_describes_a_syntax_error_without_quoting_the_text() {
+        let domain = "nightowl.example";
+        let cases = [
+            "[rules.off]\ndomain = \"nightowl.example\n",
+            "[rules.off]\nnightowl.example/x = []\n",
+            "[rules.off]\ndomain [\"nightowl.example\"]\n",
+            "[rules.off]\ndomain = [\"nightowl.example\"] x\n",
+            "[rules.off]\n\"nightowl.example\" = 1\n\"nightowl.example\" = 2\n",
+        ];
+
+        for text in cases {
+            let malformed = parse(text).unwrap_err();
+            let line = malformed.at.unwrap().line;
+            assert!(
+                text.lines()
+                    .nth(usize::try_from(line - 1).unwrap())
+                    .unwrap()
+                    .contains(domain),
+                "toml found the error in {text:?} on line {line}, away from the domain"
+            );
+            assert!(!malformed.to_string().contains(domain), "{malformed}");
+        }
     }
 
     #[test]

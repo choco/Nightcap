@@ -240,6 +240,26 @@ mod tests {
     }
 
     #[test]
+    fn custom_hours_that_arent_times_of_day_are_out_of_range_from_00_00_to_23_59() {
+        let error = CheckedSchedule::try_from(Schedule::Custom {
+            from: TimeOfDay {
+                hour: 22,
+                minute: 0,
+            },
+            to: TimeOfDay {
+                hour: 24,
+                minute: 5,
+            },
+        })
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "custom hours are times of day, from 00:00 to 23:59, not 24:05"
+        );
+    }
+
+    #[test]
     fn custom_hours_across_midnight_are_on_from_their_start_until_their_end() {
         let timeline = custom((22, 0), (7, 0));
 

@@ -86,6 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let announcer = Announcer(defaults: .standard, words: .system)
         executor.onChange { [notifications] cause, snapshot in
             if cause == .launch, let notice = whatsNew.launched(snapshot.about()) { notifications.post(notice) }
+            // Onboarding asks for notifications in a step of its own, so problems wait for it to
+            // finish rather than bringing macOS's prompt up first; the next fact tells them.
+            guard onboardingRecord.finished else { return }
             announcer.heard(cause, snapshot).forEach { notifications.post($0) }
         }
         executor.onChange { [weak self] cause, snapshot in
@@ -262,20 +265,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// While website checking is on, the icons of the site in front and every site with a rule,
-    /// which the menu and the Rules tab show (ADR-0019).
+    /// indefinite or temporary, which the menu and the Rules tab show (ADR-0019).
     private func askForSiteIcons() {
         guard let core else { return }
         let snapshot = core.snapshot()
         guard snapshot.preferences().websiteChecking.state == .on else { return }
         let front = snapshot.front().site.map { [$0] } ?? []
-        let ruled = snapshot.rules().rules.compactMap { listed -> String? in
+        let rules = snapshot.rules()
+        let ruled = rules.rules.compactMap { listed -> String? in
             guard case .domain(let domain) = listed.rule.place else { return nil }
             switch listed.rule.setBy {
             case .config, .you: return domain
-            case .trial, .outsideChange: return nil
+            case .trial: return nil
+            // An app's or a site's indefinite rule is never an outside change's.
+            case .outsideChange: return nil
             }
         }
-        siteIcons.ask(front + ruled)
+        let forNow = rules.temporary.compactMap { rule -> String? in
+            guard case .domain(let domain) = rule.place else { return nil }
+            return domain
+        }
+        siteIcons.ask(front + ruled + forNow)
     }
 
     /// On `tab`, or on the tab last shown.

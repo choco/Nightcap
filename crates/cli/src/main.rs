@@ -242,11 +242,12 @@ fn run(instance: Instance, command: Command) -> Result<(), Failure> {
 
 /// What `command`, one that can change what decides, prints once Nightcap has carried it out,
 /// with `send` sending each request: what it did, where the decision doesn't say so, then what
-/// Night Shift does after it. The reply comes before the shell applies the change, so it names
-/// what the core decided rather than Night Shift as last observed. It carries the decision
-/// alone, so the deciding rule's snooze comes from the rules, asked in a second request: the core
-/// publishes the snapshot a command leaves before it replies, so they answer as of the command
-/// or later.
+/// Night Shift does after it, then, while a trial runs, that what changes during it lasts until
+/// it ends (ADR-0016). The reply comes before the shell applies the change, so it names what the
+/// core decided rather than Night Shift as last observed. It carries the decision alone, so the
+/// deciding rule's snooze and the trial come from the rules and trial queries, asked in a second
+/// request: the core publishes the snapshot a command leaves before it replies, so they answer
+/// as of the command or later.
 fn commanded(
     command: &protocol::Command,
     mut send: impl FnMut(&Request) -> Result<Payload, Failure>,
@@ -265,14 +266,16 @@ fn commanded(
         (_, Payload::Decision(decision)) => (None, decision),
         _ => return Err(unexpected_reply()),
     };
-    let rules = client::rules(send)?;
-    Ok(match done {
+    let (rules, trial) = client::rules_and_trial(send)?;
+    let mut lines = match done {
         Some(done) => vec![wording::rules_changed(&done, &decision, &rules, zone)],
         None => set_elsewhere(command, &decision, zone)
             .into_iter()
             .chain([wording::decided(&decision, &rules, zone)])
             .collect(),
-    })
+    };
+    lines.extend(trial.map(|_| wording::during_the_tour()));
+    Ok(lines)
 }
 
 /// What a `Set` to a place that doesn't decide says it set: the decision is the front's.
@@ -421,16 +424,14 @@ mod tests {
         lines
     }
 
-    // Staged cores exist only in debug builds.
+    /// At 23:00 in Zurich, with Night Shift on by the custom hours, 22:00 to 07:00, and the app
+    /// `bundle_id` in front.
     #[cfg(debug_assertions)]
-    #[test]
-    fn a_command_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
+    fn at_night_in(bundle_id: &str) -> nightcap_core::Scenario {
         use nightcap_core::{Fact, Scenario, SwitchedBy};
         use protocol::{Schedule, TimeOfDay};
 
-        let figma = || Place::App("com.figma.Desktop".parse().unwrap());
-        let staged = Scenario::at("2026-10-16T23:00:00+02:00".parse().unwrap())
-            .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        Scenario::at("2026-10-16T23:00:00+02:00".parse().unwrap())
             .then(Fact::StatusChanged {
                 enabled: true,
                 schedule: Schedule::Custom {
@@ -445,9 +446,18 @@ mod tests {
                 switched_by: SwitchedBy::Schedule,
             })
             .then(Fact::AppActivated {
-                bundle_id: Some("com.figma.Desktop".to_owned()),
+                bundle_id: Some(bundle_id.to_owned()),
                 is_browser: false,
             })
+    }
+
+    // Staged cores exist only in debug builds.
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_command_says_the_deciding_rule_is_snoozed_as_the_rules_answer_serves_it() {
+        let figma = || Place::App("com.figma.Desktop".parse().unwrap());
+        let staged = at_night_in("com.figma.Desktop")
+            .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
             .then(protocol::Command::Set {
                 place: figma(),
                 state: OnOff::On,
@@ -456,7 +466,7 @@ mod tests {
             .stage()
             .unwrap();
         let snoozed =
-            "Night Shift on at app:com.figma.Desktop until 23:30, its config rule snoozed";
+            "Night Shift on at app:com.figma.Desktop until 23:30, its config rule snoozed.";
 
         assert_eq!(printed(&staged, protocol::Command::Off), [snoozed]);
         assert_eq!(printed(&staged, protocol::Command::Toggle), [snoozed]);
@@ -469,12 +479,60 @@ mod tests {
                 }
             ),
             [format!(
-                "Added domain:youtube.com, which turns Night Shift off. {snoozed}."
+                "Added domain:youtube.com, which turns Night Shift off. {snoozed}"
             )]
         );
         assert_eq!(
             printed(&staged, protocol::Command::Reset(figma())),
-            ["Night Shift off by the config rule for app:com.figma.Desktop"]
+            ["Night Shift off by the config rule for app:com.figma.Desktop."]
         );
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_change_while_the_tour_runs_says_it_lasts_until_the_tour_ends() {
+        use nightcap_core::AppCommand;
+
+        let mail = || {
+            "app:com.apple.mail"
+                .parse::<protocol::RuleIdentity>()
+                .unwrap()
+        };
+        let mail_off = || {
+            at_night_in("com.apple.mail").then(protocol::Command::AddRule {
+                identity: mail(),
+                says: OnOff::Off,
+            })
+        };
+        let commands = [
+            protocol::Command::AddRule {
+                identity: mail(),
+                says: OnOff::On,
+            },
+            protocol::Command::AddRule {
+                identity: "app:com.apple.Notes".parse().unwrap(),
+                says: OnOff::Off,
+            },
+            protocol::Command::RemoveRule(mail()),
+            protocol::Command::Off,
+        ];
+        let replies = [
+            "Changed the ad-hoc rule for app:com.apple.mail to turn Night Shift on. Night Shift on by the ad-hoc rule for app:com.apple.mail.",
+            "Added app:com.apple.Notes, which turns Night Shift off. Night Shift on by the ad-hoc rule for app:com.apple.mail.",
+            "Removed app:com.apple.mail. Night Shift following the schedule.",
+            "Night Shift off until you turn it on.",
+        ];
+        let during = mail_off()
+            .then(AppCommand::BeginTrial { stands_in: false })
+            .stage()
+            .unwrap();
+        let outside = mail_off().stage().unwrap();
+        let tour =
+            "The tour is running in the app, so rules and changes you make last until it ends.";
+
+        for (command, reply) in commands.into_iter().zip(replies) {
+            assert_eq!(printed(&during, command.clone()), [reply, tour]);
+            assert_eq!(printed(&outside, command), [reply]);
+        }
     }
 }

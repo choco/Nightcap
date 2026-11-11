@@ -186,9 +186,9 @@ mod tests {
     use std::time::Duration;
 
     use nightcap_protocol::{
-        Answer, Command, Decision, Done, Front, Hello, HelloMessage, HelloReply, IoFailure,
-        NightShift, OnOff, PROTOCOL_VERSION, Payload, Place, PlaceInFront, Query, Request,
-        Response, RuleIdentity,
+        Answer, Command, Decision, Done, ExportFormat, Front, Hello, HelloMessage, HelloReply,
+        IoFailure, NightShift, NotificationPermission, OnOff, PROTOCOL_VERSION, Payload, Place,
+        PlaceInFront, Query, Request, Response,
     };
 
     use super::{bind, serve};
@@ -196,7 +196,7 @@ mod tests {
     use crate::server::react::{Input, ReplyTo};
     use crate::server::snapshot::{Published, Snapshot};
     use crate::server::tests::{ChannelListener, Heard, noon};
-    use crate::{Cause, Core, CoreError, Outcome};
+    use crate::{Cause, Core, CoreError, Fact, Outcome};
 
     /// The socket, in a folder that serving creates.
     fn socket_in(dir: &tempfile::TempDir) -> PathBuf {
@@ -467,32 +467,67 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let socket = socket_in(&dir);
         let (core, outcomes) = served_core(&socket);
-        let queries = || Request::Queries(vec![Query::Rules, Query::Checks]);
+        core.report(Fact::PermissionsChanged {
+            accessibility: false,
+            notifications: NotificationPermission::Granted,
+        });
+        outcomes.recv_timeout(Duration::from_secs(5)).unwrap();
+        let queries = || Request::Queries(vec![Query::Preferences, Query::Checks]);
         let before = core.snapshot();
         let asked_before = ask(&socket, queries()).join().unwrap();
 
-        core.send(
-            Command::AddRule {
-                identity: RuleIdentity::App("com.figma.Desktop".parse().unwrap()),
-                says: OnOff::Off,
-            },
-            None,
-        );
+        core.send(Command::Websites(OnOff::On), None);
         outcomes.recv_timeout(Duration::from_secs(5)).unwrap();
         let after = core.snapshot();
         let asked_after = ask(&socket, queries()).join().unwrap();
 
-        assert_eq!(before.rules().rules, Vec::new());
-        assert_eq!(after.rules().rules.len(), 1);
+        assert_eq!(before.preferences().website_checking.state, OnOff::Off);
+        assert_eq!(after.preferences().website_checking.state, OnOff::On);
         assert_ne!(before.checks(), after.checks());
         let answers = |snapshot: &Snapshot| {
             Response::Ok(Payload::Answers(vec![
-                Answer::Rules(snapshot.rules()),
+                Answer::Preferences(snapshot.preferences()),
                 Answer::Checks(snapshot.checks()),
             ]))
         };
         assert_eq!(asked_before, answers(&before));
         assert_eq!(asked_after, answers(&after));
+    }
+
+    #[test]
+    fn a_snapshot_and_a_request_from_before_an_input_export_the_ad_hoc_rules_as_they_were() {
+        let dir = tempfile::tempdir().unwrap();
+        let socket = socket_in(&dir);
+        let (core, outcomes) = served_core(&socket);
+        let add_rule = |identity: &str, says| {
+            let identity = identity.parse().unwrap();
+            core.send(Command::AddRule { identity, says }, None);
+            outcomes.recv_timeout(Duration::from_secs(5)).unwrap();
+        };
+        let export = || Request::Queries(vec![Query::Export(ExportFormat::Toml)]);
+        add_rule("app:com.figma.Desktop", OnOff::Off);
+        let before = core.snapshot();
+        let asked_before = ask(&socket, export()).join().unwrap();
+
+        add_rule("domain:youtube.com", OnOff::On);
+        let after = core.snapshot();
+        let asked_after = ask(&socket, export()).join().unwrap();
+
+        assert_eq!(
+            before.export(ExportFormat::Toml),
+            "[rules.off]\napp = [\"com.figma.Desktop\"]\n"
+        );
+        assert_eq!(
+            after.export(ExportFormat::Toml),
+            "[rules.off]\napp = [\"com.figma.Desktop\"]\n\n[rules.on]\ndomain = [\"youtube.com\"]\n"
+        );
+        let exported = |snapshot: &Snapshot| {
+            Response::Ok(Payload::Answers(vec![Answer::Export(
+                snapshot.export(ExportFormat::Toml),
+            )]))
+        };
+        assert_eq!(asked_before, exported(&before));
+        assert_eq!(asked_after, exported(&after));
     }
 
     #[test]

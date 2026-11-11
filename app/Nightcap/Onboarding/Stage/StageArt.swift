@@ -278,10 +278,10 @@ enum StageArt {
         let sunrise = calendar.date(bySettingHour: 7, minute: 0, second: 0, of: tomorrow)!
         let length: SignedDuration = 30 * 60
         let row = { (place: Place, title: String) in
-            let first = Menu.Choice(
+            let first = Menu.Action(
                 title: words.forLength(length), command: .set(place: place, state: .off, length: .for(length)))
             return Menu.Entry.row(
-                Menu.PlaceRow(place: place, title: title, site: nil, subtitle: nil, items: [.choice(first)]))
+                Menu.PlaceRow(place: place, title: title, site: nil, subtitle: nil, items: [.action(first)]))
         }
         return Menu(
             moon: .on, problemLine: nil,

@@ -156,7 +156,7 @@ struct NoticeTests {
         #expect(problem(.nightShift(.unavailable)) == nil)
         #expect(problem(.notifications(.switchedOff)) == nil)
         #expect(problem(.openAtLogin(.awaitingApproval)) == nil)
-        #expect(problem(.configFile(.valid(rules: 1))) == nil)
+        #expect(problem(.configFile(.valid)) == nil)
     }
 
     @Test func aRefusedReloadIsLeftToTheConfigFilesCheck() {

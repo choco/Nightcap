@@ -147,7 +147,8 @@ fn an_indefinite_rule_outlasts_sunrise_and_sunset() {
 
     staged.set_now(at("2026-10-17T07:00:00+02:00"));
     staged.report(Fact::TimerFired);
-    // macOS performs its own transition, and Nightcap puts Night Shift back on.
+    // macOS fades the tint out and performs its own transition over the rule's write, and
+    // Nightcap puts Night Shift back on (ADR-0021).
     let effects = staged.report(reported(false, custom_hours())).effects;
 
     assert_eq!(effects, vec![switched(true)]);

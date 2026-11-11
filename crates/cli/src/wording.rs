@@ -74,13 +74,11 @@ pub(crate) fn rule(listed: &ListedRule, zone: &TimeZone) -> String {
 }
 
 /// What adding a rule for `identity` that says `says` did, as Nightcap answers it: added one,
-/// the tour's lasting until it ends, changed the user's own or the tour's, or left one that
-/// already says so. A config rule that says otherwise is refused instead.
+/// changed the user's own or the tour's, or left one that already says so. A config rule that
+/// says otherwise is refused instead. `during_the_tour` says how long a rule added during the
+/// tour lasts.
 pub(crate) fn rule_added(identity: &RuleIdentity, says: OnOff, added: RuleAdded) -> String {
     match added {
-        RuleAdded::New {
-            set_by: SetBy::Trial,
-        } => format!("Added {identity}, which turns Night Shift {says} until the tour ends."),
         RuleAdded::New { .. } => format!("Added {identity}, which turns Night Shift {says}."),
         RuleAdded::AlreadySays { set_by } => format!(
             "The {} rule for {identity} already turns Night Shift {says}.",
@@ -100,6 +98,7 @@ fn source(set_by: SetBy) -> &'static str {
         SetBy::Config => "config",
         SetBy::You => "ad-hoc",
         SetBy::Trial => "tour",
+        // An app's or a site's indefinite rule is never an outside change's.
         SetBy::OutsideChange => "adopted",
     }
 }
@@ -136,13 +135,14 @@ pub(crate) fn check(detail: &CheckDetail) -> String {
         CheckDetail::AdHocRules(AdHocRulesDetail::Off(error)) => {
             format!("Ad-hoc rules are off: {}.", file_error(error))
         }
-        // The core finds these with their check ok or off, which needs no attention.
-        CheckDetail::NightShift(NightShiftDetail::Available { .. })
+        // The core's `state()` (`crates/core/src/setup/checks.rs`) leaves these ok or off, which
+        // needs no attention.
+        CheckDetail::NightShift(NightShiftDetail::Available)
         | CheckDetail::Accessibility(AccessibilityDetail::Allowed | AccessibilityDetail::NotNeeded)
         | CheckDetail::Notifications(NotificationsDetail::Allowed | NotificationsDetail::Off)
         | CheckDetail::OpenAtLogin(OpenAtLoginDetail::Opens | OpenAtLoginDetail::Off)
-        | CheckDetail::ConfigFile(ConfigFileDetail::Valid { .. } | ConfigFileDetail::Missing)
-        | CheckDetail::AdHocRules(AdHocRulesDetail::On { .. }) => unexpected_reply(),
+        | CheckDetail::ConfigFile(ConfigFileDetail::Valid | ConfigFileDetail::Missing)
+        | CheckDetail::AdHocRules(AdHocRulesDetail::On) => unexpected_reply(),
     }
 }
 
@@ -416,10 +416,13 @@ pub(crate) fn set(place: &Place, state: OnOff, length: &Lasting, zone: &TimeZone
     format!("Set {place} {state} {}.", length_text(length, zone))
 }
 
-/// What Night Shift does after a command, as the core decided it, with the deciding rule's snooze
-/// as `rules` serve it and times in `zone`.
+/// What Night Shift does after a command, as the core decided it, in a sentence: with the
+/// deciding rule's snooze as `rules` serve it and times in `zone`.
 pub(crate) fn decided(decision: &Decision, rules: &[ListedRule], zone: &TimeZone) -> String {
-    format!("Night Shift {}", decided_and_snoozed(decision, rules, zone))
+    format!(
+        "Night Shift {}.",
+        decided_and_snoozed(decision, rules, zone)
+    )
 }
 
 /// What Nightcap decided and why, as it reads after "Night Shift", then whether the deciding
@@ -440,11 +443,18 @@ pub(crate) fn rules_changed(
     rules: &[ListedRule],
     zone: &TimeZone,
 ) -> String {
-    format!("{done} {}.", decided(decision, rules, zone))
+    format!("{done} {}", decided(decision, rules, zone))
 }
 
 pub(crate) fn rule_removed(identity: &RuleIdentity) -> String {
     format!("Removed {identity}.")
+}
+
+/// What a command that can change what decides says after its reply while a trial runs, which
+/// only the app's tour begins: whatever changes during it, whoever made it, lasts until it ends
+/// (ADR-0016).
+pub(crate) fn during_the_tour() -> String {
+    "The tour is running in the app, so rules and changes you make last until it ends.".to_owned()
 }
 
 /// `nightcap rules list` with no rule to list.
@@ -1022,16 +1032,6 @@ mod tests {
         assert_eq!(
             rule_added(
                 &figma,
-                OnOff::On,
-                RuleAdded::New {
-                    set_by: SetBy::Trial
-                }
-            ),
-            "Added app:com.figma.Desktop, which turns Night Shift on until the tour ends."
-        );
-        assert_eq!(
-            rule_added(
-                &figma,
                 OnOff::Off,
                 RuleAdded::AlreadySays {
                     set_by: SetBy::Config
@@ -1258,6 +1258,55 @@ mod tests {
             assert_eq!(
                 night_shift_line(&report),
                 "Night Shift: on at domain:figma.com until 07:00"
+            );
+        }
+
+        #[test]
+        fn status_says_everywheres_temporary_rule_then_its_indefinite_one_on_one_line() {
+            let scenario = on_figma()
+                .then(Command::Set {
+                    place: Place::Everywhere,
+                    state: OnOff::Off,
+                    length: Lasting::Indefinite,
+                })
+                .then(Command::Set {
+                    place: Place::Everywhere,
+                    state: OnOff::On,
+                    length: Lasting::UntilScheduleTurns,
+                });
+
+            assert_eq!(
+                shown(scenario).swap_remove(7),
+                "Everywhere: on until 07:00, then off until you turn it on"
+            );
+        }
+
+        #[test]
+        fn status_says_a_rule_with_no_end_lasts_until_you_turn_it_back() {
+            let status = |enabled, switched_by| Fact::StatusChanged {
+                enabled,
+                schedule: Schedule::Off,
+                sun_schedule_set_aside: false,
+                written_at: None,
+                switched_by,
+            };
+            // At noon with no schedule, an outside change turns Night Shift on over Figma's config
+            // rule, which Nightcap adopts at Figma and everywhere with no turn to wait for.
+            let scenario = Scenario::at("2026-10-16T12:00:00+02:00".parse().unwrap())
+                .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+                .then(status(false, SwitchedBy::Schedule))
+                .then(Fact::AppActivated {
+                    bundle_id: Some("com.figma.Desktop".to_owned()),
+                    is_browser: false,
+                })
+                .then(status(true, SwitchedBy::Outside));
+
+            assert_eq!(
+                shown(scenario)[6..8],
+                [
+                    "app:com.figma.Desktop: on until you turn it off",
+                    "Everywhere: on until you turn it off",
+                ]
             );
         }
 

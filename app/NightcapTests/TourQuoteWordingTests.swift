@@ -10,7 +10,7 @@ private let mail = TourApp(bundleId: "com.apple.mail", name: "Mail")
 private func quoted(_ row: Menu.PlaceRow?, _ wanted: (Command) -> Bool) throws -> (Wording.Quote, Command) {
     let row = try #require(row)
     let choices = row.items.compactMap { item in
-        if case .choice(let choice) = item { choice } else { nil }
+        if case .action(let action) = item { action } else { nil }
     }
     let item = try #require(choices.first { wanted($0.command) })
     return (Wording.Quote(row: row.title, item: item.title), item.command)
