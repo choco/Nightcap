@@ -166,8 +166,10 @@ impl Inner {
     }
 
     /// Writes Night Shift when what the core wants differs from what was last observed
-    /// (ADR-0004), short of what's left to macOS's schedule. The shell writes once while the
-    /// same write is on its way, so asking again before its status arrives changes nothing.
+    /// (ADR-0004), short of what's left to macOS's schedule. A write that gives Night Shift back
+    /// to the schedule during one of the schedule's fades carries what's left of that fade, which
+    /// a write cuts short in macOS (ADR-0021). The shell writes once while the same write is on
+    /// its way, so asking again before its status arrives changes nothing.
     pub(crate) fn enforce(&self, now: Timestamp) -> Option<Effect> {
         if self.facts.night_shift == NightShift::Unavailable
             || self.facts.session != Session::Active
@@ -180,24 +182,34 @@ impl Inner {
         }
         let decision = self.rules.decide(&self.facts.world(now));
         let wanted = wanted(&decision)?;
-        if self.left_to_macos(&decision) || wanted == (self.facts.night_shift == NightShift::On) {
+        let schedule_decides = matches!(decision.reasons.first(), Some(Reason::Schedule { .. }));
+        if (schedule_decides && self.left_to_macos())
+            || wanted == (self.facts.night_shift == NightShift::On)
+        {
             return None;
         }
-        Some(Effect::SetNightShift { enabled: wanted })
+        let tint = if schedule_decides {
+            self.facts.timeline.fade(self.facts.applied_until)
+        } else {
+            None
+        };
+        Some(Effect::SetNightShift {
+            enabled: wanted,
+            tint,
+        })
     }
 
-    /// Whether Nightcap leaves Night Shift to macOS's schedule, which performs its own
-    /// transitions, fading them over minutes where a write fades in two seconds. It does
-    /// wherever the schedule alone decides, unless a write since the schedule's last transition
-    /// stands: Nightcap's own, from a rule that no longer decides. Night Shift with no write
-    /// standing is as the schedule left it, or as its next transition will, and macOS performs
-    /// a transition over any write from before it (ADR-0004).
-    fn left_to_macos(&self, decision: &Decision) -> bool {
+    /// Whether Nightcap leaves Night Shift to macOS's schedule, where it decides alone. macOS
+    /// performs its own transitions, fading them over minutes where a write fades in two seconds.
+    /// Nightcap leaves them unless a write since the schedule's last transition stands: Nightcap's
+    /// own, from a rule that no longer decides. Night Shift with no write standing is as the
+    /// schedule left it, or as its next transition will, and macOS performs a transition over
+    /// any write from before it (ADR-0004).
+    fn left_to_macos(&self) -> bool {
         let last_transition = (self.facts.timeline).last_transition(self.facts.applied_until);
-        matches!(decision.reasons.first(), Some(Reason::Schedule { .. }))
-            && self.facts.written_at.is_none_or(|written| {
-                last_transition.is_some_and(|transition| written < transition)
-            })
+        self.facts
+            .written_at
+            .is_none_or(|written| last_transition.is_some_and(|transition| written < transition))
     }
 }
 

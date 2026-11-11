@@ -12,7 +12,7 @@ use nightcap_protocol::{
 use common::{
     activate, adopted, app_rule, at, custom_hours, echo, figma_app, forced, late, minutes, noon,
     off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable, send, set,
-    until, until_turn, written, yours,
+    switched, until, until_turn, written, yours,
 };
 
 /// The answer to a command that leaves Night Shift on at 23:00 by the custom hours.
@@ -71,7 +71,7 @@ fn on_turns_night_shift_on_everywhere_until_turned_back() {
 
     let (effects, response) = send(&staged, Command::On);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(
         response,
         everywhere_by(yours(Place::Everywhere, OnOff::On, Length::Indefinite))
@@ -86,7 +86,7 @@ fn off_takes_off_everywheres_rule_where_that_is_enough() {
 
     let (effects, response) = send(&staged, Command::Off);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(response, off_with_no_schedule());
 }
 
@@ -111,7 +111,7 @@ fn toggle_turns_everywhere_the_other_way() {
 
     let (effects, response) = send(&staged, Command::Toggle);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(response, off_with_no_schedule());
 }
 
@@ -123,7 +123,7 @@ fn two_flips_leave_nothing_behind() {
 
     let (effects, response) = send(&staged, Command::Toggle);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(response, following_the_custom_hours_until_morning());
     assert_eq!(resettable(&staged), Vec::new());
 }
@@ -150,7 +150,7 @@ fn an_indefinite_rule_outlasts_sunrise_and_sunset() {
     // macOS performs its own transition, and Nightcap puts Night Shift back on.
     let effects = staged.report(reported(false, custom_hours())).effects;
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(
         resettable(&staged),
         vec![yours(Place::Everywhere, OnOff::On, Length::Indefinite)]
@@ -185,7 +185,7 @@ fn a_rule_until_a_time_gives_back_what_was_under_it() {
     assert_eq!(
         effects,
         vec![
-            Effect::SetNightShift { enabled: false },
+            switched(false),
             Effect::ScheduleWakeup {
                 at: at("2026-10-16T23:30:00+02:00").into()
             },
@@ -197,7 +197,7 @@ fn a_rule_until_a_time_gives_back_what_was_under_it() {
     assert_eq!(
         staged.report(Fact::TimerFired).effects,
         vec![
-            Effect::SetNightShift { enabled: true },
+            switched(true),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             },
@@ -372,7 +372,7 @@ fn everywheres_indefinite_rule_comes_back_when_a_temporary_one_over_it_ends() {
     staged.report(Fact::TimerFired);
     // macOS performs its own transition, and Nightcap puts Night Shift back off.
     let effects = staged.report(reported(true, custom_hours())).effects;
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
 }
 
 #[test]

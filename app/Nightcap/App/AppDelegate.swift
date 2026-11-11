@@ -119,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         nightShift?.endPeek()
         tour?.end()
         executor.stop()
+        nightShift?.leaveTint()
     }
 
     /// launchd stops the app with SIGTERM, whose default action would skip

@@ -63,6 +63,7 @@
 				Platform/LoginItemAdapter.swift,
 				Platform/NightShiftStrength.swift,
 				Platform/NightShiftWrites.swift,
+				Platform/TintCurve.swift,
 				Settings/Settings.swift,
 				Tour/TourFacts.swift,
 				Tour/TourFlow.swift,

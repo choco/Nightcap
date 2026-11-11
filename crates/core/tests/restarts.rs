@@ -9,7 +9,8 @@ use nightcap_protocol::{Command, Lasting, OnOff, Place};
 use common::{
     accessibility_granted, activate, activate_browser, activate_event, adopted, at, books,
     custom_hours, echo, figma_app, forced, in_books_at_noon, late, launch, minutes,
-    on_by_the_schedule, reported, resettable, send, set, until, until_turn, watch, written, yours,
+    on_by_the_schedule, reported, resettable, send, set, switched, until, until_turn, watch,
+    written, yours,
 };
 
 /// Snoozes the Figma rule until 07:00, then turns Night Shift off everywhere for an hour.
@@ -70,20 +71,14 @@ fn on_the_way_out_only_everywheres_rules_short_of_one_until_a_time_still_apply()
     send(&staged, set(Place::Everywhere, OnOff::On, minutes(30)));
     echo(&staged, true);
 
-    assert_eq!(
-        staged.stop().effects,
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(staged.stop().effects, vec![switched(false)]);
 }
 
 #[test]
 fn terminating_releases_every_force() {
     let staged = forced();
 
-    assert_eq!(
-        staged.stop().effects,
-        vec![Effect::SetNightShift { enabled: true }]
-    );
+    assert_eq!(staged.stop().effects, vec![switched(true)]);
 }
 
 #[test]
@@ -103,10 +98,7 @@ fn terminating_stops_watching_and_releases_without_waiting_for_the_host() {
 
     assert_eq!(
         staged.stop().effects,
-        vec![
-            Effect::StopWatching,
-            Effect::SetNightShift { enabled: true }
-        ]
+        vec![Effect::StopWatching, switched(true)]
     );
 }
 
@@ -124,7 +116,7 @@ fn after_a_crash_night_shift_left_off_by_a_force_is_not_an_outside_change() {
     assert_eq!(
         effects,
         vec![
-            Effect::SetNightShift { enabled: true },
+            switched(true),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             },
@@ -165,7 +157,7 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
     assert_eq!(
         effects,
         vec![
-            Effect::SetNightShift { enabled: false },
+            switched(false),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             },
@@ -186,8 +178,5 @@ fn a_rule_that_says_on_is_released_on_a_clean_exit() {
     );
     echo(&staged, true);
 
-    assert_eq!(
-        staged.stop().effects,
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(staged.stop().effects, vec![switched(false)]);
 }

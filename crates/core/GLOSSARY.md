@@ -27,6 +27,14 @@ _Avoid_: boundary
 How warm Night Shift tints the display. The system owns it; Nightcap changes it only when the user asks.
 _Avoid_: temperature, warmth
 
+**Tint**:
+How much of the strength shows at a moment, from none to all of it.
+_Avoid_: factor
+
+**Fade**:
+The tint moving between none and all of the strength as Night Shift switches: over two seconds for a write, and for the schedule's own switches over the half hour after sunset and before sunrise, or the two minutes after custom hours start and before they end.
+_Avoid_: ramp, transition (which is the schedule's moment)
+
 ### Changes
 
 **Rule**:

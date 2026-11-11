@@ -3,7 +3,7 @@
 
 mod common;
 
-use nightcap_core::{Effect, Fact, File, Staged};
+use nightcap_core::{Fact, File, Staged};
 use nightcap_protocol::{
     AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
     Decision, Done, ExportFormat, FileError, Lasting, Length, OnOff, Payload, Place, Problem,
@@ -14,8 +14,8 @@ use common::{
     accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
     app_rule, at, books, check, custom_hours, domain_rule, echo, figma, figma_app, forced,
     host_event, in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon,
-    on_by_the_schedule, refusal, reported, resettable, rules, send, set, standing, until_turn,
-    yours,
+    on_by_the_schedule, refusal, reported, resettable, rules, send, set, standing, switched,
+    until_turn, yours,
 };
 
 #[test]
@@ -27,7 +27,7 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
 
     let effects = activate(&staged, "com.figma.Desktop");
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
         staged.core().snapshot().front().app,
         Some("com.figma.Desktop".parse().unwrap())
@@ -53,7 +53,7 @@ fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
 
     let effects = activate(&staged, "com.apple.Terminal");
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
 }
 
 #[test]
@@ -90,7 +90,7 @@ fn reload_applies_a_changed_config() {
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
     let (effects, response) = send(&staged, Command::Reload);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
         response,
         Response::Ok(Payload::Rules(vec![listed(app_rule("com.figma.Desktop"))]))
@@ -135,7 +135,7 @@ fn setting_a_rules_place_the_other_way_snoozes_the_rule_for_that_length() {
         set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(
         response,
         Response::Ok(Payload::Decision(Decision {
@@ -162,7 +162,7 @@ fn a_snoozed_rule_comes_back_when_its_snooze_ends() {
     staged.set_now(at("2026-10-16T23:30:00+02:00"));
     let effects = staged.report(Fact::TimerFired).effects;
 
-    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert!(effects.contains(&switched(false)));
     assert_eq!(resettable(&staged), Vec::new());
     assert_eq!(staged.core().snapshot().front().decision.place, figma_app());
 }
@@ -255,7 +255,7 @@ fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
 
     let (effects, response) = send(&staged, add_rule(figma()));
 
-    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert!(effects.contains(&switched(false)));
     assert_eq!(
         response,
         Response::Ok(Payload::RuleAdded {
@@ -305,7 +305,7 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
 
     let (effects, response) = send(&staged, add_rule(figma()));
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
         response,
         Response::Ok(Payload::RuleAdded {
@@ -328,7 +328,7 @@ fn a_rule_the_app_adds_applies_at_once() {
 
     let effects = staged.send(add_rule(figma())).0.effects;
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
 }
 
 #[test]
@@ -340,7 +340,7 @@ fn removing_an_ad_hoc_rule_lifts_it() {
 
     let (effects, _) = send(&staged, Command::RemoveRule(figma()));
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(rules(&staged), Vec::new());
 }
 
@@ -527,11 +527,7 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
 
     let (outcome, answer) = staged.send(add_rule(mail()));
 
-    assert!(
-        outcome
-            .effects
-            .contains(&Effect::SetNightShift { enabled: false })
-    );
+    assert!(outcome.effects.contains(&switched(false)));
     assert!(
         matches!(
             &answer,
@@ -559,11 +555,8 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
     );
     echo(&staged, true);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
-    assert_eq!(
-        activate(&staged, "com.apple.mail"),
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(effects, vec![switched(true)]);
+    assert_eq!(activate(&staged, "com.apple.mail"), vec![switched(false)]);
 }
 
 #[test]

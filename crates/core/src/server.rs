@@ -243,7 +243,10 @@ pub(crate) mod tests {
         );
         assert_eq!(
             next(&outcomes).effects,
-            vec![Effect::SetNightShift { enabled: true }]
+            vec![Effect::SetNightShift {
+                enabled: true,
+                tint: None,
+            }]
         );
         assert_eq!(next(&outcomes), Outcome::new(Cause::Fact));
     }
@@ -359,7 +362,10 @@ pub(crate) mod tests {
 
         assert_eq!(
             released.effects,
-            vec![Effect::SetNightShift { enabled: true }]
+            vec![Effect::SetNightShift {
+                enabled: true,
+                tint: None,
+            }]
         );
         assert_eq!(outcomes.try_iter().count(), 4);
         core.report(reported(true));

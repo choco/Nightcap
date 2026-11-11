@@ -86,6 +86,12 @@ final class NightShiftAdapter: NightShiftWriting {
     /// back.
     private var peekedFrom: (enabled: Bool, factor: Float)?
     private var writes = NightShiftWrites()
+    /// The curve Nightcap's last write moves the tint along, until the report that first shows a
+    /// new write: Nightcap's own starts it playing, and another's drops it.
+    private var waiting: TintCurve?
+    /// The curve playing, while the mark of the write it follows stands, with the timer that
+    /// steps along it.
+    private var playing: (curve: TintCurve, mark: Date, timer: DispatchSourceTimer)?
 
     /// Fails when CoreBrightness or its expected methods are missing. `onChange` runs on the main
     /// thread with the new status, and whose write it's the first to show, whenever
@@ -189,7 +195,22 @@ final class NightShiftAdapter: NightShiftWriting {
     /// write is told once.
     func report() -> (status: Status, switchedBy: SwitchedBy)? {
         guard let status else { return nil }
-        return (status, writes.report(enabled: status.enabled, writtenAt: status.writtenAt))
+        let switchedBy = writes.report(enabled: status.enabled, writtenAt: status.writtenAt)
+        switch switchedBy {
+        case .nightcap:
+            // Started here, no step reaches CoreBrightness ahead of the write, over the other
+            // connection, for the write's own fade to replace.
+            if let curve = waiting, let mark = status.writtenAt { play(curve, mark: mark) }
+            waiting = nil
+        case .outside:
+            waiting = nil
+        case .schedule:
+            break
+        }
+        // Another write replaces the mark, and the schedule clears it as it switches Night Shift
+        // or as its mode changes, then fades the tint itself.
+        if status.writtenAt != playing?.mark { stopPlaying() }
+        return (status, switchedBy)
     }
 
     /// Night Shift's state and schedule, or nil when CoreBrightness can't say.
@@ -380,8 +401,10 @@ final class NightShiftAdapter: NightShiftWriting {
 
     /// Ends any peek: switching Night Shift on puts the tint back by itself, and switching it off
     /// needs the factor left at 0. Writes nothing while Night Shift is already so, or the same
-    /// write is on its way: the core asks again with each input until a report shows it.
-    func setEnabled(_ enabled: Bool) {
+    /// write is on its way: the core asks again with each input until a report shows it. Where
+    /// `tint` has points, the tint moves along them from the report that shows the write; without,
+    /// macOS fades the write as a switch (ADR-0021).
+    func setEnabled(_ enabled: Bool, tint: [TintPoint]?) {
         guard writes.needs(enabled, current: status?.enabled) else { return }
         guard setEnabledImplementation(client, NSSelectorFromString("setEnabled:"), enabled) else {
             log.error("CoreBrightness refused setEnabled(\(enabled))")
@@ -389,6 +412,44 @@ final class NightShiftAdapter: NightShiftWriting {
         }
         writes.wrote(enabled)
         peekedFrom = nil
+        stopPlaying()
+        waiting = tint.flatMap(TintCurve.init)
+    }
+
+    /// Leaves the rest of the curve to macOS as Nightcap quits: one fade to its next point, which
+    /// CoreBrightness eases, straying from the line by a fifth at most on the way. A curve whose
+    /// write no report shows yet can reach CoreBrightness ahead of the write, whose own fade then
+    /// replaces it.
+    func leaveTint() {
+        guard let curve = playing?.curve ?? waiting else { return }
+        stopPlaying()
+        waiting = nil
+        guard let next = curve.handOver(at: Date()) else { return }
+        _ = setFactor(next.tint, fade: Float(next.fade))
+    }
+
+    /// Moves the tint along `curve` in steps, as macOS moves along its own fades, while the mark
+    /// of the write it follows stands.
+    private func play(_ curve: TintCurve, mark: Date) {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + TintCurve.interval, repeating: TintCurve.interval)
+        timer.setEventHandler { [weak self] in self?.stepTint() }
+        timer.resume()
+        playing = (curve, mark, timer)
+        stepTint()
+    }
+
+    /// A peek holds the tint where it shows the other side, and the curve goes on once it ends.
+    private func stepTint() {
+        guard let curve = playing?.curve, peekedFrom == nil else { return }
+        let step = curve.step(at: Date())
+        _ = setFactor(step.tint, fade: Float(step.fade))
+        if step.last { stopPlaying() }
+    }
+
+    private func stopPlaying() {
+        playing?.timer.cancel()
+        playing = nil
     }
 
     private static func timeOfDay(_ hour: Int32, _ minute: Int32) -> TimeOfDay? {

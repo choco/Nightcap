@@ -17,7 +17,7 @@ use nightcap_protocol::{
 use common::{
     activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, custom_hours, echo, figma,
     figma_app, kept_ad_hoc, late, minutes, off_by_the_schedule, on_by_the_schedule, refusal,
-    report, report_host, resettable, rules, send, set, until, until_turn, written, yours,
+    report, report_host, resettable, rules, send, set, switched, until, until_turn, written, yours,
 };
 
 /// The app the trials here give a rule.
@@ -72,10 +72,7 @@ fn on_by_the_stand_in() -> Decision {
 fn a_trial_begun_with_the_stand_in_while_night_shift_is_off_turns_it_on() {
     let staged = off_by_the_schedule().stage().unwrap();
 
-    assert_eq!(
-        begin_trial(&staged, true),
-        vec![Effect::SetNightShift { enabled: true }]
-    );
+    assert_eq!(begin_trial(&staged, true), vec![switched(true)]);
     assert_eq!(echo(&staged, true), Vec::new());
 
     assert_eq!(
@@ -111,10 +108,7 @@ fn the_trials_end_turns_night_shift_back_off_following_the_schedule() {
     begin_trial(&staged, true);
     echo(&staged, true);
 
-    assert_eq!(
-        end_trial(&staged),
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(end_trial(&staged), vec![switched(false)]);
     assert_eq!(echo(&staged, false), Vec::new());
 
     assert_eq!(
@@ -133,15 +127,9 @@ fn the_stand_in_sets_aside_everywheres_indefinite_rule_and_the_end_puts_it_back(
     send(&staged, Command::Off);
     echo(&staged, false);
 
-    assert_eq!(
-        begin_trial(&staged, true),
-        vec![Effect::SetNightShift { enabled: true }]
-    );
+    assert_eq!(begin_trial(&staged, true), vec![switched(true)]);
     echo(&staged, true);
-    assert_eq!(
-        end_trial(&staged),
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(end_trial(&staged), vec![switched(false)]);
 
     assert_eq!(
         resettable(&staged),
@@ -158,7 +146,7 @@ fn the_stand_in_sets_aside_everywheres_rule_until_a_time_and_the_end_puts_it_bac
     assert_eq!(
         begin_trial(&staged, true),
         vec![
-            Effect::SetNightShift { enabled: true },
+            switched(true),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             },
@@ -168,7 +156,7 @@ fn the_stand_in_sets_aside_everywheres_rule_until_a_time_and_the_end_puts_it_bac
     assert_eq!(
         end_trial(&staged),
         vec![
-            Effect::SetNightShift { enabled: false },
+            switched(false),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T00:00:00+02:00").into()
             },
@@ -192,11 +180,11 @@ fn while_a_trial_stands_in_a_tap_off_and_on_returns_to_its_on() {
     echo(&staged, true);
 
     let (effects, _) = send(&staged, Command::Toggle);
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     echo(&staged, false);
     let (effects, response) = send(&staged, Command::Toggle);
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(
         response,
         Response::Ok(Payload::Decision(on_by_the_stand_in()))
@@ -224,7 +212,7 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
 
     let (effects, response) = send(&staged, add_rule(notes()));
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
         response,
         Response::Ok(Payload::RuleAdded {
@@ -239,10 +227,7 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
         })
     );
     echo(&staged, false);
-    assert_eq!(
-        activate(&staged, "com.apple.mail"),
-        vec![Effect::SetNightShift { enabled: true }]
-    );
+    assert_eq!(activate(&staged, "com.apple.mail"), vec![switched(true)]);
 }
 
 #[test]
@@ -294,7 +279,7 @@ fn removing_a_trial_rule_mid_trial_drops_it() {
 
     let (effects, response) = send(&staged, Command::RemoveRule(notes()));
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert!(matches!(response, Response::Ok(_)), "{response:?}");
     assert_eq!(rules(&staged), Vec::new());
 }
@@ -485,7 +470,7 @@ fn a_restart_after_a_crash_mid_trial_puts_night_shift_back_where_the_trial_found
     assert_eq!(
         effects,
         vec![
-            Effect::SetNightShift { enabled: false },
+            switched(false),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             },
@@ -503,10 +488,7 @@ fn quitting_mid_trial_ends_it() {
     begin_trial(&staged, true);
     echo(&staged, true);
 
-    assert_eq!(
-        staged.stop().effects,
-        vec![Effect::SetNightShift { enabled: false }]
-    );
+    assert_eq!(staged.stop().effects, vec![switched(false)]);
 }
 
 #[test]

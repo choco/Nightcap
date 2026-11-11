@@ -1,9 +1,12 @@
-//! The schedule math behind reconciliation (ADR-0004): what the schedule says at a moment, and
-//! when it next changes.
+//! The schedule math behind reconciliation (ADR-0004): what the schedule says at a moment, when
+//! it next changes, and how macOS fades it (ADR-0021).
 
 use jiff::tz::TimeZone;
-use jiff::{Timestamp, civil};
+use jiff::{SignedDuration, Timestamp, civil};
 use nightcap_protocol::{OnOff, Schedule, TimeOfDay};
+
+use crate::TintPoint;
+use crate::tint;
 
 /// The schedule placed in time, from what the shell reports.
 pub(crate) struct Timeline {
@@ -188,6 +191,27 @@ impl Timeline {
                     .max()
             }
         }
+    }
+
+    /// What's still to come at `at` of macOS's fades while the schedule has Night Shift on: over
+    /// the half hour after sunset and before sunrise, or the two minutes after custom hours start
+    /// and before they end, as `-[NightModeControl setMode:]` sets them. None between them, and
+    /// while the schedule has Night Shift off.
+    pub(crate) fn fade(&self, at: Timestamp) -> Option<Vec<TintPoint>> {
+        let length = match self.schedule? {
+            CheckedSchedule::Off => return None,
+            CheckedSchedule::SunsetToSunrise => SignedDuration::from_mins(30),
+            CheckedSchedule::Custom { .. } => SignedDuration::from_mins(2),
+        };
+        if !self.scheduled_state(at)? {
+            return None;
+        }
+        tint::schedule_fade(
+            self.last_transition(at)?,
+            self.next_transition(at)?,
+            length,
+            at,
+        )
     }
 
     /// When the schedule next turns Night Shift away from `state` after `after`: sunrise ends

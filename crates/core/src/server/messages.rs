@@ -11,7 +11,7 @@ use nightcap_protocol::{
     Done, LoginItem, NotificationPermission, OnOff, Place, Refusal, RuleIdentity, Schedule,
 };
 
-use crate::Snapshot;
+use crate::{Snapshot, TintPoint};
 
 /// Something macOS observed, which the shell reports.
 #[derive(Debug, uniffi::Enum)]
@@ -116,8 +116,11 @@ pub enum Effect {
         generation: u64,
     },
     StopWatching,
+    /// Writes Night Shift, its tint moving in straight lines through `tint`'s points, from where
+    /// it shows to the last. Without them, macOS fades the write as a switch (ADR-0021).
     SetNightShift {
         enabled: bool,
+        tint: Option<Vec<TintPoint>>,
     },
     /// Writes Night Shift's schedule. macOS applies it at once, so it can switch Night Shift
     /// on or off.

@@ -47,16 +47,22 @@ pub(crate) fn on_by_the_schedule() -> Scenario {
 /// Starts at 23:00 with Night Shift on by the custom hours, then brings Figma, which a config
 /// rule forces off, to the front, and reports the result.
 pub(crate) fn forced() -> Staged {
-    let staged = late()
+    forced_at(late(), custom_hours())
+}
+
+/// Starts as `scenario` with Night Shift on by `schedule`, then brings Figma, which a config rule
+/// forces off, to the front, and reports the result.
+pub(crate) fn forced_at(scenario: Scenario, schedule: Schedule) -> Staged {
+    let staged = scenario
         .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .then(reported(true, custom_hours()))
+        .then(reported(true, schedule))
         .stage()
         .unwrap();
     assert_eq!(
         activate(&staged, "com.figma.Desktop"),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
-    echo(&staged, false);
+    echo_on(&staged, false, schedule);
     staged
 }
 
@@ -200,14 +206,28 @@ pub(crate) fn report(staged: &Staged, enabled: bool) -> Vec<Effect> {
 /// Night Shift on the custom hours as CoreBrightness reports it once Nightcap's own write
 /// lands, marked as written now.
 pub(crate) fn echo(staged: &Staged, enabled: bool) -> Vec<Effect> {
+    echo_on(staged, enabled, custom_hours())
+}
+
+/// Night Shift on `schedule` as CoreBrightness reports it once Nightcap's own write lands,
+/// marked as written now.
+pub(crate) fn echo_on(staged: &Staged, enabled: bool, schedule: Schedule) -> Vec<Effect> {
     let landed = Fact::StatusChanged {
         enabled,
-        schedule: custom_hours(),
+        schedule,
         sun_schedule_set_aside: false,
         written_at: Some(staged.now().into()),
         switched_by: SwitchedBy::Nightcap,
     };
     staged.report(landed).effects
+}
+
+/// Night Shift written `enabled`, which macOS fades as a switch (ADR-0021).
+pub(crate) fn switched(enabled: bool) -> Effect {
+    Effect::SetNightShift {
+        enabled,
+        tint: None,
+    }
 }
 
 /// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
@@ -217,9 +237,13 @@ pub(crate) fn report_night_shift(staged: &Staged, schedule: Schedule, strength: 
     staged.report(Fact::StrengthChanged { value: strength });
 }
 
-/// The sun times CoreBrightness reported in Zurich around the night of 15 October 2026.
 pub(crate) fn report_zurich_sun(staged: &Staged) {
-    staged.report(Fact::SunTimesChanged {
+    staged.report(zurich_sun());
+}
+
+/// The sun times CoreBrightness reported in Zurich around the night of 15 October 2026.
+pub(crate) fn zurich_sun() -> Fact {
+    Fact::SunTimesChanged {
         sunrises: [
             "2026-10-15T05:49:20Z",
             "2026-10-16T05:50:47Z",
@@ -234,7 +258,7 @@ pub(crate) fn report_zurich_sun(staged: &Staged) {
         ]
         .map(|sunset| at(sunset).into())
         .to_vec(),
-    });
+    }
 }
 
 /// The shell's launch, and its outcome.

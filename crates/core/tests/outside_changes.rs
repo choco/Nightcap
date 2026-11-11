@@ -14,8 +14,8 @@ use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOf
 
 use common::{
     activate, adopted, at, custom_hours, echo, figma, figma_app, forced, late, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, until,
-    until_turn, written, yours,
+    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, switched,
+    until, until_turn, written, yours,
 };
 
 #[test]
@@ -158,7 +158,7 @@ fn a_transition_macos_performs_however_late_is_not_an_outside_change() {
     staged.set_now(at("2026-10-16T22:30:00+02:00"));
     let effects = staged.report(reported(true, custom_hours())).effects;
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: false }]);
+    assert_eq!(effects, vec![switched(false)]);
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -171,14 +171,14 @@ fn nightcaps_own_write_landing_after_the_front_app_moved_on_is_not_an_outside_ch
         .unwrap();
     assert_eq!(
         activate(&staged, "com.figma.Desktop"),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
     // Mail comes to the front before Nightcap's write for Figma lands.
     assert_eq!(activate(&staged, "com.apple.mail"), Vec::new());
 
     let landed = echo(&staged, false);
 
-    assert_eq!(landed, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(landed, vec![switched(true)]);
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -187,14 +187,14 @@ fn a_command_that_changes_what_nightcap_wants_before_its_write_lands_is_not_undo
     let staged = on_by_the_schedule().stage().unwrap();
     assert_eq!(
         staged.send(Command::Toggle).0.effects,
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
     // `nightcap on`, before the shortcut's write lands.
     assert_eq!(send(&staged, Command::On).0, Vec::new());
 
     let landed = echo(&staged, false);
 
-    assert_eq!(landed, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(landed, vec![switched(true)]);
     assert_eq!(resettable(&staged), Vec::new());
 }
 
@@ -364,6 +364,6 @@ fn returning_to_the_session_puts_night_shift_where_nightcap_wants_it() {
         .report(written(false, custom_hours(), "2026-10-16T23:00:00+02:00"))
         .effects;
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(resettable(&staged), Vec::new());
 }

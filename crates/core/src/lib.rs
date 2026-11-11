@@ -14,12 +14,14 @@ mod schedule;
 mod server;
 mod setup;
 mod storage;
+mod tint;
 
 pub use ffi::{is_bundle_id, normalize_domain};
 pub use server::messages::{
     AppCommand, Cause, Effect, Fact, Listener, Outcome, Replied, Reply, SwitchedBy,
 };
 pub use server::snapshot::Snapshot;
+pub use tint::TintPoint;
 
 #[cfg(any(test, debug_assertions))]
 pub use scenario::{Scenario, ScenarioError, Staged, Step};

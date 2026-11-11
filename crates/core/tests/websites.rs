@@ -9,7 +9,7 @@ use nightcap_protocol::{Command, Lasting, OnOff, Place, Reason, Refusal, Website
 use common::{
     accessibility_granted, activate, activate_browser, custom_hours, domain_rule, echo, late,
     minutes, noon, on_by_the_schedule, on_figma, refusal, report_host, reported, resettable, send,
-    set, until_turn, watch, with_figma_domain, yours,
+    set, switched, until_turn, watch, with_figma_domain, yours,
 };
 
 /// Website checking is useless without Accessibility, so tests about it start granted.
@@ -27,7 +27,7 @@ fn a_domain_rule_turns_night_shift_off_on_its_site() {
     );
     assert_eq!(
         report_host(&staged, 1, "www.figma.com"),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
 
     assert!(staged.core().snapshot().front().watching);
@@ -61,10 +61,7 @@ fn leaving_the_browser_stops_watching_and_lifts_the_force() {
 
     assert_eq!(
         activate(&staged, "com.apple.Terminal"),
-        vec![
-            Effect::StopWatching,
-            Effect::SetNightShift { enabled: true }
-        ]
+        vec![Effect::StopWatching, switched(true)]
     );
 }
 
@@ -104,7 +101,7 @@ fn an_unreadable_host_leaves_only_app_rules() {
         })
         .effects;
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert!(staged.core().snapshot().front().watching);
     assert_eq!(staged.core().snapshot().front().host, None);
 }
@@ -116,7 +113,7 @@ fn hosts_compare_in_normal_form() {
 
     assert_eq!(
         report_host(&staged, 1, "WWW.FIGMA.COM."),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
 }
 
@@ -136,7 +133,7 @@ fn a_browser_its_own_rule_keeps_off_is_watched_and_a_site_in_it_can_turn_night_s
     );
     assert_eq!(
         report_host(&staged, 1, "www.example.com"),
-        vec![Effect::SetNightShift { enabled: false }]
+        vec![switched(false)]
     );
     echo(&staged, false);
     assert_eq!(
@@ -144,10 +141,10 @@ fn a_browser_its_own_rule_keeps_off_is_watched_and_a_site_in_it_can_turn_night_s
         Some("example.com".parse().unwrap())
     );
     let (effects, _) = send(&staged, set(example.clone(), OnOff::On, minutes(30)));
-    assert!(effects.contains(&Effect::SetNightShift { enabled: true }));
+    assert!(effects.contains(&switched(true)));
     echo(&staged, true);
     let (effects, _) = send(&staged, Command::Reset(example));
-    assert!(effects.contains(&Effect::SetNightShift { enabled: false }));
+    assert!(effects.contains(&switched(false)));
     assert!(staged.core().snapshot().front().watching);
 }
 
@@ -161,7 +158,7 @@ fn snoozing_a_domain_rule_lifts_it_and_keeps_watching() {
         set(figma_site.clone(), OnOff::On, Lasting::UntilScheduleTurns),
     );
 
-    assert_eq!(effects, vec![Effect::SetNightShift { enabled: true }]);
+    assert_eq!(effects, vec![switched(true)]);
     assert_eq!(
         resettable(&staged),
         vec![yours(

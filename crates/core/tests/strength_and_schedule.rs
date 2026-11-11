@@ -114,7 +114,11 @@ fn switching_the_schedule_off_while_night_shift_is_on_lets_it_go_off_with_it() {
     // macOS switches Night Shift off along with the schedule.
     let effects = staged.report(reported(false, Schedule::Off)).effects;
 
-    assert!(!effects.contains(&Effect::SetNightShift { enabled: true }));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::SetNightShift { .. }))
+    );
     assert_eq!(resettable(&staged), Vec::new());
 }
 

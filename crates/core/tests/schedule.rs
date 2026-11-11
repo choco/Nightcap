@@ -1,16 +1,18 @@
 #![cfg(debug_assertions)]
-//! Following the schedule: its transitions, the wakeups for them, and the sun times (ADR-0004).
+//! Following the schedule: its transitions, the wakeups for them, the sun times (ADR-0004), and
+//! its fades (ADR-0021).
 
 mod common;
 
 use std::time::Duration;
 
-use nightcap_core::{Effect, Fact, Scenario};
+use nightcap_core::{Effect, Fact, Scenario, Staged, TintPoint};
 use nightcap_protocol::{NightShift, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    at, custom_hours, echo, late, minutes, off_by_the_schedule, on_by_the_schedule,
-    report_zurich_sun, reported, resettable, send, set, written,
+    activate, at, custom_hours, echo, forced_at, late, minutes, off_by_the_schedule,
+    on_by_the_schedule, report_zurich_sun, reported, resettable, send, set, switched, written,
+    zurich_sun,
 };
 
 #[test]
@@ -87,7 +89,7 @@ fn a_rule_ends_on_time_after_the_clock_goes_back() {
     assert_eq!(
         staged.report(Fact::TimerFired).effects,
         vec![
-            Effect::SetNightShift { enabled: true },
+            switched(true),
             Effect::ScheduleWakeup {
                 at: at("2026-10-17T07:00:00+02:00").into()
             }
@@ -145,6 +147,86 @@ fn a_rule_ending_at_a_transition_leaves_the_transition_to_macos() {
         }]
     );
     assert_eq!(resettable(&staged), Vec::new());
+}
+
+/// Figma, which a config rule keeps off, came to the front at `instant` in Zurich with Night
+/// Shift on by `schedule`, and Nightcap's write landed.
+fn in_figma(instant: &str, schedule: Schedule) -> Staged {
+    forced_at(Scenario::at(at(instant)).then(zurich_sun()), schedule)
+}
+
+/// Each point of a fade, as the instant it passes and its tint.
+fn fade(points: &[(&str, u8)]) -> Vec<TintPoint> {
+    points
+        .iter()
+        .map(|&(instant, tint)| TintPoint {
+            at: at(instant),
+            tint,
+        })
+        .collect()
+}
+
+#[test]
+fn night_shift_given_back_during_the_schedules_fade_in_carries_on_the_fade() {
+    let staged = in_figma("2026-10-16T22:01:00+02:00", custom_hours());
+
+    let effects = activate(&staged, "com.apple.Terminal");
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetNightShift {
+            enabled: true,
+            tint: Some(fade(&[
+                ("2026-10-16T22:00:00+02:00", 0),
+                ("2026-10-16T22:02:00+02:00", 100)
+            ])),
+        }]
+    );
+}
+
+#[test]
+fn sunset_to_sunrise_fades_in_over_the_half_hour_after_sunset() {
+    let staged = in_figma("2026-10-16T16:41:32Z", Schedule::SunsetToSunrise);
+
+    let effects = activate(&staged, "com.apple.Terminal");
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetNightShift {
+            enabled: true,
+            tint: Some(fade(&[
+                ("2026-10-16T16:31:32Z", 0),
+                ("2026-10-16T17:01:32Z", 100)
+            ])),
+        }]
+    );
+}
+
+#[test]
+fn night_shift_given_back_during_the_schedules_fade_out_fades_out_with_it() {
+    let staged = in_figma("2026-10-17T06:59:00+02:00", custom_hours());
+
+    let effects = activate(&staged, "com.apple.Terminal");
+
+    assert_eq!(
+        effects,
+        vec![Effect::SetNightShift {
+            enabled: true,
+            tint: Some(fade(&[
+                ("2026-10-17T06:58:00+02:00", 100),
+                ("2026-10-17T07:00:00+02:00", 0)
+            ])),
+        }]
+    );
+}
+
+#[test]
+fn night_shift_given_back_between_the_schedules_fades_switches_as_any_write() {
+    let staged = in_figma("2026-10-16T23:00:00+02:00", custom_hours());
+
+    let effects = activate(&staged, "com.apple.Terminal");
+
+    assert_eq!(effects, vec![switched(true)]);
 }
 
 #[test]

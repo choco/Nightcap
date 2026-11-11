@@ -128,7 +128,7 @@ final class Executor {
             updater.start()
         case .checkForUpdates:
             updater.checkForUpdates()
-        case .setNightShift(let enabled):
+        case .setNightShift(let enabled, let tint):
             guard let nightShift else {
                 log.error("Night Shift is unavailable; dropped setNightShift(enabled: \(enabled))")
                 return
@@ -136,7 +136,7 @@ final class Executor {
             if let host = browser.host {
                 log.info("Night Shift turns \(enabled ? "on" : "off") on \(host, privacy: .private)")
             }
-            nightShift.setEnabled(enabled)
+            nightShift.setEnabled(enabled, tint: tint)
         case .setSchedule(let schedule):
             guard let nightShift else {
                 log.error("Night Shift is unavailable; dropped setSchedule")
@@ -168,7 +168,9 @@ final class Executor {
 
 /// Writes Night Shift through CoreBrightness.
 protocol NightShiftWriting {
-    func setEnabled(_ enabled: Bool)
+    /// Where `tint` has points, the tint then moves along them; without, macOS fades the write as
+    /// a switch (ADR-0021).
+    func setEnabled(_ enabled: Bool, tint: [TintPoint]?)
     /// macOS applies a new schedule at once, so it can switch Night Shift on or off.
     func setSchedule(_ schedule: Schedule)
     /// Uncommitted, macOS shows the strength without saving it. A committed write reports

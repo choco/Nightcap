@@ -4,7 +4,7 @@ import Testing
 
 /// What the executor had macOS do, told the user, or ran on a reply, in order.
 private enum Call: Equatable {
-    case setNightShift(Bool)
+    case setNightShift(Bool, tint: [TintPoint]?)
     case setSchedule(Schedule)
     case setStrength(UInt8, commit: Bool)
     case registerLoginItem
@@ -38,7 +38,9 @@ private final class Mac: NightShiftWriting, LoginItemRegistering, Updating, Wake
         onMainThread.append(Thread.isMainThread)
     }
 
-    func setEnabled(_ enabled: Bool) { record(.setNightShift(enabled)) }
+    func setEnabled(_ enabled: Bool, tint: [TintPoint]?) {
+        record(.setNightShift(enabled, tint: tint))
+    }
     func setSchedule(_ schedule: Schedule) { record(.setSchedule(schedule)) }
     func setStrength(_ value: UInt8, commit: Bool) { record(.setStrength(value, commit: commit)) }
 
@@ -100,6 +102,8 @@ nonisolated private func outcome(_ effects: Effect...) -> Outcome {
 }
 
 private let sunrise = at("2026-10-17T07:00:00+02:00")
+/// The custom hours' fade out before sunrise.
+private let fadeOut = [TintPoint(at: sunrise - 120, tint: 100), TintPoint(at: sunrise, tint: 0)]
 
 /// How the executor carries out the core's outcomes: each effect by its adapter, in the core's
 /// order, on the main queue, then what waits on a command's reply, and the release as the app
@@ -110,7 +114,8 @@ struct ExecutorTests {
 
         shell.tell(
             outcome(
-                .watchBrowser(bundleId: "com.apple.Safari", generation: 1), .setNightShift(enabled: false),
+                .watchBrowser(bundleId: "com.apple.Safari", generation: 1),
+                .setNightShift(enabled: true, tint: fadeOut),
                 .setSchedule(schedule: customHours), .setStrength(value: 40, commit: false),
                 .scheduleWakeup(at: sunrise), .cancelWakeup, .stopWatching, .registerLoginItem,
                 .unregisterLoginItem, .startUpdater, .checkForUpdates))
@@ -118,7 +123,8 @@ struct ExecutorTests {
 
         #expect(
             shell.mac.calls == [
-                .watch("com.apple.Safari", generation: 1), .setNightShift(false), .setSchedule(customHours),
+                .watch("com.apple.Safari", generation: 1), .setNightShift(true, tint: fadeOut),
+                .setSchedule(customHours),
                 .setStrength(40, commit: false), .scheduleWakeup(sunrise), .cancelWakeup, .stopWatching,
                 .registerLoginItem, .unregisterLoginItem, .startUpdater,
                 .checkForUpdates, .redraw,
@@ -130,7 +136,7 @@ struct ExecutorTests {
 
         shell.tell(
             outcome(
-                .setNightShift(enabled: false), .setSchedule(schedule: customHours),
+                .setNightShift(enabled: false, tint: nil), .setSchedule(schedule: customHours),
                 .setStrength(value: 60, commit: true), .scheduleWakeup(at: sunrise)))
         await mainQueueTurns()
 
@@ -147,10 +153,12 @@ struct ExecutorTests {
 
         shell.tell(outcome(.stopWatching))
         shell.tell(
-            Outcome(cause: .command, effects: [.setNightShift(enabled: false)], reply: Replied(ticket: 1, reply: done)))
+            Outcome(
+                cause: .command, effects: [.setNightShift(enabled: false, tint: nil)],
+                reply: Replied(ticket: 1, reply: done)))
         await mainQueueTurns()
 
-        #expect(mac.calls == [.stopWatching, .redraw, .setNightShift(false), .redraw, .replied(done)])
+        #expect(mac.calls == [.stopWatching, .redraw, .setNightShift(false, tint: nil), .redraw, .replied(done)])
     }
 
     @Test func aRefusalIsToldBeforeTheRedrawAndAnAdoptionInItsPlaceAmongTheEffects() async throws {
@@ -164,14 +172,14 @@ struct ExecutorTests {
                 cause: .fact,
                 effects: [
                     .adopted(place: .everywhere, snoozed: nil, state: .off, until: sunrise),
-                    .setNightShift(enabled: false),
+                    .setNightShift(enabled: false, tint: nil),
                 ], reply: nil))
         shell.tell(Outcome(cause: .command, effects: [], reply: Replied(ticket: 1, reply: refused)))
         await mainQueueTurns()
 
         #expect(
             mac.calls == [
-                .toldAdopted(snoozed: nil, state: .off), .setNightShift(false), .redraw,
+                .toldAdopted(snoozed: nil, state: .off), .setNightShift(false, tint: nil), .redraw,
                 .toldRefused(.on, .nightShiftUnavailable), .redraw,
             ])
     }
@@ -256,7 +264,8 @@ struct ExecutorTests {
         shell.executor.stop()
 
         let carriedOut: [Call] = [
-            .watch("com.apple.Safari", generation: 1), .redraw, .stopWatching, .setNightShift(true), .redraw,
+            .watch("com.apple.Safari", generation: 1), .redraw, .stopWatching,
+            .setNightShift(true, tint: nil), .redraw,
         ]
         #expect(shell.mac.calls == carriedOut)
         await mainQueueTurns()
