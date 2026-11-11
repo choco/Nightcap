@@ -34,8 +34,8 @@ export function Privacy() {
 					from the menu or with <code>nightcap rules add</code>.
 				</li>
 				<li>
-					<code>~/.local/state/nightcap/state.json</code>, its timers and
-					snoozes, and the choices you made in onboarding and Settings.
+					<code>~/.local/state/nightcap/state.json</code>, its temporary rules,
+					and the choices you made in onboarding and Settings.
 				</li>
 				<li>
 					<code>~/Library/Caches/io.github.choco.nightcap/</code>, the icons of
