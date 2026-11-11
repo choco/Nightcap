@@ -16,7 +16,7 @@
 	inset: 0;
 }
 .tint span:first-child {
-	background: rgba(255, 138, 46, 0.22);
+	background: var(--tint);
 	mix-blend-mode: multiply;
 }
 .tint span:last-child {

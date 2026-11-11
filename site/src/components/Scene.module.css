@@ -11,7 +11,7 @@
 	overflow: hidden;
 	background: var(--scene-wall);
 	box-shadow:
-		0 10px 24px rgba(0, 0, 0, 0.3),
+		var(--shadow-lift),
 		0 0 0 1px var(--line);
 	color: var(--scene-ink);
 	font-family:

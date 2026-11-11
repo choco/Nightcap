@@ -1,67 +1,32 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { cx } from "../lib/cx";
 import styles from "./Footer.module.css";
-import { MOON } from "./outlines";
+import { MOON, RAYS } from "./outlines";
 
 type Theme = "system" | "light" | "dark";
 
-const THEMES: { theme: Theme; label: string; icon: ReactNode }[] = [
+const THEMES: { theme: Theme; label: string; glyph: ReactNode }[] = [
 	{
 		theme: "system",
 		label: "Match the system",
-		icon: (
-			<svg
-				aria-hidden="true"
-				viewBox="0 0 24 24"
-				width="17"
-				height="17"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.7"
-				strokeLinejoin="round"
-			>
+		glyph: (
+			<>
 				<circle cx="12" cy="12" r="8" />
 				<path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" />
-			</svg>
+			</>
 		),
 	},
 	{
 		theme: "light",
 		label: "Light",
-		icon: (
-			<svg
-				aria-hidden="true"
-				viewBox="0 0 24 24"
-				width="17"
-				height="17"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.7"
-				strokeLinecap="round"
-			>
+		glyph: (
+			<>
 				<circle cx="12" cy="12" r="4.2" />
-				<path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" />
-			</svg>
+				<path d={RAYS} />
+			</>
 		),
 	},
-	{
-		theme: "dark",
-		label: "Dark",
-		icon: (
-			<svg
-				aria-hidden="true"
-				viewBox="0 0 24 24"
-				width="17"
-				height="17"
-				fill="none"
-				stroke="currentColor"
-				strokeWidth="1.7"
-				strokeLinejoin="round"
-			>
-				<path d={MOON} />
-			</svg>
-		),
-	},
+	{ theme: "dark", label: "Dark", glyph: <path d={MOON} /> },
 ];
 
 /** The appearance: the system's, unless this switch chose one, remembered on this device.
@@ -94,7 +59,7 @@ function ThemeSwitch() {
 			)}
 			aria-label="Appearance"
 		>
-			{THEMES.map(({ theme, label, icon }) => (
+			{THEMES.map(({ theme, label, glyph }) => (
 				<button
 					key={theme}
 					className="inline-flex h-[30px] w-[34px] cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 text-ink-muted hover:text-ink aria-pressed:bg-surface aria-pressed:text-ink"
@@ -104,7 +69,19 @@ function ThemeSwitch() {
 					aria-pressed={choice === theme}
 					onClick={() => choose(theme)}
 				>
-					{icon}
+					<svg
+						aria-hidden="true"
+						viewBox="0 0 24 24"
+						width="17"
+						height="17"
+						fill="none"
+						stroke="currentColor"
+						strokeWidth="1.7"
+						strokeLinecap="round"
+						strokeLinejoin="round"
+					>
+						{glyph}
+					</svg>
 				</button>
 			))}
 		</fieldset>

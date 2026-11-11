@@ -27,18 +27,16 @@ export function Legal({
 	useBodyEdge();
 	return (
 		<div className="min-h-svh bg-ground">
-			<header className={styles.sky}>
-				<div className="mx-auto max-w-[calc(864px+4rem)] px-4">
+			<header className="bg-sky">
+				<div className="mx-auto max-w-column px-4">
 					<div className="py-6">
 						<Wordmark href="/" />
 					</div>
 					<div className="flex flex-col items-start gap-4 pt-10 pb-14 max-sm:pt-6 max-sm:pb-10">
-						<h1 className="font-display text-[length:clamp(40px,7vw,64px)] leading-none font-normal tracking-[-0.005em] text-balance">
+						<h1 className="font-display text-display-l text-balance">
 							{title}
 						</h1>
-						<p className="max-w-[46ch] text-[19px] leading-[1.6] max-sm:text-[17px]">
-							{lead}
-						</p>
+						<p className="max-w-[46ch] text-lead max-sm:text-[17px]">{lead}</p>
 						{updated && (
 							<p className="text-[14px] text-ink-muted">
 								Last updated{" "}
@@ -48,7 +46,7 @@ export function Legal({
 					</div>
 				</div>
 			</header>
-			<main className="mx-auto max-w-[calc(864px+4rem)] px-4">
+			<main className="mx-auto max-w-column px-4">
 				<article className={styles.text}>{children}</article>
 				<Footer />
 			</main>

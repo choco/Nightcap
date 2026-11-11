@@ -4,7 +4,6 @@ import { Celestial } from "./components/Celestial";
 import { Doodles, useDoodles } from "./components/Doodles";
 import { Footer } from "./components/Footer";
 import { Wordmark } from "./components/Wordmark";
-import styles from "./NotFound.module.css";
 
 /** The page Pages serves for a path that isn't there: the hero's sky, and the way back. */
 export function NotFound() {
@@ -12,10 +11,10 @@ export function NotFound() {
 	const doodles = useDoodles(page);
 	return (
 		<div ref={page} className="relative overflow-hidden">
-			<div className={styles.sky} data-hero>
+			<div className="relative min-h-svh bg-sky" data-hero>
 				<Doodles doodles={doodles.hero} />
 				<Celestial />
-				<div className="relative mx-auto flex min-h-svh max-w-[calc(864px+4rem)] flex-col px-4">
+				<div className="relative mx-auto flex min-h-svh max-w-column flex-col px-4">
 					<div className="py-6" data-doodle-clear="12">
 						<Wordmark href="/" />
 					</div>
@@ -24,13 +23,13 @@ export function NotFound() {
 							className="flex max-w-[36rem] flex-col items-start gap-6"
 							data-doodle-clear="26"
 						>
-							<span className="text-[12px] font-[650] tracking-[0.08em] text-ink-muted uppercase">
+							<span className="text-label text-ink-muted uppercase">
 								404 · Not found
 							</span>
-							<h1 className="animate-rise font-display text-[length:clamp(40px,7vw,64px)] leading-none font-normal tracking-[-0.005em] text-balance motion-reduce:animate-none">
+							<h1 className="animate-rise font-display text-display-l text-balance motion-reduce:animate-none">
 								Nothing at this address.
 							</h1>
-							<p className="max-w-[40ch] animate-fade-in text-[19px] leading-[1.6] motion-reduce:animate-none max-sm:text-[17px]">
+							<p className="max-w-[40ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-[17px]">
 								The link may be mistyped, or out of date. Everything about
 								Nightcap is on its home page.
 							</p>

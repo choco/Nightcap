@@ -1,12 +1,3 @@
-/* The sky over a text page's title, fading into the ground as the hero's does. */
-.sky {
-	background: linear-gradient(
-		180deg,
-		var(--hero-top) 0%,
-		var(--hero-bottom) 100%
-	);
-}
-
 /* Running text near 65 characters a line, its headings in the `title` style. */
 .text {
 	max-width: 65ch;

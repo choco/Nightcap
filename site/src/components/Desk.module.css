@@ -14,11 +14,11 @@
 	position: relative;
 	aspect-ratio: 16 / 10;
 	max-width: 100%;
-	border-radius: 12px;
+	border-radius: var(--radius-md);
 	overflow: hidden;
 	background: linear-gradient(180deg, var(--night) 0%, var(--night-deep) 100%);
 	box-shadow:
-		0 10px 24px rgba(0, 0, 0, 0.3),
+		var(--shadow-lift),
 		0 0 0 1px var(--line);
 	color: var(--starlight);
 	--tint-in: 900ms;
@@ -64,7 +64,7 @@
 	height: 64%;
 	border-radius: 10px;
 	overflow: hidden;
-	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+	box-shadow: var(--shadow-lift);
 }
 .window {
 	height: 100%;

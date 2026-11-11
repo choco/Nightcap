@@ -30,7 +30,7 @@ export function App() {
 			<Doodles doodles={doodles.page} />
 			<Hero doodles={doodles.hero} shiftOn={shiftOn} onShift={toggleShift} />
 			{/* The sections' column: 896px inside 1rem gutters, a step wider than the nav's. */}
-			<main className="relative mx-auto max-w-[calc(864px+4rem)] px-4">
+			<main className="relative mx-auto max-w-column px-4">
 				<How shiftOn={shiftOn} />
 				<Shortcut shiftOn={shiftOn} onShift={toggleShift} onPeek={setPeek} />
 				<Evening />

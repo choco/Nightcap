@@ -2,7 +2,6 @@ import type { Doodle } from "../lib/doodles";
 import { Celestial } from "./Celestial";
 import { Doodles } from "./Doodles";
 import { DownloadButton, WhatsNew } from "./Download";
-import styles from "./Hero.module.css";
 import { Nav } from "./Nav";
 import { Scene } from "./Scene";
 
@@ -14,7 +13,7 @@ interface Props {
 
 export function Hero({ doodles, shiftOn, onShift }: Props) {
 	return (
-		<section className={styles.hero} data-lens-section data-hero>
+		<section className="relative bg-sky" data-lens-section data-hero>
 			<Doodles doodles={doodles} />
 			<Celestial />
 			{/* The hero's column is wider than the sections', and on screens wider than phones it
@@ -29,7 +28,7 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 						className="flex min-w-0 flex-col gap-6 max-md:flex-none"
 						data-doodle-clear="26"
 					>
-						<span className="text-[12px] font-[650] tracking-[0.08em] text-ink-muted uppercase">
+						<span className="text-label text-ink-muted uppercase">
 							For Mac · free and open source
 						</span>
 						{/* The headline scales with the column, so beside the scene it always keeps its two
@@ -42,7 +41,7 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 								made yours.
 							</span>
 						</h1>
-						<p className="max-w-[46ch] animate-fade-in text-[19px] leading-[1.6] motion-reduce:animate-none max-sm:text-[17px]">
+						<p className="max-w-[46ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-[17px]">
 							Nightcap brings Night Shift to your menu bar. Set how warm it
 							gets, switch it or peek past it with a shortcut, and keep it off
 							while the apps and websites you choose are in front.

@@ -71,6 +71,9 @@ export default defineConfig(({ command }) => ({
 	build: {
 		outDir: "../build/site",
 		emptyOutDir: true,
+		// Lightning CSS lowers the tokens' light-dark() to variables for the build target's Safari,
+		// which predates light-dark().
+		cssMinify: "lightningcss",
 		rolldownOptions: {
 			input: Object.fromEntries(
 				Object.entries(PAGES).map(([file, { entry }]) => [entry, site + file]),

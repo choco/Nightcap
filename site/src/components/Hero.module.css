@@ -1,8 +1,0 @@
-.hero {
-	position: relative;
-	background: linear-gradient(
-		180deg,
-		var(--hero-top) 0%,
-		var(--hero-bottom) 100%
-	);
-}

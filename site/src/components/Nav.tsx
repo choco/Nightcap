@@ -20,7 +20,7 @@ export function Nav({
 		>
 			<Wordmark href="#top" compact />
 			<div className="grow" />
-			<div className="inline-flex items-center gap-0.5 rounded-full bg-nav-bg p-[3px] shadow-[inset_0_0_0_1px_var(--line)] backdrop-blur-[10px] max-sm:p-0.5">
+			<div className="inline-flex items-center gap-0.5 rounded-full bg-surface/62 p-[3px] shadow-[inset_0_0_0_1px_var(--line)] backdrop-blur-[10px] max-sm:p-0.5">
 				<NavLink href="#how" wide>
 					How it works
 				</NavLink>

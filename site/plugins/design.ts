@@ -43,25 +43,21 @@ interface Tokens {
 const css = (value: string) =>
 	/^\{.+\}$/.test(value) ? `var(--${value.slice(1, -1)})` : value;
 
-// A colour missing a theme takes the other's.
-function themed(token: Token<Value>, theme: "light" | "dark"): string {
-	const { value } = token;
+// A colour with a value for each theme is both, in light-dark(); one missing a theme takes the
+// other's.
+function themed({ name, value }: Token<Value>): string {
 	if (typeof value === "string") return css(value);
-	const picked = value[theme] ?? value[theme === "light" ? "dark" : "light"];
-	if (picked === undefined)
-		throw new Error(`design/tokens.json: ${token.name} has no value`);
-	return css(picked);
+	const { light = value.dark, dark = value.light } = value;
+	if (light === undefined || dark === undefined)
+		throw new Error(`design/tokens.json: ${name} has no value`);
+	return `light-dark(${css(light)},${css(dark)})`;
 }
 
-/** The design system's tokens as CSS: the fonts, the colours as variables, light on :root and
- *  dark for the dark system appearance unless the page was set to light, and for an explicit
- *  dark choice; then Tailwind's theme from them. */
+/** The design system's tokens as CSS: the fonts, the colours as variables on :root, light-dark()
+ *  picking each theme's by the colour scheme, which is dark for the dark system appearance unless
+ *  the page was set to light, and for an explicit dark choice; then Tailwind's theme from them. */
 function tokensCss(tokens: Tokens): string {
 	const colours = tokens.color.tokens;
-	const dark = colours
-		.filter((token) => typeof token.value === "object")
-		.map((token) => `--${token.name}:${themed(token, "dark")}`)
-		.join(";");
 	// The spacing tokens are Tailwind's 4px scale, space-N being N steps.
 	for (const { name, value } of tokens.spacing.tokens) {
 		const steps = Number(name.replace(/^space-/, ""));
@@ -76,9 +72,9 @@ function tokensCss(tokens: Tokens): string {
 			(font) =>
 				`@font-face{font-family:"${font.family}";src:url("../../../design/${font.file}") format("woff2");font-weight:${font.weight};font-style:${font.style ?? "normal"};font-display:swap}`,
 		),
-		`:root{${colours.map((token) => `--${token.name}:${themed(token, "light")}`).join(";")};color-scheme:light}`,
-		`@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){${dark};color-scheme:dark}}`,
-		`:root[data-theme="dark"]{${dark};color-scheme:dark}`,
+		`:root{${colours.map((token) => `--${token.name}:${themed(token)}`).join(";")};color-scheme:light}`,
+		`@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark}}`,
+		`:root[data-theme="dark"]{color-scheme:dark}`,
 		// Inline, so a utility reads the colour's variable, which the theme switches.
 		`@theme inline{--color-*:initial;${colours.map(({ name }) => `--color-${name}:var(--${name})`).join(";")}}`,
 		// Static, so every variable reaches :root for the CSS modules too, which Tailwind doesn't see.

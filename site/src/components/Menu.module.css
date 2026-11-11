@@ -6,7 +6,7 @@
 	border-radius: 10px;
 	background: var(--night);
 	border: 1px solid var(--menu-line);
-	box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+	box-shadow: var(--shadow-lift);
 	font-size: 12px;
 	line-height: 1.25;
 	color: var(--starlight);

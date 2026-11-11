@@ -25,7 +25,7 @@ export function ButtonLink({
 				primary
 					? "bg-moon text-on-moon hover:text-on-moon"
 					: "border-line-strong text-ink hover:text-ink",
-				primary && (plain ? "border-transparent" : "border-primary-edge"),
+				primary && (plain ? "border-transparent" : "border-moon-text"),
 			)}
 			href={href}
 		>

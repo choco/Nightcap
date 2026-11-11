@@ -10,45 +10,15 @@ import {
 import { MOON, SPARKLE, STAR } from "./outlines";
 
 const PATHS: Record<DoodleKind, ReactNode> = {
-	star: (
-		<path
-			d={STAR}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinejoin="round"
-		/>
-	),
-	sparkle: (
-		<path
-			d={SPARKLE}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinejoin="round"
-		/>
-	),
-	dot: <circle cx="12" cy="12" r="9" fill="currentColor" />,
-	moon: (
-		<path
-			d={MOON}
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		/>
-	),
+	star: <path d={STAR} />,
+	sparkle: <path d={SPARKLE} />,
+	dot: <circle cx="12" cy="12" r="9" fill="currentColor" stroke="none" />,
+	moon: <path d={MOON} />,
 	sun: (
-		<g
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="1.5"
-			strokeLinecap="round"
-		>
+		<>
 			<circle cx="12" cy="12" r="4.4" />
 			<path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.4 5.4l1.9 1.9M16.7 16.7l1.9 1.9M5.4 18.6l1.9-1.9M16.7 7.3l1.9-1.9" />
-		</g>
+		</>
 	),
 };
 
@@ -94,6 +64,11 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 							aria-hidden="true"
 							className="block size-full"
 							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="1.5"
+							strokeLinecap="round"
+							strokeLinejoin="round"
 						>
 							{PATHS[d.kind]}
 						</svg>
@@ -172,15 +147,13 @@ export function useDoodles(page: RefObject<HTMLElement | null>) {
 			clearTimeout(timer);
 			timer = setTimeout(draw, 200);
 		};
-		window.addEventListener("resize", redraw);
-		// The web fonts arriving reflow the text, which the doodles keep clear of.
+		// The page resizing, or the web fonts reflowing the text the doodles keep clear of.
 		const reflow = new ResizeObserver(redraw);
 		for (const node of root.querySelectorAll("[data-hero] [data-doodle-clear]"))
 			reflow.observe(node);
 		reflow.observe(root);
 		return () => {
 			clearTimeout(timer);
-			window.removeEventListener("resize", redraw);
 			reflow.disconnect();
 		};
 	}, [page]);

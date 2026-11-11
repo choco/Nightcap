@@ -109,7 +109,7 @@
 	height: calc(var(--lr) * 2 + 4px);
 	border-radius: 50%;
 	border: 2px solid var(--moon);
-	box-shadow: 0 0 0 1px var(--ring-edge);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 30%, transparent);
 }
 
 /* Night Shift off, the page's switch or a tap of the shortcut, lifts both; a peek, a hold of

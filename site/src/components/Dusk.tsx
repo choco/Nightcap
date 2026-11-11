@@ -42,7 +42,7 @@ export function Dusk() {
 		<section
 			className={cx(
 				styles.dusk,
-				"mb-18 flex flex-wrap items-center gap-x-10 gap-y-6 rounded-[12px] p-[clamp(28px,5vw,48px)]",
+				"mb-18 flex flex-wrap items-center gap-x-10 gap-y-6 rounded-md p-[clamp(28px,5vw,48px)]",
 			)}
 			data-lens-section
 			data-lens-area
