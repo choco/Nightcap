@@ -68,17 +68,19 @@ fi
 if [[ -n "$audit" ]]; then
   cargo deny check advisories
   # The site's lockfile holds two YAML documents, pnpm itself in the first. OSV-Scanner reads only
-  # that one, and passes; pnpm's own audit reads both.
+  # that one, and passes, as GitHub's dependency graph does, so Dependabot never alerts on the
+  # site's packages; pnpm's own audit reads both.
   pnpm --dir site audit
   osv-scanner scan source \
     --lockfile app/Nightcap.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
   # zizmor looks the actions' advisories up through GitHub's API, and without a token skips that
-  # audit with only a warning.
+  # audit with only a warning. It reads .github alone, where all the workflows are, so it skips
+  # other checkouts inside this one, such as agents' worktrees.
   if [[ -z "${GH_TOKEN:-}" ]]; then
     GH_TOKEN="$(gh auth token)"
     export GH_TOKEN
   fi
-  vulnerable_actions="$(zizmor --no-progress --no-exit-codes --format json-v1 . | jq -r '
+  vulnerable_actions="$(zizmor --no-progress --no-exit-codes --format json-v1 .github | jq -r '
     .[] | select(.ident == "known-vulnerable-actions") | .locations[]
     | select(.symbolic.kind == "Primary")
     | "\(.symbolic.key.Local.verbatim_path): \(.concrete.feature) (\(.symbolic.annotation))"')"

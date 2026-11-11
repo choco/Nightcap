@@ -3,7 +3,7 @@
 
 [advisories]
 ignore = [
-  { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained, and reaches us only inside askama's proc macro, through uniffi-bindgen" },
+  { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained, and reaches us only inside askama's proc macro, through uniffi-bindgen; drop this once uniffi-bindgen no longer pulls it in" },
 ]
 
 [licenses]

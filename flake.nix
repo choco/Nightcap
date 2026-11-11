@@ -82,6 +82,8 @@
             + pkgs.lib.optionalString isDarwin ''
               export CC=/usr/bin/cc CXX=/usr/bin/c++ AR=/usr/bin/ar
               export CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER=/usr/bin/cc
+              # Cargo doesn't rebuild when this changes: run `cargo clean` after changing it, or ld
+              # links objects built for the old target.
               export MACOSX_DEPLOYMENT_TARGET=15.0
             '';
           };
