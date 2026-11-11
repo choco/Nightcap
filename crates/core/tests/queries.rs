@@ -70,7 +70,6 @@ fn night_shift_is_unknown_until_macos_reports_it() {
             state: NightShift::Unavailable,
             strength: None,
             schedule: None,
-            set_aside: false,
             scheduled: None,
             next_on: None,
             next_off: None,
@@ -92,7 +91,6 @@ fn night_shift_answers_its_strength_its_schedule_and_the_schedules_next_turns() 
             state: NightShift::Off,
             strength: Some(60),
             schedule: Some(custom_hours()),
-            set_aside: false,
             scheduled: Some(OnOff::Off),
             next_on: Some(at("2026-10-16T22:00:00+02:00")),
             next_off: Some(at("2026-10-17T07:00:00+02:00")),
@@ -136,7 +134,7 @@ fn night_shift_answers_when_the_schedule_next_turns_it_each_way() {
 }
 
 #[test]
-fn night_shift_answers_sunset_to_sunrise_set_aside() {
+fn night_shift_answers_sunset_to_sunrise_set_aside_as_the_schedule_off() {
     let staged = noon()
         .then(Fact::StatusChanged {
             enabled: false,
@@ -150,7 +148,6 @@ fn night_shift_answers_sunset_to_sunrise_set_aside() {
 
     let night_shift = staged.core().snapshot().night_shift();
 
-    assert!(night_shift.set_aside);
     assert_eq!(night_shift.schedule, Some(Schedule::Off));
     assert_eq!(night_shift.next_transition(), None);
 }
@@ -412,8 +409,6 @@ fn preferences_answer_the_users_choices() {
                 state: OnOff::On,
                 from_config: false,
             },
-            notifications_wanted: true,
-            open_at_login: false,
         }
     );
     answers_alike(&staged);

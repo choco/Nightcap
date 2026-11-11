@@ -8,17 +8,13 @@ use nightcap_protocol::{
     FileError, Hello, IdentityError, Install, IoFailure, Lasting, Length, ListedRule, NightShift,
     NightShiftDetail, NotSelfManaged, NotificationPermission, NotificationsDetail, OnOff,
     OpenAtLoginDetail, PROTOCOL_VERSION, Place, Problem, Reason, Refusal, Rule, RuleAdded,
-    RuleIdentity, Schedule, SetBy, TimeOfDay, TrialState, ValueType,
+    RuleIdentity, Schedule, SetBy, TrialState, ValueType,
 };
 
 use crate::client::Report;
 
 /// What Nightcap decided and why, as it reads after "Night Shift", with times in `zone`.
 fn decision(decision: &Decision, zone: &TimeZone) -> String {
-    let until = |end: Option<Timestamp>, state: OnOff| match end {
-        Some(end) => format!(" until {}", moment(end, zone)),
-        None => format!(" until you turn it {}", state.other()),
-    };
     let Some(top) = decision.reasons.first() else {
         return "left alone".to_owned();
     };
@@ -37,9 +33,11 @@ fn decision(decision: &Decision, zone: &TimeZone) -> String {
                 rule.place
             )
         }
-        (Reason::Rule(rule), _) => {
-            format!("{}{at}{}", rule.says, until(rule.length.end(), rule.says))
-        }
+        (Reason::Rule(rule), _) => format!(
+            "{}{at}{}",
+            rule.says,
+            until_end(rule.length.end(), rule.says.other(), zone)
+        ),
         // Only the app's tour begins a trial, which the CLI's user knows by the tour's name.
         (Reason::StandIn, _) => "on for the tour".to_owned(),
         (Reason::Schedule { .. }, _) => "following the schedule".to_owned(),
@@ -61,11 +59,12 @@ fn snoozed(place: &Place, rules: &[ListedRule]) -> String {
 /// `app:com.figma.Desktop (config rule, off, snoozed until 07:00)`, with times in `zone`.
 pub(crate) fn rule(listed: &ListedRule, zone: &TimeZone) -> String {
     let ListedRule { rule, snooze } = listed;
-    let snoozed = match snooze.as_ref().map(|snooze| snooze.length.end()) {
-        None => String::new(),
-        Some(Some(end)) => format!(", snoozed{}", until(Some(end), zone)),
-        Some(None) => format!(", snoozed until you turn it {}", rule.says),
-    };
+    let snoozed = snooze.as_ref().map_or_else(String::new, |snooze| {
+        format!(
+            ", snoozed{}",
+            until_end(snooze.length.end(), rule.says, zone)
+        )
+    });
     format!(
         "{} ({} rule, {}{snoozed})",
         rule.place,
@@ -151,10 +150,7 @@ pub(crate) fn check(detail: &CheckDetail) -> String {
 /// valid TOML".
 fn file_error(error: &FileError) -> String {
     match error {
-        FileError::Unreadable { path, failure } => match io_failure(*failure) {
-            Some(why) => format!("couldn't read {path}: {why}"),
-            None => format!("couldn't read {path}"),
-        },
+        FileError::Unreadable { path, failure } => couldnt("read", path, *failure),
         FileError::Malformed { path, at: Some(at) } => format!(
             "{path}: line {}, column {} isn't valid TOML",
             at.line, at.column
@@ -168,6 +164,15 @@ fn file_error(error: &FileError) -> String {
         FileError::Newer { path, version } => {
             format!("{path} is version {version}, from a newer Nightcap than this one")
         }
+    }
+}
+
+/// That macOS couldn't `verb` the file at `path`, and why where the CLI can say: "couldn't read
+/// /…/rules.toml: permission denied".
+fn couldnt(verb: &str, path: &str, failure: IoFailure) -> String {
+    match io_failure(failure) {
+        Some(why) => format!("couldn't {verb} {path}: {why}"),
+        None => format!("couldn't {verb} {path}"),
     }
 }
 
@@ -281,10 +286,7 @@ pub(crate) fn refusal(refusal: &Refusal) -> String {
         }
         Refusal::NoSuchRule { identity } => format!("{identity} isn't a rule"),
         Refusal::AdHocRulesOff(error) => format!("ad-hoc rules are off: {}", file_error(error)),
-        Refusal::AdHocRulesNotSaved { path, failure } => match io_failure(*failure) {
-            Some(why) => format!("couldn't save {path}: {why}"),
-            None => format!("couldn't save {path}"),
-        },
+        Refusal::AdHocRulesNotSaved { path, failure } => couldnt("save", path, *failure),
         Refusal::InvalidConfig(error) => file_error(error),
         Refusal::WebsiteCheckingInConfig => {
             "website checking is set by `websites` in the config".to_owned()
@@ -334,7 +336,7 @@ fn schedule_text(schedule: Schedule) -> String {
     match schedule {
         Schedule::Off => "off".to_owned(),
         Schedule::SunsetToSunrise => "sunset to sunrise".to_owned(),
-        Schedule::Custom { from, to } => format!("{} to {}", time_of_day(from), time_of_day(to)),
+        Schedule::Custom { from, to } => format!("{from} to {to}"),
     }
 }
 
@@ -417,8 +419,14 @@ pub(crate) fn set(place: &Place, state: OnOff, length: &Lasting, zone: &TimeZone
 /// What Night Shift does after a command, as the core decided it, with the deciding rule's snooze
 /// as `rules` serve it and times in `zone`.
 pub(crate) fn decided(decision: &Decision, rules: &[ListedRule], zone: &TimeZone) -> String {
+    format!("Night Shift {}", decided_and_snoozed(decision, rules, zone))
+}
+
+/// What Nightcap decided and why, as it reads after "Night Shift", then whether the deciding
+/// rule is snoozed, as `rules` serve it, with times in `zone`.
+fn decided_and_snoozed(decision: &Decision, rules: &[ListedRule], zone: &TimeZone) -> String {
     format!(
-        "Night Shift {}{}",
+        "{}{}",
         self::decision(decision, zone),
         snoozed(&decision.place, rules)
     )
@@ -521,11 +529,7 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
     };
     let mut lines = vec![format!("Nightcap {}, {install}", about.version)];
     lines.extend(trial.map(tour));
-    let decided = format!(
-        "{}{}",
-        decision(&front.decision, zone),
-        snoozed(&front.decision.place, &answered.rules)
-    );
+    let decided = decided_and_snoozed(&front.decision, &answered.rules, zone);
     // A decision on a rule starts with the state it asks for, which needs saying again
     // only while Night Shift isn't there yet.
     let says_state = !matches!(
@@ -578,19 +582,13 @@ pub(crate) fn status(report: &Report, zone: &TimeZone) -> Vec<String> {
             ""
         }
     ));
-    lines.extend(places_rules(
-        answered
-            .temporary
-            .iter()
-            .chain(&front.everywhere.indefinite),
-        zone,
-    ));
+    lines.extend(places_rules(report.changes(), zone));
     lines.push(format!("Accessibility: {accessibility}"));
     lines.push(format!("Notifications: {notifications}"));
-    let problems = needs_attention(checks);
-    if !problems.is_empty() {
+    let mut problems = report.problems().peekable();
+    if problems.peek().is_some() {
         lines.push("Needs attention:".to_owned());
-        lines.extend(problems.into_iter().map(|problem| format!("  {problem}")));
+        lines.extend(problems.map(|problem| format!("  {}", check(&problem.detail))));
     }
     lines
 }
@@ -604,16 +602,6 @@ fn tour(trial: TrialState) -> String {
         ""
     };
     format!("Tour: running in the app{stands_in}, so rules and changes you make last until it ends")
-}
-
-/// Each problem's line.
-fn needs_attention(checks: &Checks) -> Vec<String> {
-    checks
-        .checks
-        .iter()
-        .filter(|check| check.state.is_problem())
-        .map(|check| self::check(&check.detail))
-        .collect()
 }
 
 /// Rules as `rule` words them, with times in `zone`, or "none".
@@ -634,10 +622,11 @@ fn rules(rules: &[ListedRule], zone: &TimeZone) -> String {
 fn places_rules<'a>(rules: impl Iterator<Item = &'a Rule>, zone: &TimeZone) -> Vec<String> {
     let mut places: Vec<(&Place, Vec<String>)> = Vec::new();
     for rule in rules {
-        let part = match rule.length.end() {
-            Some(end) => format!("{}{}", rule.says, until(Some(end), zone)),
-            None => format!("{} until you turn it {}", rule.says, rule.says.other()),
-        };
+        let part = format!(
+            "{}{}",
+            rule.says,
+            until_end(rule.length.end(), rule.says.other(), zone)
+        );
         match places.iter_mut().find(|(place, _)| **place == rule.place) {
             Some((_, parts)) => parts.push(part),
             None => places.push((&rule.place, vec![part])),
@@ -662,6 +651,15 @@ fn until(transition: Option<Timestamp>, zone: &TimeZone) -> String {
     })
 }
 
+/// How long something lasts, as it reads after what it says: " until 22:00" in `zone` when it
+/// has an end, else " until you turn it off" with `back_to` off.
+fn until_end(end: Option<Timestamp>, back_to: OnOff, zone: &TimeZone) -> String {
+    match end {
+        Some(end) => format!(" until {}", moment(end, zone)),
+        None => format!(" until you turn it {back_to}"),
+    }
+}
+
 /// A time on the clock, as the CLI writes every time: two-digit hours on a 24-hour clock, then
 /// the minutes, "07:00".
 fn clock(time: civil::Time) -> String {
@@ -671,11 +669,6 @@ fn clock(time: civil::Time) -> String {
 /// A moment as the clock in `zone` reads it.
 fn moment(moment: Timestamp, zone: &TimeZone) -> String {
     clock(moment.to_zoned(zone.clone()).time())
-}
-
-/// One end of custom hours, as the clock reads it: "07:00".
-fn time_of_day(time: TimeOfDay) -> String {
-    format!("{:02}:{:02}", time.hour, time.minute)
 }
 
 #[cfg(test)]
@@ -1160,7 +1153,7 @@ mod tests {
     mod status {
         use jiff::SignedDuration;
         use nightcap_core::{AppCommand, Fact, Scenario, SwitchedBy};
-        use nightcap_protocol::Command;
+        use nightcap_protocol::{Command, TimeOfDay};
 
         use super::*;
         use crate::client::tests::staged_report;

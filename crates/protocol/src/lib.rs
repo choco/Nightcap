@@ -35,7 +35,7 @@ uniffi::custom_type!(Timestamp, SystemTime, {
 });
 
 /// Sent in every `Hello`; the CLI and the server must speak the same one exactly.
-pub const PROTOCOL_VERSION: u32 = 16;
+pub const PROTOCOL_VERSION: u32 = 17;
 
 /// The `sockaddr_un` path limit on macOS, including the terminating NUL.
 const SOCKET_PATH_LIMIT: usize = 104;
@@ -351,9 +351,6 @@ pub struct NightShiftState {
     pub strength: Option<u8>,
     /// None until the shell first reports it.
     pub schedule: Option<Schedule>,
-    /// macOS has sunset to sunrise set aside, and the schedule off, while Location Services is
-    /// off.
-    pub set_aside: bool,
     /// What the schedule says now; None while the schedule, or the sun times it needs, aren't
     /// known.
     pub scheduled: Option<OnOff>,
@@ -473,11 +470,6 @@ pub struct ConfigState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct Preferences {
     pub website_checking: WebsiteChecking,
-    /// Whether the user wants Nightcap's notifications, which the notifications check compares
-    /// against.
-    pub notifications_wanted: bool,
-    /// Whether the user wants Nightcap to open at login (ADR-0011).
-    pub open_at_login: bool,
 }
 
 /// The checks, and what macOS last reported behind them: the grants and the login item.
@@ -1139,6 +1131,13 @@ pub struct TimeOfDay {
     pub minute: u8,
 }
 
+/// Two-digit hours on a 24-hour clock, then the minutes: `07:00`.
+impl fmt::Display for TimeOfDay {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{:02}:{:02}", self.hour, self.minute)
+    }
+}
+
 /// Who owns updates and starting at login (ADR-0011).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
@@ -1517,7 +1516,6 @@ mod tests {
                 state: NightShift::On,
                 strength: Some(60),
                 schedule: Some(Schedule::SunsetToSunrise),
-                set_aside: false,
                 scheduled: Some(OnOff::Off),
                 next_on: Some(at("2026-10-16T20:00:00Z")),
                 next_off: None,
@@ -1547,8 +1545,6 @@ mod tests {
                     state: OnOff::On,
                     from_config: true,
                 },
-                notifications_wanted: true,
-                open_at_login: false,
             }),
             Answer::Checks(Checks {
                 checks: vec![Check {

@@ -255,7 +255,6 @@ fn keeping_notifications_off_settles_them_switched_off() {
     _ = staged.send(Command::KeepNotificationsOff);
     let kept_off = notifications(NotificationsDetail::Off, CheckState::Off);
     assert_eq!(found(&staged, CheckKind::Notifications), kept_off);
-    assert!(!staged.core().snapshot().preferences().notifications_wanted);
 
     let staged = staged.restart_at(at("2026-10-16T12:10:00+02:00"));
     staged.report(permissions(true, NotificationPermission::Denied));
@@ -275,7 +274,6 @@ fn notifications_that_arent_switched_off_cant_be_kept_off() {
             check: CheckKind::Notifications
         }
     );
-    assert!(staged.core().snapshot().preferences().notifications_wanted);
     staged.report(permissions(true, NotificationPermission::Denied));
     assert_eq!(
         found(&staged, CheckKind::Notifications),

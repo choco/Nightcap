@@ -32,8 +32,6 @@ pub(crate) struct Status {
 
 impl From<&Report> for Status {
     fn from(report: &Report) -> Self {
-        // Every temporary rule, then everywhere's indefinite one: what a reset takes off.
-        let changes = (report.rules.temporary.iter()).chain(&report.front.everywhere.indefinite);
         Self {
             schema: SCHEMA,
             nightcap: Nightcap::from(&report.about),
@@ -41,18 +39,13 @@ impl From<&Report> for Status {
             front: Front::from(&report.front),
             tour: report.trial,
             rules: report.rules.rules.iter().map(ListedRule::from).collect(),
-            changes: changes.map(Rule::from).collect(),
+            changes: report.changes().map(Rule::from).collect(),
             website_checking: report.preferences.website_checking,
             config: Config {
                 path: report.config.path.clone(),
                 error: wording::config_error(&report.checks),
             },
-            needs_attention: report
-                .checks
-                .checks
-                .iter()
-                .filter_map(Problem::of)
-                .collect(),
+            needs_attention: report.problems().map(Problem::from).collect(),
         }
     }
 }
@@ -138,11 +131,10 @@ impl From<&protocol::NightShiftState> for NightShift {
 }
 
 fn schedule(schedule: protocol::Schedule) -> String {
-    let time = |time: protocol::TimeOfDay| format!("{:02}:{:02}", time.hour, time.minute);
     match schedule {
         protocol::Schedule::Off => "off".to_owned(),
         protocol::Schedule::SunsetToSunrise => "sunset-to-sunrise".to_owned(),
-        protocol::Schedule::Custom { from, to } => format!("{}-{}", time(from), time(to)),
+        protocol::Schedule::Custom { from, to } => format!("{from}-{to}"),
     }
 }
 
@@ -296,14 +288,13 @@ struct Problem {
     message: String,
 }
 
-impl Problem {
-    /// The check's problem, if it has one.
-    fn of(check: &protocol::Check) -> Option<Self> {
-        check.state.is_problem().then(|| Self {
+impl From<&protocol::Check> for Problem {
+    fn from(check: &protocol::Check) -> Self {
+        Self {
             check: check.detail.kind(),
             state: check.state,
             message: wording::check(&check.detail),
-        })
+        }
     }
 }
 

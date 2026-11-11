@@ -141,7 +141,6 @@ fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_i
             .effects
             .contains(&Effect::RegisterLoginItem)
     );
-    assert!(staged.core().snapshot().preferences().open_at_login);
     staged.report(login_item(LoginItem::Enabled));
     assert_eq!(
         found(&staged, CheckKind::OpenAtLogin),
@@ -154,7 +153,6 @@ fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_i
             .effects
             .contains(&Effect::UnregisterLoginItem)
     );
-    assert!(!staged.core().snapshot().preferences().open_at_login);
 }
 
 #[test]

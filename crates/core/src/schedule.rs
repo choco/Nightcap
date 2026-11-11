@@ -56,11 +56,7 @@ impl From<CheckedSchedule> for Schedule {
 
 /// Custom hours with an end that isn't a time of day.
 #[derive(Debug, thiserror::Error)]
-#[error(
-    "custom hours are times of day, from 00:00 to 23:59, not {:02}:{:02}",
-    .0.hour,
-    .0.minute
-)]
+#[error("custom hours are times of day, from 00:00 to 23:59, not {0}")]
 pub(crate) struct OutOfRange(pub(crate) TimeOfDay);
 
 /// One end of custom hours on the clock.

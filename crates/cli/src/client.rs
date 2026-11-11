@@ -9,8 +9,9 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use nightcap_protocol::{
-    About, Answer, Checks, ConfigState, Front, Hello, HelloMessage, HelloReply, Instance,
-    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response, Rules, TrialState,
+    About, Answer, Check, Checks, ConfigState, Front, Hello, HelloMessage, HelloReply, Instance,
+    ListedRule, NightShiftState, Payload, Preferences, Query, Request, Response, Rule, Rules,
+    TrialState,
 };
 use serde::Serialize;
 
@@ -57,17 +58,23 @@ pub(crate) fn request(
     }
 }
 
+/// Asks `queries`, in the one request `send` sends, and gives their answers in the order asked.
+fn answers<const N: usize>(
+    send: impl FnOnce(&Request) -> Result<Payload, Failure>,
+    queries: [Query; N],
+) -> Result<[Answer; N], Failure> {
+    let Payload::Answers(answers) = send(&Request::Queries(queries.into()))? else {
+        return Err(unexpected_reply());
+    };
+    <[Answer; N]>::try_from(answers).map_err(|_| unexpected_reply())
+}
+
 /// Asks `query` alone, in the one request `send` sends, and gives its answer.
 pub(crate) fn ask(
     send: impl FnOnce(&Request) -> Result<Payload, Failure>,
     query: Query,
 ) -> Result<Answer, Failure> {
-    let Payload::Answers(answers) = send(&Request::Queries(vec![query]))? else {
-        return Err(unexpected_reply());
-    };
-    let Ok([answer]) = <[Answer; 1]>::try_from(answers) else {
-        return Err(unexpected_reply());
-    };
+    let [answer] = answers(send, [query])?;
     Ok(answer)
 }
 
@@ -95,35 +102,44 @@ pub(crate) struct Report {
     pub(crate) trial: Option<TrialState>,
 }
 
-/// Asks what `nightcap status` shows, in the one request `ask` sends to the server.
+impl Report {
+    /// Every place's temporary rule, then everywhere's indefinite one: what a reset takes off.
+    pub(crate) fn changes(&self) -> impl Iterator<Item = &Rule> {
+        (self.rules.temporary.iter()).chain(&self.front.everywhere.indefinite)
+    }
+
+    /// The checks that need the user.
+    pub(crate) fn problems(&self) -> impl Iterator<Item = &Check> {
+        (self.checks.checks.iter()).filter(|check| check.state.is_problem())
+    }
+}
+
+/// Asks what `nightcap status` shows, in the one request `send` sends to the server.
 pub(crate) fn report(
-    ask: impl FnOnce(&Request) -> Result<Payload, Failure>,
+    send: impl FnOnce(&Request) -> Result<Payload, Failure>,
 ) -> Result<Report, Failure> {
-    let request = Request::Queries(vec![
-        Query::About,
-        Query::NightShift,
-        Query::Front,
-        Query::Rules,
-        Query::Config,
-        Query::Preferences,
-        Query::Checks,
-        Query::Trial,
-    ]);
-    let Payload::Answers(answers) = ask(&request)? else {
-        return Err(unexpected_reply());
-    };
-    let Ok(
+    let [
+        Answer::About(about),
+        Answer::NightShift(night_shift),
+        Answer::Front(front),
+        Answer::Rules(rules),
+        Answer::Config(config),
+        Answer::Preferences(preferences),
+        Answer::Checks(checks),
+        Answer::Trial(trial),
+    ] = answers(
+        send,
         [
-            Answer::About(about),
-            Answer::NightShift(night_shift),
-            Answer::Front(front),
-            Answer::Rules(rules),
-            Answer::Config(config),
-            Answer::Preferences(preferences),
-            Answer::Checks(checks),
-            Answer::Trial(trial),
+            Query::About,
+            Query::NightShift,
+            Query::Front,
+            Query::Rules,
+            Query::Config,
+            Query::Preferences,
+            Query::Checks,
+            Query::Trial,
         ],
-    ) = <[Answer; 8]>::try_from(answers)
+    )?
     else {
         return Err(unexpected_reply());
     };

@@ -92,7 +92,6 @@ impl Snapshot {
                 state: facts.night_shift,
                 strength: inner.strength,
                 schedule: timeline.schedule.map(Schedule::from),
-                set_aside: inner.setup.schedule_set_aside,
                 scheduled: timeline.scheduled_state(facts.applied_until),
                 // A turn on is what ends an off, and a turn off what ends an on.
                 next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
@@ -112,8 +111,6 @@ impl Snapshot {
                     state: OnOff::from(facts.website_checking()),
                     from_config: facts.config_websites.is_some(),
                 },
-                notifications_wanted: inner.setup.notifications_wanted,
-                open_at_login: inner.setup.open_at_login,
             },
             checks: Checks {
                 checks: inner.checks(now),
