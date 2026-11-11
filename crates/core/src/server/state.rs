@@ -3,11 +3,10 @@
 use std::sync::Arc;
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_protocol::{Install, NightShift, OnOff};
+use nightcap_protocol::{Decision, Install, NightShift, OnOff};
 
 use crate::rules::{Context, Rules, World};
 use crate::schedule::Timeline;
-use crate::server::turn::wanted;
 use crate::server::watch::Watching;
 use crate::setup::SetupState;
 use crate::storage::ad_hoc_rules;
@@ -93,6 +92,12 @@ impl Facts {
 }
 
 impl Inner {
+    /// The decision at `now`: what Night Shift should be for the context, the place that decides
+    /// it, and what it rests on.
+    pub(crate) fn decision(&self, now: Timestamp) -> Decision {
+        self.rules.decide(&self.facts.world(now))
+    }
+
     /// Mid-trial, the state the trial's end would leave, with Night Shift as the trial holds it:
     /// a run after a crash finds it there, as the last run left it, and puts it back (ADR-0016).
     fn persisted(&self, now: Timestamp) -> Persisted {
@@ -103,7 +108,7 @@ impl Inner {
             websites: self.facts.websites,
             notifications_wanted: self.setup.notifications_wanted,
             open_at_login: self.setup.open_at_login,
-            night_shift: wanted(&self.rules.decide(&self.facts.world(now))).map(OnOff::from),
+            night_shift: self.decision(now).state,
             until: self
                 .facts
                 .timeline

@@ -3,13 +3,13 @@
 
 mod common;
 
-use nightcap_core::{Cause, Effect, Fact, Reply, Scenario, Staged};
+use nightcap_core::{Cause, Effect, Fact, Reply, Scenario};
 use nightcap_protocol::{
     CheckDetail, CheckKind, CheckState, Command, Done, Install, LoginItem, NotSelfManaged, OnOff,
     OpenAtLoginDetail, Payload, Refusal, Response,
 };
 
-use common::{check, launch, noon, refusal, send};
+use common::{check, found, launch, noon, refusal, send};
 
 #[test]
 fn update_in_a_self_managed_release_starts_sparkles_check() {
@@ -131,7 +131,7 @@ fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_i
     staged.report(login_item(LoginItem::NotRegistered));
 
     assert_eq!(
-        login_check(&staged),
+        found(&staged, CheckKind::OpenAtLogin),
         opening(OpenAtLoginDetail::Off, CheckState::Off)
     );
     assert!(
@@ -144,7 +144,7 @@ fn opening_at_login_registers_and_unregisters_the_login_item_in_a_self_managed_i
     assert!(staged.core().snapshot().preferences().open_at_login);
     staged.report(login_item(LoginItem::Enabled));
     assert_eq!(
-        login_check(&staged),
+        found(&staged, CheckKind::OpenAtLogin),
         opening(OpenAtLoginDetail::Opens, CheckState::Ok)
     );
     assert!(
@@ -164,7 +164,7 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
         .stage()
         .unwrap();
     managed.report(login_item(LoginItem::NotRegistered));
-    assert_eq!(login_check(&managed), None);
+    assert_eq!(found(&managed, CheckKind::OpenAtLogin), None);
     let (_, response) = send(&managed, Command::OpenAtLogin(OnOff::On));
     assert_eq!(
         refusal(response),
@@ -176,17 +176,12 @@ fn managed_installs_and_dev_builds_have_no_open_at_login_check() {
         .stage()
         .unwrap();
     dev.report(login_item(LoginItem::NotRegistered));
-    assert_eq!(login_check(&dev), None);
+    assert_eq!(found(&dev, CheckKind::OpenAtLogin), None);
     let (_, response) = send(&dev, Command::OpenAtLogin(OnOff::On));
     assert_eq!(
         refusal(response),
         Refusal::NoLoginItem(NotSelfManaged::DevBuild)
     );
-}
-
-/// What opening at login's check found and where that leaves it.
-fn login_check(staged: &Staged) -> Option<(CheckDetail, CheckState)> {
-    check(staged, CheckKind::OpenAtLogin).map(|check| (check.detail, check.state))
 }
 
 fn opening(found: OpenAtLoginDetail, state: CheckState) -> Option<(CheckDetail, CheckState)> {
@@ -199,16 +194,16 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
     let off = opening(OpenAtLoginDetail::Off, CheckState::Off);
     staged.report(login_item(LoginItem::NotRegistered));
 
-    assert_eq!(login_check(&staged), off);
+    assert_eq!(found(&staged, CheckKind::OpenAtLogin), off);
     _ = staged.send(Command::OpenAtLogin(OnOff::On));
     staged.report(login_item(LoginItem::Enabled));
     assert_eq!(
-        login_check(&staged),
+        found(&staged, CheckKind::OpenAtLogin),
         opening(OpenAtLoginDetail::Opens, CheckState::Ok)
     );
     staged.report(login_item(LoginItem::NotRegistered));
     assert_eq!(
-        login_check(&staged),
+        found(&staged, CheckKind::OpenAtLogin),
         opening(OpenAtLoginDetail::Removed, CheckState::Drifted)
     );
     assert!(
@@ -219,11 +214,11 @@ fn opening_at_login_that_stops_after_the_user_chose_it_is_a_problem() {
             .contains(&Effect::RegisterLoginItem)
     );
     _ = staged.send(Command::OpenAtLogin(OnOff::Off));
-    assert_eq!(login_check(&staged), off);
+    assert_eq!(found(&staged, CheckKind::OpenAtLogin), off);
 
     let staged = staged.restart();
     staged.report(login_item(LoginItem::NotRegistered));
-    assert_eq!(login_check(&staged), off);
+    assert_eq!(found(&staged, CheckKind::OpenAtLogin), off);
 }
 
 #[test]
@@ -233,7 +228,7 @@ fn opening_at_login_waiting_for_approval_is_a_problem_the_user_can_accept() {
     staged.report(login_item(LoginItem::RequiresApproval));
 
     assert_eq!(
-        login_check(&staged),
+        found(&staged, CheckKind::OpenAtLogin),
         opening(OpenAtLoginDetail::AwaitingApproval, CheckState::Drifted)
     );
     assert!(

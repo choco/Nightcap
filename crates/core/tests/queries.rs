@@ -16,10 +16,11 @@ use nightcap_protocol::{
 };
 
 use common::{
-    accessibility_granted, activate_browser, activate_browser_event, activate_event, ad_hoc,
-    add_rule, adopted, app_rule, ask, at, custom_hours, domain_rule, figma_app, forced, host_event,
-    listed, mail, minutes, noon, off_by_the_schedule, on_by_the_schedule, on_figma, permissions,
-    report_zurich_sun, reported, send, set, until, until_turn, written, yours,
+    FIGMA_OFF, accessibility_granted, activate_browser, activate_browser_event, activate_event,
+    ad_hoc, add_rule, adopted, app_rule, ask, at, begin_trial, custom_hours, domain_rule,
+    figma_app, forced, host_event, listed, mail, minutes, noon, off_by_the_schedule,
+    on_by_the_schedule, on_figma, permissions, report_zurich_sun, reported, send, set, until,
+    until_turn, written, yours,
 };
 
 /// Every query's answer over the socket, all asked in one request, in the order asked and however
@@ -288,7 +289,7 @@ fn front_answers_what_a_site_that_says_nothing_inherits_from_its_browser() {
 #[test]
 fn front_answers_an_external_on_over_the_rule_it_snoozed() {
     let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .config(FIGMA_OFF)
         .then(reported(false, custom_hours()))
         .then(activate_event("com.figma.Desktop"))
         .then(written(true, custom_hours(), "2026-10-16T12:00:00+02:00"))
@@ -328,7 +329,7 @@ fn rules_answers_the_apps_and_sites_rules_with_their_snoozes_apart_from_the_temp
             until("2026-10-17T00:00:00+02:00"),
         )
     };
-    send(&staged, add_rule(mail()));
+    send(&staged, add_rule(mail(), OnOff::Off));
     send(
         &staged,
         set(figma_app(), OnOff::On, Lasting::UntilScheduleTurns),
@@ -487,10 +488,6 @@ fn checks_answer_the_grants_and_the_login_item_once_reported() {
     answers_alike(&staged);
 }
 
-fn begin_trial(staged: &Staged, stands_in: bool) {
-    staged.send_app(AppCommand::BeginTrial { stands_in });
-}
-
 #[test]
 fn trial_answers_whether_one_runs_and_stands_in_for_the_schedule() {
     let off = off_by_the_schedule().stage().unwrap();
@@ -538,7 +535,7 @@ fn front_answers_what_a_reset_restores_without_changing_the_snapshot() {
     let scenarios = [
         (
             on_by_the_schedule()
-                .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+                .config(FIGMA_OFF)
                 .then(activate_event("com.figma.Desktop"))
                 .then(set(figma_app(), OnOff::On, minutes(30))),
             figma_app(),
@@ -626,7 +623,7 @@ fn front_answers_what_a_reset_restores_without_changing_the_snapshot() {
 #[test]
 fn a_reset_result_describes_its_place_even_when_another_place_decides_the_screen() {
     let staged = on_by_the_schedule()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .config(FIGMA_OFF)
         .then(Command::Off)
         .then(activate_event("com.figma.Desktop"))
         .stage()
@@ -650,7 +647,7 @@ fn a_reset_result_describes_its_place_even_when_another_place_decides_the_screen
 fn reset_results_include_the_removal_of_adoptions_linked_rule() {
     for place in [Place::Everywhere, figma_app()] {
         let staged = noon()
-            .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+            .config(FIGMA_OFF)
             .then(reported(false, custom_hours()))
             .then(activate_event("com.figma.Desktop"))
             .then(written(true, custom_hours(), "2026-10-16T12:01:00+02:00"))

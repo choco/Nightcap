@@ -6,6 +6,7 @@ mod clock;
 mod domain;
 mod ffi;
 mod ipc;
+mod lock;
 mod logging;
 mod rules;
 #[cfg(any(test, debug_assertions))]

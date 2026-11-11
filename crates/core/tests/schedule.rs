@@ -10,14 +10,13 @@ use nightcap_core::{Effect, Fact, Scenario, Staged, TintPoint};
 use nightcap_protocol::{NightShift, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    activate, at, custom_hours, echo, forced_at, late, minutes, off_by_the_schedule,
-    on_by_the_schedule, report_zurich_sun, reported, resettable, send, set, switched, written,
-    zurich_sun,
+    activate, at, custom_hours, echo, forced_at, minutes, off_by_the_schedule, on_by_the_schedule,
+    report_zurich_sun, reported, resettable, send, set, switched, written, zurich_sun,
 };
 
 #[test]
 fn custom_hours_the_shell_reports_out_of_range_leave_the_schedule_unknown() {
-    let staged = late().then(reported(true, custom_hours())).stage().unwrap();
+    let staged = on_by_the_schedule().stage().unwrap();
     let hours = Schedule::Custom {
         from: TimeOfDay {
             hour: 25,

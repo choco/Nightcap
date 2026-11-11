@@ -2,9 +2,12 @@
 //! it's set to, so that tests control the time completely.
 
 #[cfg(any(test, debug_assertions))]
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use jiff::Timestamp;
+
+#[cfg(any(test, debug_assertions))]
+use crate::lock::lock;
 
 /// Where the core reads the time.
 pub(crate) trait Clock: Send + Sync {
@@ -32,21 +35,13 @@ impl ManualClock {
     }
 
     pub(crate) fn set(&self, now: Timestamp) {
-        *self.time() = now;
-    }
-
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    fn time(&self) -> MutexGuard<'_, Timestamp> {
-        self.0.lock().expect("no panic happens while it's held")
+        *lock(&self.0) = now;
     }
 }
 
 #[cfg(any(test, debug_assertions))]
 impl Clock for ManualClock {
     fn now(&self) -> Timestamp {
-        *self.time()
+        *lock(&self.0)
     }
 }

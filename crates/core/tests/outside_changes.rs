@@ -13,9 +13,9 @@ use nightcap_core::{Cause, Effect, Fact, Outcome, Scenario, Staged};
 use nightcap_protocol::{Command, Lasting, Length, OnOff, Place, Schedule, TimeOfDay};
 
 use common::{
-    activate, adopted, at, custom_hours, echo, figma, figma_app, forced, late, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set, switched,
-    until, until_turn, written, yours,
+    FIGMA_OFF, activate, adopted, at, custom_hours, echo, figma, figma_app, forced, late, minutes,
+    noon, off_by_the_schedule, on_by_the_schedule, report, reported, resettable, send, set,
+    switched, until, until_turn, written, yours,
 };
 
 #[test]
@@ -147,7 +147,7 @@ fn a_write_just_before_a_schedule_transition_is_an_outside_change() {
 #[test]
 fn a_transition_macos_performs_however_late_is_not_an_outside_change() {
     let staged = Scenario::at(at("2026-10-16T21:00:00+02:00"))
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .config(FIGMA_OFF)
         .stage()
         .unwrap();
     staged.report(reported(false, custom_hours()));
@@ -165,7 +165,7 @@ fn a_transition_macos_performs_however_late_is_not_an_outside_change() {
 #[test]
 fn nightcaps_own_write_landing_after_the_front_app_moved_on_is_not_an_outside_change() {
     let staged = late()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .config(FIGMA_OFF)
         .then(reported(true, custom_hours()))
         .stage()
         .unwrap();
@@ -242,10 +242,7 @@ fn with_no_schedule_an_outside_change_lasts_until_turned_back() {
 
 #[test]
 fn flipping_back_from_outside_takes_off_both_linked_rules() {
-    let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = noon().config(FIGMA_OFF).stage().unwrap();
     staged.report(reported(false, custom_hours()));
     activate(&staged, "com.figma.Desktop");
 
@@ -281,10 +278,7 @@ fn flipping_back_from_outside_takes_off_both_linked_rules() {
 
 #[test]
 fn a_rule_set_over_a_linked_one_leaves_its_partner_unlinked() {
-    let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = noon().config(FIGMA_OFF).stage().unwrap();
     report(&staged, false);
     activate(&staged, "com.figma.Desktop");
     staged.report(written(true, custom_hours(), "2026-10-16T12:00:00+02:00"));
@@ -316,7 +310,7 @@ fn a_rule_set_over_a_linked_one_leaves_its_partner_unlinked() {
 
 /// Starts at 23:00 with Night Shift on by the custom hours, then turns it off for an hour.
 fn disabled() -> Staged {
-    let staged = late().then(reported(true, custom_hours())).stage().unwrap();
+    let staged = on_by_the_schedule().stage().unwrap();
     send(&staged, set(Place::Everywhere, OnOff::Off, minutes(60)));
     echo(&staged, false);
     staged

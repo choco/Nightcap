@@ -4,7 +4,7 @@
 
 use jiff::Timestamp;
 use nightcap_protocol::{
-    CheckKind, CheckState, Command, Done, FileError, Install, LoginItem, NightShift, OnOff, Place,
+    CheckKind, CheckState, Command, Done, FileError, Install, LoginItem, NightShift, OnOff,
     Refusal, RuleAdded, RuleIdentity,
 };
 
@@ -68,7 +68,9 @@ impl Inner {
             }
             Command::Toggle => {
                 let world = self.facts.world(now);
-                let to = (self.rules.says(&Place::Everywhere, &world))
+                let to = self
+                    .rules
+                    .everywhere_says(&world)
                     .unwrap_or(world.observed)
                     .other();
                 self.rules.switch(to, &world);
@@ -155,7 +157,7 @@ impl Inner {
             }
         };
         done.map(|()| {
-            let decision = self.rules.decide(&self.facts.world(now));
+            let decision = self.decision(now);
             let done = match added {
                 Some(rule) => Done::RuleAdded { rule, decision },
                 None => Done::Decision(decision),

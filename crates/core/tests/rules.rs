@@ -7,23 +7,20 @@ use nightcap_core::{Fact, File, Staged};
 use nightcap_protocol::{
     AdHocRulesDetail, Check, CheckDetail, CheckKind, CheckState, Command, ConfigFileDetail,
     Decision, Done, ExportFormat, FileError, Lasting, Length, OnOff, Payload, Place, Problem,
-    Reason, Refusal, Request, Response, Rule, RuleAdded, RuleIdentity, SetBy, ValueType,
+    Reason, Refusal, Request, Response, Rule, RuleAdded, SetBy, ValueType,
 };
 
 use common::{
-    accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc, add_rule,
-    app_rule, at, books, check, custom_hours, domain_rule, echo, figma, figma_app, forced,
-    host_event, in_books_at_noon, kept_ad_hoc, late, launch, listed, mail, minutes, noon,
-    on_by_the_schedule, refusal, reported, resettable, rules, send, set, standing, switched,
-    until_turn, yours,
+    FIGMA_OFF, accessibility_granted, activate, activate_browser_event, activate_event, ad_hoc,
+    add_rule, app_rule, at, books, check, custom_hours, domain, domain_rule, echo, figma,
+    figma_app, forced, host_event, in_books_at_noon, kept_ad_hoc, late, launch, listed, mail,
+    minutes, noon, on_by_the_schedule, refusal, reported, resettable, rules, send, set, standing,
+    switched, until_turn, yours,
 };
 
 #[test]
 fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
-    let staged = on_by_the_schedule()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = on_by_the_schedule().config(FIGMA_OFF).stage().unwrap();
 
     let effects = activate(&staged, "com.figma.Desktop");
 
@@ -44,10 +41,7 @@ fn a_config_rule_turns_night_shift_off_while_its_app_is_frontmost() {
 
 #[test]
 fn leaving_the_app_hands_night_shift_back_to_the_schedule() {
-    let staged = on_by_the_schedule()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = on_by_the_schedule().config(FIGMA_OFF).stage().unwrap();
     activate(&staged, "com.figma.Desktop");
     echo(&staged, false);
 
@@ -87,7 +81,7 @@ fn reload_applies_a_changed_config() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
 
-    staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
+    staged.write_config(Some(FIGMA_OFF));
     let (effects, response) = send(&staged, Command::Reload);
 
     assert_eq!(effects, vec![switched(false)]);
@@ -99,10 +93,7 @@ fn reload_applies_a_changed_config() {
 
 #[test]
 fn reloading_an_invalid_config_is_refused_and_keeps_the_rules_in_force() {
-    let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = noon().config(FIGMA_OFF).stage().unwrap();
 
     staged.write_config(Some("[rules.off]\napp = \"com.figma.Desktop\"\n"));
     let (effects, response) = send(&staged, Command::Reload);
@@ -253,7 +244,7 @@ fn adding_the_rule_a_snoozed_app_already_has_ends_the_snooze() {
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
     echo(&staged, true);
 
-    let (effects, response) = send(&staged, add_rule(figma()));
+    let (effects, response) = send(&staged, add_rule(figma(), OnOff::Off));
 
     assert!(effects.contains(&switched(false)));
     assert_eq!(
@@ -303,7 +294,7 @@ fn an_added_rule_applies_at_once_and_survives_a_restart() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
 
-    let (effects, response) = send(&staged, add_rule(figma()));
+    let (effects, response) = send(&staged, add_rule(figma(), OnOff::Off));
 
     assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
@@ -326,7 +317,7 @@ fn a_rule_the_app_adds_applies_at_once() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
 
-    let effects = staged.send(add_rule(figma())).0.effects;
+    let effects = staged.send(add_rule(figma(), OnOff::Off)).0.effects;
 
     assert_eq!(effects, vec![switched(false)]);
 }
@@ -335,7 +326,7 @@ fn a_rule_the_app_adds_applies_at_once() {
 fn removing_an_ad_hoc_rule_lifts_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.figma.Desktop");
-    send(&staged, add_rule(figma()));
+    send(&staged, add_rule(figma(), OnOff::Off));
     echo(&staged, false);
 
     let (effects, _) = send(&staged, Command::RemoveRule(figma()));
@@ -358,7 +349,7 @@ fn ad_hoc_rules_from_a_newer_build_are_left_alone() {
     let newer = "version = 3\n[rules.off]\napp = [\"com.figma.Desktop\"]\n";
     let staged = noon().rules(newer).stage().unwrap();
 
-    let (_, response) = send(&staged, add_rule(figma()));
+    let (_, response) = send(&staged, add_rule(figma(), OnOff::Off));
 
     let why = refusal(response);
     assert!(
@@ -424,10 +415,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
             Refusal::ConfigRule { identity: figma() },
         ),
         (
-            Command::AddRule {
-                identity: figma(),
-                says: OnOff::On,
-            },
+            add_rule(figma(), OnOff::On),
             Refusal::ConfigSays {
                 identity: figma(),
                 says: OnOff::Off,
@@ -443,10 +431,7 @@ fn a_config_rule_cant_be_replaced_or_removed() {
 
 #[test]
 fn removing_a_config_rule_from_the_app_is_refused() {
-    let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = noon().config(FIGMA_OFF).stage().unwrap();
 
     let (outcome, answer) = staged.send(Command::RemoveRule(figma()));
 
@@ -464,7 +449,7 @@ fn adding_a_rule_from_the_app_while_rules_toml_is_from_a_newer_nightcap_is_refus
         .then(activate_event("com.figma.Desktop"))
         .stage()
         .unwrap();
-    let (outcome, answer) = staged.send(add_rule(figma()));
+    let (outcome, answer) = staged.send(add_rule(figma(), OnOff::Off));
 
     assert_eq!(outcome.effects, Vec::new());
     assert!(
@@ -482,16 +467,10 @@ fn adding_a_rule_from_the_app_while_rules_toml_is_from_a_newer_nightcap_is_refus
 fn adding_a_rule_makes_the_users_rule_say_that_way_replacing_one_that_said_the_other() {
     let staged = on_by_the_schedule().stage().unwrap();
     activate(&staged, "com.apple.mail");
-    send(&staged, add_rule(mail()));
+    send(&staged, add_rule(mail(), OnOff::Off));
     send(&staged, set(Place::from(mail()), OnOff::On, minutes(30)));
 
-    let (_, response) = send(
-        &staged,
-        Command::AddRule {
-            identity: mail(),
-            says: OnOff::On,
-        },
-    );
+    let (_, response) = send(&staged, add_rule(mail(), OnOff::On));
 
     assert!(
         matches!(
@@ -525,7 +504,7 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
         .unwrap();
     echo(&staged, true);
 
-    let (outcome, answer) = staged.send(add_rule(mail()));
+    let (outcome, answer) = staged.send(add_rule(mail(), OnOff::Off));
 
     assert!(outcome.effects.contains(&switched(false)));
     assert!(
@@ -546,13 +525,7 @@ fn adding_your_rule_again_ends_its_snooze_and_leaves_rules_toml_as_it_is() {
 fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
     let staged = in_books_at_noon().stage().unwrap();
 
-    let (effects, _) = send(
-        &staged,
-        Command::AddRule {
-            identity: books(),
-            says: OnOff::On,
-        },
-    );
+    let (effects, _) = send(&staged, add_rule(books(), OnOff::On));
     echo(&staged, true);
 
     assert_eq!(effects, vec![switched(true)]);
@@ -562,13 +535,7 @@ fn an_app_rule_that_says_on_turns_night_shift_on_by_day() {
 #[test]
 fn an_ad_hoc_rule_graduates_whatever_either_says() {
     let staged = noon().stage().unwrap();
-    send(
-        &staged,
-        Command::AddRule {
-            identity: figma(),
-            says: OnOff::On,
-        },
-    );
+    send(&staged, add_rule(figma(), OnOff::On));
 
     staged.write_config(Some("[rules.off]\napp = [\"com.figma.desktop\"]\n"));
     staged.request(Request::Command(Command::Reload));
@@ -580,14 +547,8 @@ fn an_ad_hoc_rule_graduates_whatever_either_says() {
 #[test]
 fn export_writes_both_lists() {
     let staged = noon().stage().unwrap();
-    send(&staged, add_rule(figma()));
-    send(
-        &staged,
-        Command::AddRule {
-            identity: RuleIdentity::Domain("youtube.com".parse().unwrap()),
-            says: OnOff::On,
-        },
-    );
+    send(&staged, add_rule(figma(), OnOff::Off));
+    send(&staged, add_rule(domain("youtube.com"), OnOff::On));
 
     assert_eq!(
         staged.core().snapshot().export(ExportFormat::Nix),
@@ -614,7 +575,7 @@ fn rules_are_listed_by_what_they_say() {
         vec![
             app_rule("com.figma.Desktop"),
             on(books()),
-            on(RuleIdentity::Domain("youtube.com".parse().unwrap())),
+            on(domain("youtube.com")),
         ]
     );
 }

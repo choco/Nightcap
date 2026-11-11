@@ -15,9 +15,10 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, custom_hours, echo, figma,
-    figma_app, kept_ad_hoc, late, minutes, off_by_the_schedule, on_by_the_schedule, refusal,
-    report, report_host, resettable, rules, send, set, switched, until, until_turn, written, yours,
+    FIGMA_OFF, activate, activate_browser_event, ad_hoc, add_rule, app_rule, at, begin_trial,
+    custom_hours, domain, echo, end_trial, figma, figma_app, kept_ad_hoc, late, mail, minutes,
+    off_by_the_schedule, on_by_the_schedule, refusal, report, report_host, resettable, rules, send,
+    set, switched, until, until_turn, written, yours,
 };
 
 /// The app the trials here give a rule.
@@ -42,16 +43,6 @@ fn notes_rule() -> Rule {
 }
 
 const SITE: &str = "docs.example.org";
-
-fn begin_trial(staged: &Staged, stands_in: bool) -> Vec<Effect> {
-    staged
-        .send_app(AppCommand::BeginTrial { stands_in })
-        .effects
-}
-
-fn end_trial(staged: &Staged) -> Vec<Effect> {
-    staged.send_app(AppCommand::EndTrial).effects
-}
 
 /// Night Shift on by the stand-in, over the custom hours' off until 22:00.
 fn on_by_the_stand_in() -> Decision {
@@ -210,7 +201,7 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
     begin_trial(&staged, false);
     assert_eq!(activate(&staged, NOTES), Vec::new());
 
-    let (effects, response) = send(&staged, add_rule(notes()));
+    let (effects, response) = send(&staged, add_rule(notes(), OnOff::Off));
 
     assert_eq!(effects, vec![switched(false)]);
     assert_eq!(
@@ -234,15 +225,9 @@ fn a_rule_added_mid_trial_forces_night_shift_off_while_its_app_is_in_front() {
 fn turning_a_trial_rule_the_other_way_mid_trial_answers_that_the_trials_rule_changed() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
-    send(&staged, add_rule(notes()));
+    send(&staged, add_rule(notes(), OnOff::Off));
 
-    let (_, response) = send(
-        &staged,
-        Command::AddRule {
-            identity: notes(),
-            says: OnOff::On,
-        },
-    );
+    let (_, response) = send(&staged, add_rule(notes(), OnOff::On));
 
     assert!(
         matches!(
@@ -262,7 +247,7 @@ fn turning_a_trial_rule_the_other_way_mid_trial_answers_that_the_trials_rule_cha
 fn once_a_trial_ends_the_rule_added_during_it_matches_nothing() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
-    send(&staged, add_rule(notes()));
+    send(&staged, add_rule(notes(), OnOff::Off));
     activate(&staged, "com.apple.mail");
     end_trial(&staged);
 
@@ -274,7 +259,7 @@ fn removing_a_trial_rule_mid_trial_drops_it() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
     activate(&staged, NOTES);
-    send(&staged, add_rule(notes()));
+    send(&staged, add_rule(notes(), OnOff::Off));
     echo(&staged, false);
 
     let (effects, response) = send(&staged, Command::RemoveRule(notes()));
@@ -288,9 +273,9 @@ fn removing_a_trial_rule_mid_trial_drops_it() {
 fn rules_added_mid_trial_stay_out_of_exports_and_files_and_go_with_their_snoozes() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
-    let site = RuleIdentity::Domain("choco.me".parse().unwrap());
+    let site = domain("choco.me");
     for identity in [notes(), site.clone()] {
-        let (_, response) = send(&staged, add_rule(identity));
+        let (_, response) = send(&staged, add_rule(identity, OnOff::Off));
         assert!(matches!(response, Response::Ok(_)), "{response:?}");
     }
     let (_, response) = send(
@@ -331,14 +316,11 @@ fn rules_added_mid_trial_stay_out_of_exports_and_files_and_go_with_their_snoozes
 
 #[test]
 fn adding_a_rule_that_exists_mid_trial_leaves_it_as_it_is() {
-    let staged = late()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = late().config(FIGMA_OFF).stage().unwrap();
     report(&staged, true);
     begin_trial(&staged, false);
 
-    send(&staged, add_rule(figma()));
+    send(&staged, add_rule(figma(), OnOff::Off));
 
     assert_eq!(rules(&staged), vec![app_rule("com.figma.Desktop")]);
     end_trial(&staged);
@@ -347,15 +329,12 @@ fn adding_a_rule_that_exists_mid_trial_leaves_it_as_it_is() {
 
 #[test]
 fn adding_the_rule_a_snoozed_app_has_mid_trial_ends_the_snooze_only_while_it_runs() {
-    let staged = late()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = late().config(FIGMA_OFF).stage().unwrap();
     report(&staged, true);
     send(&staged, set(figma_app(), OnOff::On, minutes(30)));
     begin_trial(&staged, false);
 
-    send(&staged, add_rule(figma()));
+    send(&staged, add_rule(figma(), OnOff::Off));
     assert_eq!(resettable(&staged), Vec::new());
     end_trial(&staged);
 
@@ -373,7 +352,7 @@ fn adding_the_rule_a_snoozed_app_has_mid_trial_ends_the_snooze_only_while_it_run
 fn a_config_rule_reloaded_mid_trial_replaces_the_trials_rule_for_its_app() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
-    send(&staged, add_rule(notes()));
+    send(&staged, add_rule(notes(), OnOff::Off));
     staged.write_config(Some(format!("[rules.on]\napp = [\"{NOTES}\"]\n").as_str()));
 
     staged.request(Request::Command(Command::Reload));
@@ -391,37 +370,29 @@ fn a_config_rule_reloaded_mid_trial_replaces_the_trials_rule_for_its_app() {
 #[test]
 fn removing_your_own_rule_mid_trial_lasts_only_while_it_runs() {
     let staged = on_by_the_schedule().stage().unwrap();
-    let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
-    send(&staged, add_rule(mail.clone()));
+    send(&staged, add_rule(mail(), OnOff::Off));
     begin_trial(&staged, false);
 
-    send(&staged, Command::RemoveRule(mail.clone()));
+    send(&staged, Command::RemoveRule(mail()));
     assert_eq!(rules(&staged), Vec::new());
-    assert_eq!(kept_ad_hoc(&staged), vec![ad_hoc(mail.clone())]);
+    assert_eq!(kept_ad_hoc(&staged), vec![ad_hoc(mail())]);
     end_trial(&staged);
 
-    assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
+    assert_eq!(rules(&staged), vec![ad_hoc(mail())]);
 }
 
 #[test]
 fn turning_your_own_rule_the_other_way_mid_trial_lasts_only_while_it_runs() {
     let staged = on_by_the_schedule().stage().unwrap();
-    let mail = RuleIdentity::App("com.apple.mail".parse().unwrap());
-    send(&staged, add_rule(mail.clone()));
+    send(&staged, add_rule(mail(), OnOff::Off));
     begin_trial(&staged, false);
 
-    send(
-        &staged,
-        Command::AddRule {
-            identity: mail.clone(),
-            says: OnOff::On,
-        },
-    );
+    send(&staged, add_rule(mail(), OnOff::On));
     assert_eq!(
         rules(&staged),
         vec![Rule {
             says: OnOff::On,
-            ..ad_hoc(mail.clone())
+            ..ad_hoc(mail())
         }]
     );
     assert!(
@@ -433,15 +404,12 @@ fn turning_your_own_rule_the_other_way_mid_trial_lasts_only_while_it_runs() {
     );
     end_trial(&staged);
 
-    assert_eq!(rules(&staged), vec![ad_hoc(mail)]);
+    assert_eq!(rules(&staged), vec![ad_hoc(mail())]);
 }
 
 #[test]
 fn snoozes_and_the_switch_mid_trial_last_only_while_it_runs() {
-    let staged = late()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = late().config(FIGMA_OFF).stage().unwrap();
     report(&staged, true);
     begin_trial(&staged, false);
 
@@ -534,7 +502,7 @@ fn a_snooze_of_a_trial_rule_ends_while_its_app_is_in_the_background() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
     activate(&staged, NOTES);
-    staged.send(add_rule(notes())).1.unwrap();
+    staged.send(add_rule(notes(), OnOff::Off)).1.unwrap();
     staged
         .send(set(notes_app(), OnOff::On, minutes(30)))
         .1
@@ -561,7 +529,7 @@ fn mid_trial_a_rule_from_the_cli_is_the_trials_and_its_snooze_the_users() {
     let staged = on_by_the_schedule().stage().unwrap();
     begin_trial(&staged, false);
 
-    send(&staged, add_rule(notes()));
+    send(&staged, add_rule(notes(), OnOff::Off));
     assert_eq!(rules(&staged), vec![notes_rule()]);
     send(
         &staged,

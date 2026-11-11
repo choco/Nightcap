@@ -12,7 +12,7 @@ use crate::schedule::{SunTimes, Timeline};
 use crate::server::state::{Facts, Inner, Loaded, Session};
 use crate::server::watch::Watching;
 use crate::setup::SetupState;
-use crate::storage::config::{self, NightShiftConfig};
+use crate::storage::config;
 use crate::storage::file::Files;
 use crate::storage::{ad_hoc_rules, saved_state};
 use crate::{CoreError, Effect};
@@ -37,11 +37,8 @@ impl Inner {
             Err(error) => {
                 tracing::warn!("running without config rules: {error}; see status");
                 let config = config::Config {
-                    rules: Vec::new(),
-                    websites: None,
-                    night_shift: NightShiftConfig::default(),
-                    lengths: config::default_lengths(),
                     found: true,
+                    ..config::Config::default()
                 };
                 (config, Some(error))
             }

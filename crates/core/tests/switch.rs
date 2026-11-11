@@ -10,9 +10,9 @@ use nightcap_protocol::{
 };
 
 use common::{
-    activate, adopted, app_rule, at, custom_hours, echo, figma_app, forced, late, minutes, noon,
-    off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable, send, set,
-    switched, until, until_turn, written, yours,
+    FIGMA_OFF, activate, adopted, app_rule, at, custom_hours, echo, figma_app, forced, late,
+    minutes, noon, off_by_the_schedule, on_by_the_schedule, refusal, report, reported, resettable,
+    send, set, switched, until, until_turn, written, yours,
 };
 
 /// The answer to a command that leaves Night Shift on at 23:00 by the custom hours.
@@ -424,11 +424,7 @@ fn lengths_that_cant_be_are_refused() {
             Refusal::NoSchedule,
         ),
         (
-            set(
-                Place::App("com.figma.Desktop".parse().unwrap()),
-                OnOff::Off,
-                Lasting::Indefinite,
-            ),
+            set(figma_app(), OnOff::Off, Lasting::Indefinite),
             Refusal::IndefiniteIsAdded,
         ),
     ] {
@@ -473,16 +469,10 @@ fn the_switch_first_takes_off_everywheres_rules_that_say_otherwise() {
 
 #[test]
 fn turning_night_shift_off_everywhere_leaves_a_snoozed_rule_warm() {
-    let staged = late()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = late().config(FIGMA_OFF).stage().unwrap();
     report(&staged, true);
-    staged.report(Fact::AppActivated {
-        bundle_id: Some("com.figma.Desktop".to_owned()),
-        is_browser: false,
-    });
-    let figma = Place::App("com.figma.Desktop".parse().unwrap());
+    activate(&staged, "com.figma.Desktop");
+    let figma = figma_app();
     send(&staged, set(figma.clone(), OnOff::On, minutes(30)));
     echo(&staged, true);
 

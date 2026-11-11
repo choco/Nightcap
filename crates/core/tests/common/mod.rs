@@ -12,12 +12,15 @@
 )]
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_core::{Effect, Fact, File, Outcome, Scenario, Staged, SwitchedBy};
+use nightcap_core::{AppCommand, Effect, Fact, File, Outcome, Scenario, Staged, SwitchedBy};
 use nightcap_protocol::{
-    Answer, Check, CheckKind, Command, Front, Lasting, Length, ListedRule, NotificationPermission,
-    OnOff, Payload, Place, PlaceInFront, Query, Refusal, Request, Response, Rule, RuleIdentity,
-    Rules, Schedule, SetBy, TimeOfDay,
+    Answer, Check, CheckDetail, CheckKind, CheckState, Command, Front, Lasting, Length, ListedRule,
+    NotificationPermission, OnOff, Payload, Place, PlaceInFront, Query, Refusal, Request, Response,
+    Rule, RuleIdentity, Rules, Schedule, SetBy, TimeOfDay,
 };
+
+/// A config whose one rule keeps Figma off.
+pub(crate) const FIGMA_OFF: &str = "[rules.off]\napp = [\"com.figma.Desktop\"]\n";
 
 /// The instant `instant` names, such as "2026-10-16T23:00:00+02:00".
 pub(crate) fn at(instant: &str) -> Timestamp {
@@ -54,7 +57,7 @@ pub(crate) fn forced() -> Staged {
 /// forces off, to the front, and reports the result.
 pub(crate) fn forced_at(scenario: Scenario, schedule: Schedule) -> Staged {
     let staged = scenario
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
+        .config(FIGMA_OFF)
         .then(reported(true, schedule))
         .stage()
         .unwrap();
@@ -230,8 +233,7 @@ pub(crate) fn switched(enabled: bool) -> Effect {
     }
 }
 
-/// Night Shift off with no schedule, at a strength of 60, as the shell reports it before
-/// `Launched`.
+/// Night Shift off with `schedule`, at `strength`, as the shell reports it before `Launched`.
 pub(crate) fn report_night_shift(staged: &Staged, schedule: Schedule, strength: u8) {
     staged.report(reported(false, schedule));
     staged.report(Fact::StrengthChanged { value: strength });
@@ -407,12 +409,9 @@ pub(crate) fn until_turn(instant: &str) -> Length {
     }
 }
 
-/// Adds an ad-hoc rule that says off.
-pub(crate) fn add_rule(identity: RuleIdentity) -> Command {
-    Command::AddRule {
-        identity,
-        says: OnOff::Off,
-    }
+/// Adds a rule saying `says` at the app or site `identity` names.
+pub(crate) fn add_rule(identity: RuleIdentity, says: OnOff) -> Command {
+    Command::AddRule { identity, says }
 }
 
 pub(crate) fn set(place: Place, state: OnOff, length: Lasting) -> Command {
@@ -436,4 +435,21 @@ pub(crate) fn check(staged: &Staged, kind: CheckKind) -> Option<Check> {
         .checks
         .into_iter()
         .find(|check| check.detail.kind() == kind)
+}
+
+/// What the check of `kind` found and where that leaves it, as the checks query answers it.
+pub(crate) fn found(staged: &Staged, kind: CheckKind) -> Option<(CheckDetail, CheckState)> {
+    check(staged, kind).map(|check| (check.detail, check.state))
+}
+
+/// Begins a trial as the app does, standing in for the schedule if `stands_in`.
+pub(crate) fn begin_trial(staged: &Staged, stands_in: bool) -> Vec<Effect> {
+    staged
+        .send_app(AppCommand::BeginTrial { stands_in })
+        .effects
+}
+
+/// Ends the trial as the app does.
+pub(crate) fn end_trial(staged: &Staged) -> Vec<Effect> {
+    staged.send_app(AppCommand::EndTrial).effects
 }

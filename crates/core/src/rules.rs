@@ -117,7 +117,7 @@ impl Rules {
     /// an indefinite rule of the user's saying `to`.
     pub(crate) fn switch(&mut self, to: OnOff, world: &World<'_>) {
         while self.live.peel(&Place::Everywhere, Some(to)) {}
-        if self.says(&Place::Everywhere, world) != Some(to) {
+        if self.everywhere_says(world) != Some(to) {
             tracing::info!("switched {to} everywhere, indefinitely");
             self.live.set_everywhere(to);
         }
@@ -183,7 +183,7 @@ impl Rules {
         self.live.adopt(&place, state, until);
         if place != Place::Everywhere {
             while self.live.peel(&Place::Everywhere, Some(state)) {}
-            if self.says(&Place::Everywhere, world) != Some(state) {
+            if self.everywhere_says(world) != Some(state) {
                 self.live.link_adoption(&place, state, until);
             }
         }
@@ -290,9 +290,9 @@ impl Rules {
         self.resolve(world).decision()
     }
 
-    /// What a place itself says, or None when nothing there says anything.
-    pub(crate) fn says(&self, place: &Place, world: &World<'_>) -> Option<OnOff> {
-        self.resolve(world).says(place)
+    /// What everywhere itself says, or None when nothing there says anything.
+    pub(crate) fn everywhere_says(&self, world: &World<'_>) -> Option<OnOff> {
+        self.resolve(world).everywhere_says()
     }
 
     /// What's in front, as `front()` answers it, with whether a browser is `watching`: each

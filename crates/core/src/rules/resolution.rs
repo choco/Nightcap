@@ -77,7 +77,7 @@ impl<'a> Resolution<'a> {
             .timeline
             .scheduled_state(world.applied_until)
             .map(|state| Reason::Schedule {
-                state: OnOff::from(state),
+                state,
                 until: world.timeline.next_transition(world.applied_until),
             });
         let base: Vec<_> = stands_in
@@ -163,10 +163,8 @@ impl<'a> Resolution<'a> {
             .collect()
     }
 
-    pub(super) fn says(&self, place: &Place) -> Option<OnOff> {
-        Self::reasons(self.rules, place, &self.base, self.released)
-            .first()
-            .map(Reason::says)
+    pub(super) fn everywhere_says(&self) -> Option<OnOff> {
+        self.everywhere.reasons.first().map(Reason::says)
     }
 
     pub(super) fn decision(&self) -> Decision {

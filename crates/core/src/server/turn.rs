@@ -3,7 +3,7 @@
 //! reading its status reports reconcile against the schedule the core computes (ADR-0004).
 
 use jiff::{SignedDuration, Timestamp};
-use nightcap_protocol::{Decision, NightShift, OnOff, Reason, Schedule};
+use nightcap_protocol::{NightShift, OnOff, Reason, Schedule};
 
 use crate::schedule::CheckedSchedule;
 use crate::server::state::{Inner, Session};
@@ -72,11 +72,11 @@ impl Inner {
         switched: bool,
         now: Timestamp,
     ) -> Option<Effect> {
-        if self.facts.left_by_last_run.take() == Some(OnOff::from(enabled)) {
+        let observed = OnOff::from(enabled);
+        if self.facts.left_by_last_run.take() == Some(observed) {
             tracing::info!("Night Shift is where the last run left it");
             return None;
         }
-        let observed = OnOff::from(enabled);
         match switched_by {
             SwitchedBy::Schedule => {
                 if switched {
@@ -86,8 +86,7 @@ impl Inner {
             }
             SwitchedBy::Nightcap => None,
             SwitchedBy::Outside => {
-                let wanted = wanted(&self.rules.decide(&self.facts.world(now)))?;
-                if enabled == wanted {
+                if self.decision(now).state? == observed {
                     return None;
                 }
                 tracing::info!("Night Shift turned {observed} outside Nightcap");
@@ -180,8 +179,8 @@ impl Inner {
         if self.watching.awaits_first_read() {
             return None;
         }
-        let decision = self.rules.decide(&self.facts.world(now));
-        let wanted = wanted(&decision)?;
+        let decision = self.decision(now);
+        let wanted = decision.state? == OnOff::On;
         let schedule_decides = matches!(decision.reasons.first(), Some(Reason::Schedule { .. }));
         if (schedule_decides && self.left_to_macos())
             || wanted == (self.facts.night_shift == NightShift::On)
@@ -211,9 +210,4 @@ impl Inner {
             .written_at
             .is_none_or(|written| last_transition.is_some_and(|transition| written < transition))
     }
-}
-
-/// The Night Shift state a decision asks for, if it asks for one.
-pub(crate) fn wanted(decision: &Decision) -> Option<bool> {
-    decision.state.map(|state| state == OnOff::On)
 }

@@ -7,13 +7,15 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 #[cfg(any(test, debug_assertions))]
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use etcetera::BaseStrategy;
 use nightcap_protocol::Instance;
 use tempfile::NamedTempFile;
 
 use crate::CoreError;
+#[cfg(any(test, debug_assertions))]
+use crate::lock::lock;
 
 /// One of the core's files.
 #[cfg_attr(
@@ -156,25 +158,17 @@ impl Memory {
 
     /// What `file` holds, or None where there's no such file.
     pub(crate) fn get(&self, file: File) -> Option<String> {
-        self.texts().get(&file).cloned()
+        lock(&self.texts).get(&file).cloned()
     }
 
     /// Changes `file` from outside the core, as the user or their installer would, or takes it
     /// away.
     pub(crate) fn put(&self, file: File, text: Option<String>) {
-        let mut files = self.texts();
+        let mut files = lock(&self.texts);
         match text {
             Some(text) => files.insert(file, text),
             None => files.remove(&file),
         };
-    }
-
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    fn texts(&self) -> MutexGuard<'_, HashMap<File, String>> {
-        self.texts.lock().expect("no panic happens while it's held")
     }
 }
 

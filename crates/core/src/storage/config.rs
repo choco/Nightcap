@@ -28,8 +28,21 @@ pub(crate) struct Config {
     pub found: bool,
 }
 
+/// The config a missing file gives: no rules, nothing set, and the default lengths.
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            websites: None,
+            night_shift: NightShiftConfig::default(),
+            lengths: default_lengths(),
+            found: false,
+        }
+    }
+}
+
 /// The lengths a change can be picked for when the config sets none.
-pub(crate) fn default_lengths() -> Vec<SignedDuration> {
+fn default_lengths() -> Vec<SignedDuration> {
     vec![
         SignedDuration::from_mins(30),
         SignedDuration::from_hours(1),
@@ -46,15 +59,7 @@ pub(crate) fn load(files: &dyn Files) -> Result<Config, Unusable> {
     };
     let text = match files.read(file::File::Config) {
         Ok(Some(text)) => text,
-        Ok(None) => {
-            return Ok(Config {
-                rules: Vec::new(),
-                websites: None,
-                night_shift: NightShiftConfig::default(),
-                lengths: default_lengths(),
-                found: false,
-            });
-        }
+        Ok(None) => return Ok(Config::default()),
         Err(error) => return Err(unusable(Why::Unreadable(error))),
     };
     let document = document::parse(&text).map_err(|error| unusable(Why::Malformed(error)))?;

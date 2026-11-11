@@ -179,6 +179,6 @@ impl Inner {
             AppCommand::BeginTrial { stands_in } => self.rules.begin_trial(stands_in),
             AppCommand::EndTrial => self.rules.end_trial(now),
         }
-        Done::Decision(self.rules.decide(&self.facts.world(now)))
+        Done::Decision(self.decision(now))
     }
 }

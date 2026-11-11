@@ -1,7 +1,7 @@
 //! What the reads answer from: the core as its thread left it after its last input, published
 //! whole, so neither the shell's reads nor the CLI's queries wait on the mailbox.
 
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex};
 
 use jiff::Timestamp;
 
@@ -11,6 +11,7 @@ use nightcap_protocol::{
     WebsiteChecking,
 };
 
+use crate::lock::lock;
 use crate::server::state::Inner;
 use crate::storage::ad_hoc_rules;
 use crate::storage::file::File;
@@ -92,9 +93,7 @@ impl Snapshot {
                 strength: inner.strength,
                 schedule: timeline.schedule.map(Schedule::from),
                 set_aside: inner.setup.schedule_set_aside,
-                scheduled: timeline
-                    .scheduled_state(facts.applied_until)
-                    .map(OnOff::from),
+                scheduled: timeline.scheduled_state(facts.applied_until),
                 // A turn on is what ends an off, and a turn off what ends an on.
                 next_on: timeline.next_turn(facts.applied_until, OnOff::Off),
                 next_off: timeline.next_turn(facts.applied_until, OnOff::On),
@@ -168,19 +167,11 @@ impl Published {
     /// Publishes `snapshot`, and hands it back as the reads now take it.
     pub(crate) fn publish(&self, snapshot: Snapshot) -> Arc<Snapshot> {
         let published = Arc::new(snapshot);
-        *self.lock() = published.clone();
+        *lock(&self.0) = published.clone();
         published
     }
 
     pub(crate) fn latest(&self) -> Arc<Snapshot> {
-        self.lock().clone()
-    }
-
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
-    fn lock(&self) -> MutexGuard<'_, Arc<Snapshot>> {
-        self.0.lock().expect("no panic happens while it's held")
+        lock(&self.0).clone()
     }
 }

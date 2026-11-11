@@ -13,8 +13,8 @@ use nightcap_protocol::{
 };
 
 use common::{
-    add_rule, at, check, custom_hours, domain, figma, noon, on_by_the_schedule, permissions,
-    refusal, report_zurich_sun, reported, send,
+    FIGMA_OFF, add_rule, at, check, custom_hours, domain, figma, found, noon, on_by_the_schedule,
+    permissions, refusal, report_zurich_sun, reported, send,
 };
 
 #[test]
@@ -30,11 +30,6 @@ fn website_checking_switches_unless_the_config_sets_it() {
     staged.write_config(Some("websites = false\n"));
     staged.request(Request::Command(Command::Reload));
     assert_eq!(checking(&staged), state(OnOff::Off, true));
-}
-
-/// What the check of `kind` found and where that leaves it, as the checks query answers it.
-fn found(staged: &Staged, kind: CheckKind) -> Option<(CheckDetail, CheckState)> {
-    check(staged, kind).map(|check| (check.detail, check.state))
 }
 
 fn stands(detail: CheckDetail, state: CheckState) -> Option<(CheckDetail, CheckState)> {
@@ -128,7 +123,7 @@ fn the_config_file_check_says_whether_the_file_is_missing_valid_or_broken() {
         found(&staged, CheckKind::ConfigFile),
         config(ConfigFileDetail::Missing, CheckState::Off)
     );
-    staged.write_config(Some("[rules.off]\napp = [\"com.figma.Desktop\"]\n"));
+    staged.write_config(Some(FIGMA_OFF));
     staged.request(Request::Command(Command::Reload));
     assert_eq!(
         found(&staged, CheckKind::ConfigFile),
@@ -160,7 +155,7 @@ fn the_ad_hoc_rules_check_counts_them_or_says_why_they_are_off() {
         found(&staged, CheckKind::AdHocRules),
         ad_hoc(AdHocRulesDetail::On { rules: 0 }, CheckState::Ok)
     );
-    send(&staged, add_rule(figma()));
+    send(&staged, add_rule(figma(), OnOff::Off));
     assert_eq!(
         found(&staged, CheckKind::AdHocRules),
         ad_hoc(AdHocRulesDetail::On { rules: 1 }, CheckState::Ok)
@@ -471,10 +466,7 @@ fn reloading_mends_a_broken_config_once_it_is_fixed() {
 
 #[test]
 fn a_refused_reload_is_replied_to_with_why_and_the_config_check_shows_it() {
-    let staged = noon()
-        .config("[rules.off]\napp = [\"com.figma.Desktop\"]\n")
-        .stage()
-        .unwrap();
+    let staged = noon().config(FIGMA_OFF).stage().unwrap();
     staged.write_config(Some("[rules.off]\ndomian = [\"figma.com\"]\n"));
 
     let (outcome, _) = staged.send(Command::Reload);
@@ -495,8 +487,8 @@ fn a_refused_reload_is_replied_to_with_why_and_the_config_check_shows_it() {
 #[test]
 fn the_config_is_read_from_its_xdg_path_and_the_ad_hoc_rules_export_for_it() {
     let staged = noon().stage().unwrap();
-    send(&staged, add_rule(figma()));
-    send(&staged, add_rule(domain("figma.com")));
+    send(&staged, add_rule(figma(), OnOff::Off));
+    send(&staged, add_rule(domain("figma.com"), OnOff::Off));
 
     assert_eq!(
         staged.core().snapshot().config().path,

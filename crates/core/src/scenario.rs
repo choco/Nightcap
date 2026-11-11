@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 use crate::clock::{Clock, ManualClock};
+use crate::lock::lock;
 use crate::server::react::{Input, ReplyTo, react};
 use crate::server::snapshot::{Published, Snapshot};
 use crate::server::start::{Setup, install_of, instance_of, zone_of};
@@ -152,14 +153,6 @@ impl Scenario {
         }
     }
 
-    /// The scenario with `state.json` holding `text`.
-    pub fn state(self, text: impl Into<String>) -> Self {
-        Self {
-            state: Some(text.into()),
-            ..self
-        }
-    }
-
     /// The scenario with `step` after its other steps: a fact, or a command from the app.
     pub fn then(mut self, step: impl Into<Step>) -> Self {
         self.steps.push(step.into());
@@ -180,9 +173,7 @@ impl Scenario {
             (File::Rules, self.rules),
             (File::State, self.state),
         ] {
-            if let Some(text) = text {
-                files.put(file, Some(text));
-            }
+            files.put(file, text);
         }
         let staged = Staged::start(
             install_of(instance, self.bundle_writable),
@@ -236,12 +227,8 @@ impl fmt::Debug for Inline {
 impl Inline {
     /// Runs `decide` on the staged core at the time its clock reads, then publishes what it
     /// left, as the core's thread does after each input.
-    #[expect(
-        clippy::expect_used,
-        reason = "panics abort (ADR-0002), so none can poison the lock"
-    )]
     pub(crate) fn decide<T>(&self, decide: impl FnOnce(&mut Inner, Timestamp) -> T) -> T {
-        let mut inner = self.inner.lock().expect("no panic happens while it's held");
+        let mut inner = lock(&self.inner);
         let now = self.clock.now();
         let answer = decide(&mut inner, now);
         self.published.publish(Snapshot::of(&inner, now));

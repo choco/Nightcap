@@ -7,8 +7,8 @@ use nightcap_core::{Effect, Staged};
 use nightcap_protocol::{Command, Lasting, OnOff, Place};
 
 use common::{
-    accessibility_granted, activate, activate_browser, activate_event, adopted, at, books,
-    custom_hours, echo, figma_app, forced, in_books_at_noon, late, launch, minutes,
+    accessibility_granted, activate, activate_browser, activate_event, add_rule, adopted, at,
+    books, custom_hours, echo, figma_app, forced, in_books_at_noon, late, launch, minutes,
     on_by_the_schedule, reported, resettable, send, set, switched, until, until_turn, watch,
     written, yours,
 };
@@ -169,13 +169,7 @@ fn after_a_clean_exit_a_force_still_in_place_comes_back() {
 #[test]
 fn a_rule_that_says_on_is_released_on_a_clean_exit() {
     let staged = in_books_at_noon().stage().unwrap();
-    send(
-        &staged,
-        Command::AddRule {
-            identity: books(),
-            says: OnOff::On,
-        },
-    );
+    send(&staged, add_rule(books(), OnOff::On));
     echo(&staged, true);
 
     assert_eq!(staged.stop().effects, vec![switched(false)]);
