@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { KEYS } from "../data/menus";
 import { cx } from "../lib/cx";
 import { useInView } from "../lib/inView";
+import { Outline } from "./icons";
 import { Mini } from "./Mini";
 import { Section, SplitHeading } from "./Section";
 
@@ -251,20 +252,7 @@ function MoveCard({
 	glyph: ReactNode;
 	children: ReactNode;
 }) {
-	const icon = (
-		<svg
-			aria-hidden="true"
-			className="size-[26px]"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			{glyph}
-		</svg>
-	);
+	const icon = <Outline className="size-[26px]">{glyph}</Outline>;
 	// Lit, the card's ring and the icon's colours fade in as layers over it, by opacity alone.
 	return (
 		<figure

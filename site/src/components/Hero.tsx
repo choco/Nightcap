@@ -2,6 +2,7 @@ import type { Doodle } from "../lib/doodles";
 import { Celestial } from "./Celestial";
 import { Doodles } from "./Doodles";
 import { DownloadButton, WhatsNew } from "./Download";
+import { Outline } from "./icons";
 import { Nav } from "./Nav";
 import { Scene } from "./Scene";
 
@@ -63,20 +64,13 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 				data-doodle-clear="20"
 			>
 				How it works
-				<svg
+				<Outline
 					className="animate-nudge motion-reduce:animate-none"
-					viewBox="0 0 24 24"
 					width="18"
 					height="18"
-					fill="none"
-					stroke="currentColor"
-					strokeWidth="2"
-					strokeLinecap="round"
-					strokeLinejoin="round"
-					aria-hidden="true"
 				>
 					<path d="m6 9 6 6 6-6" />
-				</svg>
+				</Outline>
 			</a>
 		</section>
 	);

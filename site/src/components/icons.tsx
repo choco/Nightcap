@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, SVGProps } from "react";
 import type { Glyph, Moon } from "../data/menus";
 import { RAYS } from "./outlines";
 
@@ -34,7 +34,30 @@ export function MoonIcon({ moon }: { moon: Moon }) {
 	);
 }
 
-// The menu's other images, drawn like the moons: a 24 grid, 2px strokes, round joins.
+/** An outline on the 24 grid, as the design system draws its icons: 2px strokes unless set,
+ *  round caps and joins, in the text's colour. */
+export function Outline({
+	strokeWidth = 2,
+	children,
+	...svg
+}: SVGProps<SVGSVGElement>) {
+	return (
+		<svg
+			aria-hidden="true"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth={strokeWidth}
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			{...svg}
+		>
+			{children}
+		</svg>
+	);
+}
+
+// The menu's other images, drawn like the moons.
 const GLYPHS: Record<Glyph, ReactNode> = {
 	timer: (
 		<>
@@ -59,19 +82,7 @@ const GLYPHS: Record<Glyph, ReactNode> = {
 };
 
 export function GlyphIcon({ glyph }: { glyph: Glyph }) {
-	return (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			{GLYPHS[glyph]}
-		</svg>
-	);
+	return <Outline>{GLYPHS[glyph]}</Outline>;
 }
 
 /** A submenu's chevron, at the menu's text size. */
@@ -94,29 +105,15 @@ export function Chevron() {
 /** The slider's ends, as the app draws them: a small four-rayed sun, a large eight-rayed one. */
 export function Sun({ large }: { large?: boolean }) {
 	return large ? (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-		>
+		<Outline>
 			<circle cx="12" cy="12" r="4.2" />
 			<path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" />
-		</svg>
+		</Outline>
 	) : (
-		<svg
-			aria-hidden="true"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2.4"
-			strokeLinecap="round"
-		>
+		<Outline strokeWidth="2.4">
 			<circle cx="12" cy="12" r="4" />
 			<path d="M12 3v2M12 19v2M3 12h2M19 12h2" />
-		</svg>
+		</Outline>
 	);
 }
 

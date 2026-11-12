@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { REPO } from "../data/repo";
 import { cx } from "../lib/cx";
+import { Outline } from "./icons";
 import { Wordmark } from "./Wordmark";
 
 export function Nav({
@@ -28,19 +29,9 @@ export function Nav({
 				<span className="h-3.5 w-px bg-line max-md:hidden" aria-hidden="true" />
 				<NavLink href={REPO}>
 					GitHub
-					<svg
-						viewBox="0 0 24 24"
-						width="13"
-						height="13"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="2.2"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						aria-hidden="true"
-					>
+					<Outline width="13" height="13" strokeWidth="2.2">
 						<path d="M8 16 16 8M9.5 8H16v6.5" />
-					</svg>
+					</Outline>
 				</NavLink>
 			</div>
 			<button

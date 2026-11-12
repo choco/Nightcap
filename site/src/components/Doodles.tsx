@@ -7,6 +7,7 @@ import {
 	type DoodleMotion,
 	placeDoodles,
 } from "../lib/doodles";
+import { Outline } from "./icons";
 import { MOON, SPARKLE, STAR } from "./outlines";
 
 const PATHS: Record<DoodleKind, ReactNode> = {
@@ -60,18 +61,9 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 							animationDuration: `${d.duration.toFixed(1)}s`,
 						}}
 					>
-						<svg
-							aria-hidden="true"
-							className="block size-full"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							strokeWidth="1.5"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-						>
+						<Outline className="block size-full" strokeWidth="1.5">
 							{PATHS[d.kind]}
-						</svg>
+						</Outline>
 					</span>
 				</span>
 			))}

@@ -3,6 +3,7 @@ import { REPO } from "../data/repo";
 import { cx } from "../lib/cx";
 import { THEME_KEY } from "../pages";
 import styles from "./Footer.module.css";
+import { Outline } from "./icons";
 import { MOON, RAYS } from "./outlines";
 
 type Theme = "system" | "light" | "dark";
@@ -71,19 +72,9 @@ function ThemeSwitch() {
 					aria-pressed={choice === theme}
 					onClick={() => choose(theme)}
 				>
-					<svg
-						aria-hidden="true"
-						viewBox="0 0 24 24"
-						width="17"
-						height="17"
-						fill="none"
-						stroke="currentColor"
-						strokeWidth="1.7"
-						strokeLinecap="round"
-						strokeLinejoin="round"
-					>
+					<Outline width="17" height="17" strokeWidth="1.7">
 						{glyph}
-					</svg>
+					</Outline>
 				</button>
 			))}
 		</fieldset>
