@@ -42,7 +42,7 @@ A commit names its human author alone, with no co-author or assisted-by line for
 
 ## Design
 
-Brand and UI work start from `design/README.md`, the design system's brand book, with its tokens, fonts and component previews beside it.
+Brand and UI work start from `design/README.md`, the design system's brand book, with its tokens, fonts and component previews beside it. The components are the site's: `pnpm --dir site bundle` builds them (`site/src/bundle.tsx`), with the site's stylesheet and React, into `design/components/` for the previews to mount, so run it after changing a component the design system shows, and commit what it writes. A component the design system shows leaves its placement to its parent, which passes a `className`.
 
 ## Agent skills
 

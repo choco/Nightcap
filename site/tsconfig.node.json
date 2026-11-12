@@ -5,5 +5,11 @@
 		"lib": ["es2023"],
 		"types": ["node"]
 	},
-	"include": ["vite.config.ts", "plugins", "prerender.ts", "render-og.ts"]
+	"include": [
+		"vite.config.ts",
+		"plugins",
+		"prerender.ts",
+		"render-og.ts",
+		"bundle.ts"
+	]
 }

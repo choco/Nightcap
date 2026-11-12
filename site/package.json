@@ -9,6 +9,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build && vite build --ssr src/render.tsx --outDir ../build/site-render --emptyOutDir && node prerender.ts",
+		"bundle": "node bundle.ts",
 		"typecheck": "tsc -b",
 		"check": "biome check",
 		"format": "biome check --write"

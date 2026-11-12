@@ -1,8 +1,8 @@
-A capsule button, as in the app: primary in `moon` for the one action a view is about, secondary outlined in `line-strong` for the rest.
+A capsule link, as the app's buttons are capsules: `primary` in `moon`, with a `moon-text` edge, for the one action a view is about, and outlined in `line-strong` for the rest. Both spring on hover, growing to 104.5%, and press in to 97%.
 
-Use `nc-button nc-button--primary` once per view, for its main action ("Download for Mac"). Everything else is `nc-button--secondary`. On a `night` or `night-deep` panel add `nc-button--on-night` to a secondary button so its text and edge use `starlight`. `nc-button--large` is for the download button in the hero and nowhere else.
+Use `primary` once per view, for its main action ("Download for Mac"). `large`, 52px tall with `space-8` sides, is for the download button in the hero and the dusk banner; every other button is 40px with `space-6` sides. On a night panel (`night`) a button takes the Night theme's colours, whatever the page's theme.
 
-The consumer provides the element (`<a>` for navigation and downloads, `<button>` for actions), its label in title case, and, for a download, the version in `nc-button__meta` set in Martian Mono. An icon goes before the label as an inline SVG at 18px.
+`Button` is a link: the consumer provides its `href` and its label in title case. For a download, the version follows the label in Martian Mono.
 
-- Do: "Download for Mac", "View on GitHub", "Copy".
+- Do: "Download for Mac", "View on GitHub", "Back to Nightcap".
 - Don't: "Get started", "Enable", two primary buttons side by side.

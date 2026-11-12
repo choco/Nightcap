@@ -9,7 +9,8 @@
 #   --secrets  betterleaks over every commit, with what it finds redacted
 #   --scripts  shellcheck on the shell scripts in scripts/, release/ and .githooks/, and
 #              actionlint on the workflows, with shellcheck on their run steps
-#   --site     Biome, the type checker and the site's build (build-site)
+#   --site     Biome, the type checker and the site's build (build-site), then the design
+#              system's components, which must be what the site builds (site/bundle.ts)
 #   --swift    swift-format against .swift-format, the debug core and the dev build
 #              (build-core, build-app), the String Catalog against the dev build's strings
 #              (sync-strings --check), then the Swift tests (test-app); by default only on
@@ -110,6 +111,12 @@ fi
 
 if [[ -n "$site" ]]; then
   scripts/build-site
+  pnpm --dir site bundle
+  if [[ -n "$(git status --porcelain -- design/components)" ]]; then
+    echo "error: design/components isn't what the site builds: run pnpm --dir site bundle and commit it" >&2
+    git status --porcelain -- design/components >&2
+    exit 1
+  fi
 fi
 
 if [[ -n "$swift" ]]; then

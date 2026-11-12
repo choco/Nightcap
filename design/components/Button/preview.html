@@ -1,14 +1,18 @@
-<!-- @dsCard group="Actions" height=168 subtitle="Primary, secondary, on a night panel" -->
-<div style="display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-4);font-family:var(--font-text)">
-  <div style="display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center">
-    <a class="nc-button nc-button--primary nc-button--large" href="#download">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19h14"/></svg>
-      Download for Mac <span class="nc-button__meta">0.3.1</span>
-    </a>
-    <a class="nc-button nc-button--secondary" href="#github">View on GitHub</a>
-  </div>
-  <div style="display:flex;gap:var(--space-2);align-items:center;background:var(--night);padding:var(--space-4);border-radius:var(--radius-md)">
-    <button class="nc-button nc-button--primary" type="button">Turn On</button>
-    <button class="nc-button nc-button--secondary nc-button--on-night" type="button">Not Now</button>
-  </div>
-</div>
+<!-- @dsCard group="Actions" height=184 subtitle="Primary, secondary, on a night panel" -->
+<div id="card" style="display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-4);background:var(--ground)"></div>
+<script>
+const h = React.createElement;
+const { Button } = Nightcap;
+const row = { display: "flex", flexWrap: "wrap", gap: "var(--space-2)", alignItems: "center" };
+ReactDOM.createRoot(document.getElementById("card")).render([
+  h("div", { key: "ground", style: row },
+    h(Button, { primary: true, large: true, href: "#download" }, "Download for Mac",
+      h("span", { className: "font-mono text-[12px] font-medium opacity-75" }, "0.3.1")),
+    h(Button, { href: "#github" }, "View on GitHub"),
+  ),
+  h("div", { key: "night", className: "night", style: { ...row, padding: "var(--space-4)", borderRadius: "var(--radius-md)", background: "var(--night)" } },
+    h(Button, { primary: true, href: "#on" }, "Turn On"),
+    h(Button, { href: "#later" }, "Not Now"),
+  ),
+]);
+</script>

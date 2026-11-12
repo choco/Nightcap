@@ -1,13 +1,18 @@
-<!-- @dsCard group="Content" height=232 subtitle="The CLI, with its real output" -->
-<div style="padding:var(--space-4)">
-  <div class="nc-terminal" role="figure" aria-label="nightcap status in a terminal">
-    <div class="nc-terminal__line"><span class="nc-terminal__prompt">$ </span>nightcap status</div>
-    <div class="nc-terminal__line nc-terminal__out"><span class="nc-terminal__key">Nightcap 0.3.1</span>, self-managed</div>
-    <div class="nc-terminal__line nc-terminal__out"><span class="nc-terminal__key">Night Shift:</span> on, following the schedule</div>
-    <div class="nc-terminal__line nc-terminal__out"><span class="nc-terminal__key">Schedule:</span> sunset to sunrise, on until 07:52</div>
-    <div class="nc-terminal__line nc-terminal__out"><span class="nc-terminal__key">Frontmost app:</span> com.apple.mail</div>
-    <div class="nc-terminal__line nc-terminal__out"><span class="nc-terminal__key">Rules:</span> app:com.figma.Desktop (config rule, off)</div>
-    <div class="nc-terminal__line"><span class="nc-terminal__prompt">$ </span>nightcap off --for 1h30m</div>
-    <div class="nc-terminal__line nc-terminal__out">Night Shift off until 01:00</div>
-  </div>
-</div>
+<!-- @dsCard group="Content" height=300 subtitle="The CLI, with its real output" -->
+<div id="card" style="padding:var(--space-6);background:var(--ground)"></div>
+<script>
+const h = React.createElement;
+const { Terminal, Command, Output, Arg, State } = Nightcap;
+ReactDOM.createRoot(document.getElementById("card")).render(
+  h(Terminal, { "aria-label": "A terminal session with the nightcap command" },
+    h(Command, null, " off ", h(Arg, null, "--for 1h30m")),
+    h(Output, null, "Night Shift ", h(State), " until 01:00"),
+    h(Command, null, " rules add ", h(Arg, null, "domain:figma.com")),
+    h(Output, null, "Added domain:figma.com, which turns Night Shift off. Night Shift ", h(State), " until 01:00."),
+    h(Command, null, " reset"),
+    h(Output, null, "Night Shift following the schedule"),
+    h(Command, null, " status ", h(Arg, null, "--json"), " | jq -r ", h(Arg, null, ".front.decision.state")),
+    h(Output, null, h(State, { on: true })),
+  ),
+);
+</script>
