@@ -7,6 +7,7 @@ export function How({ shiftOn }: { shiftOn: boolean }) {
 			<div
 				className="flex max-w-[720px] flex-col items-center gap-3 text-center"
 				data-lens-area
+				data-doodle-clear="12"
 			>
 				<h2>It follows what's in front</h2>
 				<SectionText>

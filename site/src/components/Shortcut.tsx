@@ -147,6 +147,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			<div
 				ref={cards}
 				className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-6"
+				data-doodle-clear="12"
 			>
 				<MoveCard
 					lit={shown.lit === "tap"}
@@ -176,7 +177,10 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 					so.
 				</MoveCard>
 			</div>
-			<div className="flex flex-col items-center gap-3.5">
+			<div
+				className="flex flex-col items-center gap-3.5"
+				data-doodle-clear="12"
+			>
 				<button
 					className="cursor-pointer touch-none rounded-[18px] border border-line bg-surface px-[18px] py-3.5 shadow-lift select-none"
 					type="button"

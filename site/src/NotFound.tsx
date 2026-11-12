@@ -42,9 +42,7 @@ export function NotFound() {
 							</div>
 						</div>
 					</main>
-					<div data-doodle-clear="12">
-						<Footer />
-					</div>
+					<Footer />
 				</div>
 			</div>
 		</div>

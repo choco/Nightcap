@@ -92,7 +92,10 @@ const LINKS = [
 
 export function Footer() {
 	return (
-		<footer className={cx(styles.footer, "text-[14px] text-ink-muted")}>
+		<footer
+			className={cx(styles.footer, "text-[14px] text-ink-muted")}
+			data-doodle-clear="12"
+		>
 			<span className={cx(styles.credit, "inline-flex items-center gap-1.5")}>
 				Made with
 				<svg

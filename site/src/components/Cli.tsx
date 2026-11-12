@@ -22,7 +22,10 @@ const Off = () => <span className="text-[#ffaa6b]">off</span>;
 export function Cli() {
 	return (
 		<Section id="cli" className="flex flex-wrap items-center gap-x-12 gap-y-8">
-			<div className="flex flex-[1_1_300px] flex-col gap-3.5">
+			<div
+				className="flex flex-[1_1_300px] flex-col gap-3.5"
+				data-doodle-clear="12"
+			>
 				<h2>Made to be scripted</h2>
 				<SectionText>
 					Everything in the menu is also a <code>nightcap</code> command. Bind
@@ -38,6 +41,7 @@ export function Cli() {
 			<figure
 				className="min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md border border-menu-line bg-night-deep p-6 font-mono text-[13px] leading-[1.6] text-starlight shadow-[0_24px_70px_-18px_rgba(246,213,138,0.32)] max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
 				data-lens-area
+				data-doodle-clear="12"
 				aria-label="A terminal session with the nightcap command"
 			>
 				<Command>

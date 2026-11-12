@@ -1,4 +1,10 @@
-import { type ReactNode, type RefObject, useEffect, useState } from "react";
+import {
+	memo,
+	type ReactNode,
+	type RefObject,
+	useEffect,
+	useState,
+} from "react";
 import { cx } from "../lib/cx";
 import {
 	type Box,
@@ -7,6 +13,7 @@ import {
 	type DoodleMotion,
 	placeDoodles,
 } from "../lib/doodles";
+import { phoneQuery } from "../lib/phone";
 import { Outline } from "./icons";
 import { MOON, SPARKLE, STAR } from "./outlines";
 
@@ -30,8 +37,12 @@ const MOTIONS: Record<DoodleMotion, string> = {
 	spin: "animate-spin",
 };
 
-/** A layer of doodles behind the content; on phones only the ones marked to keep. */
-export function Doodles({ doodles }: { doodles: Doodle[] }) {
+/** A layer of doodles behind the content. */
+export const Doodles = memo(function Doodles({
+	doodles,
+}: {
+	doodles: Doodle[];
+}) {
 	return (
 		<div
 			className="pointer-events-none absolute inset-0 z-0"
@@ -40,7 +51,7 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 			{doodles.map((d) => (
 				<span
 					key={`${d.kind}-${d.x}-${d.y}`}
-					className={cx("absolute", !d.keep && "max-sm:hidden")}
+					className="absolute"
 					style={{
 						left: `${d.x.toFixed(2)}%`,
 						top: `${Math.round(d.y)}px`,
@@ -69,7 +80,7 @@ export function Doodles({ doodles }: { doodles: Doodle[] }) {
 			))}
 		</div>
 	);
-}
+});
 
 const box = (r: DOMRect, origin: DOMRect, margin: number): Box => ({
 	left: r.left - origin.left - margin,
@@ -78,9 +89,20 @@ const box = (r: DOMRect, origin: DOMRect, margin: number): Box => ({
 	bottom: r.bottom - origin.top + margin,
 });
 
-/** The doodles for the hero's layer and the page's, placed once the page is laid out and again
- *  when it resizes or the web fonts reflow its text. The hero's content boxes are marked
- *  `data-doodle-clear` with the margin to keep; the page's are the sections' blocks. */
+/** The boxes marked `data-doodle-clear` among `nodes`, each with the margin it gives. */
+const cleared = (nodes: HTMLElement[], origin: DOMRect) =>
+	nodes.map((node) =>
+		box(node.getBoundingClientRect(), origin, Number(node.dataset.doodleClear)),
+	);
+
+const same = (a: Doodle[], b: Doodle[]) =>
+	a.length === b.length && a.every((d, i) => d === b[i]);
+
+/** The doodles for the hero's layer and the page's, clear of the boxes marked
+ *  `data-doodle-clear` with the margin to keep: the hero's of those in the hero, the page's of the
+ *  rest. They're placed once the page is laid out, and again when its width changes or the web
+ *  fonts reflow the hero; when only the page's height changes, the ones that would now touch
+ *  content or fall past its end are left out. On phones, only those marked to keep are drawn. */
 export function useDoodles(page: RefObject<HTMLElement | null>) {
 	const [doodles, setDoodles] = useState<{ hero: Doodle[]; page: Doodle[] }>({
 		hero: [],
@@ -89,32 +111,33 @@ export function useDoodles(page: RefObject<HTMLElement | null>) {
 	useEffect(() => {
 		const root = page.current;
 		if (!root) throw new Error("the doodles have no page");
+		const hero = root.querySelector<HTMLElement>("[data-hero]");
+		if (!hero) throw new Error("the doodles have no hero");
+		const marked = [
+			...root.querySelectorAll<HTMLElement>("[data-doodle-clear]"),
+		];
+		const heroMarked = marked.filter((node) => hero.contains(node));
+		const pageMarked = marked.filter((node) => !hero.contains(node));
+		const phone = phoneQuery();
+		// The doodles as last placed, and the hero they were placed around.
+		let placed: { around: string; doodles: Doodle[] } | null = null;
 		const draw = () => {
-			const hero = root.querySelector<HTMLElement>("[data-hero]");
-			if (!hero) throw new Error("the doodles have no hero");
 			const heroBox = hero.getBoundingClientRect();
 			const heroHeight = hero.offsetHeight;
 			const pageHeight = root.offsetHeight;
-			const clear = [
-				...hero.querySelectorAll<HTMLElement>("[data-doodle-clear]"),
-			].map((node) =>
-				box(
-					node.getBoundingClientRect(),
-					heroBox,
-					Number(node.dataset.doodleClear),
-				),
-			);
-			const all = placeDoodles(pageHeight, {
-				width: heroBox.width,
-				height: heroHeight,
-				clear,
-			});
+			const clear = cleared(heroMarked, heroBox);
+			const around = JSON.stringify([heroBox.width, heroHeight, clear]);
+			if (placed?.around !== around)
+				placed = {
+					around,
+					doodles: placeDoodles(pageHeight, {
+						width: heroBox.width,
+						height: heroHeight,
+						clear,
+					}),
+				};
 			const pageBox = root.getBoundingClientRect();
-			const content = [
-				...root.querySelectorAll(
-					"main > section:not([data-dusk]) > *, main > [data-dusk], main > footer",
-				),
-			].map((node) => box(node.getBoundingClientRect(), pageBox, 12));
+			const content = cleared(pageMarked, pageBox);
 			const offContent = (d: Doodle) => {
 				const x = (d.x / 100) * pageBox.width;
 				return !content.some(
@@ -125,13 +148,21 @@ export function useDoodles(page: RefObject<HTMLElement | null>) {
 						d.y < r.bottom,
 				);
 			};
-			setDoodles({
+			const all = phone.matches
+				? placed.doodles.filter((d) => d.keep)
+				: placed.doodles;
+			const next = {
 				hero: all.filter((d) => d.y + d.size < heroHeight),
 				page: all.filter(
 					(d) =>
 						d.y > heroHeight && d.y + d.size < pageHeight - 24 && offContent(d),
 				),
-			});
+			};
+			setDoodles((current) =>
+				same(current.hero, next.hero) && same(current.page, next.page)
+					? current
+					: next,
+			);
 		};
 		draw();
 		let timer: ReturnType<typeof setTimeout>;
@@ -139,10 +170,9 @@ export function useDoodles(page: RefObject<HTMLElement | null>) {
 			clearTimeout(timer);
 			timer = setTimeout(draw, 200);
 		};
-		// The page resizing, or the web fonts reflowing the text the doodles keep clear of.
+		// The page resizing, or the web fonts reflowing the hero's content.
 		const reflow = new ResizeObserver(redraw);
-		for (const node of root.querySelectorAll("[data-hero] [data-doodle-clear]"))
-			reflow.observe(node);
+		for (const node of heroMarked) reflow.observe(node);
 		reflow.observe(root);
 		return () => {
 			clearTimeout(timer);

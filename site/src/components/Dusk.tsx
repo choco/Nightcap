@@ -53,7 +53,7 @@ export function Dusk() {
 			)}
 			data-lens-section
 			data-lens-area
-			data-dusk
+			data-doodle-clear="12"
 		>
 			<span className={styles.sky} aria-hidden="true" />
 			<span className={cx(styles.sun, glow.glow)} aria-hidden="true" />

@@ -40,7 +40,10 @@ export function SplitHeading({
 	children: ReactNode;
 }) {
 	return (
-		<div className="flex flex-wrap items-start gap-x-12 gap-y-3">
+		<div
+			className="flex flex-wrap items-start gap-x-12 gap-y-3"
+			data-doodle-clear="12"
+		>
 			<h2 className="flex-[1_1_280px]">{title}</h2>
 			<SectionText className="flex-[1_1_420px]">{children}</SectionText>
 		</div>

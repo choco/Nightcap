@@ -18,7 +18,7 @@ export function Evening() {
 				off: Nightcap goes along with you, and snoozes that rule until the
 				schedule's next change instead of fighting you.
 			</SplitHeading>
-			<div className={styles.sky} aria-hidden="true">
+			<div className={styles.sky} aria-hidden="true" data-doodle-clear="12">
 				{MOMENTS.map((m, i) => (
 					<span
 						key={m.time}
@@ -31,6 +31,7 @@ export function Evening() {
 				className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-5"
 				aria-label="Moments of one evening"
 				data-lens-area
+				data-doodle-clear="12"
 			>
 				{MOMENTS.map((m, i) => (
 					<button
@@ -57,7 +58,10 @@ export function Evening() {
 					</button>
 				))}
 			</fieldset>
-			<div className="flex flex-wrap items-start gap-x-10 gap-y-6">
+			<div
+				className="flex flex-wrap items-start gap-x-10 gap-y-6"
+				data-doodle-clear="12"
+			>
 				<p
 					key={index}
 					className="max-w-[46ch] flex-[1_1_320px] animate-swap text-[17px] leading-[1.6] motion-reduce:animate-none"
