@@ -1,7 +1,6 @@
 import {
 	copyFileSync,
 	existsSync,
-	mkdirSync,
 	readdirSync,
 	readFileSync,
 	writeFileSync,
@@ -21,9 +20,9 @@ const output = fileURLToPath(
 const appIcon = fileURLToPath(
 	new URL("../../app/icons/AppIcon.svg", import.meta.url),
 );
-const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
+const icon = fileURLToPath(new URL("../public/icon.svg", import.meta.url));
 
-type Value = string | { light?: string; dark?: string };
+type Value = string | { light: string; dark: string };
 interface Token<V = string> {
 	name: string;
 	value: V;
@@ -35,7 +34,7 @@ interface Tokens {
 	shadow: { tokens: Token[] };
 	type: {
 		families: Record<string, string>;
-		fonts: { family: string; weight: string; style?: string; file: string }[];
+		fonts: { family: string; weight: string; style: string; file: string }[];
 	};
 }
 
@@ -43,14 +42,14 @@ interface Tokens {
 const css = (value: string) =>
 	/^\{.+\}$/.test(value) ? `var(--${value.slice(1, -1)})` : value;
 
-// A colour with a value for each theme is both, in light-dark(); one missing a theme takes the
-// other's.
+// A colour with a value for each theme is both, in light-dark().
 function themed({ name, value }: Token<Value>): string {
 	if (typeof value === "string") return css(value);
-	const { light = value.dark, dark = value.light } = value;
-	if (light === undefined || dark === undefined)
-		throw new Error(`design/tokens.json: ${name} has no value`);
-	return `light-dark(${css(light)},${css(dark)})`;
+	if (!value.light || !value.dark)
+		throw new Error(
+			`design/tokens.json: ${name} needs a light and a dark value`,
+		);
+	return `light-dark(${css(value.light)},${css(value.dark)})`;
 }
 
 /** The design system's tokens as CSS: the fonts, the colours as variables on :root, light-dark()
@@ -70,7 +69,7 @@ function tokensCss(tokens: Tokens): string {
 		"/* Generated from design/tokens.json by site/plugins/design.ts. */",
 		...tokens.type.fonts.map(
 			(font) =>
-				`@font-face{font-family:"${font.family}";src:url("../../../design/${font.file}") format("woff2");font-weight:${font.weight};font-style:${font.style ?? "normal"};font-display:swap}`,
+				`@font-face{font-family:"${font.family}";src:url("../../../design/${font.file}") format("woff2");font-weight:${font.weight};font-style:${font.style};font-display:swap}`,
 		),
 		`:root{${colours.map((token) => `--${token.name}:${themed(token)}`).join(";")};color-scheme:light}`,
 		`@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark}}`,
@@ -97,28 +96,24 @@ function writeTokens() {
 		writeFileSync(output, css);
 }
 
+const copyIcon = () => copyFileSync(appIcon, icon);
+
 /** What the site takes from the rest of the repo: src/styles/tokens.css from the design system's
  *  tokens, and public/icon.svg, the app icon, both written before Vite reads anything and again
  *  when their sources change while serving; preloads for the first screen's fonts; and the fonts'
  *  licences beside the built site's fonts. */
 export function design(): Plugin {
-	// The preloads' addresses, from the base the config resolves to.
-	let base = "/";
 	return {
 		name: "nightcap:design",
-		configResolved(config) {
-			base = config.base;
-		},
 		config() {
 			writeTokens();
-			mkdirSync(publicDir, { recursive: true });
-			copyFileSync(appIcon, `${publicDir}icon.svg`);
+			copyIcon();
 		},
 		configureServer(server) {
 			server.watcher.add([source, appIcon]);
 			server.watcher.on("change", (path) => {
 				if (path === source) writeTokens();
-				if (path === appIcon) copyFileSync(appIcon, `${publicDir}icon.svg`);
+				if (path === appIcon) copyIcon();
 			});
 		},
 		// The faces the first screen sets (the headline's and the text's), preloaded so the headline
@@ -137,7 +132,7 @@ export function design(): Plugin {
 						tag: "link",
 						attrs: {
 							rel: "preload",
-							href: `${base}${name}`,
+							href: `/${name}`,
 							as: "font",
 							type: "font/woff2",
 							crossorigin: "",
