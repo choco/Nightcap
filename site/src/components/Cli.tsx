@@ -1,23 +1,5 @@
-import type { ReactNode } from "react";
 import { Section, SectionText } from "./Section";
-
-const Command = ({ children }: { children: ReactNode }) => (
-	<div className="wrap-anywhere whitespace-pre-wrap">
-		<span className="text-moon">$ </span>
-		<span className="font-semibold">nightcap</span>
-		{children}
-	</div>
-);
-const Output = ({ children }: { children: ReactNode }) => (
-	<div className="wrap-anywhere whitespace-pre-wrap text-ink-muted">
-		{children}
-	</div>
-);
-// An argument stays whole: a line breaks between them, never at a flag's hyphens.
-const Arg = ({ children }: { children: ReactNode }) => (
-	<span className="whitespace-nowrap text-moon">{children}</span>
-);
-const Off = () => <span className="text-ember-text">off</span>;
+import { Arg, Command, Output, State, Terminal } from "./Terminal";
 
 export function Cli() {
 	return (
@@ -37,9 +19,8 @@ export function Cli() {
 					plain config file, next to the rest of your setup.
 				</p>
 			</div>
-			{/* Long output wraps, as a terminal window would. */}
-			<figure
-				className="night min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md bg-night-deep p-6 font-mono text-code text-ink shadow-glow inset-ring inset-ring-starlight/8 max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
+			<Terminal
+				className="min-w-0 flex-[999_1_490px]"
 				data-lens-area
 				data-doodle-clear="12"
 				aria-label="A terminal session with the nightcap command"
@@ -49,7 +30,7 @@ export function Cli() {
 					off <Arg>--for 1h30m</Arg>
 				</Command>
 				<Output>
-					Night Shift <Off /> until 01:00
+					Night Shift <State /> until 01:00
 				</Output>
 				<Command>
 					{" "}
@@ -57,7 +38,7 @@ export function Cli() {
 				</Command>
 				<Output>
 					Added domain:figma.com, which turns Night Shift off. Night Shift{" "}
-					<Off /> until 01:00.
+					<State /> until 01:00.
 				</Output>
 				<Command>
 					{" "}
@@ -65,7 +46,7 @@ export function Cli() {
 				</Command>
 				<Output>
 					Added app:com.apple.iBooksX, which turns Night Shift on. Night Shift{" "}
-					<Off /> until 01:00.
+					<State /> until 01:00.
 				</Output>
 				<Command> reset</Command>
 				<Output>Night Shift following the schedule</Output>
@@ -74,9 +55,9 @@ export function Cli() {
 					status <Arg>--json</Arg> | jq -r <Arg>.front.decision.state</Arg>
 				</Command>
 				<Output>
-					<span className="text-ok">on</span>
+					<State on />
 				</Output>
-			</figure>
+			</Terminal>
 		</Section>
 	);
 }

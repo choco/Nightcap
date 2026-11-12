@@ -1,5 +1,5 @@
 import { REPO } from "../data/repo";
-import { ButtonLink } from "./Button";
+import { Button } from "./Button";
 
 const RELEASES = `${REPO}/releases/latest`;
 
@@ -13,14 +13,14 @@ if (Boolean(version) !== Boolean(url))
 
 export function DownloadButton({ showVersion }: { showVersion?: boolean }) {
 	return (
-		<ButtonLink href={url || RELEASES} primary large>
+		<Button href={url || RELEASES} primary large>
 			Download for Mac
 			{showVersion && version && (
 				<span className="font-mono text-[12px] font-medium opacity-75">
 					{version}
 				</span>
 			)}
-		</ButtonLink>
+		</Button>
 	);
 }
 

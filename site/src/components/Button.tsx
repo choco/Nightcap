@@ -1,20 +1,16 @@
 import type { ReactNode } from "react";
 import { cx } from "../lib/cx";
 
-/** A capsule link, as the design system's Button, that springs on hover: `primary`, in moon, for
- *  the one action a view is about, and outlined for the rest. `large` is for the download button
- *  in the hero. */
-export function ButtonLink({
-	href,
-	primary,
-	large,
-	children,
-}: {
+export interface ButtonProps {
 	href: string;
 	primary?: boolean;
 	large?: boolean;
 	children: ReactNode;
-}) {
+}
+
+/** A capsule link that springs on hover: `primary`, in moon with a gold edge, for the one action a
+ *  view is about, and outlined for the rest. `large` is for the download button in the hero. */
+export function Button({ href, primary, large, children }: ButtonProps) {
 	return (
 		<a
 			className={cx(

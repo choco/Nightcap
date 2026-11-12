@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { ButtonLink } from "./components/Button";
+import { Button } from "./components/Button";
 import { Celestial } from "./components/Celestial";
 import { Doodles, useDoodles } from "./components/Doodles";
 import { Footer } from "./components/Footer";
@@ -35,10 +35,10 @@ export function NotFound() {
 								Nightcap is on its home page.
 							</p>
 							<div className="flex flex-wrap gap-3">
-								<ButtonLink href="/" primary>
+								<Button href="/" primary>
 									Back to Nightcap
-								</ButtonLink>
-								<ButtonLink href={REPO}>View on GitHub</ButtonLink>
+								</Button>
+								<Button href={REPO}>View on GitHub</Button>
 							</div>
 						</div>
 					</main>

@@ -4,12 +4,15 @@ import { cx } from "../lib/cx";
 import { Chevron, GlyphIcon, MoonIcon, Sun } from "./icons";
 import styles from "./Menu.module.css";
 
-type Props = HTMLAttributes<HTMLDivElement> & {
+export type MenuProps = HTMLAttributes<HTMLDivElement> & {
 	entries: MenuEntry[];
 	look: "mac" | "night";
 };
 
-export function Menu({ entries, look, className, ...rest }: Props) {
+/** Nightcap's menu, with the rows the app would show: in macOS's own look (`mac`), sized in em of
+ *  the text its parent sets, 13px at the real menu's size, or as a night panel in the site's
+ *  colours (`night`). */
+export function Menu({ entries, look, className, ...rest }: MenuProps) {
 	return (
 		<div
 			className={cx(styles[look], look === "night" && "night", className)}
