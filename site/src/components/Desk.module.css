@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* A Mac at night in the site's own colours: the menu bar, the front app's window, Nightcap's
    menu and a dock that brings an app to the front. */
 .desk {
@@ -228,7 +230,7 @@
 		transition: none;
 	}
 }
-@media (width < 561px) {
+@variant max-sm {
 	.menuInline {
 		display: none;
 	}

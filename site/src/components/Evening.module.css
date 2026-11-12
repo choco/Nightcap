@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The evening's sky, from sunset to sunrise, with a marker at each moment. */
 .sky {
 	position: relative;
@@ -25,7 +27,7 @@
 	border-radius: 50%;
 	background: var(--surface);
 	box-shadow: 0 0 0 2px var(--line-strong);
-	transition: transform 220ms cubic-bezier(0.2, 1.6, 0.4, 1);
+	transition: transform 220ms var(--ease-spring);
 }
 .marker.on {
 	background: var(--moon);
@@ -37,7 +39,7 @@
 		transition: none;
 	}
 }
-@media (width < 561px) {
+@variant max-sm {
 	.sky {
 		display: none;
 	}

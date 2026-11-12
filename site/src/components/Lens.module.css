@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The page under Night Shift, with the true-colour circle cut out of it, and the ring around the
    circle, of radius --lr. Lens places them with --lx and --ly, and glides or steers them there. */
 .tint,
@@ -9,10 +11,13 @@
 	pointer-events: none;
 	transform: translate(var(--lx, 900px), var(--ly, 330px));
 }
+@variant max-sm {
+	.tint,
+	.ring {
+		--lr: min(92px, 24vw);
+	}
+}
 .tint {
-	/* The tint's two layers, 22% of #ff8a2e under 10% of #ff9a4d, as one colour: this, at the
-	   pieces' opacity. */
-	--tint: rgb(255 143.4 56.4);
 	--reach: 10000px;
 	--overlap: 1px;
 	z-index: 5;
@@ -47,8 +52,8 @@
    band that changed its size or place after the first paint would be a layout shift as big as
    the screen.
 
-   The pieces are solid, each overlapping the next by --overlap, and fade together to the tint's
-   opacity. Off a whole pixel, WebKit smooths each layer's edge by itself, so see-through pieces
+   The pieces are solid, each overlapping the next by --overlap, and fade together to the flat
+   tint's opacity (main.css). Off a whole pixel, WebKit smooths each layer's edge by itself, so see-through pieces
    meeting edge to edge leave the tint thinner along every seam: lines across the page. */
 .pieces {
 	opacity: 0.298;
@@ -70,7 +75,7 @@
 	background: radial-gradient(
 		circle var(--lr),
 		transparent 98%,
-		var(--tint) 100%
+		var(--tint-flat) 100%
 	);
 }
 .above,
@@ -78,7 +83,7 @@
 	left: calc(-1 * var(--reach));
 	width: calc(var(--reach) * 2);
 	height: calc(var(--reach) - var(--lr));
-	background-color: var(--tint);
+	background-color: var(--tint-flat);
 }
 .above {
 	bottom: var(--lr);
@@ -91,7 +96,7 @@
 	top: calc(-1 * (var(--lr) + var(--overlap)));
 	width: calc(var(--reach) - var(--lr));
 	height: calc((var(--lr) + var(--overlap)) * 2);
-	background-color: var(--tint);
+	background-color: var(--tint-flat);
 }
 .left {
 	right: var(--lr);
@@ -131,11 +136,5 @@
 	.tint,
 	.ring {
 		transition: none;
-	}
-}
-@media (width < 561px) {
-	.tint,
-	.ring {
-		--lr: min(92px, 24vw);
 	}
 }

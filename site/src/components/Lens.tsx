@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
+import { phoneQuery } from "../lib/phone";
 import styles from "./Lens.module.css";
 
 // The sway, across and down at different paces, so the circle traces a slow figure.
@@ -28,7 +29,7 @@ export function Lens({ page }: { page: RefObject<HTMLElement | null> }) {
 		if (!root || !tinted || !ringed || !cutout)
 			throw new Error("the lens has no page");
 		const circles = [tinted, ringed];
-		const phone = window.matchMedia("(max-width: 560px)");
+		const phone = phoneQuery();
 		const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 		const written = new Map<string, string>();
 		const set = (values: Record<string, number>) => {

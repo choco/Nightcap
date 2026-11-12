@@ -61,6 +61,9 @@ export function isPage(file: string): file is PageFile {
 
 const ORIGIN = "https://nightcap.choco.me";
 
+/** Where the footer's appearance switch keeps the appearance chosen on this device. */
+export const THEME_KEY = "nightcap-theme";
+
 /** A page's head, for its HTML's `<!--head-->` outlet. */
 export function head(file: string): string {
 	if (!isPage(file)) throw new Error(`${file} isn't one of the site's pages`);
@@ -93,7 +96,7 @@ export function head(file: string): string {
 		`<script>
   // The footer's appearance switch, applied before the first paint.
   try {
-    const theme = localStorage.getItem('nightcap-theme');
+    const theme = localStorage.getItem('${THEME_KEY}');
     if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
   } catch {}
 </script>`,

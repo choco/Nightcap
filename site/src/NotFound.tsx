@@ -4,6 +4,7 @@ import { Celestial } from "./components/Celestial";
 import { Doodles, useDoodles } from "./components/Doodles";
 import { Footer } from "./components/Footer";
 import { Wordmark } from "./components/Wordmark";
+import { REPO } from "./data/repo";
 
 /** The page Pages serves for a path that isn't there: the hero's sky, and the way back. */
 export function NotFound() {
@@ -37,9 +38,7 @@ export function NotFound() {
 								<ButtonLink href="/" primary>
 									Back to Nightcap
 								</ButtonLink>
-								<ButtonLink href="https://github.com/choco/Nightcap">
-									View on GitHub
-								</ButtonLink>
+								<ButtonLink href={REPO}>View on GitHub</ButtonLink>
 							</div>
 						</div>
 					</main>

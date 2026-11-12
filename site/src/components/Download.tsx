@@ -1,6 +1,7 @@
+import { REPO } from "../data/repo";
 import { ButtonLink } from "./Button";
 
-const RELEASES = "https://github.com/choco/Nightcap/releases/latest";
+const RELEASES = `${REPO}/releases/latest`;
 
 /** The newest release's DMG, which the Pages deploy builds the site with (pages.yml), so the
  *  prerendered page links it. A build without one, as before the first release and everywhere

@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { KEYS } from "../data/menus";
 import { cx } from "../lib/cx";
 import { useInView } from "../lib/inView";
 import { Mini } from "./Mini";
@@ -146,9 +147,9 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 	return (
 		<Section id="shortcut" className="flex flex-col gap-8">
 			<SplitHeading title="One shortcut, two moves">
-				Set a shortcut in Settings, <kbd>⌃⌥⌘N</kbd> to start with, and it works
-				from any app. A tap switches Night Shift. A hold is a peek: true colour
-				until you let go, then the warmth comes straight back.
+				Set a shortcut in Settings, <kbd>{KEYS}</kbd> to start with, and it
+				works from any app. A tap switches Night Shift. A hold is a peek: true
+				colour until you let go, then the warmth comes straight back.
 			</SplitHeading>
 			<div
 				ref={cards}
@@ -208,7 +209,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 					onClick={(event) => event.preventDefault()}
 				>
 					<span className="inline-flex gap-2.5" aria-hidden="true">
-						{["⌃", "⌥", "⌘", "N"].map((key) => (
+						{[...KEYS].map((key) => (
 							// The key's side stays put, and the cap sinks over it.
 							<span
 								key={key}

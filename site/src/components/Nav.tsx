@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { REPO } from "../data/repo";
 import { cx } from "../lib/cx";
 import { Wordmark } from "./Wordmark";
 
@@ -14,7 +15,7 @@ export function Nav({
 		// sections' column, and below lg it joins the hero's, the difference being too small to look
 		// deliberate. Below md its wide link would push the Night Shift switch onto a second row.
 		<nav
-			className="flex flex-wrap items-center gap-x-6 gap-y-3 py-6 max-md:gap-x-4 max-sm:flex-nowrap max-sm:gap-1 lg:mx-auto lg:w-full lg:max-w-[864px]"
+			className="flex flex-wrap items-center gap-x-6 gap-y-3 py-6 max-md:gap-x-4 max-sm:flex-nowrap max-sm:gap-1 lg:mx-auto lg:w-full lg:max-w-nav"
 			aria-label="Main"
 			data-doodle-clear="12"
 		>
@@ -25,7 +26,7 @@ export function Nav({
 					How it works
 				</NavLink>
 				<span className="h-3.5 w-px bg-line max-md:hidden" aria-hidden="true" />
-				<NavLink href="https://github.com/choco/Nightcap">
+				<NavLink href={REPO}>
 					GitHub
 					<svg
 						viewBox="0 0 24 24"

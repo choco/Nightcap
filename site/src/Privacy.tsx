@@ -1,4 +1,5 @@
 import { Legal } from "./components/Legal";
+import { REPO } from "./data/repo";
 
 /** The privacy policy, for the app, its command and this site. Every statement is one the code
  *  bears out: change it with the behaviour it describes. */
@@ -18,8 +19,7 @@ export function Privacy() {
 			<p>
 				Nightcap has no accounts, no analytics, no ads and no crash reporting.
 				It sends nothing about you to me or to anyone else. Its source is{" "}
-				<a href="https://github.com/choco/Nightcap">on GitHub</a>, so you can
-				check every line of this.
+				<a href={REPO}>on GitHub</a>, so you can check every line of this.
 			</p>
 
 			<h2>What stays on your Mac</h2>
@@ -131,7 +131,7 @@ export function Privacy() {
 			<p>
 				If Nightcap starts doing something this policy doesn't describe, the
 				policy changes first, with a new date above. Every version is in{" "}
-				<a href="https://github.com/choco/Nightcap/commits/main/site/src/Privacy.tsx">
+				<a href={`${REPO}/commits/main/site/src/Privacy.tsx`}>
 					the site's history
 				</a>
 				.

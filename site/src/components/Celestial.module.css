@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The hero's sky body: the moon at night, the sun by day. It grows with the screen up to 620px,
    and sits off the corner in proportion, so its rays and rings stay clear of the hero's text. */
 .celestial {
@@ -75,7 +77,7 @@
 }
 
 /* On phones, at the corner above the nav, small enough on the narrowest to keep off the wordmark. */
-@media (width < 721px) {
+@variant max-md {
 	.celestial {
 		--size: min(240px, 50vw);
 		right: calc(var(--size) * -0.4);

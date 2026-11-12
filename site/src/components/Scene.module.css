@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The hero's scene: a live mock of the menu bar with Nightcap's menu open over Figma, in macOS's
    own light or dark look. It's laid out in em of the 13-point menu text, at the real menu's size,
    and scales down as one piece where it gets less than 440px. */
@@ -136,7 +138,7 @@
 	top: 2.38em;
 }
 
-@media (width < 561px) {
+@variant max-sm {
 	.scene {
 		aspect-ratio: 0.95;
 	}

@@ -6,11 +6,11 @@
 	--doodle: light-dark(rgba(74, 85, 120, 0.34), rgba(167, 178, 212, 0.3));
 	--doodle-gold: light-dark(rgba(138, 91, 0, 0.42), rgba(246, 213, 138, 0.42));
 	--hero-top: light-dark(#dde5f6, #16224b);
-	--choco: light-dark(#6e4026, #a8714a);
-	--choco-band: light-dark(#1b2a52, #34467a);
-	--choco-foil: light-dark(#cfd3df, #d9dce6);
 	--nav-hover: light-dark(rgba(11, 19, 48, 0.07), rgba(238, 241, 250, 0.09));
 	--menu-line: #34467a;
+	/* Night Shift's tint over a page, as one colour at 29.8%: the tint, 22% of #ff8a2e, under 10%
+	   of ember comes to 29.8% of this. */
+	--tint-flat: rgb(255 143.4 56.4);
 	/* The mocks of macOS: the menu bar, menus and wallpaper. */
 	--scene-bar: light-dark(rgba(246, 246, 248, 0.74), rgba(28, 30, 44, 0.66));
 	--scene-menu: light-dark(rgba(244, 244, 247, 0.9), rgba(40, 42, 56, 0.9));
@@ -61,16 +61,19 @@
 	);
 }
 
-/* Phones are narrower than sm; md is where the nav's wide link fits, lg where the nav joins the
-   sections' column. */
-@theme {
+/* Static, so the CSS modules and scripts can use them too. Phones are narrower than sm; md is
+   where the nav's wide link fits, lg where the nav joins the sections' column. */
+@theme static {
 	--breakpoint-*: initial;
 	--breakpoint-sm: 561px;
 	--breakpoint-md: 721px;
 	--breakpoint-lg: 1040px;
 	--ease-spring: cubic-bezier(0.2, 1.6, 0.4, 1);
+}
 
-	--container-column: calc(864px + 4rem);
+@theme {
+	--container-nav: 864px;
+	--container-column: calc(var(--container-nav) + 4rem);
 	/* The type of a page's top: the eyebrow, the title and the lead under it. */
 	--text-label: 12px;
 	--text-label--font-weight: 650;
@@ -186,28 +189,22 @@
 			scroll-behavior: auto;
 		}
 	}
-	body {
-		color: var(--ink);
-		font-family: var(--font-text);
-	}
 	/* Safari paints its status bar and toolbar strips, and the overscroll past either end, in the
      body's background, which the page covers everywhere else: the sky at the top, the ground
-     once the end is in view, and on the home page, under the page tint's two layers, flattened,
-     while its Night Shift is on. Lens.module.css flattens them as a plain mix, without the
-     multiply the desk's tint gives its first layer, and so does this. */
+     once the end is in view, and on the home page, under the page's tint while its Night Shift is
+     on. Lens.module.css lays the tint over the page as a plain mix, without the multiply the
+     desk's tint gives its first layer, and so does this. */
 	body {
 		--edge: var(--hero-top);
+		color: var(--ink);
+		font-family: var(--font-text);
 		background-color: var(--edge);
 	}
 	body.at-end {
 		--edge: var(--ground);
 	}
 	body:has([data-shift="on"]) {
-		background-color: color-mix(
-			in srgb,
-			color-mix(in srgb, var(--edge) 78%, rgb(255 138 46)) 90%,
-			rgb(255 154 77)
-		);
+		background-color: color-mix(in srgb, var(--edge) 70.2%, var(--tint-flat));
 	}
 	a {
 		color: var(--moon-text);

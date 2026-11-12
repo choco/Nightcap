@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The footer: the credit, the links, the year and the appearance switch. On phones, all centred,
    one above the other, the links in two rows of three; from sm, the credit and the switch on a row
    above the links and the year, at either edge; from lg, all on one row. */
@@ -10,6 +12,9 @@
 	padding-bottom: 48px;
 }
 .credit {
+	--choco: light-dark(#6e4026, #a8714a);
+	--choco-band: light-dark(#1b2a52, #34467a);
+	--choco-foil: light-dark(#cfd3df, #d9dce6);
 	grid-area: credit;
 }
 .links {
@@ -27,7 +32,7 @@
 	grid-area: switch;
 }
 
-@media (width >= 561px) {
+@variant sm {
 	.footer {
 		grid-template-areas: "credit switch" "links year";
 		grid-template-columns: 1fr auto;
@@ -45,7 +50,7 @@
 		justify-self: end;
 	}
 }
-@media (width >= 1040px) {
+@variant lg {
 	.footer {
 		grid-template-areas: "credit links year switch";
 		grid-template-columns: auto 1fr auto auto;

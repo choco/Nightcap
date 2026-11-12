@@ -1,5 +1,7 @@
 import { type ReactNode, useEffect, useState } from "react";
+import { REPO } from "../data/repo";
 import { cx } from "../lib/cx";
+import { THEME_KEY } from "../pages";
 import styles from "./Footer.module.css";
 import { MOON, RAYS } from "./outlines";
 
@@ -45,8 +47,8 @@ function ThemeSwitch() {
 		if (theme === "system") delete root.dataset.theme;
 		else root.dataset.theme = theme;
 		try {
-			if (theme === "system") localStorage.removeItem("nightcap-theme");
-			else localStorage.setItem("nightcap-theme", theme);
+			if (theme === "system") localStorage.removeItem(THEME_KEY);
+			else localStorage.setItem(THEME_KEY, theme);
 		} catch {
 			// Without storage, the choice lasts until the page is left.
 		}
@@ -87,6 +89,15 @@ function ThemeSwitch() {
 		</fieldset>
 	);
 }
+
+const LINKS = [
+	["GitHub", REPO],
+	["Sponsor", "https://github.com/sponsors/choco"],
+	["Changelog", "/changelog/"],
+	["Privacy", "/privacy/"],
+	["Terms", "/terms/"],
+	["MIT licence", `${REPO}/blob/main/LICENSE`],
+];
 
 export function Footer() {
 	return (
@@ -157,27 +168,11 @@ export function Footer() {
 				</svg>
 			</span>
 			<span className={styles.links}>
-				<a className="text-ink-muted" href="https://github.com/choco/Nightcap">
-					GitHub
-				</a>
-				<a className="text-ink-muted" href="https://github.com/sponsors/choco">
-					Sponsor
-				</a>
-				<a className="text-ink-muted" href="/changelog/">
-					Changelog
-				</a>
-				<a className="text-ink-muted" href="/privacy/">
-					Privacy
-				</a>
-				<a className="text-ink-muted" href="/terms/">
-					Terms
-				</a>
-				<a
-					className="text-ink-muted"
-					href="https://github.com/choco/Nightcap/blob/main/LICENSE"
-				>
-					MIT licence
-				</a>
+				{LINKS.map(([label, href]) => (
+					<a key={href} className="text-ink-muted" href={href}>
+						{label}
+					</a>
+				))}
 			</span>
 			<span className={styles.year}>© 2026</span>
 			<ThemeSwitch />

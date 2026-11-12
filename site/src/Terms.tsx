@@ -1,4 +1,5 @@
 import { Legal } from "./components/Legal";
+import { REPO } from "./data/repo";
 
 /** The terms of service, for the app, its command and this site, beside the MIT License, which
  *  governs the code. */
@@ -12,12 +13,10 @@ export function Terms() {
 			<h2>The app and its licence</h2>
 			<p>
 				Nightcap is made by me, Enrico Ghirardi, and given away under the{" "}
-				<a href="https://github.com/choco/Nightcap/blob/main/LICENSE">
-					MIT License
-				</a>
-				. These terms cover using the app, its <code>nightcap</code> command and
-				this website. The licence covers copying, changing and sharing
-				Nightcap's code; where the two differ about the code, the licence wins.
+				<a href={`${REPO}/blob/main/LICENSE`}>MIT License</a>. These terms cover
+				using the app, its <code>nightcap</code> command and this website. The
+				licence covers copying, changing and sharing Nightcap's code; where the
+				two differ about the code, the licence wins.
 			</p>
 
 			<h2>Using Nightcap</h2>
@@ -78,7 +77,7 @@ export function Terms() {
 			<p>
 				If these terms change, the new version goes here with a new date above.
 				Every version is in{" "}
-				<a href="https://github.com/choco/Nightcap/commits/main/site/src/Terms.tsx">
+				<a href={`${REPO}/commits/main/site/src/Terms.tsx`}>
 					the site's history
 				</a>
 				.

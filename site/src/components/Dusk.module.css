@@ -1,3 +1,5 @@
+@reference "../styles/main.css";
+
 /* The download panel, at dusk: the sun setting into the panel's lower edge, and a few stars. */
 .dusk {
 	position: relative;
@@ -46,7 +48,7 @@
 	pointer-events: none;
 	color: rgba(238, 241, 250, 0.55);
 }
-@media (width < 561px) {
+@variant max-sm {
 	.dusk > .sun {
 		right: 10%;
 		width: 96px;

@@ -20,7 +20,7 @@
 	mix-blend-mode: multiply;
 }
 .tint span:last-child {
-	background: rgba(255, 154, 77, 0.1);
+	background: color-mix(in srgb, var(--ember) 10%, transparent);
 }
 @media (prefers-reduced-motion: reduce) {
 	.tint {
