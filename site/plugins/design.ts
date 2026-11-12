@@ -89,8 +89,10 @@ function tokensCss(tokens: Tokens): string {
 	].join("\n");
 }
 
+const readTokens = (): Tokens => JSON.parse(readFileSync(source, "utf8"));
+
 function writeTokens() {
-	const css = tokensCss(JSON.parse(readFileSync(source, "utf8")));
+	const css = tokensCss(readTokens());
 	// Unchanged content leaves the file alone, so the dev server doesn't reload for nothing.
 	if (!existsSync(output) || readFileSync(output, "utf8") !== css)
 		writeFileSync(output, css);
@@ -98,10 +100,28 @@ function writeTokens() {
 
 const copyIcon = () => copyFileSync(appIcon, icon);
 
+/** The browser's bars in the sky's colour, by the system's appearance. */
+function themeColours() {
+	const sky = readTokens().color.tokens.find((token) => token.name === "sky");
+	if (!sky || typeof sky.value === "string")
+		throw new Error(
+			"design/tokens.json: the sky needs a light and a dark value",
+		);
+	return Object.entries(sky.value).map(([theme, colour]) => ({
+		tag: "meta",
+		attrs: {
+			name: "theme-color",
+			content: colour,
+			media: `(prefers-color-scheme: ${theme})`,
+		},
+		injectTo: "head" as const,
+	}));
+}
+
 /** What the site takes from the rest of the repo: src/styles/tokens.css from the design system's
  *  tokens, and public/icon.svg, the app icon, both written before Vite reads anything and again
- *  when their sources change while serving; preloads for the first screen's fonts; and the fonts'
- *  licences beside the built site's fonts. */
+ *  when their sources change while serving; the browser's bar colours; preloads for the first
+ *  screen's fonts; and the fonts' licences beside the built site's fonts. */
 export function design(): Plugin {
 	return {
 		name: "nightcap:design",
@@ -121,8 +141,8 @@ export function design(): Plugin {
 		transformIndexHtml: {
 			order: "post",
 			handler(_html, { bundle }) {
-				if (!bundle) return [];
-				return Object.keys(bundle)
+				if (!bundle) return themeColours();
+				const preloads = Object.keys(bundle)
 					.filter((name) =>
 						/^fonts\/(Caprasimo-Regular|Figtree-Variable)-[\w-]+\.woff2$/.test(
 							name,
@@ -139,6 +159,7 @@ export function design(): Plugin {
 						},
 						injectTo: "head" as const,
 					}));
+				return [...themeColours(), ...preloads];
 			},
 		},
 		generateBundle() {

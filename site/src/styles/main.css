@@ -5,20 +5,11 @@
 :root {
 	--doodle: light-dark(rgba(74, 85, 120, 0.34), rgba(167, 178, 212, 0.3));
 	--doodle-gold: light-dark(rgba(138, 91, 0, 0.42), rgba(246, 213, 138, 0.42));
-	--hero-top: light-dark(#dde5f6, #16224b);
-	--nav-hover: light-dark(rgba(11, 19, 48, 0.07), rgba(238, 241, 250, 0.09));
 	--menu-line: #34467a;
 	/* Night Shift's tint over a page, as one colour at 29.8%: the tint, 22% of #ff8a2e, under 10%
 	   of ember comes to 29.8% of this. */
 	--tint-flat: rgb(255 143.4 56.4);
-	/* The mocks of macOS: the menu bar, menus and wallpaper. */
-	--scene-bar: light-dark(rgba(246, 246, 248, 0.74), rgba(28, 30, 44, 0.66));
-	--scene-menu: light-dark(rgba(244, 244, 247, 0.9), rgba(40, 42, 56, 0.9));
-	--scene-ink: light-dark(#1d1d1f, #f5f5f7);
-	--scene-muted: light-dark(rgba(29, 29, 31, 0.48), rgba(245, 245, 247, 0.5));
-	--scene-edge: light-dark(rgba(0, 0, 0, 0.14), rgba(255, 255, 255, 0.16));
-	--scene-sep: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12));
-	--scene-pressed: light-dark(rgba(0, 0, 0, 0.13), rgba(255, 255, 255, 0.2));
+	/* The wallpaper of the mocks of macOS. */
 	--scene-wall:
 		radial-gradient(
 			120% 90% at 85% 110%,
@@ -51,12 +42,11 @@
 }
 
 @theme inline {
-	--color-nav-hover: var(--nav-hover);
 	--color-menu-line: var(--menu-line);
 	/* The hero's sky, fading into the ground, over every page's top. */
-	--background-image-sky: linear-gradient(
+	--background-image-hero-sky: linear-gradient(
 		180deg,
-		var(--hero-top),
+		var(--sky),
 		var(--ground)
 	);
 }
@@ -195,7 +185,7 @@
      on. Lens.module.css lays the tint over the page as a plain mix, without the multiply the
      desk's tint gives its first layer, and so does this. */
 	body {
-		--edge: var(--hero-top);
+		--edge: var(--sky);
 		color: var(--ink);
 		font-family: var(--font-text);
 		background-color: var(--edge);

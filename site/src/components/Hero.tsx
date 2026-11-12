@@ -14,7 +14,7 @@ interface Props {
 
 export function Hero({ doodles, shiftOn, onShift }: Props) {
 	return (
-		<section className="relative bg-sky" data-lens-section data-hero>
+		<section className="relative bg-hero-sky" data-lens-section data-hero>
 			<Doodles doodles={doodles} />
 			<Celestial />
 			{/* The hero's column is wider than the sections', and on screens wider than phones it

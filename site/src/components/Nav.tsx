@@ -61,7 +61,7 @@ function NavLink({
 	return (
 		<a
 			className={cx(
-				"inline-flex h-[30px] items-center gap-1 rounded-full px-3 text-[14px] font-semibold text-ink no-underline transition-[background-color] duration-[160ms] hover:bg-nav-hover hover:text-ink motion-reduce:transition-none max-sm:h-7 max-sm:px-[9px] max-sm:text-[13px]",
+				"inline-flex h-[30px] items-center gap-1 rounded-full px-3 text-[14px] font-semibold text-ink no-underline transition-[background-color] duration-[160ms] hover:bg-hover hover:text-ink motion-reduce:transition-none max-sm:h-7 max-sm:px-[9px] max-sm:text-[13px]",
 				wide && "max-md:hidden",
 			)}
 			href={href}

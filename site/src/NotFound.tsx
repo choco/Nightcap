@@ -12,7 +12,7 @@ export function NotFound() {
 	const doodles = useDoodles(page);
 	return (
 		<div ref={page} className="relative overflow-hidden">
-			<div className="relative min-h-svh bg-sky" data-hero>
+			<div className="relative min-h-svh bg-hero-sky" data-hero>
 				<Doodles doodles={doodles.hero} />
 				<Celestial />
 				<div className="relative mx-auto flex min-h-svh max-w-column flex-col px-4">

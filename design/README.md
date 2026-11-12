@@ -23,7 +23,9 @@ Write the way the app talks: plain, specific, and about what the user sees.
 - `moon` is the one accent. Spend it on the primary action, the moon itself and at most one highlight per view. Text on it is `on-moon`.
 - `ember` and `tint` show Night Shift's warmth and nothing else: the tinted half of a before/after, a screen warming as the schedule starts. Never use them for buttons, links or status.
 - `ok`, `drift`, `broken` and `off` are the app's check states, with the app's own values. Each always travels with its shape (circle-check, triangle, x-circle, minus) and a word, since colour alone doesn't tell them apart, and the light values are too faint on their own.
-- Every focusable thing gets a 2px `focus` ring, 2px out.
+- Every focusable thing gets a 2px `focus` ring, 2px out. A quiet control, such as a nav link, takes `hover` behind it under the pointer.
+- `sky` is the top of the hero's sky, which fades down into `ground`; the browser's bars take it too.
+- `scene-*` are macOS's own colours, light or dark, for a mock of it (Imagery): the menu bar, menus, their text and muted text, the hairline round a menu or window, a menu's separators, and a menu-bar item whose menu is open.
 
 ## Type
 

@@ -27,7 +27,7 @@ export function Legal({
 	useBodyEdge();
 	return (
 		<div className="min-h-svh bg-ground">
-			<header className="bg-sky">
+			<header className="bg-hero-sky">
 				<div className="mx-auto max-w-column px-4">
 					<div className="py-6">
 						<Wordmark href="/" />

@@ -89,8 +89,6 @@ export function head(file: string): string {
 					'<meta name="twitter:card" content="summary_large_image">',
 				]
 			: ['<meta name="robots" content="noindex">']),
-		'<meta name="theme-color" content="#dde5f6" media="(prefers-color-scheme: light)">',
-		'<meta name="theme-color" content="#16224b" media="(prefers-color-scheme: dark)">',
 		'<link rel="icon" href="/icon.svg" type="image/svg+xml">',
 		'<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
 		`<script>
