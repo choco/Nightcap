@@ -38,7 +38,7 @@ export function App() {
 				<Dusk />
 				<Footer />
 			</main>
-			<Lens page={page} />
+			<Lens page={page} shiftOn={shiftOn} />
 		</div>
 	);
 }
