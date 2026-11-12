@@ -69,15 +69,11 @@ export function head(file: string): string {
 		'<meta charset="utf-8">',
 		'<meta name="viewport" content="width=device-width, initial-scale=1">',
 		`<title>${title}</title>`,
+		'<meta name="color-scheme" content="light dark">',
 		...(listed
 			? [
 					`<meta name="description" content="${listed.description}">`,
 					`<link rel="canonical" href="${ORIGIN}${listed.path}">`,
-				]
-			: ['<meta name="robots" content="noindex">']),
-		'<meta name="color-scheme" content="light dark">',
-		...(listed
-			? [
 					'<meta property="og:type" content="website">',
 					`<meta property="og:url" content="${ORIGIN}${listed.path}">`,
 					'<meta property="og:site_name" content="Nightcap">',
@@ -89,7 +85,7 @@ export function head(file: string): string {
 					`<meta property="og:image:alt" content="Night Shift, made yours: Nightcap's menu open in the Mac menu bar, keeping Night Shift off while Figma is in front">`,
 					'<meta name="twitter:card" content="summary_large_image">',
 				]
-			: []),
+			: ['<meta name="robots" content="noindex">']),
 		'<meta name="theme-color" content="#dde5f6" media="(prefers-color-scheme: light)">',
 		'<meta name="theme-color" content="#16224b" media="(prefers-color-scheme: dark)">',
 		'<link rel="icon" href="/icon.svg" type="image/svg+xml">',
