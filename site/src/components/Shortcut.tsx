@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import {
+	type Dispatch,
+	type ReactNode,
+	type SetStateAction,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { KEYS } from "../data/menus";
 import { cx } from "../lib/cx";
 import { useInView } from "../lib/inView";
@@ -10,27 +17,46 @@ export type Peek = "peeking" | "returning" | null;
 
 type Move = "tap" | "hold";
 
+/** What the keys and cards show: the keys down, the card lit, the hold card peeking, and the tap
+ *  card's Night Shift. */
+interface Frame {
+	down: boolean;
+	lit: Move | null;
+	holding: boolean;
+	tapOn: boolean;
+}
+
+// The keys acting out a tap, a tap back and a hold, each frame for its milliseconds, round and
+// round.
+const DEMO: [Frame, number][] = [
+	[{ down: true, lit: null, holding: false, tapOn: true }, 140],
+	[{ down: false, lit: "tap", holding: false, tapOn: false }, 1560],
+	[{ down: true, lit: "tap", holding: false, tapOn: false }, 140],
+	[{ down: false, lit: "tap", holding: false, tapOn: true }, 1460],
+	[{ down: true, lit: "hold", holding: true, tapOn: true }, 2200],
+	[{ down: false, lit: "hold", holding: false, tapOn: true }, 1300],
+];
+
 interface Props {
 	shiftOn: boolean;
 	onShift: () => void;
-	onPeek: (peek: (current: Peek) => Peek) => void;
+	onPeek: Dispatch<SetStateAction<Peek>>;
 }
 
 /** The shortcut: one set of keys under two cards, telling a tap from a hold as the app does.
  *  Until pressed, the keys act it out on the cards while they can be seen: a tap, a tap back,
  *  then a hold. Pressed, the press lifts the page's warmth at once, and a release within 0.3 s
  *  was a tap, which switches the page's Night Shift as the nav's switch does. The card for the
- *  move that happened lights. */
+ *  move that happened lights, and the tap card shows the page's Night Shift. */
 export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
-	const [tapOn, setTapOn] = useState(true);
 	const [holding, setHolding] = useState(false);
 	const [lit, setLit] = useState<Move | null>(null);
 	const [down, setDown] = useState(false);
+	const [demo, setDemo] = useState<Frame | null>(null);
 	const [hint, setHint] = useState(
 		"Try the shortcut: tap the keys, then hold them.",
 	);
-	const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
-	const demoing = useRef(false);
+	const demoTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 	const pressedAt = useRef<number | null>(null);
 	const peeking = useRef(false);
 	const lastMove = useRef<Move | null>(null);
@@ -45,63 +71,29 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			window.matchMedia("(prefers-reduced-motion: reduce)").matches
 		)
 			return;
-		demoing.current = true;
-		setDown(false);
-		setHolding(false);
-		setLit(null);
-		setTapOn(true);
-		const at = (ms: number, run: () => void) =>
-			timers.current.push(setTimeout(run, ms));
-		const demo = () => {
-			at(0, () => setDown(true));
-			at(140, () => {
-				setDown(false);
-				setLit("tap");
-				setTapOn(false);
-			});
-			at(1700, () => setDown(true));
-			at(1840, () => {
-				setDown(false);
-				setTapOn(true);
-			});
-			at(3300, () => {
-				setDown(true);
-				setLit("hold");
-				setHolding(true);
-			});
-			at(5500, () => {
-				setDown(false);
-				setHolding(false);
-			});
-			at(6800, () => {
-				setLit(null);
-				timers.current = [];
-				demo();
-			});
+		const play = (i: number) => {
+			const [frame, ms] = DEMO[i];
+			setDemo(frame);
+			demoTimer.current = setTimeout(() => play((i + 1) % DEMO.length), ms);
 		};
-		demo();
+		play(0);
 		return () => {
-			demoing.current = false;
-			for (const timer of timers.current) clearTimeout(timer);
-			timers.current = [];
+			clearTimeout(demoTimer.current);
+			setDemo(null);
 		};
 	}, [inView]);
 
 	function press() {
 		if (pressedAt.current !== null) return;
 		pressedOnce.current = true;
-		if (demoing.current) {
-			demoing.current = false;
-			timers.current.forEach(clearTimeout);
-			setLit(null);
-			setTapOn(shiftOn);
-		}
+		clearTimeout(demoTimer.current);
+		setDemo(null);
 		pressedAt.current = performance.now();
 		setDown(true);
 		if (!shiftOn) return;
 		setHolding(true);
 		peeking.current = true;
-		onPeek(() => "peeking");
+		onPeek("peeking");
 		setHint("True colour while you hold. Let go and the warmth comes back.");
 	}
 
@@ -113,11 +105,10 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 		setHolding(false);
 		const peeked = peeking.current;
 		peeking.current = false;
-		onPeek(() => null);
+		onPeek(null);
 		if (held < 300) {
 			const on = !shiftOn;
 			onShift();
-			setTapOn(on);
 			setLit("tap");
 			setHint(
 				on
@@ -126,7 +117,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 			);
 			lastMove.current = "tap";
 		} else if (peeked) {
-			onPeek(() => "returning");
+			onPeek("returning");
 			setTimeout(
 				() => onPeek((current) => (current === "returning" ? null : current)),
 				300,
@@ -145,6 +136,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 		}
 	}
 
+	const shown = demo ?? { down, lit, holding, tapOn: shiftOn };
 	return (
 		<Section id="shortcut" className="flex flex-col gap-8">
 			<SplitHeading title="One shortcut, two moves">
@@ -157,8 +149,8 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 				className="grid grid-cols-[repeat(auto-fit,minmax(min(260px,100%),1fr))] gap-6"
 			>
 				<MoveCard
-					lit={lit === "tap"}
-					mini={<Mini warm={tapOn} moon={tapOn ? "on" : "off"} />}
+					lit={shown.lit === "tap"}
+					mini={<Mini warm={shown.tapOn} moon={shown.tapOn ? "on" : "off"} />}
 					title="Tap"
 					glyph={
 						<>
@@ -170,8 +162,8 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 					Night Shift turns off, and stays off until you tap again.
 				</MoveCard>
 				<MoveCard
-					lit={lit === "hold"}
-					mini={<Mini warm={!holding} moon="on" />}
+					lit={shown.lit === "hold"}
+					mini={<Mini warm={!shown.holding} moon="on" />}
 					title="Hold"
 					glyph={
 						<>
@@ -219,7 +211,7 @@ export function Shortcut({ shiftOn, onShift, onPeek }: Props) {
 								<span
 									className={cx(
 										"relative box-border inline-flex h-11 min-w-11 items-center justify-center rounded-[10px] border border-line-strong bg-surface-raised px-2.5 font-text text-[19px] text-ink transition-[translate] duration-[70ms] motion-reduce:transition-none max-sm:h-[38px] max-sm:min-w-[38px] max-sm:text-[17px]",
-										down && "translate-y-[3px]",
+										shown.down && "translate-y-[3px]",
 									)}
 								>
 									{key}
