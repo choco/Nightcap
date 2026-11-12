@@ -14,11 +14,17 @@ export const APPS: Record<
 	figma: { name: "Figma", letter: "F", tile: "#a259ff" },
 	safari: { name: "Safari", letter: "S", tile: "#1d9bf0" },
 };
+export const APP_NAMES = Object.keys(APPS) as AppName[];
+
+/** The Night Shift item, everywhere's switch: checked while it's on everywhere, which a
+ *  forced-off moon still means, and what decides the screen, warm only while the moon is on. */
+export interface NightShift {
+	moon: Moon;
+	reason: string[];
+}
 
 export type MenuEntry =
-	// The Night Shift item, everywhere's switch: checked while it's on everywhere, which a
-	// forced-off moon still means, and what decides the screen.
-	| { kind: "nightShift"; moon: Moon; reason: string[] }
+	| ({ kind: "nightShift" } & NightShift)
 	| { kind: "strength"; value: number }
 	| { kind: "separator" }
 	| {
@@ -48,7 +54,7 @@ const row = (
 	submenu: true,
 	...extra,
 });
-export const nightShift = (moon: Moon, reason: string[]): MenuEntry => ({
+export const nightShift = ({ moon, reason }: NightShift): MenuEntry => ({
 	kind: "nightShift",
 	moon,
 	reason,
@@ -70,9 +76,16 @@ export const FOLLOWING = ["Following the", `schedule until ${SUNRISE}`];
 export const FIGMA_RULE = ["Off in Figma:", "your config’s rule"];
 export const FIGMA_ALWAYS = ["Always off: your", "config’s rule"];
 
+/** The Night Shift item with each app in front. */
+export const NIGHT_SHIFT: Record<AppName, NightShift> = {
+	mail: { moon: "on", reason: FOLLOWING },
+	figma: { moon: "forced", reason: FIGMA_RULE },
+	safari: { moon: "forced", reason: ["Off at youtube.com:", "your rule"] },
+};
+
 export const MENUS: Record<AppName, MenuEntry[]> = {
 	mail: [
-		nightShift("on", FOLLOWING),
+		nightShift(NIGHT_SHIFT.mail),
 		strength,
 		turnOff,
 		separator,
@@ -81,7 +94,7 @@ export const MENUS: Record<AppName, MenuEntry[]> = {
 		...tail,
 	],
 	figma: [
-		nightShift("forced", FIGMA_RULE),
+		nightShift(NIGHT_SHIFT.figma),
 		strength,
 		turnOff,
 		separator,
@@ -90,7 +103,7 @@ export const MENUS: Record<AppName, MenuEntry[]> = {
 		...tail,
 	],
 	safari: [
-		nightShift("forced", ["Off at youtube.com:", "your rule"]),
+		nightShift(NIGHT_SHIFT.safari),
 		strength,
 		turnOff,
 		separator,
@@ -110,4 +123,4 @@ export const placeRow = (
 	title: string,
 	app: AppName,
 	subtitle?: string[],
-): MenuEntry => row(title, { app }, subtitle ? { subtitle } : {});
+): MenuEntry => row(title, { app }, { subtitle });

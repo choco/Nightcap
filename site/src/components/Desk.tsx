@@ -1,5 +1,11 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { APPS, type AppName, MENUS } from "../data/menus";
+import {
+	APP_NAMES,
+	APPS,
+	type AppName,
+	MENUS,
+	NIGHT_SHIFT,
+} from "../data/menus";
 import { cx } from "../lib/cx";
 import { useInView } from "../lib/inView";
 import { Clock } from "./Clock";
@@ -11,13 +17,6 @@ import { Tint } from "./Tint";
 
 // Until the reader picks an app, the desk shows each in turn, while it can be seen.
 const CYCLE: AppName[] = ["figma", "mail", "safari", "mail"];
-
-/** What the menu's Night Shift row says with the app in front. */
-function nightShiftSays(app: AppName) {
-	const row = MENUS[app].find((entry) => entry.kind === "nightShift");
-	if (!row) throw new Error(`${app}'s menu has no Night Shift row`);
-	return `Night Shift: ${row.reason.join(" ")}`;
-}
 
 /** The live Mac: the Nightcap menu as the app builds it, for whatever is in front. Figma has a
  *  config rule and youtube.com an ad-hoc one; Mail has none, so only Mail is warm. */
@@ -35,7 +34,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 		return () => clearInterval(timer);
 	}, [picked, inView]);
 	const front = picked ?? CYCLE[step];
-	const warm = front === "mail";
+	const { moon } = NIGHT_SHIFT[front];
 	const windowClass = (app: AppName) =>
 		cx(styles.window, styles[app], "animate-swap motion-reduce:animate-none");
 
@@ -52,8 +51,8 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					<span className={styles.label}>File</span>
 					<span className={styles.label}>Edit</span>
 					<span className={styles.spacer} />
-					<span className={styles.moon} aria-hidden="true">
-						<MoonIcon moon={warm ? "on" : "forced"} />
+					<span className={styles.moon}>
+						<MoonIcon moon={moon} />
 					</span>
 					<Clock className={styles.time} />
 				</div>
@@ -107,7 +106,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 				/>
 
 				<div className={styles.dock}>
-					{(Object.keys(APPS) as AppName[]).map((app) => (
+					{APP_NAMES.map((app) => (
 						<button
 							key={app}
 							className={styles.dockApp}
@@ -122,10 +121,10 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 					))}
 				</div>
 
-				<Tint on={warm && shiftOn} />
+				<Tint on={moon === "on" && shiftOn} />
 			</div>
 			<div className={styles.menusBelow} aria-hidden="true">
-				{(Object.keys(APPS) as AppName[]).map((app) => (
+				{APP_NAMES.map((app) => (
 					<Menu
 						key={app}
 						className={cx(styles.menuBelow, app !== front && styles.unseen)}
@@ -137,7 +136,7 @@ export function Desk({ shiftOn }: { shiftOn: boolean }) {
 			{/* Says what a pick does to Night Shift, in the menu's words. The cycle says nothing, or
 			    it would speak every 3.2 s. */}
 			<p className="sr-only" aria-live="polite">
-				{picked && nightShiftSays(picked)}
+				{picked && `Night Shift: ${NIGHT_SHIFT[picked].reason.join(" ")}`}
 			</p>
 		</figure>
 	);

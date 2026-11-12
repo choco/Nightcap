@@ -44,10 +44,10 @@ export function Evening() {
 							<span
 								className={cx(
 									"size-2 rounded-full",
-									m.warm ? "bg-ember" : "bg-true-colour",
+									m.moon === "on" ? "bg-ember" : "bg-true-colour",
 								)}
 								role="img"
-								aria-label={m.warm ? "Warm screen" : "True colour"}
+								aria-label={m.moon === "on" ? "Warm screen" : "True colour"}
 							/>
 							{m.time}
 						</span>
@@ -68,7 +68,7 @@ export function Evening() {
 					className="flex-[0_1_272px]"
 					look="night"
 					entries={[
-						nightShift(moment.moon, moment.reason),
+						nightShift(moment),
 						separator,
 						placeRow(moment.item, moment.app, moment.note),
 					]}
