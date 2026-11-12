@@ -40,7 +40,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 
 - Space with the `space-` steps only. Gutters are `space-4` on phones and `space-12` on wide screens; sections sit `space-18` apart on phones and `space-30` on wide screens.
 - Buttons are capsules (`radius-pill`), as in the app. Cards, groups, the terminal and the menu mock use `radius-md`; chips and small tiles `radius-sm`. `radius-icon` is for the app icon's tile alone.
-- Only floating things cast a shadow, and it's always `shadow-lift`.
+- Only floating things cast a shadow, and it's always `shadow-lift`. The terminal glows instead, with `shadow-glow` under it.
 
 ## Motion
 

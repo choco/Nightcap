@@ -39,7 +39,7 @@ export function Cli() {
 			</div>
 			{/* Long output wraps, as a terminal window would. */}
 			<figure
-				className="night min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md border border-line bg-night-deep p-6 font-mono text-[13px] leading-[1.6] text-ink shadow-[0_24px_70px_-18px_rgba(246,213,138,0.32)] max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
+				className="night min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md bg-night-deep p-6 font-mono text-code text-ink shadow-glow inset-ring inset-ring-starlight/8 max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
 				data-lens-area
 				data-doodle-clear="12"
 				aria-label="A terminal session with the nightcap command"
