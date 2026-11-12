@@ -47,16 +47,8 @@
 @theme {
 	--container-nav: 864px;
 	--container-column: calc(var(--container-nav) + 4rem);
-	/* The type of a page's top: the eyebrow, the title and the lead under it. */
-	--text-label: 12px;
-	--text-label--font-weight: 650;
-	--text-label--letter-spacing: 0.08em;
+	/* A page's title comes down from 64px with the screen, to 40px on phones. */
 	--text-display-l: clamp(40px, 7vw, 64px);
-	--text-display-l--line-height: 1;
-	--text-display-l--letter-spacing: -0.005em;
-	--text-display-l--font-weight: 400;
-	--text-lead: 19px;
-	--text-lead--line-height: 1.6;
 
 	/* Motion: one orchestrated entrance, and slow ambient loops. */
 	--animate-*: initial;

@@ -30,7 +30,7 @@ export function NotFound() {
 							<h1 className="animate-rise font-display text-display-l text-balance motion-reduce:animate-none">
 								Nothing at this address.
 							</h1>
-							<p className="max-w-[40ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-[17px]">
+							<p className="max-w-[40ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-body">
 								The link may be mistyped, or out of date. Everything about
 								Nightcap is on its home page.
 							</p>

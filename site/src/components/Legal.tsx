@@ -36,7 +36,7 @@ export function Legal({
 						<h1 className="font-display text-display-l text-balance">
 							{title}
 						</h1>
-						<p className="max-w-[46ch] text-lead max-sm:text-[17px]">{lead}</p>
+						<p className="max-w-[46ch] text-lead max-sm:text-body">{lead}</p>
 						{updated && (
 							<p className="text-[14px] text-ink-muted">
 								Last updated{" "}

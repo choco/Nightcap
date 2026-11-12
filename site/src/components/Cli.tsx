@@ -32,7 +32,7 @@ export function Cli() {
 					it to a key with skhd, Raycast or Karabiner, run it from a script, or
 					read the status as JSON.
 				</SectionText>
-				<p className="text-[15px] leading-[1.55] text-ink-muted">
+				<p className="text-small text-ink-muted">
 					Rules, and Night Shift's strength and schedule, can also live in a
 					plain config file, next to the rest of your setup.
 				</p>

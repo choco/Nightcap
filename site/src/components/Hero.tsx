@@ -42,7 +42,7 @@ export function Hero({ doodles, shiftOn, onShift }: Props) {
 								made yours.
 							</span>
 						</h1>
-						<p className="max-w-[46ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-[17px]">
+						<p className="max-w-[46ch] animate-fade-in text-lead motion-reduce:animate-none max-sm:text-body">
 							Nightcap brings Night Shift to your menu bar. Set how warm it
 							gets, switch it or peek past it with a shortcut, and keep it off
 							while the apps and websites you choose are in front.

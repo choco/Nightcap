@@ -35,7 +35,15 @@ interface Tokens {
 	type: {
 		families: Record<string, string>;
 		fonts: { family: string; weight: string; style: string; file: string }[];
+		groups: { styles: TextStyle[] }[];
 	};
+}
+interface TextStyle {
+	name: string;
+	fontSize: string;
+	lineHeight: number;
+	fontWeight: number;
+	letterSpacing?: string;
 }
 
 // A value that names another token, such as "{night}", is that token's variable.
@@ -52,9 +60,21 @@ function themed({ name, value }: Token<Value>): string {
 	return `light-dark(${css(value.light)},${css(value.dark)})`;
 }
 
+// A text style is Tailwind's `text-<name>`: its size, with its line height, weight and spacing.
+const textStyle = (style: TextStyle) =>
+	[
+		`--text-${style.name}:${style.fontSize}`,
+		`--text-${style.name}--line-height:${style.lineHeight}`,
+		`--text-${style.name}--font-weight:${style.fontWeight}`,
+		...(style.letterSpacing
+			? [`--text-${style.name}--letter-spacing:${style.letterSpacing}`]
+			: []),
+	].join(";");
+
 /** The design system's tokens as CSS: the fonts, the colours as variables on :root, light-dark()
  *  picking each theme's by the colour scheme, which is dark for the dark system appearance unless
- *  the page was set to light, and for an explicit dark choice; then Tailwind's theme from them. */
+ *  the page was set to light, and for an explicit dark choice; then Tailwind's theme from them,
+ *  the text styles among it. */
 function tokensCss(tokens: Tokens): string {
 	const colours = tokens.color.tokens;
 	// The spacing tokens are Tailwind's 4px scale, space-N being N steps.
@@ -77,13 +97,14 @@ function tokensCss(tokens: Tokens): string {
 		// Inline, so a utility reads the colour's variable, which the theme switches.
 		`@theme inline{--color-*:initial;${colours.map(({ name }) => `--color-${name}:var(--${name})`).join(";")}}`,
 		// Static, so every variable reaches :root for the CSS modules too, which Tailwind doesn't see.
-		`@theme static{--spacing:4px;--radius-*:initial;--shadow-*:initial;--font-*:initial;${[
+		`@theme static{--spacing:4px;--radius-*:initial;--shadow-*:initial;--font-*:initial;--text-*:initial;${[
 			...[...tokens.radius.tokens, ...tokens.shadow.tokens].map(
 				({ name, value }) => `--${name}:${value}`,
 			),
 			...Object.entries(tokens.type.families).map(
 				([family, stack]) => `--font-${family}:${stack}`,
 			),
+			...tokens.type.groups.flatMap(({ styles }) => styles.map(textStyle)),
 		].join(";")}}`,
 		"",
 	].join("\n");

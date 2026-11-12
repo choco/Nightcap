@@ -70,10 +70,10 @@ export function Dusk() {
 				</Outline>
 			))}
 			<div className="flex min-w-0 flex-[999_1_300px] flex-col gap-2.5">
-				<p className="font-display text-[40px] leading-[1.05] text-balance max-sm:text-[length:clamp(32px,9.5vw,34px)]">
+				<p className="font-display text-display-m text-balance max-sm:text-[length:clamp(32px,9.5vw,34px)]">
 					Set it up before sunset.
 				</p>
-				<p className="text-[15px] leading-[1.55] text-balance text-starlight-muted">
+				<p className="text-small text-balance text-starlight-muted">
 					Free and open source, for macOS 15 or later on Apple silicon.
 				</p>
 			</div>

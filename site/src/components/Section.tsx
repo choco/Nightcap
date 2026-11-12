@@ -20,12 +20,7 @@ export function SectionText({
 	children: ReactNode;
 }) {
 	return (
-		<p
-			className={cx(
-				"max-w-[540px] text-[17px] leading-[1.6] text-ink-muted",
-				className,
-			)}
-		>
+		<p className={cx("max-w-[540px] text-body text-ink-muted", className)}>
 			{children}
 		</p>
 	);

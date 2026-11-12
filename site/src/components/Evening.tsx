@@ -64,7 +64,7 @@ export function Evening() {
 			>
 				<p
 					key={index}
-					className="max-w-[46ch] flex-[1_1_320px] animate-swap text-[17px] leading-[1.6] motion-reduce:animate-none"
+					className="max-w-[46ch] flex-[1_1_320px] animate-swap text-body motion-reduce:animate-none"
 				>
 					{moment.body}
 				</p>
