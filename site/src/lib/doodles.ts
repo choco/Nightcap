@@ -23,6 +23,26 @@ export interface Doodle {
 	gold: boolean;
 }
 
+// The sun spins and the moon sways; of the rest, every fifth of a kind drifts and the others
+// twinkle. Each loop lasts between its motion's two durations, in seconds.
+const MOTION: Partial<Record<DoodleKind, DoodleMotion>> = {
+	sun: "spin",
+	moon: "sway",
+};
+const DURATION: Record<DoodleMotion, [number, number]> = {
+	spin: [45, 80],
+	sway: [6, 9],
+	drift: [8, 11],
+	twinkle: [3, 6],
+};
+
+/** How far apart two doodles are, in pixels, on a page `width` wide. */
+const gap = (
+	a: { x: number; y: number },
+	b: { x: number; y: number },
+	width: number,
+) => Math.hypot(((a.x - b.x) / 100) * width, a.y - b.y);
+
 export interface Box {
 	left: number;
 	right: number;
@@ -91,22 +111,8 @@ export function placeDoodles(
 	const doodle = (kind: DoodleKind, x: number, y: number): Doodle => {
 		const count = (counts[kind] ?? 0) + 1;
 		counts[kind] = count;
-		const motion: DoodleMotion =
-			kind === "sun"
-				? "spin"
-				: kind === "moon"
-					? "sway"
-					: count % 5 === 0
-						? "drift"
-						: "twinkle";
-		const duration =
-			motion === "spin"
-				? between(45, 80)
-				: motion === "sway"
-					? between(6, 9)
-					: motion === "drift"
-						? between(8, 11)
-						: between(3, 6);
+		const motion = MOTION[kind] ?? (count % 5 === 0 ? "drift" : "twinkle");
+		const duration = between(...DURATION[motion]);
 		const gold = kind === "sun" || kind === "moon" || count % 4 === 0;
 		return {
 			kind,
@@ -147,12 +153,9 @@ export function placeDoodles(
 			for (let i = 0; i < 10; i++) {
 				const x = between(x0 + 0.6, x1 - 0.6);
 				const y = between(y0 + cell * 0.1, y0 + cell * 0.9);
-				const gap = placed.reduce(
-					(g, d) => Math.min(g, Math.hypot(((d.x - x) / 100) * 1440, d.y - y)),
-					Infinity,
-				);
-				if (gap > bestGap) {
-					bestGap = gap;
+				const nearest = Math.min(...placed.map((d) => gap(d, { x, y }, 1440)));
+				if (nearest > bestGap) {
+					bestGap = nearest;
 					best = { x, y };
 				}
 			}
@@ -165,9 +168,7 @@ export function placeDoodles(
 	for (let tries = 0; tries < 400 && centre.length < 14; tries++) {
 		const x = between(16, 84);
 		const y = between(700, bottom);
-		if (
-			centre.every((d) => Math.hypot(((d.x - x) / 100) * 1440, d.y - y) > 300)
-		)
+		if (centre.every((d) => gap(d, { x, y }, 1440) > 300))
 			centre.push({ x, y });
 	}
 	for (const d of centre) placed.push(doodle(drawKind([]), d.x, d.y));
@@ -184,10 +185,7 @@ export function placeDoodles(
 		const px = between(12, hero.width - 12);
 		const y = between(12, hero.height - 12);
 		const x = (px / hero.width) * 100;
-		if (
-			covers(px, y) ||
-			open.some((d) => Math.hypot(((d.x - x) / 100) * hero.width, d.y - y) < 92)
-		)
+		if (covers(px, y) || open.some((d) => gap(d, { x, y }, hero.width) < 92))
 			continue;
 		open.push(doodle(drawKind([]), x, y));
 		added++;
