@@ -13,32 +13,15 @@
 	--scene-wall:
 		radial-gradient(
 			120% 90% at 85% 110%,
-			#f6d58a 0%,
-			rgba(246, 213, 138, 0) 55%
+			var(--scene-wall-glow) 0%,
+			transparent 55%
 		),
-		linear-gradient(165deg, #b9c9ef 0%, #dfe6f6 60%, #eef1f8 100%);
-}
-/* Night's wallpaper puts a stop elsewhere, and light-dark() picks only colours, so the dark theme
-   sets it whole. */
-@media (prefers-color-scheme: dark) {
-	:root:not([data-theme="light"]) {
-		--scene-wall:
-			radial-gradient(
-				120% 90% at 85% 110%,
-				rgba(246, 213, 138, 0.35) 0%,
-				rgba(246, 213, 138, 0) 55%
-			),
-			linear-gradient(165deg, #22356b 0%, #131e42 55%, #0b1330 100%);
-	}
-}
-:root[data-theme="dark"] {
-	--scene-wall:
-		radial-gradient(
-			120% 90% at 85% 110%,
-			rgba(246, 213, 138, 0.35) 0%,
-			rgba(246, 213, 138, 0) 55%
-		),
-		linear-gradient(165deg, #22356b 0%, #131e42 55%, #0b1330 100%);
+		linear-gradient(
+			165deg,
+			var(--scene-wall-top) 0%,
+			var(--scene-wall-middle) 60%,
+			var(--ground) 100%
+		);
 }
 
 @theme inline {
