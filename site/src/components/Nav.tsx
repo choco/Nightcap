@@ -41,7 +41,7 @@ export function Nav({
 				onClick={onShift}
 			>
 				<span className="relative h-5 w-[34px] rounded-full bg-line-strong transition-[background-color] duration-[160ms] group-aria-pressed:bg-ember motion-reduce:transition-none">
-					<span className="absolute top-0.5 left-0.5 size-4 rounded-full bg-[#ffffff] shadow-[0_1px_2px_rgba(11,19,48,0.3)] transition-[left] duration-[160ms] group-aria-pressed:left-4 motion-reduce:transition-none" />
+					<span className="absolute top-0.5 left-0.5 size-4 rounded-full bg-[#ffffff] shadow-[0_1px_2px_rgba(11,19,48,0.3)] transition-[translate] duration-[160ms] group-aria-pressed:translate-x-3.5 motion-reduce:transition-none" />
 				</span>
 				<span>{shiftOn ? "Night Shift: On" : "Night Shift: Off"}</span>
 			</button>
