@@ -6,37 +6,10 @@
 		"useIgnoreFile": true,
 		"root": ".."
 	},
-	"files": {
-		"ignoreUnknown": false,
-		"includes": ["**"]
-	},
-	"formatter": {
-		"enabled": true,
-		"indentStyle": "tab"
-	},
-	"linter": {
-		"enabled": true,
-		"rules": {
-			"preset": "recommended"
-		}
-	},
-	"javascript": {
-		"formatter": {
-			"quoteStyle": "double"
-		}
-	},
 	"css": {
 		"parser": {
 			"cssModules": true,
 			"tailwindDirectives": true
-		}
-	},
-	"assist": {
-		"enabled": true,
-		"actions": {
-			"source": {
-				"organizeImports": "on"
-			}
 		}
 	}
 }
