@@ -11,15 +11,9 @@ const { VITE_RELEASE_VERSION: version, VITE_RELEASE_URL: url } = import.meta
 if (Boolean(version) !== Boolean(url))
 	throw new Error("VITE_RELEASE_VERSION and VITE_RELEASE_URL go together");
 
-export function DownloadButton({
-	plain,
-	showVersion,
-}: {
-	plain?: boolean;
-	showVersion?: boolean;
-}) {
+export function DownloadButton({ showVersion }: { showVersion?: boolean }) {
 	return (
-		<ButtonLink href={url || RELEASES} primary large plain={plain}>
+		<ButtonLink href={url || RELEASES} primary large>
 			Download for Mac
 			{showVersion && version && (
 				<span className="font-mono text-[12px] font-medium opacity-75">

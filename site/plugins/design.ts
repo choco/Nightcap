@@ -60,6 +60,26 @@ function themed({ name, value }: Token<Value>): string {
 	return `light-dark(${css(value.light)},${css(value.dark)})`;
 }
 
+// A night panel stays night in the Day theme, so inside one each themed colour is its night value.
+// A reference there names a colour both themes share, or it would take the Day theme's.
+function night(colours: Token<Value>[]): string {
+	const shared = new Set(
+		colours
+			.filter(({ value }) => typeof value === "string")
+			.map(({ name }) => name),
+	);
+	const declarations = colours.flatMap(({ name, value }) => {
+		if (typeof value === "string") return [];
+		const reference = /^\{(.+)\}$/.exec(value.dark)?.[1];
+		if (reference && !shared.has(reference))
+			throw new Error(
+				`design/tokens.json: ${name}'s night value names ${reference}, which differs by theme`,
+			);
+		return [`--${name}:${css(value.dark)}`];
+	});
+	return `.night{${declarations.join(";")};color-scheme:dark}`;
+}
+
 // A text style is Tailwind's `text-<name>`: its size, with its line height, weight and spacing.
 const textStyle = (style: TextStyle) =>
 	[
@@ -73,8 +93,8 @@ const textStyle = (style: TextStyle) =>
 
 /** The design system's tokens as CSS: the fonts, the colours as variables on :root, light-dark()
  *  picking each theme's by the colour scheme, which is dark for the dark system appearance unless
- *  the page was set to light, and for an explicit dark choice; then Tailwind's theme from them,
- *  the text styles among it. */
+ *  the page was set to light, and for an explicit dark choice, and always on a night panel
+ *  (`.night`); then Tailwind's theme from them, the text styles among it. */
 function tokensCss(tokens: Tokens): string {
 	const colours = tokens.color.tokens;
 	// The spacing tokens are Tailwind's 4px scale, space-N being N steps.
@@ -94,6 +114,7 @@ function tokensCss(tokens: Tokens): string {
 		`:root{${colours.map((token) => `--${token.name}:${themed(token)}`).join(";")};color-scheme:light}`,
 		`@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark}}`,
 		`:root[data-theme="dark"]{color-scheme:dark}`,
+		night(colours),
 		// Inline, so a utility reads the colour's variable, which the theme switches.
 		`@theme inline{--color-*:initial;${colours.map(({ name }) => `--color-${name}:var(--${name})`).join(";")}}`,
 		// Static, so every variable reaches :root for the CSS modules too, which Tailwind doesn't see.

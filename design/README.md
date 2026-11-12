@@ -19,7 +19,7 @@ Write the way the app talks: plain, specific, and about what the user sees.
 - Lay pages on `ground`, sections on `surface`, floating things on `surface-raised` with `shadow-lift`. Divide with `line`; give controls their edge with `line-strong`.
 - Set text in `ink`, secondary text in `ink-muted`. Gold words use `moon-text`, warm words `ember-text`.
 - `true-colour` is ember's counterpart: a mark (a dot, a highlight) for what the screen looks like with Night Shift off. Pair the two to tell a warm screen from a true one.
-- `night` and `night-deep` are the brand's navies in both themes. Use them for night panels: the hero, the terminal, a feature that happens after dark. Text on them is `starlight` or `starlight-muted`, whatever the theme.
+- `night` and `night-deep` are the brand's navies in both themes. Use them for night panels: the hero, the terminal, a feature that happens after dark. Text on them is `starlight` or `starlight-muted`, whatever the theme. Inside a night panel every colour takes its Night value, so its text, lines, buttons and focus rings are the Night theme's in both.
 - `moon` is the one accent. Spend it on the primary action, the moon itself and at most one highlight per view. Text on it is `on-moon`.
 - `ember` and `tint` show Night Shift's warmth and nothing else: the tinted half of a before/after, a screen warming as the schedule starts. Never use them for buttons, links or status.
 - `ok`, `drift`, `broken` and `off` are the app's check states, with the app's own values. Each always travels with its shape (circle-check, triangle, x-circle, minus) and a word, since colour alone doesn't tell them apart, and the light values are too faint on their own.

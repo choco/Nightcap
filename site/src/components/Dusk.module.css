@@ -6,7 +6,7 @@
 	overflow: hidden;
 	isolation: isolate;
 	background: var(--night);
-	color: var(--starlight);
+	color: var(--ink);
 }
 .dusk > * {
 	position: relative;

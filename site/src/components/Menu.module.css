@@ -1,15 +1,15 @@
-/* Nightcap's menu in two looks: the night look of the site's own illustrations, and macOS 27's,
-   in the hero's scene. An item is a checkmark, an image and the title, with the shortcut or a
+/* Nightcap's menu in two looks: the night look of the site's own illustrations, a night panel, and
+   macOS 27's, in the hero's scene. An item is a checkmark, an image and the title, with the shortcut or a
    chevron at the end, all centred on its lines. */
 .night {
 	padding: 5px;
 	border-radius: 10px;
-	background: var(--night);
-	border: 1px solid var(--menu-line);
+	background: var(--surface-raised);
+	border: 1px solid var(--line);
 	box-shadow: var(--shadow-lift);
 	font-size: 12px;
 	line-height: 1.25;
-	color: var(--starlight);
+	color: var(--ink);
 }
 .mac {
 	width: 19.54em;
@@ -63,24 +63,24 @@
 .subtitle {
 	display: block;
 	font-size: 10px;
-	color: var(--starlight-muted);
+	color: var(--ink-muted);
 	white-space: pre-line;
 	text-wrap: balance;
 }
 .key {
-	color: var(--starlight-muted);
+	color: var(--ink-muted);
 	font-size: 11px;
 }
 .key svg {
 	display: block;
 	width: 0.5em;
 	height: 0.85em;
-	color: var(--starlight);
+	color: var(--ink);
 }
 .separator {
 	height: 1px;
 	margin: 4px 8px;
-	background: var(--menu-line);
+	background: var(--line);
 }
 /* The strength: a small sun where the titles start, the track, a large sun at the edge. */
 .slider {
@@ -88,7 +88,7 @@
 	align-items: center;
 	gap: 6px;
 	padding: 2px 8px 2px 41px;
-	color: var(--starlight-muted);
+	color: var(--ink-muted);
 }
 .sun {
 	display: inline-flex;
@@ -116,7 +116,7 @@
 	top: 5px;
 	height: 4px;
 	border-radius: 999px;
-	background: var(--starlight-muted);
+	background: var(--ink-muted);
 	opacity: 0.35;
 }
 .fill {
@@ -126,7 +126,7 @@
 	width: calc(var(--value) * 100%);
 	height: 4px;
 	border-radius: 999px;
-	background: var(--starlight);
+	background: var(--ink);
 }
 .knob {
 	position: absolute;

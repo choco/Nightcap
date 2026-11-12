@@ -4,12 +4,12 @@ import { Section, SectionText } from "./Section";
 const Command = ({ children }: { children: ReactNode }) => (
 	<div className="wrap-anywhere whitespace-pre-wrap">
 		<span className="text-moon">$ </span>
-		<span className="font-semibold text-starlight">nightcap</span>
+		<span className="font-semibold">nightcap</span>
 		{children}
 	</div>
 );
 const Output = ({ children }: { children: ReactNode }) => (
-	<div className="wrap-anywhere whitespace-pre-wrap text-starlight-muted">
+	<div className="wrap-anywhere whitespace-pre-wrap text-ink-muted">
 		{children}
 	</div>
 );
@@ -17,7 +17,7 @@ const Output = ({ children }: { children: ReactNode }) => (
 const Arg = ({ children }: { children: ReactNode }) => (
 	<span className="whitespace-nowrap text-moon">{children}</span>
 );
-const Off = () => <span className="text-[#ffaa6b]">off</span>;
+const Off = () => <span className="text-ember-text">off</span>;
 
 export function Cli() {
 	return (
@@ -39,7 +39,7 @@ export function Cli() {
 			</div>
 			{/* Long output wraps, as a terminal window would. */}
 			<figure
-				className="min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md border border-menu-line bg-night-deep p-6 font-mono text-[13px] leading-[1.6] text-starlight shadow-[0_24px_70px_-18px_rgba(246,213,138,0.32)] max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
+				className="night min-w-0 flex-[999_1_490px] overflow-x-auto rounded-md border border-line bg-night-deep p-6 font-mono text-[13px] leading-[1.6] text-ink shadow-[0_24px_70px_-18px_rgba(246,213,138,0.32)] max-sm:p-[18px] max-sm:text-[11px] max-sm:[font-variation-settings:'wdth'_87.5]"
 				data-lens-area
 				data-doodle-clear="12"
 				aria-label="A terminal session with the nightcap command"
@@ -74,7 +74,7 @@ export function Cli() {
 					status <Arg>--json</Arg> | jq -r <Arg>.front.decision.state</Arg>
 				</Command>
 				<Output>
-					<span className="text-[#30d158]">on</span>
+					<span className="text-ok">on</span>
 				</Output>
 			</figure>
 		</Section>

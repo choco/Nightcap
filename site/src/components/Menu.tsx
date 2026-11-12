@@ -11,7 +11,10 @@ type Props = HTMLAttributes<HTMLDivElement> & {
 
 export function Menu({ entries, look, className, ...rest }: Props) {
 	return (
-		<div className={cx(styles[look], className)} {...rest}>
+		<div
+			className={cx(styles[look], look === "night" && "night", className)}
+			{...rest}
+		>
 			{entries.map((entry, index) => (
 				// biome-ignore lint/suspicious/noArrayIndexKey: a menu's rows are its positions, and its separators repeat.
 				<Entry key={index} entry={entry} />

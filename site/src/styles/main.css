@@ -5,7 +5,6 @@
 :root {
 	--doodle: light-dark(rgba(74, 85, 120, 0.34), rgba(167, 178, 212, 0.3));
 	--doodle-gold: light-dark(rgba(138, 91, 0, 0.42), rgba(246, 213, 138, 0.42));
-	--menu-line: #34467a;
 	/* Night Shift's tint over a page, as one colour at 29.8%: the tint, 22% of #ff8a2e, under 10%
 	   of ember comes to 29.8% of this. */
 	--tint-flat: rgb(255 143.4 56.4);
@@ -25,7 +24,6 @@
 }
 
 @theme inline {
-	--color-menu-line: var(--menu-line);
 	/* The hero's sky, fading into the ground, over every page's top. */
 	--background-image-hero-sky: linear-gradient(
 		180deg,

@@ -49,7 +49,7 @@ export function Dusk() {
 		<section
 			className={cx(
 				styles.dusk,
-				"mb-18 flex flex-wrap items-center gap-x-10 gap-y-6 rounded-md p-[clamp(28px,5vw,48px)]",
+				"night mb-18 flex flex-wrap items-center gap-x-10 gap-y-6 rounded-md p-[clamp(28px,5vw,48px)]",
 			)}
 			data-lens-section
 			data-lens-area
@@ -73,11 +73,11 @@ export function Dusk() {
 				<p className="font-display text-display-m text-balance max-sm:text-[length:clamp(32px,9.5vw,34px)]">
 					Set it up before sunset.
 				</p>
-				<p className="text-small text-balance text-starlight-muted">
+				<p className="text-small text-balance text-ink-muted">
 					Free and open source, for macOS 15 or later on Apple silicon.
 				</p>
 			</div>
-			<DownloadButton plain />
+			<DownloadButton />
 		</section>
 	);
 }
