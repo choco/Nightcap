@@ -59,6 +59,12 @@ export function isPage(file: string): file is PageFile {
 	return Object.hasOwn(PAGES, file);
 }
 
+/** The module that hydrates a page, as the page's HTML loads it. */
+export function entryScript(file: string): string {
+	if (!isPage(file)) throw new Error(`${file} isn't one of the site's pages`);
+	return `/src/entries/${PAGES[file].entry}.tsx`;
+}
+
 const ORIGIN = "https://nightcap.choco.me";
 
 /** Where the footer's appearance switch keeps the appearance chosen on this device. */
@@ -67,7 +73,7 @@ export const THEME_KEY = "nightcap-theme";
 /** A page's head, for its HTML's `<!--head-->` outlet. */
 export function head(file: string): string {
 	if (!isPage(file)) throw new Error(`${file} isn't one of the site's pages`);
-	const { entry, title, listed }: Page = PAGES[file];
+	const { title, listed }: Page = PAGES[file];
 	return [
 		'<meta charset="utf-8">',
 		'<meta name="viewport" content="width=device-width, initial-scale=1">',
@@ -98,6 +104,6 @@ export function head(file: string): string {
     if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
   } catch {}
 </script>`,
-		`<script type="module" src="/src/entries/${entry}.tsx"></script>`,
+		`<script type="module" src="${entryScript(file)}"></script>`,
 	].join("\n");
 }
