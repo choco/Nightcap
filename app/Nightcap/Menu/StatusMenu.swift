@@ -22,7 +22,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
     /// "Nightcap is up here", or the panel saying the moon is hidden, while it shows.
-    private var pointing: NSPopover?
+    private var pointing: (popover: NSPopover, follow: NSObjectProtocol)?
     private var hiddenPanel: (panel: FloatingPanel, content: PointOut)?
     /// Custom…'s window, while it shows.
     private var picking: TimePicker?
@@ -176,7 +176,17 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 popover.contentSize = content.size
                 popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
                 popover.contentViewController?.view.window?.makeKey()
-                pointing = popover
+                // A popover follows its view only within the view's window, and the moon has a
+                // window of its own, which moves as the user ⌘-drags the moon or other items come
+                // and go. Showing it again anchors it anew.
+                let follow = NotificationCenter.default.addObserver(
+                    forName: NSWindow.didMoveNotification, object: button.window, queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+                    }
+                }
+                pointing = (popover, follow)
             } else {
                 let panel = FloatingPanel()
                 panel.setContent(content.view)
@@ -204,7 +214,10 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     private func stopPointing() {
-        pointing?.close()
+        if let pointing {
+            NotificationCenter.default.removeObserver(pointing.follow)
+            pointing.popover.close()
+        }
         pointing = nil
         hiddenPanel?.panel.close()
         hiddenPanel = nil
