@@ -2,6 +2,19 @@
 
 What changed in each version of Nightcap.
 
+## 1.2.3 · 17 November 2026
+
+The note that points out Nightcap’s moon after onboarding stays on the moon when you move it, and onboarding, rules and messages get a few smaller fixes. This release also simplifies Nightcap’s internals.
+
+### Fixed
+
+- After onboarding, “Nightcap is up here” follows the moon when you ⌘-drag it or other menu bar icons come and go.
+- Nightcap waits until onboarding is done to tell you about problems, so macOS asks about notifications at onboarding’s own step rather than ahead of it.
+- While ad-hoc rules are off, Always and Remove Your Rule in the menu, Add App and Add Website in Settings, and Add Rules in onboarding are greyed out, instead of letting you try and then refusing.
+- A website with only a temporary rule shows its icon, as one with a lasting rule does.
+- File paths in Settings’ checks, notifications and the command line’s replies show your home folder as `~`.
+- During the tour, the command line says a change lasts until the tour ends.
+
 ## 1.2.2 · 11 November 2026
 
 When you leave an app or site that turns Night Shift off, Night Shift comes back partway through the schedule’s fade in, as macOS has it, instead of at full warmth.
