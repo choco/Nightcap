@@ -2,6 +2,15 @@
 
 What changed in each version of Nightcap.
 
+## 1.2.4 · 24 November 2026
+
+After onboarding, Nightcap waits for macOS to show its moon before saying the menu bar has no room for it, and points at the moon if room frees up later.
+
+### Fixed
+
+- After onboarding, “No room for Nightcap’s moon” no longer shows when macOS is only slow to put the moon in the menu bar.
+- If the menu bar has no room for the moon after onboarding and you make some, by quitting an app with an icon up there, “Nightcap is up here” takes the note’s place and points at the moon.
+
 ## 1.2.3 · 17 November 2026
 
 The note that points out Nightcap’s moon after onboarding stays on the moon when you move it, and onboarding, rules and messages get a few smaller fixes. This release also simplifies Nightcap’s internals.
