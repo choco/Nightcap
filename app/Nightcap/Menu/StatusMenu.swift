@@ -21,9 +21,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private var drawn: (moon: Menu.Moon, problem: Bool)?
     /// The open menu's strength slider, moved in place when only the strength changed.
     private weak var slider: NSSlider?
-    /// "Nightcap is up here", or the panel saying the moon is hidden, while it shows.
-    private var pointing: (popover: NSPopover, follow: NSObjectProtocol)?
-    private var hiddenPanel: (panel: FloatingPanel, content: PointOut)?
+    /// From `pointOut(takeTour:onShown:)` until OK.
+    private var pointing: Pointing?
     /// Custom…'s window, while it shows.
     private var picking: TimePicker?
     /// The open menu's site row, which takes the site's icon if it arrives while it shows.
@@ -42,6 +41,30 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     private final class Pick: NSObject {
         let pick: Menu.PickTime
         init(_ pick: Menu.PickTime) { self.pick = pick }
+    }
+
+    private struct Pointing {
+        /// Watches the moon's window, which macOS moves as it places the moon.
+        let follow: NSObjectProtocol
+        let takeTour: () -> Void
+        let onShown: () -> Void
+        /// Nothing while macOS places the moon.
+        var pointer: Pointer?
+    }
+
+    /// "Nightcap is up here", hanging from the moon, or the panel saying the menu bar has no room
+    /// for it.
+    private enum Pointer {
+        case popover(NSPopover)
+        /// The panel holds only the view, so its controller stays here.
+        case panel(FloatingPanel, PointOut)
+
+        func close() {
+            switch self {
+            case .popover(let popover): popover.close()
+            case .panel(let panel, _): panel.close()
+            }
+        }
     }
 
     /// The item, drawn first from `snapshot`.
@@ -134,93 +157,105 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return menu
     }
 
-    /// Where macOS has the moon. A new status item's button waits at the screen's origin, with no
-    /// height, until macOS places it, a quarter of a second to over two seconds in testing. It
-    /// passes below the screen for a moment, then slides into the menu bar; when the menu bar has
-    /// no room for it, it stays below the screen.
-    private enum Placement { case pending, inMenuBar, belowScreen }
-
-    private static let placementWait: TimeInterval = 5
-    private static let belowScreenSettle: TimeInterval = 0.5
-
-    private var placement: Placement {
-        guard let window = item.button?.window, window.frame.height > 0 else { return .pending }
-        guard let screen = window.screen else { return .belowScreen }
-        return window.frame.maxY >= screen.frame.maxY - 1 ? .inMenuBar : .pending
+    /// Whether macOS has put the moon in the menu bar. A new status item's button waits at the
+    /// screen's origin, with no height, then below the screen, until macOS slides it into the menu
+    /// bar, a little over two seconds after it's made in testing. A moon the menu bar has no room
+    /// for stays below the screen, so only the wait tells the two apart.
+    private var inMenuBar: Bool {
+        guard let window = item.button?.window, window.frame.height > 0, let screen = window.screen else {
+            return false
+        }
+        return window.frame.maxY >= screen.frame.maxY - 1
     }
+
+    /// About twice the time macOS took to place the moon in testing.
+    private static let placementWait: TimeInterval = 5
 
     /// Points at the moon once onboarding is done: the only way into Nightcap from then on. It
     /// stays until OK: on macOS 27, a status item's click never arrives while a popover hangs
     /// from it. A popover, since on macOS 27 the system draws the status item, and only AppKit
     /// knows where it is. It offers the tour, which then starts knowing where the moon is. A moon
-    /// macOS hides, or never places, gets a panel saying so instead, under the menu bar at the
-    /// right. `onShown` runs once either is up and focused.
+    /// macOS hasn't placed by `placementWait` gets a panel saying the menu bar has no room for it,
+    /// under the menu bar at the right, until the moon arrives after all. `onShown` runs once the
+    /// first is up and focused.
     func pointOut(takeTour: @escaping () -> Void, onShown: @escaping () -> Void) {
-        afterPlacement(deadline: Date().addingTimeInterval(Self.placementWait)) { [weak self] inMenuBar in
-            guard let self, let button = item.button else { return }
-            let content = PointOut(
-                hidden: !inMenuBar,
-                onOK: { [weak self] in self?.stopPointing() },
-                takeTour: { [weak self] in
-                    self?.stopPointing()
-                    takeTour()
-                })
-            // Focused, as a popover the user opened would be; without it the popover's glass washes
-            // out. Nightcap is still the active app from the click on Done, so nothing else loses
-            // the focus to it.
-            NSApp.activate()
-            if inMenuBar {
-                let popover = NSPopover()
-                popover.behavior = .applicationDefined
-                popover.contentViewController = content
-                popover.contentSize = content.size
-                popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                popover.contentViewController?.view.window?.makeKey()
-                // A popover follows its view only within the view's window, and the moon has a
-                // window of its own, which moves as the user ⌘-drags the moon or other items come
-                // and go. Showing it again anchors it anew.
-                let follow = NotificationCenter.default.addObserver(
-                    forName: NSWindow.didMoveNotification, object: button.window, queue: .main
-                ) { _ in
-                    MainActor.assumeIsolated {
-                        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-                    }
-                }
-                pointing = (popover, follow)
-            } else {
-                let panel = FloatingPanel()
-                panel.setContent(content.view)
-                panel.setContentSize(content.size)
-                panel.moveUnderMenuBar()
-                panel.makeKeyAndOrderFront(nil)
-                hiddenPanel = (panel, content)
-            }
-            onShown()
+        let follow = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMoveNotification, object: item.button?.window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.moonMoved() }
+        }
+        pointing = Pointing(follow: follow, takeTour: takeTour, onShown: onShown)
+        moonMoved()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.placementWait) { [weak self] in
+            self?.placementRanOut()
         }
     }
 
-    /// Calls `then` once the moon is in the menu bar, or once it has stayed below the screen, or
-    /// at `deadline`, with whether it's in the menu bar.
-    private func afterPlacement(deadline: Date, belowSince: Date? = nil, then: @escaping (_ inMenuBar: Bool) -> Void) {
-        let now = Date()
-        let placement = self.placement
-        let belowSince = placement == .belowScreen ? belowSince ?? now : nil
-        if placement == .inMenuBar { return then(true) }
-        if let belowSince, now.timeIntervalSince(belowSince) >= Self.belowScreenSettle { return then(false) }
-        if now >= deadline { return then(false) }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.afterPlacement(deadline: deadline, belowSince: belowSince, then: then)
+    /// Hangs "Nightcap is up here" from the moon while it's in the menu bar, in place of the panel
+    /// if that shows. A popover follows its view only within the view's window, and the moon has a
+    /// window of its own, which moves as macOS places the moon, as the user ⌘-drags it, and as
+    /// other items come and go: showing the popover again anchors it anew.
+    private func moonMoved() {
+        guard let pointing, inMenuBar, let button = item.button else { return }
+        if case .popover(let popover) = pointing.pointer {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            return
         }
+        let content = pointOutContent(hidden: false)
+        let popover = NSPopover()
+        popover.behavior = .applicationDefined
+        popover.contentViewController = content
+        popover.contentSize = content.size
+        point(with: .popover(popover))
+    }
+
+    /// Says the menu bar has no room for the moon, unless something already points at it.
+    private func placementRanOut() {
+        guard let pointing, pointing.pointer == nil else { return }
+        let content = pointOutContent(hidden: true)
+        let panel = FloatingPanel()
+        panel.setContent(content.view)
+        panel.setContentSize(content.size)
+        panel.moveUnderMenuBar()
+        point(with: .panel(panel, content))
+    }
+
+    /// Puts `pointer` up in place of what shows, focused, as a popover the user opened would be:
+    /// without it the popover's glass washes out. The first activates Nightcap, which is still the
+    /// active app from the click on Done, so nothing else loses the focus to it. A popover that
+    /// takes the panel's place, which can be much later, leaves the focus where it is.
+    private func point(with pointer: Pointer) {
+        guard let pointing, let button = item.button else { return }
+        let first = pointing.pointer == nil
+        pointing.pointer?.close()
+        if first { NSApp.activate() }
+        switch pointer {
+        case .popover(let popover):
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+        case .panel(let panel, _):
+            panel.makeKeyAndOrderFront(nil)
+        }
+        self.pointing?.pointer = pointer
+        if first { pointing.onShown() }
+    }
+
+    private func pointOutContent(hidden: Bool) -> PointOut {
+        PointOut(
+            hidden: hidden,
+            onOK: { [weak self] in self?.stopPointing() },
+            takeTour: { [weak self] in
+                guard let self, let takeTour = pointing?.takeTour else { return }
+                stopPointing()
+                takeTour()
+            })
     }
 
     private func stopPointing() {
-        if let pointing {
-            NotificationCenter.default.removeObserver(pointing.follow)
-            pointing.popover.close()
-        }
-        pointing = nil
-        hiddenPanel?.panel.close()
-        hiddenPanel = nil
+        guard let pointing else { return }
+        NotificationCenter.default.removeObserver(pointing.follow)
+        pointing.pointer?.close()
+        self.pointing = nil
     }
 
     /// Puts a site's icon that just arrived in the open menu's site row.
